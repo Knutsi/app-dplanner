@@ -16,10 +16,10 @@ from dplanner.domain.store import LibraryStore
 from dplanner.modules.docs.aspect import COMPILED_ID
 from dplanner.modules.docs.aspect import MODULE_ID as DOCS_ID
 from dplanner.modules.docs.aspect import asset_source as docs_source
-from dplanner.modules.notes.log import MODULE_ID as NOTES_ID
-from dplanner.modules.notes.log import Note
-from dplanner.modules.notes.log import asset_source as notes_source
-from dplanner.modules.notes.log import write_log as write_notes
+from dplanner.modules.notes.aspect import MODULE_ID as NOTES_ID
+from dplanner.modules.notes.aspect import Note
+from dplanner.modules.notes.aspect import asset_source as notes_source
+from dplanner.modules.notes.aspect import write_log as write_notes
 from dplanner.modules.spec.aspect import MODULE_ID as SPEC_ID
 from dplanner.modules.spec.documents import (
     SpecIndex,

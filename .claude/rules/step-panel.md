@@ -26,7 +26,7 @@ paths:
   Ticket, Test, Check and Start are Step ▸ Type toggles (independent, never a radio group),
   and each that has a tab registers its `InspectorSection` with a `shown_for` predicate so
   the tab exists only on a step that carries the aspect — Check and Start are bare markers with none. **The description is an agent step's instructions** — the briefing's
-  `## Instructions` block, decided by the composition root's `_briefing_instruction`; a
+  `## Instructions` block, decided by `agent_briefing/instructions.py`'s `instruction`; a
   *separate* instruction (the checkbox in the Details tab's Description block,
   `dplanner agent set`; dropped atomically with `agent set --clear`) is the opt-out for a
   step whose how-to-execute differs from what-it-is. `ARCHITECTURE.md`'s *The description

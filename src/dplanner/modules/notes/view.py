@@ -27,19 +27,19 @@ from dplanner.framework.signalling import UpdatingIndicator
 from dplanner.framework.toolbar import FilterButton, Toolbar
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import EmptyState, note
-from dplanner.modules.notes.editor import NoteEditor
-from dplanner.modules.notes.log import (
+from dplanner.modules.notes.aspect import (
     DEFAULT_LABEL,
     LABELS,
     MODULE_ID,
     Note,
+    day,
     next_note_id,
     read_log,
     superseded_ids,
     without_note,
     write_log,
 )
-from dplanner.modules.notes.reach import day
+from dplanner.modules.notes.editor import NoteEditor
 from dplanner.theme.icons import plus_icon, trash_icon
 from dplanner.theme.tokens import FIELD_GAP, SECTION_GAP
 

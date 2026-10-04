@@ -29,29 +29,27 @@ from dplanner.cli.lookup import body_from, find_project, find_step, project_arg,
 from dplanner.domain.assets import attach
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Project, Step
-from dplanner.modules.notes.log import (
+from dplanner.modules.notes.aspect import (
+    INDEX_LIMIT,
     LABEL_IDS,
     LABELS,
     MODULE_ID,
     REACHES,
     Note,
     adding,
+    briefing_blocks,
     check_label,
     find_note,
-    read_log,
-    same_note,
-    standing,
-    with_note,
-    without_note,
-    write_log,
-)
-from dplanner.modules.notes.reach import (
-    INDEX_LIMIT,
-    briefing_blocks,
     full_lines,
     listed_within,
     reaching,
+    read_log,
+    same_note,
+    standing,
     when_where,
+    with_note,
+    without_note,
+    write_log,
 )
 
 

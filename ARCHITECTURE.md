@@ -4108,7 +4108,7 @@ format bump**: an older build reads a word it does not know as `Unknown` and lea
 entry on disk. It once read such a word as pending, and the structural review's probe showed
 what that costs: an otherwise eligible agent step became due again, so a window on an older
 build would relaunch work a newer one had claimed. Unknown holds the step instead —
-`status.held` reads it as blocked, so `progression.due` and `rounds.due_turns` skip it and
+`status.held` reads it as blocked, so `progression.due` and `step_review.aspect.due_turns` skip it and
 the board lists it with Blocked, and Run Agent refuses it, so no launch writes
 `in-progress` over the word. Absent data is the only thing that reads as pending. `started` is
 stamped the first time a step enters any *worked* status — in progress, under review or
@@ -4408,10 +4408,9 @@ selection change; the encodings cannot disagree because turning the aspect off c
 both. With a separate instruction present, the description returns to its own
 `## Description` section and the separate text takes `## Instructions`.
 
-The seam lives where the other cross-module prompt decisions do: `Briefing` carries an
-`instruction(library, step, files) → PromptPart` member, defaulted module-locally to the
-step's own text, overridden by the composition root's `_briefing_instruction` — the one
-file allowed to read the description on the agent module's behalf. Run Agent, the Agent
+The seam lives where the other cross-module prompt decisions do: `agent_briefing`'s
+`instruction(library, step, files) → PromptPart` reads the description through its
+module's `aspect.py`. Run Agent, the Agent
 tab's Prompt page and `dplanner agent prompt` all assemble through it, so no surface can
 brief a step differently. One consequence worth naming for existing plans: a described,
 uninstructed step that used to render `## Description` now renders that text as
@@ -4422,7 +4421,7 @@ the same for every review — read its subject through its lenses, post findings
 approve or escalate within its cap — and what differs is data its aspect already holds
 (the lenses, the cap) and its subject, which the graph holds. Asking somebody to write that
 protocol into every review's description would be asking for it to drift from the verbs,
-so `_briefing_instruction` hands a review to `_review_instruction`, which writes it from
+so `instruction` hands a review to `_review_instruction`, which writes it from
 the aspect and the subject. The step's own prose is not dropped: it rides inside the block
 as *what to look for*, the one thing a person adds to a review, and is still said once. A
 lens this build names carries its question (`Lens.asks`, beside the checkbox that picks
@@ -4468,7 +4467,7 @@ or a reviewing agent looks next. **Done means somebody accepted the work**, and 
 saying so about its own work is the one claim the plan cannot check. So three places say
 it, and one holds it:
 
-- **What agents read.** The briefing's epilogue (`_agent_epilogue`) ends at `status set
+- **What agents read.** The briefing's epilogue (`agent_briefing/protocol.py`) ends at `status set
   <key> ready-for-review`, and the skill's *Running as an agent step* says the same, both
   naming the way out. Both word it apart from the agent-run state `plan-for-review`, which
   is the agent's *plan* waiting for a look mid-run, not the step's work finished.
@@ -4623,8 +4622,8 @@ plan reshaped in several calls passes through both.
 
 **Every link into a review auto-progresses, by rule rather than by flag.** A review must
 start while its subject reads ready for review, and its subject becomes done only when the
-review approves it — the collector's deadlock again. The rule is ORed into the root's one
-`_auto_progresses`, so the frontier, Run Agent's gate, the doubled edge on the canvas and
+review approves it — the collector's deadlock again. The rule is ORed into the one
+`auto_progress.aspect.auto_progresses`, so the frontier, Run Agent's gate, the doubled edge on the canvas and
 `project graph` agree without a word each. Nothing is written onto the review. The Edge
 menu's *Auto-progress* shows such a link checked and greyed, with its reason (*Hidden
 means absent; disabled means not now*).
@@ -4655,7 +4654,7 @@ Every one of these goes through `status_command`, the writer `status set` uses. 
 stopped status ends an at-work claim the same way whichever verb stopped the work.
 
 **A collector talks the same way.** Who a step may talk to is whoever it takes work from
-review on — `_auto_progresses` again: a review's subject, or a collector's flagged sources.
+review on — `auto_progresses` again: a review's subject, or a collector's flagged sources.
 So `start`, `post`, `take`, `reply` and `wait` serve a collector sending work back upstream,
 with `--to` naming the source. `approve` and `escalate` are a review's verdicts: a collector
 refuses them and names its own way out, `status set`.
@@ -4732,12 +4731,11 @@ default, and a review in one would be reading a new branch off `main` — not th
 reviews. What it reads is the subject's worktree when that is on this machine, and its
 PR or branch otherwise, without checking anything out; it commits nothing, so it needs no
 branch. That is a fact about what a review *is*, not a choice somebody should have to
-untick, so `Briefing.no_worktree` lets the root rule a worktree out whatever the agent
-aspect says, and every surface asks `Briefing.worktree(step)`: the launch, the preflight
+untick, so `agent_briefing.worktree.no_worktree` rules a worktree out whatever the agent
+aspect says, and every surface asks its `worktree(step)`: the launch, the preflight
 (which tells a review to leave the checkout as it found it — no commits, branch switches or
 stashes), the Agent tab's box, greyed with the reason, and `agent worktree … on`, refused.
-It lives on `Briefing` because that object is the one wiring both surfaces read — a Deps
-field and a CLI parameter would be the two declarations `Briefing` was made to end.
+Both surfaces import that one function, so neither can declare its own.
 
 ## Auto-progress is launched by the window
 
@@ -4766,7 +4764,7 @@ owners' halves and never stores the answer:
   start: a collector whose sources a person set done by hand is ready for a person to
   launch; one whose sources just reached review was made ready by the flag, and the flag's
   promise is that it starts on its own.
-- `rounds.due_turns` — a side of a conversation whose turn it is (`rounds.turn`), whose
+- `step_review.aspect.due_turns` — a side of a conversation whose turn it is (`step_review.aspect.turn`), whose
   agent has gone, and that nobody launched *for this turn*. That last needs memory the
   graph does not have, so the round keeps it: `party_turn_launched` / `asker_turn_launched`
   hold the stamp that began the turn launched for, and equal means launched. A stamp that
@@ -4904,7 +4902,7 @@ its PR into it. Two stretches crossing without nesting is `branch.overlap`, and 
 refuses a step on both.
 
 **The plan decides the branches; the script carries them out; the agent is told the same.**
-`launcher.BranchPlan`, decided once by `Briefing.branch`, names the branch a run works on,
+`planning.branches.BranchPlan`, decided once by the root's `_branch_plan`, names the branch a run works on,
 where a new one starts, what the first run may cut and the PR's base, and the preamble, the
 epilogue and the wrapper all read it. **Every worktree now starts from the remote** — a
 stretch's branch, else the code row's `Location.ref` as the mainline, else the remote's
@@ -5222,13 +5220,13 @@ linked worktree (a `.git` *file*), and otherwise prints git's reason, waits for 
 writes `1` to the exit file — the window reports *failed (exit 1)*, the same way it reports
 any agent that died. Never the main checkout by accident.
 
-**The run is named after the step, once.** `launcher.run_name(key, ticket, title)` —
+**The run is named after the step, once.** `agent_briefing.worktree.run_name(key, ticket, title)` —
 `f7-PROJ-12-build-the-modal`, made ref-safe — is the worktree's directory, the branch's
 last component and the start of the terminal's title. The key first so `git branch` sorts
 by step, the ticket so the branch answers the tracker too, the slug for the person reading
-the list. The pieces are aspects the launcher never reads, so the root composes them
-(`planning.kinds.key_of`, `_ticket_key`) and hands them to the module; the root's `_run_name` applies
-the same launcher rule, because the **briefing names the worktree**: its preamble tells the
+the list. The pieces are aspects the launcher never reads, so `run_name_of(step)` beside it
+composes them (`planning.kinds.key_of`, the ticket aspect) and both the launch and the
+briefing call it, because the **briefing names the worktree**: its preamble tells the
 agent to confirm `git rev-parse --show-toplevel` ends in that directory and the branch is
 `agent/<name>`, and to stop if either differs. The check costs the agent two commands and
 closes the gap the silent script left — a run that somehow lands in the main checkout is
@@ -6037,6 +6035,23 @@ interprets is a list, `PLANNING_ASPECTS` (rule 14), so admitting an aspect is a 
 reviews; past about fifteen entries the tier has become "the important aspects" and wants
 rethinking rather than another line.
 
+**A package that registers nothing is surface all through.** The briefing is the case that
+needed it: what an agent is told reads a dozen modules' facts, and it lived in the root as
+eight callbacks wired onto Run Agent's `Deps` and again onto `agent prompt`. It is now
+`modules/agent_briefing/`, which reads those facts through each owner's `aspect.py` — but
+Run Agent must import the briefing in turn, and a briefing is neither an aspect nor a
+workflow; naming its files after either would make the filename lie. So rule 4 names the
+shape instead: a package with **no `module.py`** registers nothing, every file it holds is
+checked headless the way an `aspect.py` is, and another module may import any of them. The
+harness and theme-provider packages already had that shape. The edge points Run Agent →
+briefing and never back: the run-naming helpers the briefing needed (`run_name`, `workdir`,
+`worktree_path`) moved out of the launcher into `agent_briefing/worktree.py`, which is what
+kept the graph acyclic — the structural review's §4 drew the edge the other way for exactly
+those helpers. What the briefing cannot import arrives as a plain value: the branch plan,
+which the branches module reads and caches, and the location roles, the root's registry
+over every module's `roles.py`. `tests/cli/test_briefing_golden.py` holds the briefing to
+the byte, which is how the move was shown to change no text.
+
 ## Progression is the status-aware frontier
 
 **The surface is named for the question; the derivation keeps the answer's name.** A person
@@ -6837,12 +6852,12 @@ as a filter wherever a list of tests is produced.
 
 **The list is closed, and testing owns it.** `AUDIENCES` in `modules/testing/aspect.py` —
 `qa`, `technical`, `other` — each an id, a label and a line of meaning, the same shape
-`modules/notes/log.py` gives its `LABELS`. Free-form tags were the obvious alternative and
+`modules/notes/aspect.py` gives its `LABELS`. Free-form tags were the obvious alternative and
 were rejected for the reason free-form tags always lose: `QA` and `qa` become two audiences,
 and a filter over a vocabulary nobody agreed on is a search box with extra steps. It is
-**not** wired in the composition root beside `_scope_kinds()`, and that is a deliberate
-difference: the scope kinds live there because they name *other modules'* aspects — a check,
-a feature, a milestone — and testing may not import them. Nothing outside testing has an
+**not** wired beside `planning.kinds.scope_kinds()`, and that is a deliberate
+difference: the scope kinds are handed to testing because they name aspects testing does
+not own — a check, a feature, a milestone. Nothing outside testing has an
 opinion about who a test is for, so handing the vocabulary in would have bought three
 injection points (`TestsDeps`, `commands()`, `report_source()`) for a three-line tuple, and
 `aspect.py` could no longer check a value on the way in. Widening the list is a line in that
@@ -7316,9 +7331,8 @@ never ran, rather than putting a row in front of somebody that they cannot act o
 it would bury the real findings under every step anybody is currently working on.
 
 **Which labels unsettle a test is named in the composition root**, `_unsettling_notes()`,
-and the reason is the one `_scope_kinds()` gives: the root is the single place allowed to
-know every aspect at once, and `modules/testing/` may not learn the notes module's
-vocabulary. A `decision` changes what the work should do and a `spec-change` records where
+and the reason is the one the scope kinds were handed in for: `modules/testing/` may not
+learn the notes module's vocabulary. A `decision` changes what the work should do and a `spec-change` records where
 it departed from the spec — either can leave a test proving last month's answer. A
 `handoff` says where the code lives, a `later` defers work, a `post-project` note is for
 afterwards; none of them makes a claim about what a test should assert, so none should put
@@ -7385,8 +7399,8 @@ deliberately excluded (an earlier milestone already accounts for them), while th
 headings are the finer collectors found **inside** the contents. So `ScopeKind` says both, and
 `gathers` is empty for a feature — the finest grain, read flat.
 
-Both are written literally in `modules/__init__.py::_scope_kinds()`, the one file allowed to
-name every aspect at once. A rank integer was considered and dropped: three lines a reader can
+Both are written literally in `planning/kinds.py`'s `scope_kinds()`, beside the kind facts
+they read. A rank integer was considered and dropped: three lines a reader can
 check by eye beat an ordering abstraction over exactly three things, and the ordering would
 have to be explained anyway.
 
@@ -7613,7 +7627,7 @@ is a surface a person edits now, so it is worth saying out loud.
 `modules/docs/` owns both aspects, the fragment editor, the Docs folder and the Documentation
 view; `collect.py` is the one derivation, Qt-free, with four readers (the view, `docs collect`,
 `docs status`, the compile briefing). The collector kinds arrive as an argument, exactly as
-`TestsDeps` takes them — **nothing is added to `_scope_kinds()`**. A fourth kind there would
+`TestsDeps` takes them — **nothing is added to `scope_kinds()`**. A fourth kind there would
 have put documentation in the Tests tab's scope selector and its Group by, and given every
 collector a Covers tab it never asked for: four surfaces learning about documentation to
 serve none of it.
@@ -7792,11 +7806,11 @@ A whole-codebase review (2026-08) found the architecture holding; these are the 
 where growth has a known cost curve, written down so the feature that crosses the line
 recognises the moment. None needs action today.
 
-- **`_briefing_sections()` in the composition root grows one hand-rolled block per aspect**
-  with a briefing presence — four blocks today, each with its own empty-check. The exit is
-  the shape `cli/lint.py` and `cli/authoring.py` already use: each module exports a Qt-free
-  block builder, the root assembles the list. When the function hits about six blocks, make
-  that move rather than adding a seventh `if`.
+- **`agent_briefing/sections.py`'s `step_sections()` grows one hand-rolled block per aspect**
+  with a briefing presence, each with its own empty-check — nine today, past the six this
+  note once named as the line. The exit is the shape `cli/lint.py` and `cli/authoring.py`
+  already use: each module exports a Qt-free block builder and the list is assembled once;
+  make that move rather than adding a tenth `if`.
 - **The step panel's tab order is a cross-module number line.** Each aspect module picks its
   `InspectorSection(order=…)` against numbers that live in six other packages — the GitHub
   module's comment literally names two of them. Fine at this size, and

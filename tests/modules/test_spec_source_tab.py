@@ -622,8 +622,6 @@ def test_a_specs_location_becomes_a_source_that_follows_the_row(fake_kind, servi
     assert resolve_locator(services.document.project(project.id), source)["ref"] == "HEAD"
 
     services.undo.push(SetFieldCommand(project.id, "locations", ()))
-    from dplanner.modules import _default_briefing  # noqa: F401 — the module is built.
-
     module = next(m for m in services.modules if m.id == "spec")
     status = module.refresher.status(project.id, source)
     assert not status.ready and "gone from the project" in status.message

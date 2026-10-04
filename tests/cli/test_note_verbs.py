@@ -8,8 +8,7 @@ from pathlib import Path
 import pytest
 
 from dplanner.domain.store import LibraryStore
-from dplanner.modules.notes.log import read_log
-from dplanner.modules.notes.reach import INDEX_LIMIT
+from dplanner.modules.notes.aspect import INDEX_LIMIT, read_log
 
 
 def data(text):

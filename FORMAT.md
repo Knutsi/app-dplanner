@@ -775,7 +775,7 @@ ever carries it. The **note log** is the fourth: `modules/notes.json` beside the
 `"project"` — a note reaches the steps after the one it was made on by default, so
 *downstream* is never written), ids minted per project and never reused so a later note can
 name the one
-it replaces, the label one of the closed list in `modules/notes/log.py`. It absorbed two
+it replaces, the label one of the closed list in `modules/notes/aspect.py`. It absorbed two
 earlier shapes at open — `modules/decisions.json` by takeover, and each step's
 `step_handoff.md`, `step_handoff.json` and `step_handoff/assets/` by the format's
 `absorb` pass (*Retiring a module* below) — so neither is written any more. The

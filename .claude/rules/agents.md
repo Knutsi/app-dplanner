@@ -1,6 +1,6 @@
 ---
 paths:
-  - "src/dplanner/modules/{step_agent_instruction,step_agent_run,step_review,agent_claude,agent_codex,agent_opencode}/**"
+  - "src/dplanner/modules/{agent_briefing,step_agent_instruction,step_agent_run,step_review,agent_claude,agent_codex,agent_opencode}/**"
   - "src/dplanner/domain/agents.py"
   - "tests/modules/test_agent_*.py"
   - "tests/{cli,modules}/test_review*.py"
@@ -62,7 +62,7 @@ paths:
   briefing's preamble both say *never kill by name or pattern*.
   `ARCHITECTURE.md`'s *Running an agent launches a peer, not a task* has the reasoning.
 - **An agent's run ends at Ready for review, and the CLI holds it there.** The briefing's
-  epilogue (`_agent_epilogue`) and the skill's *Running as an agent step* end at
+  epilogue (`agent_briefing/protocol.py`'s `epilogue`) and the skill's *Running as an agent step* end at
   `status set <key> ready-for-review` — a person or a reviewing agent looks next and sets
   `ready-to-merge`, then `done` — worded apart from the mid-run `plan-for-review`, which is
   the agent's *plan* waiting for a look. `status set <agent step> done` **from inside an
@@ -77,18 +77,18 @@ paths:
   suite never depends on being run by an agent. `ARCHITECTURE.md`'s *An agent finishes at
   Ready for review* has the reasoning.
 - **A step that collects is briefed with what it collects, and its sources are told.**
-  `_briefing_sections` adds *Work you collect* for a step with auto-progress links: each
-  source's key, title, status, branch, PR and worktree — `launcher.workdir(facts, source)`
+  `agent_briefing/sections.py`'s `step_sections` adds *Work you collect* for a step with auto-progress links: each
+  source's key, title, status, branch, PR and worktree — `agent_briefing.worktree.workdir(facts, source)`
   under the source's run name, said as a path only when the directory is on this machine —
   then the duty to land that work, the right to `status set <source> done`, and the way to
   send unready work back (`review start|post|wait <collector> --to <source>`). That is why
-  `Briefing.sections` is handed the repository facts, as the preamble is. Each source's
-  `_agent_epilogue` names who collects it and leaves its done to them. The status guard
+  `step_sections` is handed the repository facts, as the preamble is. Each source's
+  `epilogue` names who collects it and leaves its done to them. The status guard
   needed nothing: an agent may already finish a step under review.
 - **The window launches what the plan made due, and only a window does.** Due is the root's
   one derivation `_due_now`: `progression.due` (an agent step, pending, no run, nothing
   outstanding, and a prerequisite fulfilled *through* an auto-progress link) and
-  `rounds.due_turns` (a conversation's side with the turn, no run, not launched for that
+  `step_review/aspect.py`'s `due_turns` (a conversation's side with the turn, no run, not launched for that
   turn — `*_turn_launched` holds the stamp that began it, equality not order). The terminal
   says it (`_status_written` after every status-moving verb, text only; `progression show`'s
   `due`) and `step_agent_instruction/auto_launch.py` launches it: **level-triggered** — after
@@ -118,7 +118,7 @@ paths:
   `with_workplace`; `dplanner agent workplace <step> code:UI|primary`), absent meaning
   the primary — the project's first code row — because which repository a step's change
   lands in is a fact about the step, exactly as its worktree choice is.
-  `launcher.workdir(facts, step)` places that row (Qt-free, so the briefing can place a
+  `agent_briefing.worktree.workdir(facts, step)` places that row (Qt-free, so the briefing can place a
   source's worktree); a named row that is gone falls back to the primary. A run
   across two repositories at once is two steps.
 - **An agent may be opened with nothing to do, and that is a second invocation.**
@@ -145,7 +145,7 @@ paths:
   row that runs the script and closes would close on the prompt) — and nothing else: no
   briefing, no shell facts, no exit file, no run recorded, nothing claimed in progress, a
   `notice()` when no terminal opens. Its directory is found by the wrapper script's own
-  name for it (`worktree_path(workdir, _run_name(step))`), so it is greyed with *Run Agent
+  name for it (`worktree_path(workdir, run_name_of(step))`), so it is greyed with *Run Agent
   prepares one* until that directory exists. It is in Step ▸ `agent` beside *Show Agent
   Terminal* and *Open Pull Request*, so a status row's ⋮ offers all three.
 - **A worktree is the step's decision, and the run is named after the step.** Whether the
@@ -156,20 +156,21 @@ paths:
   `.dplanner-worktrees/<run name>` on branch `agent/<run name>` **and stops with git's
   reason if it cannot** — the first version swallowed the error and ran two "isolated"
   agents on one checkout, because `.dplanner/` is the pointer *file* a subfolder project
-  leaves at the repo root. The run name is `launcher.run_name`: the step's key, its ticket
-  key and its title slug, ref-safe (`f7-PROJ-12-build-the-modal`), composed by the root
-  from aspects the launcher never reads. The briefing's preamble names that very worktree
+  leaves at the repo root. The run name is `agent_briefing.worktree.run_name`: the step's key, its ticket
+  key and its title slug, ref-safe (`f7-PROJ-12-build-the-modal`), composed by
+  `run_name_of` from the step's key and ticket, which the launcher never reads. The briefing's preamble names that very worktree
   and tells the agent to **stop if it is not in it**; the epilogue addresses every verb by
   the step's key. Inside a worktree the CLI resolves the branch's copy of the plan to the
   library project of the same id (`cli/discovery.py`), so `dplanner status set` reaches
-  the plan the window shows. **What a step is can rule a worktree out**: `Briefing.no_worktree`
-  (the root's `_no_worktree`) says why — a review reads the work it reviews — and every
-  surface asks `Briefing.worktree(step)`, never the aspect: Run Agent, `agent prompt`,
+  the plan the window shows. **What a step is can rule a worktree out**: `agent_briefing.worktree.no_worktree`
+  says why — a review reads the work it reviews — and every surface asks its
+  `worktree(step)`, never the aspect: Run Agent, `agent prompt`,
   *Open Terminal in Worktree|Checkout*, the Agent tab (its box unticked and greyed with the
   reason) and `agent worktree … on` (refused). `ARCHITECTURE.md`'s *A worktree is the
   step's decision* has the reasoning.
-- **A run starts from the remote, and the plan names its base.** `launcher.BranchPlan` —
-  decided once by `Briefing.branch`, the root's `_branch_plan` — is the branch a worktree is
+- **A run starts from the remote, and the plan names its base.** `planning.branches.BranchPlan` —
+  decided once by the root's `_branch_plan`, handed to Run Agent as `branch_plan` and to
+  `brief()` as a plain value — is the branch a worktree is
   on (its own `agent/<run name>`, or the feature branch for a landing), where a new one
   starts, what the first run in a stretch may cut on the remote, and the PR's base. The
   wrapper script **fetches and starts the branch from the plan's start** — a stretch's
@@ -181,7 +182,7 @@ paths:
   re-cut it from the mainline. It sets `gh-merge-base` as a backstop for the `--base` the
   epilogue names; the preamble checks the plan's branch. Every name is checked with
   `sparse.valid_ref` before it reaches a script. A landing is briefed like a review is —
-  its instructions generated from the stretch it closes (`_landing_instruction`, *Work you
+  its instructions generated from the stretch it closes (`agent_briefing/instructions.py`, *Work you
   land*): merge the mainline in as a merge commit, never a squash, and open the branch's
   own PR. **A PR merged into the branch of an open stretch accepts its step** from
   ready-for-review (`record_merged(accepted_by_merge=)`, the root's `finish_merged` on both
@@ -308,9 +309,9 @@ paths:
   - **The subject is the step a review `requires`, read off the graph and never stored.**
     Lint `review.subject` names a review with none or several.
   - **A round holds only texts and stamps.** Its state and whose turn it is are derived
-    (`rounds.turn`), never stored.
+    (`step_review.aspect.turn`), never stored.
   - **Who a step may talk to is whoever it takes work from review on** (the root's
-    `_auto_progresses`), so a collector sends work upstream with the same verbs and `--to`.
+    `auto_progress.aspect.auto_progresses`), so a collector sends work upstream with the same verbs and `--to`.
     `approve` and `escalate` are a review's alone.
   - **Every status a `review` verb moves goes through `status_command`**, the writer
     `status set` uses, handed in as the root's `set_status`. A stopped status ends a claim
@@ -323,10 +324,10 @@ paths:
     never by the aspect** (`rounds(step)`), so a collector's upstream conversation opens
     too, and the tab and the dialog build their rows with one `message_rows`.
   - **Each side is briefed with the conversation.** A review's `## Instructions` is
-    generated (`_review_instruction`) from its aspect and its subject — whom, each lens's
+    generated (`agent_briefing/instructions.py`) from its aspect and its subject — whom, each lens's
     `Lens.asks` (an id this build does not name is a skill to use), the round protocol and
     the cap — and its own prose rides inside as what to look for. *Work you review* says
-    where the subject's work is (`_source_line`, *Work you collect*'s line), and the run
+    where the subject's work is (`sections.py`'s `_source_line`, *Work you collect*'s line), and the run
     gets no worktree. A step a review `reviews()` is told to set `pending-approval`, `review
     wait`, take and reply, and when to stop waiting; a review's epilogue is its verdicts.
     A conversation still going is a *Review rounds with …* section on both sides, so a

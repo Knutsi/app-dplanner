@@ -515,12 +515,17 @@ src/dplanner/
 │   ├── step_ticket/         ── the other step aspects: data, editor and verbs each
 │   ├── step_description/
 │   ├── step_agent_instruction/   … this one also holds the project's standing instruction,
-│   │                             the step's worktree choice, and assembles and launches Run
-│   │                             Agent (`launcher.py`: the terminal and multiplexer table,
-│   │                             the run name a worktree and branch carry, the wrapper script
-│   │                             that prepares the worktree and reports back; `profiles.py`:
+│   │                             the step's worktree choice, and launches Run Agent
+│   │                             (`launcher.py`: the terminal and multiplexer table, the
+│   │                             wrapper script that prepares the worktree and reports
+│   │                             back; `profiles.py`:
 │   │                             the named agent-and-terminal pairs Run Agent offers, seeded once;
 │   │                             `detect_dialog.py`: the installed pairings, ticked and added)
+│   ├── agent_briefing/      what an agent is told — no module.py, headless all through:
+│   │                        the preflight and the report-back protocol (protocol.py), the
+│   │                        step's and project's facts (sections.py), the instructions
+│   │                        (instructions.py), assembled once by compose.brief; and where
+│   │                        a run works (worktree.py: its run name, checkout and worktree)
 │   ├── agent_claude/        ── one module per agent CLI, each a Qt-free `harness.py`: the
 │   ├── agent_codex/            command, how it resumes, the marks it leaves in its shells, and
 │   ├── agent_opencode/         a reader of its own records (`domain/agents.py` is the contract)
@@ -555,7 +560,7 @@ src/dplanner/
 │   ├── step_review/         a step whose agent reviews the step it waits on: the Type ▸ Review
 │   │                        toggle, the Review template and tab, `dplanner review` (the
 │   │                        conversation both sides drive, `review wait` included) and its
-│   │                        lint — the settings in `aspect.py`, the rounds in `rounds.py`,
+│   │                        lint — the settings in `planning/review.py`, the rounds in `aspect.py`,
 │   │                        the conversation read in full in `conversation.py`
 │   ├── testing/             what a step must keep passing: the tests it carries, the runs over
 │   │                        them, how they are filed (a category and a sort key, with the
@@ -589,8 +594,8 @@ src/dplanner/
 │   │                        the report site into a picked folder, Go ▸ Preview Report; the
 │   │                        `reporting` location role (roles.py)
 │   ├── notes/               what a project records along the way — decisions, handoffs, spec changes,
-│   │                        deferrals — one labelled log (log.py), what reaches a step and the briefing's
-│   │                        capped index (reach.py), how the two retired modules reach it (migrate.py),
+│   │                        deferrals — one labelled log, what reaches a step and the briefing's capped
+│   │                        index (aspect.py), how the two retired modules reach it (migrate.py),
 │   │                        `dplanner note`, and the Implementation notes tab (activity.py, view.py)
 │   ├── spec/                spec documents beside a project, their figures, and the project's
 │   │                        topology — `dplanner spec`, `dplanner topology` (pdf.py: text layers

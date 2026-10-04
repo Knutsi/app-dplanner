@@ -46,6 +46,7 @@ from dplanner.core.storage.locations import remote_label
 from dplanner.core.telemetry import current
 from dplanner.domain.agents import AgentHarness
 from dplanner.domain.commands import SetModuleDataCommand
+from dplanner.domain.locations import LocationRole
 from dplanner.domain.model import Library, Node, NodeId, Step, StepId
 from dplanner.domain.repositories import UNSET, RepositoryFacts
 from dplanner.domain.store import Conflict, FilesFor
@@ -73,6 +74,19 @@ from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import notice
 from dplanner.framework.window import NoticeHost, StatusHost
 from dplanner.framework.window_watch import WatchableRepository
+from dplanner.modules.agent_briefing import worktree as where
+from dplanner.modules.agent_briefing.compose import brief
+from dplanner.modules.agent_briefing.instructions import instruction
+from dplanner.modules.agent_briefing.prompt import (
+    AssembledPrompt,
+    PromptPart,
+    conflict_prompt,
+    handover_prompt,
+    problems_prompt,
+    reconcile_prompt,
+)
+from dplanner.modules.agent_briefing.protocol import preamble
+from dplanner.modules.agent_briefing.sections import note_parts, step_sections
 from dplanner.modules.step_agent_instruction import launcher
 from dplanner.modules.step_agent_instruction.auto_launch import AutoLauncher, Due, LaunchLock
 from dplanner.modules.step_agent_instruction.profiles import (
@@ -81,17 +95,6 @@ from dplanner.modules.step_agent_instruction.profiles import (
     profile_named,
     read_profiles,
     seed_profiles,
-)
-from dplanner.modules.step_agent_instruction.prompt import (
-    EMPTY_BRIEFING,
-    AssembledPrompt,
-    Briefing,
-    PromptPart,
-    assemble,
-    conflict_prompt,
-    handover_prompt,
-    problems_prompt,
-    reconcile_prompt,
 )
 from dplanner.modules.step_agent_instruction.run_dialog import PromptFallbackDialog, RunAnywayDialog
 from dplanner.modules.step_agent_instruction.section import (
@@ -109,7 +112,6 @@ from dplanner.planning.agent import (
     DATA_FORMAT,
     MODULE_ID,
     SPEC,
-    asset_paths,
     enabled,
     read_project,
     uses_worktree,
@@ -117,6 +119,7 @@ from dplanner.planning.agent import (
     workplace,
     write_state,
 )
+from dplanner.planning.branches import DEFAULT_BRANCHES, BranchPlan
 from dplanner.planning.progression import outstanding
 from dplanner.planning.status import Reading, Status, Unknown, phrase, readiness_of
 from dplanner.theme.icons import spark_icon, typewriter_icon
@@ -163,7 +166,7 @@ def _all_done(_step: Step) -> Reading:
 def _unplaced(facts: RepositoryFacts, step: Step | None = None) -> str:
     """The code repository this agent would work in that this machine has no checkout of
     — what Run Agent clones first — or "" when it is placed or there is none."""
-    placement = launcher.code_placement(facts, step)
+    placement = where.code_placement(facts, step)
     if placement is not None and placement.root is None:
         return placement.location.repository
     return ""
@@ -173,7 +176,7 @@ def _workdir_refusal(facts: RepositoryFacts, step: Step | None = None) -> str:
     """Why no shell can open where this project's agent would work; "" when one can. A
     repository not checked out here is a refusal only for a verb that cannot clone — Run
     Agent asks :func:`_unplaced` first and clones."""
-    placement = launcher.code_placement(facts, step)
+    placement = where.code_placement(facts, step)
     if placement is not None:
         label = placement.location.repository_label
         if not placement.here:
@@ -286,10 +289,15 @@ class StepAgentInstructionDeps:
     ensure_checkouts: Callable[[Sequence[str], Callable[[dict[str, Path], str], None]], None] = (
         field(default=_no_clone)
     )
-    # The cross-module half of the prompt, assembled by the composition root — the one
-    # place allowed to know what the other aspects store. The same object feeds
-    # ``dplanner agent prompt``, so the two surfaces cannot drift.
-    briefing: Briefing = EMPTY_BRIEFING
+    # Which branches a run of a step works between — where its worktree starts, what its
+    # PR opens against — decided by the plan's stretches, which the branches module reads
+    # and caches; the briefing tells the agent and the script prepares the same plan.
+    branch_plan: Callable[[Library, Step, RepositoryFacts | None], BranchPlan] = field(
+        default=lambda _library, _step, _facts: DEFAULT_BRANCHES
+    )
+    # The kinds of place a project can name — every module's ``roles.py``, collected by the
+    # root — which the briefing's preamble words when it says where each location is.
+    location_roles: tuple[LocationRole, ...] = ()
     # Hands the spawned shell over — with the id of the harness that runs in it, "" for
     # a custom command: the step_agent_run module stamps the aspect, watches the run's
     # files for the shell's end and reads the harness's record back — reached through
@@ -317,12 +325,8 @@ class StepAgentInstructionDeps:
     # Agent toggle greys on one and Run Agent refuses it. The root names what the step is
     # ("a wait"), "" for a step somebody works.
     works_nobody: Callable[[Step], str] = field(default=lambda _step: "")
-    # The step's readable key ("F7") and its ticket key ("PROJ-12"), both composed by the
-    # root from aspects this module never reads. They name the run — the worktree, the
-    # branch, the terminal's title — through ``launcher.run_name``, which the briefing's
-    # preamble reads too, so the agent is told the very name the script prepared.
+    # The step's readable key ("F7"), which heads its terminal's title and subject.
     step_key: Callable[[Step], str] = field(default=_no_key)
-    ticket_key: Callable[[Step], str] = field(default=_no_key)
     # What the step's agent runs have consumed, in words, for the Agent tab — the run
     # tracker's ledger, read through the root; "" when nothing has been recorded.
     usage_words: Callable[[StepId], str] = field(default=lambda _step_id: "")
@@ -367,13 +371,13 @@ class StepAgentInstructionModule:
         deps = self._deps
 
         # The tab thinks per step id; the briefing speaks the shared (library, step,
-        # files) vocabulary. The one adapter lives here, in the module that owns both.
+        # files) vocabulary. The one adapter lives here.
         def parts_for(step_id: StepId) -> Sequence[PromptPart]:
-            return deps.briefing.parts(deps.library, deps.library.step(step_id), deps.files)
+            return note_parts(deps.library, deps.library.step(step_id), deps.files)
 
         def sections_for(step_id: StepId) -> Sequence[PromptPart]:
             step = deps.library.step(step_id)
-            return deps.briefing.sections(deps.library, step, deps.files, deps.facts_for(step_id))
+            return step_sections(deps.library, step, deps.files, deps.facts_for(step_id))
 
         def make_section() -> AgentSection:
             # The tab's buttons are the same verbs the menus run — evaluated lazily, so
@@ -397,9 +401,9 @@ class StepAgentInstructionModule:
                 ),
                 preview=lambda: deps.actions.run("agent.preview", deps.context.current()),
                 pick_assets=deps.pick_assets,
-                worktree=lambda step_id: deps.briefing.worktree(deps.library.step(step_id)),
+                worktree=lambda step_id: where.worktree(deps.library.step(step_id)),
                 set_worktree=self._set_worktree,
-                no_worktree=lambda step_id: deps.briefing.no_worktree(deps.library.step(step_id)),
+                no_worktree=lambda step_id: where.no_worktree(deps.library.step(step_id)),
                 usage=deps.usage_words,
                 dictation=deps.dictation,
             )
@@ -577,7 +581,7 @@ class StepAgentInstructionModule:
             return "mark the step as an agent step first (Agent, in Step Details)"
         if isinstance(status := deps.status_for(step), Unknown):
             return f"its status ({status.word}) was written by a newer DPlanner — update to run it"
-        briefed = deps.briefing.instruction(deps.library, step, deps.files)
+        briefed = instruction(deps.library, step, deps.files)
         if (
             not briefed.body
             and not briefed.files
@@ -670,40 +674,16 @@ class StepAgentInstructionModule:
         with the preflight for the run the step gets — a worktree unless it opted out or is
         a step that takes none."""
         deps = self._deps
-        project = deps.library.project_of(step.id)
         remap: Mapping[str, str] = staged or {}
-
-        def place(paths: Sequence[str]) -> tuple[str, ...]:
-            return tuple(remap.get(path, path) for path in paths)
-
-        parts = [
-            PromptPart(heading=part.heading, body=part.body, files=place(part.files))
-            for part in deps.briefing.parts(deps.library, step, deps.files)
-        ]
-        sections = [
-            PromptPart(heading=section.heading, body=section.body, files=place(section.files))
-            for section in deps.briefing.sections(
-                deps.library, step, deps.files, deps.facts_for(step.id)
-            )
-        ]
-        project_files = place(asset_paths(deps.files, project.id))
-        # The ## Instructions block comes from the briefing — the separate instruction
-        # when one exists, the description otherwise, decided by the composition root.
-        instruction = deps.briefing.instruction(deps.library, step, deps.files)
         facts = deps.facts_for(step.id)
-        branches = deps.briefing.branch(deps.library, step, facts)
-        return assemble(
-            step_title=_titled(step),
-            project_title=project.title or "Untitled project",
-            instruction=instruction.body,
-            parts=parts,
-            sections=sections,
-            project_sections=deps.briefing.project_sections(deps.library, step, deps.files),
-            epilogue=deps.briefing.epilogue(deps.library, step, branches),
-            preamble=deps.briefing.preamble(step, deps.briefing.worktree(step), facts, branches),
-            project_instruction=read_project(project),
-            project_files=project_files,
-            instruction_files=place(instruction.files),
+        return brief(
+            deps.library,
+            step,
+            deps.files,
+            facts,
+            deps.branch_plan(deps.library, step, facts),
+            deps.location_roles,
+            place=lambda path: remap.get(path, path),
         )
 
     def _run(self, context: Context, profile: Profile | None = None) -> None:
@@ -784,19 +764,19 @@ class StepAgentInstructionModule:
         run_dir = launcher.new_run_dir()
         staged = launcher.stage_assets(run_dir, self._assembled(step).files, deps.read_asset)
         assembled = self._assembled(step, staged)
-        worktree = self._run_name(step) if deps.briefing.worktree(step) else ""
+        worktree = where.run_name_of(step) if where.worktree(step) else ""
         facts = deps.facts_for(step.id)
         spawned, prepared = self._launch(
             assembled.text,
             run_dir,
             worktree,
-            launcher.workdir(facts, step),
+            where.workdir(facts, step),
             profile,
             project_id=deps.library.project_of(step.id).id,
             subject=f"{deps.step_key(step)} {step.title}".strip(),
             key=deps.step_key(step),
             step_id=step.id,
-            branches=deps.briefing.branch(deps.library, step, facts),
+            branches=deps.branch_plan(deps.library, step, facts),
         )
         return spawned, assembled.text, prepared
 
@@ -892,7 +872,7 @@ class StepAgentInstructionModule:
         that works in place — or why nowhere can: the default profile's terminal first, as
         Run Agent asks it, then the checkout, then the worktree Run Agent would have made.
 
-        The worktree is found by the same name the wrapper script gives it (``_run_name``),
+        The worktree is found by the same name the wrapper script gives it (``run_name_of``),
         so a step renamed since its agent ran is looked for under its new name."""
         deps = self._deps
         if refusal := launcher.template_refusal(launch_command()):
@@ -900,19 +880,19 @@ class StepAgentInstructionModule:
         facts = deps.facts_for(step.id)
         if refusal := _workdir_refusal(facts, step):
             return None, refusal
-        workdir = launcher.workdir(facts, step)
+        workdir = where.workdir(facts, step)
         if workdir is None:
             return None, "the project's code is not on this machine — Project ▸ Settings…"
-        if not deps.briefing.worktree(step):
+        if not where.worktree(step):
             return workdir.expanduser(), ""
-        tree = launcher.worktree_path(workdir.expanduser(), self._run_name(step))
+        tree = where.worktree_path(workdir.expanduser(), where.run_name_of(step))
         return (tree, "") if tree.is_dir() else (None, NO_WORKTREE)
 
     def _can_open_shell(self, context: Context) -> ActionState:
         step = focused_step(context, self._deps.library)
         if step is None:
             return DISABLED
-        label = SHELL_IN_WORKTREE if self._deps.briefing.worktree(step) else SHELL_IN_CHECKOUT
+        label = SHELL_IN_WORKTREE if where.worktree(step) else SHELL_IN_CHECKOUT
         _directory, refusal = self._shell_place(step)
         plain = label.replace("&", "")
         if refusal:
@@ -946,13 +926,6 @@ class StepAgentInstructionModule:
             )
             return
         deps.status.show_status(f"Terminal opened in {directory}", 4000)
-
-    def _run_name(self, step: Step) -> str:
-        """What this step's worktree and branch are called: the launcher's rule over the
-        root's key and ticket — the same rule the root applies when the briefing names
-        the worktree, so the script and the preflight cannot disagree."""
-        deps = self._deps
-        return launcher.run_name(deps.step_key(step), deps.ticket_key(step), step.title)
 
     def _set_worktree(self, step_id: StepId, worktree: bool) -> None:
         """The Agent tab's checkbox: one undoable write of this aspect's own entry."""
@@ -1060,7 +1033,7 @@ class StepAgentInstructionModule:
             "",
             launcher.new_run_dir(),
             "",
-            launcher.workdir(deps.facts_for(project_id)),
+            where.workdir(deps.facts_for(project_id)),
             profile,
             project_id=project_id,
             subject=title,
@@ -1093,7 +1066,7 @@ class StepAgentInstructionModule:
         key: str = "",
         note: str = "",
         step_id: StepId | None = None,
-        branches: launcher.BranchPlan = launcher.DEFAULT_BRANCHES,
+        branches: BranchPlan = DEFAULT_BRANCHES,
     ) -> tuple[bool, launcher.LaunchFiles]:
         """Open the profile's terminal on ``text`` in ``workdir``; the run is recorded only
         when a shell was actually spawned, and only when it is *a step's*.
@@ -1264,7 +1237,7 @@ class StepAgentInstructionModule:
         text = conflict_prompt(
             step_title=_titled(step),
             project_title=library.project_of(step_id).title or "Untitled project",
-            preamble=deps.briefing.preamble(step, False, facts, launcher.DEFAULT_BRANCHES),
+            preamble=preamble(step, False, facts, DEFAULT_BRANCHES, deps.location_roles),
             entries=entries,
         )
         spawned, prepared = self._launch(
@@ -1350,8 +1323,8 @@ class StepAgentInstructionModule:
             text = handover_prompt(
                 f"# Documentation: {_titled(step)}",
                 project.title or "Untitled project",
-                deps.briefing.preamble(
-                    step, False, deps.facts_for(step_id), launcher.DEFAULT_BRANCHES
+                preamble(
+                    step, False, deps.facts_for(step_id), DEFAULT_BRANCHES, deps.location_roles
                 ),
                 body,
             )
@@ -1360,7 +1333,7 @@ class StepAgentInstructionModule:
                 text,
                 run_dir,
                 "",
-                launcher.workdir(deps.facts_for(step_id)),
+                where.workdir(deps.facts_for(step_id)),
                 profile,
                 project_id=project.id,
                 subject=f"{deps.step_key(step)} {step.title}".strip(),

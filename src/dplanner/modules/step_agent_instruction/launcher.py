@@ -90,19 +90,19 @@ run.** When the step asks for one (its agent aspect's ``worktree``, on by defaul
 wrapper puts the agent in :data:`WORKTREES_DIR`/``<run name>`` on the ``agent/<run name>``
 branch — created on the first run, reused on the next — so parallel agents never trample
 one checkout, and the branch is the reviewable result. **A new branch starts from the
-remote, never from whatever the checkout has checked out**: the script fetches, then
-starts it from the :class:`BranchPlan`'s ``start`` — a stretch's feature branch, the code
+remote, never from whatever the checkout has checked out**: the script fetches, then starts
+it from the :class:`BranchPlan`'s ``start`` — a stretch's feature branch, the code
 location's own mainline, else the remote's default branch — with no upstream, so a bare
-push from the agent's branch reaches nothing shared. A landing's worktree is on the
-feature branch itself, tracking it. The run name is
-:func:`run_name`: the step's key, its ticket and its title, made safe for a ref, so the
-branch says which step it is and a person can find it in ``git branch``. The directory is
-excluded through ``.git/info/exclude`` (local, never versioned). **If git cannot make the
-worktree, the script says why and exits 1 instead of carrying on in the main checkout** —
-the first version swallowed the error, and two agents launched into "fresh worktrees" did
-their work on the same branch. The directory is deliberately not ``.dplanner/``: that name
-is the pointer *file* a project kept in a subfolder leaves at the repository root, and a
-file is where the old path failed.
+push from the agent's branch reaches nothing shared. A landing's worktree is on the feature
+branch itself, tracking it. The run name is
+:func:`~dplanner.modules.agent_briefing.worktree.run_name`: the step's key, its ticket and
+its title, made safe for a ref, so the branch says which step it is and a person can find
+it in ``git branch``. The directory is excluded through ``.git/info/exclude`` (local, never
+versioned). **If git cannot make the worktree, the script says why and exits 1 instead of
+carrying on in the main checkout** — the first version swallowed the error, and two agents
+launched into "fresh worktrees" did their work on the same branch. The directory is
+deliberately not ``.dplanner/``: that name is the pointer *file* a project kept in a
+subfolder leaves at the repository root, and a file is where the old path failed.
 
 The prompt and the wrapper script go to a per-run temp directory, never the workspace — a
 prompt file inside the workspace would dirty it and end up in version control.
@@ -125,21 +125,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from dplanner.cli.discovery import PROJECT_ENV, RUN_ENV
-from dplanner.core.fsio import slugify
 from dplanner.core.process import spawn_detached
-
-# Where a step's worktree lives, under the repository root: a sibling of the `.dplanner`
-# index file, never inside it — see the module docstring. Declared beside that file, since
-# the plan repository scan has to know to skip it.
-from dplanner.core.storage.pointer import WORKTREES_DIR as WORKTREES_DIR
+from dplanner.core.storage.pointer import WORKTREES_DIR
 from dplanner.domain.agents import AgentHarness, harness_for_command
 from dplanner.domain.ledger import new_run_id
-from dplanner.domain.locations import Placement
-from dplanner.domain.model import Step
-from dplanner.domain.repositories import RepositoryFacts
-from dplanner.planning.agent import workplace
-
-BRANCH_PREFIX = "agent/"
+from dplanner.modules.agent_briefing.worktree import worktree_path
+from dplanner.planning.branches import DEFAULT_BRANCHES, DEFAULT_START, BranchPlan
 
 # The names the wrapper script reports under, beside the prompt. The exit file holds the
 # agent's status, or the word ``closed`` when the terminal was shut on it (the POSIX
@@ -147,100 +138,7 @@ BRANCH_PREFIX = "agent/"
 SHELL_FILE = "shell"
 EXIT_FILE = "exit"
 
-# A run name is a branch name's last component, so it keeps to what git's ref rules allow
-# everywhere: letters, digits, `.`, `_` and `-`, none of them doubled up or at an end.
-RUN_NAME_MAX = 60
-
-
-def ref_safe(text: str) -> str:
-    """``text`` as one component of a git ref: nothing a ref rule refuses, and nothing a
-    shell would quote — the run name is written into three script dialects verbatim."""
-    safe = re.sub(r"[^A-Za-z0-9._-]+", "-", text)
-    safe = re.sub(r"[-.]{2,}", "-", safe).strip("-.")
-    return safe[:RUN_NAME_MAX].rstrip("-.")
-
-
-def run_name(step_key: str, ticket_key: str, title: str) -> str:
-    """What a step's worktree and branch are called: ``<key>-<ticket>-<slug>``.
-
-    The key first, so ``git branch`` and the worktrees directory sort by step; the ticket
-    beside it when the step has one, so the branch answers the tracker too; the title's
-    slug last, for the person reading the list. Every part is optional, and a step with
-    none of them is still a run — ``step`` — rather than an empty name.
-    """
-    parts = [step_key.lower(), ref_safe(ticket_key), slugify(title, fallback="")]
-    return ref_safe("-".join(part for part in parts if part)) or "step"
-
-
-def workdir(facts: RepositoryFacts, step: Step | None = None) -> Path | None:
-    """Where an agent on this project works — a step's, or one opened with nothing to do:
-    the checkout of the code location the step names (its ``workplace``, else the
-    project's primary code row) when the project records one, else where the facts read
-    the code as being — the plan's own repository for the older shape of a plan kept
-    beside its code, nowhere for a project whose code is not set. None when it is not
-    here."""
-    placement = code_placement(facts, step)
-    if placement is not None:
-        return placement.root if placement.here else None
-    return facts.code_root
-
-
-def code_placement(facts: RepositoryFacts, step: Step | None) -> Placement | None:
-    """The code location a step works in, placed: the row its workplace names, else the
-    primary. A named row that is gone falls back to the primary — lint says so."""
-    named = facts.placement(workplace(step)) if step is not None else None
-    return named if named is not None else facts.code
-
-
-def worktree_path(workdir: Path, name: str) -> Path:
-    return workdir / WORKTREES_DIR / name
-
-
-def branch_name(name: str) -> str:
-    return f"{BRANCH_PREFIX}{name}"
-
-
-@dataclass(frozen=True)
-class BranchPlan:
-    """Which git branches a run of a step works between — decided by the plan, carried out
-    by the wrapper script and told to the agent, so the two cannot disagree.
-
-    ``work_branch`` is the branch its worktree is on, "" for the step's own
-    ``agent/<run name>``; a landing names the feature branch it lands. ``start`` is where a
-    new branch starts — ``origin/<branch>`` — and "" is the remote's default branch, looked
-    up by the script. ``create`` is the branch this run may create on the remote from
-    ``create_from`` when it is not there yet: the first run in a stretch cuts it, and no
-    later one ever cuts it again. ``pr_base`` is the branch the step's PR opens against, ""
-    for the repository's default. ``refusal`` is why no agent may run on the step now, ""
-    when one may. Every field names a branch the plan wrote, so each is checked with
-    :func:`dplanner.core.storage.sparse.valid_ref` before it reaches a script.
-    """
-
-    work_branch: str = ""
-    start: str = ""
-    create: str = ""
-    create_from: str = ""
-    pr_base: str = ""
-    refusal: str = ""
-
-    def branch_for(self, run: str) -> str:
-        """The branch a worktree named ``run`` is on."""
-        return self.work_branch or branch_name(run)
-
-
-# A run nothing narrows: its own branch, started from the remote's default, its PR opened
-# against the same — and every run that has no worktree, which reads none of it.
-DEFAULT_BRANCHES = BranchPlan()
-# The remote's default branch, as a start a plan can name when its mainline names none.
-DEFAULT_START = "origin/HEAD"
 DEFAULT_START_REF = "refs/remotes/origin/HEAD"
-
-
-def mainline(facts: RepositoryFacts | None, step: Step | None = None) -> str:
-    """The branch a step's work lands on when no stretch holds it: the ref its code location
-    names, "" for the repository's default branch."""
-    placement = code_placement(facts, step) if facts is not None else None
-    return placement.location.ref if placement is not None else ""
 
 
 def current_command(agent_command: str, harnesses: tuple[AgentHarness, ...]) -> str:
@@ -548,8 +446,8 @@ def prepare(
 ) -> LaunchFiles:
     """Write the prompt and a wrapper script to ``directory``, or a fresh temp directory.
 
-    ``worktree`` is a run name (:func:`run_name`); when non-empty the script prepares
-    :func:`worktree_path` on the branch ``branches`` names and moves into it before
+    ``worktree`` is a run name (``agent_briefing.worktree.run_name``); when non-empty the
+    script prepares ``worktree_path`` on the branch ``branches`` names and moves into it before
     starting — or stops with git's reason when it cannot. Empty means the checkout itself.
     A new branch starts from ``branches.start`` after a fetch — the remote's default branch
     when that is "" — never from whatever the checkout has checked out. ``session``

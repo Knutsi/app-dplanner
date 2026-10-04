@@ -30,7 +30,7 @@ from dplanner.domain.model import Library, NodeId, Project, Step
 from dplanner.framework.dictation import DictationService
 from dplanner.framework.prose_section import ProseSection
 from dplanner.framework.undo import UndoService
-from dplanner.modules.notes.log import (
+from dplanner.modules.notes.aspect import (
     LABELS,
     MODULE_ID,
     PROJECT,

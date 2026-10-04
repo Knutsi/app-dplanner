@@ -1,24 +1,16 @@
-"""Assembling the prompt an agent starts a step with.
+"""The prompt's shape: blocks, segments, and the one assembly that joins them.
 
-The module never learns what the context sections *are* — a note index, a topology — it is
-handed finished :class:`PromptPart`s by the composition root, which is the one file allowed
-to know every module's vocabulary. The project's standing instruction and the step's own are
-this module's data, so they arrive as plain arguments. The same assembly answers the GUI's
-Run Agent, the ``dplanner agent prompt`` verb, and the preview and fallback dialogs, so none
-of them can drift.
+:func:`assemble` renders blocks it does not understand — a note index, a topology — in a
+fixed order, so the text an agent is launched with, the ``dplanner agent prompt`` verb and
+the Agent tab's panes are one rendering. What goes *in* the blocks is the rest of this
+package (:mod:`.compose`).
 
-:func:`conflict_prompt` is the one other prompt this module launches: the briefing for an
-agent asked to reconcile an entry the window and another writer both changed.
+The hand-overs — :func:`conflict_prompt`, :func:`problems_prompt`, :func:`reconcile_prompt`
+— are the briefings for a run that is not carrying out a step.
 """
 
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
-
-from dplanner.domain.model import Library, Step
-from dplanner.domain.repositories import RepositoryFacts
-from dplanner.domain.store import FilesFor
-from dplanner.modules.step_agent_instruction.launcher import BranchPlan
-from dplanner.planning.agent import asset_paths, read, uses_worktree
+from collections.abc import Sequence
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
@@ -28,89 +20,6 @@ class PromptPart:
     heading: str
     body: str
     files: tuple[str, ...] = ()
-
-
-# (library, step, files) -> the blocks a briefing carries. The store's file lookup is the
-# third argument so a block can name real asset paths.
-PartsFor = Callable[[Library, Step, FilesFor], Sequence[PromptPart]]
-
-
-# (library, step, files, facts) -> the step's own facts as blocks. The project's repository
-# facts ride along — None when the caller has none — so a block can say where a step's
-# work stands on this machine, as the preamble does.
-SectionsFor = Callable[[Library, Step, FilesFor, RepositoryFacts | None], Sequence[PromptPart]]
-
-
-def _no_parts(_product: Library, _step: Step, _files: FilesFor) -> Sequence[PromptPart]:
-    return ()
-
-
-def _no_sections(
-    _product: Library, _step: Step, _files: FilesFor, _facts: RepositoryFacts | None
-) -> Sequence[PromptPart]:
-    return ()
-
-
-def _own_instruction(_product: Library, step: Step, files: FilesFor) -> PromptPart:
-    """The module's own answer: the step's separate instruction and its images. The
-    composition root swaps in the description when there is no separate one — a decision
-    that crosses modules and so cannot be made here."""
-    return PromptPart(heading="Instructions", body=read(step), files=asset_paths(files, step.id))
-
-
-@dataclass(frozen=True)
-class Briefing:
-    """The cross-module half of the prompt, assembled once by the composition root.
-
-    One object in one vocabulary for both surfaces: the window's Deps and ``dplanner
-    agent prompt`` used to declare these four members separately, in two different
-    callable shapes, with two adapter closures in the root bridging them.
-
-    ``parts`` is what the project recorded for whoever works this step (the notes
-    addressed to it, the index of the rest), rendered after the instructions;
-    ``sections`` the step's own facts (description, the feature it realises, the PR, the
-    work it collects — handed the repository facts, to say where that work is here);
-    ``project_sections`` the project's — its topology — rendered beside the standing
-    instruction; ``instruction`` the block the ``## Instructions`` heading carries — the
-    step's separate instruction when one exists, the description otherwise, decided by
-    the root; ``epilogue`` closes the prompt with the report-back protocol (handed the
-    library, since the verbs it names address the project as well as the step) and
-    ``preamble`` opens it — per step, told whether *this run* gets a worktree, since
-    the preflight names the worktree the launcher prepares and a conflict run never has
-    one whatever the step says, and handed the project's repository facts so it can say
-    where the plan lives (None when the caller has none to give). ``no_worktree`` is why a
-    run of a step gets no worktree whatever its agent aspect says — "" when the aspect
-    decides — because what a step *is* can rule one out (a review reads the work it
-    reviews and commits none of its own), and that is another module's word: every
-    surface asks :meth:`worktree` rather than the aspect. ``branch`` is which branches a run
-    works between — the one its worktree is on, where that starts, what its PR opens
-    against — decided once and handed to the preamble, the epilogue and the launcher alike,
-    so the script prepares what the agent is told. The default is the honest empty
-    briefing of a build where no other module contributes.
-    """
-
-    parts: PartsFor = _no_parts
-    sections: SectionsFor = _no_sections
-    project_sections: PartsFor = _no_parts
-    epilogue: Callable[[Library, Step, BranchPlan], str] = field(
-        default=lambda _library, _step, _branches: ""
-    )
-    preamble: Callable[[Step, bool, RepositoryFacts | None, BranchPlan], str] = field(
-        default=lambda _step, _worktree, _facts, _branches: ""
-    )
-    instruction: Callable[[Library, Step, FilesFor], PromptPart] = _own_instruction
-    no_worktree: Callable[[Step], str] = field(default=lambda _step: "")
-    branch: Callable[[Library, Step, RepositoryFacts | None], BranchPlan] = field(
-        default=lambda _library, _step, _facts: BranchPlan()
-    )
-
-    def worktree(self, step: Step) -> bool:
-        """Whether a run of ``step`` gets a fresh worktree: the step's own choice, unless
-        what the step is rules one out."""
-        return uses_worktree(step) and not self.no_worktree(step)
-
-
-EMPTY_BRIEFING = Briefing()
 
 
 @dataclass(frozen=True)
@@ -174,12 +83,12 @@ def assemble(
     """The whole prompt as markdown, and the files it points at.
 
     ``preamble`` opens the briefing — preflight checks the agent must pass before touching
-    the work, worded by the composition root like the epilogue is.
+    the work, worded like the epilogue is (:mod:`.protocol`).
     ``project_instruction`` is the project's standing instruction, ahead of the step's own;
     either instruction's section disappears entirely when it is empty and carries no files,
     which is what lets a step ride on the standing instruction alone.
     ``sections`` are the step's own facts — a description, the feature it realises —
-    worded by the composition root and rendered here as opaque blocks, between the standing
+    worded in :mod:`.sections` and rendered here as opaque blocks, between the standing
     instruction and the step's, so the agent reads what the step *is* before how to do it.
     ``project_sections`` are the project's own facts — its topology — rendered right after
     the standing instruction, because they frame every step the same way. ``parts`` come
@@ -391,3 +300,15 @@ def reconcile_prompt(repo_root: str, branch: str) -> str:
             "",
         ]
     )
+
+
+def listed(words: Sequence[str]) -> str:
+    """``A``, ``A and B``, ``A, B and C`` — a list as a sentence says it."""
+    if len(words) < 2:
+        return "".join(words)
+    return ", ".join(words[:-1]) + f" and {words[-1]}"
+
+
+def quoted(key: str) -> str:
+    """A step's key or title as a verb takes it: quoted only when it has a space."""
+    return f"'{key}'" if " " in key else key

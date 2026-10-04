@@ -37,8 +37,8 @@ from dplanner.domain.store import ModuleFileArea
 from dplanner.modules import default_module_formats
 from dplanner.modules.estimation.aspect import write as estimate
 from dplanner.modules.estimation.schedule import write_start
-from dplanner.modules.notes.log import MODULE_ID as NOTES_ID
-from dplanner.modules.notes.log import Note, write_log
+from dplanner.modules.notes.aspect import MODULE_ID as NOTES_ID
+from dplanner.modules.notes.aspect import Note, write_log
 from dplanner.modules.project_editor.positions import MODULE_ID as EDITOR_ID
 from dplanner.modules.project_editor.positions import write_position
 from dplanner.modules.project_editor.sorts import layered_flow

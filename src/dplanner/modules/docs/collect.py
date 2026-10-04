@@ -2,7 +2,7 @@
 
 One function with four readers — the Documentation tab, ``dplanner docs collect``,
 ``docs status`` and the compile briefing (:mod:`dplanner.modules.docs.prompt`) — for the same
-reason ``notes/reach.py`` is one: an accumulation each surface computed for itself would
+reason the notes' ``reaching`` is one: an accumulation each surface computed for itself would
 be four answers to one question. Nothing is stored;
 ``dplanner step link`` relinks a graph with no window running to notice a stored list going
 stale.

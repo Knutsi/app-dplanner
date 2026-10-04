@@ -6,10 +6,9 @@ whose how-to-execute genuinely differs from its description — or, with ``--for
 the project's standing instruction prepended to every briefing. ``prompt`` prints the whole
 assembled briefing, which is also what Run Agent in the window launches with.
 
-``commands()`` takes the context assembly as typed parameters, supplied by the composition
-root — the CLI-side twin of a module ``Deps`` callback, and the same generalisation
-``skill_commands(specs, described)`` already made: a ``cli.py`` never imports another
-module, so what crosses modules arrives as arguments.
+The briefing itself is ``agent_briefing.compose.brief``, the one assembly Run Agent uses.
+``commands()`` takes the two facts the composition root collects — the location roles every
+module declares, and the branch plan the branches module decides — as keyword arguments.
 """
 
 from argparse import ArgumentParser, Namespace
@@ -20,15 +19,16 @@ from dplanner.cli.authoring import StepAuthor, StepAuthored
 from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import body_from, find_project, find_step, step_arg
 from dplanner.domain.commands import EditTextCommand, SetModuleDataCommand
-from dplanner.domain.locations import CODE, find_location, of_role
+from dplanner.domain.locations import CODE, LocationRole, find_location, of_role
 from dplanner.domain.model import Library, Node, Project, Step, TextEdit
-from dplanner.domain.repositories import repository_facts
+from dplanner.domain.repositories import RepositoryFacts, repository_facts
 from dplanner.domain.shelf import turn_off, turn_on
 from dplanner.domain.store import FilesFor
-from dplanner.modules.step_agent_instruction.prompt import Briefing, assemble
+from dplanner.modules.agent_briefing.compose import brief
+from dplanner.modules.agent_briefing.instructions import instruction
+from dplanner.modules.agent_briefing.worktree import no_worktree
 from dplanner.planning.agent import (
     MODULE_ID,
-    asset_paths,
     enabled,
     read,
     read_project,
@@ -39,6 +39,7 @@ from dplanner.planning.agent import (
     workplace,
     write_state,
 )
+from dplanner.planning.branches import BranchPlan
 
 
 def step_author() -> StepAuthor:
@@ -120,7 +121,11 @@ def lint_checks(*, described: Callable[[Step], bool]) -> list[LintCheck]:
     return [missing_briefing]
 
 
-def commands(*, briefing: Briefing) -> list[CliCommand]:
+def commands(
+    *,
+    roles: tuple[LocationRole, ...],
+    branch_plan: Callable[[Library, Step, RepositoryFacts | None], BranchPlan],
+) -> list[CliCommand]:
     def _prompt(context: CliContext, args: Namespace) -> int:
         step = find_step(context.library, args.step, context.current)
         project = context.library.project_of(step.id)
@@ -129,31 +134,19 @@ def commands(*, briefing: Briefing) -> list[CliCommand]:
                 f"{step.title!r} is not an agent step — mark it with "
                 f"`dplanner agent on {step.title!r}`"
             )
-        instruction = briefing.instruction(context.library, step, context.store.files)
+        own = instruction(context.library, step, context.store.files)
         project_instruction = read_project(project)
         directory = context.store.project_dir(project.id)
         facts = repository_facts(project, directory, context.store.checkouts())
-        if not instruction.body and not instruction.files and not project_instruction:
+        if not own.body and not own.files and not project_instruction:
             raise CliError(
                 f"{step.title!r} has nothing to brief an agent with — describe it with "
                 f"`dplanner describe set {step.title!r} --file …`, or set a standing "
                 f"instruction with `dplanner agent set --for-project {project.title!r} "
                 "--file …`"
             )
-        branches = briefing.branch(context.library, step, facts)
-        assembled = assemble(
-            step_title=step.title or "Untitled step",
-            project_title=project.title or "Untitled project",
-            instruction=instruction.body,
-            parts=briefing.parts(context.library, step, context.store.files),
-            sections=briefing.sections(context.library, step, context.store.files, facts),
-            project_sections=briefing.project_sections(context.library, step, context.store.files),
-            epilogue=briefing.epilogue(context.library, step, branches),
-            preamble=briefing.preamble(step, briefing.worktree(step), facts, branches),
-            project_instruction=project_instruction,
-            project_files=asset_paths(context.store.files, project.id),
-            instruction_files=instruction.files,
-        )
+        branches = branch_plan(context.library, step, facts)
+        assembled = brief(context.library, step, context.store.files, facts, branches, roles)
         data = {
             "step": step.id,
             "root": str(directory),
@@ -227,7 +220,7 @@ def commands(*, briefing: Briefing) -> list[CliCommand]:
             " own branch (on by default); off only for a step that must work in the checkout"
             " the window shows.",
             configure=_configure_worktree,
-            run=lambda context, args: _worktree(context, args, briefing.no_worktree),
+            run=_worktree,
             examples=("dplanner agent worktree 'Cut the release' off",),
         ),
         CliCommand(
@@ -272,7 +265,7 @@ def _configure_worktree(parser: ArgumentParser) -> None:
     parser.add_argument("worktree", choices=("on", "off"), help="fresh worktree, or the checkout")
 
 
-def _worktree(context: CliContext, args: Namespace, no_worktree: Callable[[Step], str]) -> int:
+def _worktree(context: CliContext, args: Namespace) -> int:
     step = find_step(context.library, args.step, context.current)
     wanted = args.worktree == "on"
     if not enabled(step):
