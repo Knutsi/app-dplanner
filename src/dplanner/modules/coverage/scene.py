@@ -61,6 +61,7 @@ from dplanner.modules.coverage.trace import (
     Item,
     Trace,
 )
+from dplanner.planning.status import word
 from dplanner.theme.cards import (
     FILL_ALPHA,
     KEY_BLOCK_W,
@@ -216,7 +217,7 @@ class CardItem(QGraphicsObject):
         if self.item.muted:
             text.setAlpha(SECONDARY_ALPHA)
         if self.item.key:
-            tone = STEP_STATUS_TONES.get(self.item.status, "")
+            tone = STEP_STATUS_TONES.get(word(self.item.status), "")
             paint_key_block(painter, palette, body, self.item.key, tone, text, *self.item.glyph)
         left = inner.left()
         glyph = GLYPHS.get(kind_of(self.item))

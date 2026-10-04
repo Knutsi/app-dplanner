@@ -10,10 +10,10 @@ from dplanner.modules.github import refresh as refresh_mod
 from dplanner.modules.github.aspect import MODULE_ID, GithubRefs, read, write
 from dplanner.modules.github.gh import PrInfo
 from dplanner.modules.github.refresh import PrRefresher
-from dplanner.modules.step_status.aspect import MERGED_ORIGIN, record_merged
-from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
-from dplanner.modules.step_status.aspect import read as status_read
-from dplanner.modules.step_status.aspect import write as status_write
+from dplanner.planning.status import MERGED_ORIGIN, Status, record_merged
+from dplanner.planning.status import MODULE_ID as STATUS_ID
+from dplanner.planning.status import stored as status_read
+from dplanner.planning.status import write as status_write
 
 MERGED = PrInfo(number=12, title="Add login flow", state="merged", url="u12", head_ref="feat/login")
 
@@ -57,7 +57,7 @@ def refresher(services, monkeypatch):
 
 def set_status(services, step, status):
     today = services.clock.today()
-    SetModuleDataCommand(step.id, STATUS_ID, status_write(status, today=today)).redo(
+    SetModuleDataCommand(step.id, STATUS_ID, status_write(Status(status), today=today)).redo(
         services.document
     )
 
@@ -136,7 +136,7 @@ def test_a_merged_pr_finishes_a_step_waiting_on_its_merge(services, step, refres
         lambda _node, module, origin: written.append((module, origin))
     )
     refresher._apply([(step.id, MERGED)])
-    assert status_read(services.document.step(step.id)) == "done"
+    assert status_read(services.document.step(step.id)) is Status.DONE
     assert (STATUS_ID, MERGED_ORIGIN) in written
     # Undo is for decisions: GitHub merged it, and Ctrl+Z cannot take that back.
     assert not services.undo.can_undo()
@@ -145,7 +145,7 @@ def test_a_merged_pr_finishes_a_step_waiting_on_its_merge(services, step, refres
 def test_a_merged_pr_leaves_work_nobody_accepted_alone(services, step, refresher):
     set_status(services, step, "in-progress")
     refresher._apply([(step.id, MERGED)])
-    assert status_read(services.document.step(step.id)) == "in-progress"
+    assert status_read(services.document.step(step.id)) is Status.IN_PROGRESS
 
 
 def test_a_tick_finishes_a_step_whose_pr_read_merged_before_it_was_accepted(
@@ -159,4 +159,4 @@ def test_a_tick_finishes_a_step_whose_pr_read_merged_before_it_was_accepted(
     set_status(services, step, "ready-to-merge")
     monkeypatch.setattr(refresh_mod, "view_pr", lambda _repo, _number: pytest.fail("fetched"))
     refresher._tick()
-    assert status_read(services.document.step(step.id)) == "done"
+    assert status_read(services.document.step(step.id)) is Status.DONE

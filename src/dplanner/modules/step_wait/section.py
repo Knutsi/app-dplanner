@@ -19,11 +19,11 @@ from PySide6.QtWidgets import (
 )
 
 from dplanner.domain.model import Library, Step
-from dplanner.domain.schedule import Wait
 from dplanner.framework.module_data_section import FIELD_GAP, ModuleDataSection
 from dplanner.framework.table import DATE_FORMAT
 from dplanner.framework.undo import UndoService
 from dplanner.modules.step_wait.aspect import MODULE_ID, read, write
+from dplanner.planning.schedule import Wait
 
 DAYS_MOST = 250.0  # A year of working days; a longer wait is a milestone of its own.
 

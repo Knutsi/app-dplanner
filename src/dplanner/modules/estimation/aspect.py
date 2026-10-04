@@ -3,7 +3,7 @@
 ``read`` and ``write`` are what the CLI verb, the panel editor and every report call, so the
 shape of an estimate exists once rather than once per caller. There is one field, so there is
 no dataclass around it: ``read`` returns the days, which makes it exactly the ``days_for``
-function :mod:`dplanner.domain.schedule` asks for, with no adapter in between.
+function :mod:`dplanner.planning.schedule` asks for, with no adapter in between.
 
 **Numbers are coerced here.** ``FORMAT.md``'s normalisation rule used to be enforced at the
 model boundary, because an ``int`` writes as ``5`` where a reloaded ``float`` writes as

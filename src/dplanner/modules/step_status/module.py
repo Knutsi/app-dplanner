@@ -18,14 +18,6 @@ from PySide6.QtGui import QColor, QIcon
 
 from dplanner.core.clock import Clock
 from dplanner.domain.model import Library, Step
-from dplanner.domain.progression import (
-    BLOCKED,
-    DONE,
-    IN_PROGRESS,
-    READY_FOR_REVIEW,
-    READY_TO_MERGE,
-    phrase,
-)
 from dplanner.framework.action_registry import (
     DISABLED,
     ActionRegistry,
@@ -35,15 +27,15 @@ from dplanner.framework.action_registry import (
 from dplanner.framework.context import Context
 from dplanner.framework.step_selection import chosen_steps
 from dplanner.framework.undo import UndoService
-from dplanner.modules.step_status.aspect import (
+from dplanner.planning.status import (
     DATA_FORMAT,
     MODULE_ID,
-    PENDING,
-    STATUSES,
+    Status,
     label,
     no_status,
-    read,
+    phrase,
     status_command,
+    stored,
 )
 from dplanner.theme.icons import (
     check_icon,
@@ -55,13 +47,13 @@ from dplanner.theme.icons import (
 )
 
 # One glyph per state, so the submenu, the palette and a strip that seats a verb agree.
-GLYPHS: dict[str, Callable[[QColor], QIcon]] = {
-    PENDING: step_icon,
-    IN_PROGRESS: play_icon,
-    READY_FOR_REVIEW: eye_icon,
-    READY_TO_MERGE: pull_request_icon,
-    DONE: check_icon,
-    BLOCKED: stop_icon,
+GLYPHS: dict[Status, Callable[[QColor], QIcon]] = {
+    Status.PENDING: step_icon,
+    Status.IN_PROGRESS: play_icon,
+    Status.READY_FOR_REVIEW: eye_icon,
+    Status.READY_TO_MERGE: pull_request_icon,
+    Status.DONE: check_icon,
+    Status.BLOCKED: stop_icon,
 }
 
 
@@ -84,10 +76,10 @@ class StepStatusModule:
         self._deps = deps
 
     def register(self) -> None:
-        for order, status in enumerate(STATUSES, start=1):
+        for order, status in enumerate(Status, start=1):
             self._deps.actions.register(
                 ActionSpec(
-                    id=f"status.{status}",
+                    id=f"status.{status.value}",
                     label=label(status),
                     menu="Step",
                     group="track",
@@ -106,18 +98,18 @@ class StepStatusModule:
         library = self._deps.library
         return [library.step(step_id) for step_id in chosen_steps(context, library)]
 
-    def _current(self, status: str) -> Callable[[Context], ActionState]:
+    def _current(self, status: Status) -> Callable[[Context], ActionState]:
         def state(context: Context) -> ActionState:
             steps = self._chosen(context)
             if not steps:
                 return DISABLED
             if kind := next(filter(None, map(self._deps.works_nobody, steps)), ""):
                 return ActionState(enabled=False, label=f"{label(status)} — {no_status(kind)}")
-            return ActionState(checked=all(read(step) == status for step in steps))
+            return ActionState(checked=all(stored(step) is status for step in steps))
 
         return state
 
-    def _setter(self, status: str) -> Callable[[Context], None]:
+    def _setter(self, status: Status) -> Callable[[Context], None]:
         def run(context: Context) -> None:
             steps = self._chosen(context)
             if any(self._deps.works_nobody(step) for step in steps):
@@ -125,7 +117,7 @@ class StepStatusModule:
             today = self._deps.clock.today()
             with self._deps.undo.gesture("Set Status"):
                 for step in steps:
-                    if read(step) == status:
+                    if stored(step) is status:
                         continue
                     self._deps.undo.push(
                         status_command(step, status, today=today, label="Set Status")

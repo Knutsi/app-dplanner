@@ -20,9 +20,9 @@ from dplanner.cli.report.parts import (
     Table,
 )
 from dplanner.domain.model import Library, Project, Step, StepId
-from dplanner.domain.schedule import Scheduled
 from dplanner.domain.store import FilesFor
 from dplanner.modules.step_order.export import HEADERS, order_entries
+from dplanner.planning.schedule import Scheduled
 
 TABLE_ID = "order"
 

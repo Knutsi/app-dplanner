@@ -20,6 +20,7 @@ from dplanner.modules.step_agent_instruction.launcher import (
 )
 from dplanner.modules.step_agent_instruction.launcher import prepare as _prepare
 from dplanner.modules.step_agent_instruction.prompt import PromptPart, assemble
+from dplanner.planning.status import Status
 
 HARNESSES = agent_harnesses()
 
@@ -1387,12 +1388,12 @@ def test_run_anyway_launches_over_an_unfinished_prerequisite(
 
 def test_done_prerequisites_launch_without_asking(services, step, prerequisite, monkeypatch):
     from dplanner.domain.commands import SetModuleDataCommand
-    from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
-    from dplanner.modules.step_status.aspect import write as write_status
+    from dplanner.planning.status import MODULE_ID as STATUS_ID
+    from dplanner.planning.status import write as write_status
 
     services.undo.push(
         SetModuleDataCommand(
-            prerequisite.id, STATUS_ID, write_status("done", today=date(2026, 9, 21))
+            prerequisite.id, STATUS_ID, write_status(Status.DONE, today=date(2026, 9, 21))
         )
     )
     calls = _fake_terminal(monkeypatch)
@@ -1408,12 +1409,12 @@ def test_a_prerequisite_under_review_still_asks(services, step, prerequisite, mo
     statuses tab keeps the waiting step out of Ready to start — one question, two readers —
     and the box says the status as words."""
     from dplanner.domain.commands import SetModuleDataCommand
-    from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
-    from dplanner.modules.step_status.aspect import write as write_status
+    from dplanner.planning.status import MODULE_ID as STATUS_ID
+    from dplanner.planning.status import write as write_status
 
     for word, said in (
-        ("ready-for-review", "ready for review"),
-        ("ready-to-merge", "ready to merge"),
+        (Status.READY_FOR_REVIEW, "ready for review"),
+        (Status.READY_TO_MERGE, "ready to merge"),
     ):
         services.undo.push(
             SetModuleDataCommand(
@@ -1437,13 +1438,13 @@ def test_a_source_under_review_across_an_auto_progress_link_launches_without_ask
     from dplanner.domain.commands import SetModuleDataCommand
     from dplanner.modules.auto_progress.aspect import MODULE_ID as AUTO_PROGRESS_ID
     from dplanner.modules.auto_progress.aspect import write as write_flags
-    from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
-    from dplanner.modules.step_status.aspect import write as write_status
+    from dplanner.planning.status import MODULE_ID as STATUS_ID
+    from dplanner.planning.status import write as write_status
 
     library = services.document
     SetModuleDataCommand(step.id, AUTO_PROGRESS_ID, write_flags([prerequisite.id])).redo(library)
     SetModuleDataCommand(
-        prerequisite.id, STATUS_ID, write_status("ready-for-review", today=date(2026, 9, 21))
+        prerequisite.id, STATUS_ID, write_status(Status.READY_FOR_REVIEW, today=date(2026, 9, 21))
     ).redo(library)
     calls = _fake_terminal(monkeypatch)
     boxes = _record_boxes(monkeypatch, click=None)
@@ -1497,13 +1498,13 @@ def test_the_prompt_fallback_does_not_stamp(services, step, monkeypatch):
 def test_a_successful_launch_claims_the_step_is_in_progress(services, step, monkeypatch):
     """On by default, and off the undo stack for the launch stamp's reason: Ctrl+Z must
     not file the step as pending while an agent is still working in it."""
-    from dplanner.modules.step_status.aspect import read as status_of
+    from dplanner.planning.status import stored as status_of
 
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
     select(services, step)
     _fake_terminal(monkeypatch)
     services.actions.run("agent.run", services.context.current())
-    assert status_of(step) == "in-progress"
+    assert status_of(step) is Status.IN_PROGRESS
     assert not services.undo.can_undo()
     assert "marked in progress" in services.window.statusBar().currentMessage()
 
@@ -1513,14 +1514,14 @@ def test_the_launch_claim_can_be_switched_off(services, step, monkeypatch):
     from dplanner.framework.user_config import set_global
     from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_ID
     from dplanner.modules.step_agent_instruction.settings_page import START_IN_PROGRESS_KEY
-    from dplanner.modules.step_status.aspect import read as status_of
+    from dplanner.planning.status import stored as status_of
 
     set_global(AGENT_ID, START_IN_PROGRESS_KEY, False)
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
     select(services, step)
     _fake_terminal(monkeypatch)
     services.actions.run("agent.run", services.context.current())
-    assert status_of(step) == "pending"
+    assert status_of(step) is Status.PENDING
     assert "marked in progress" not in services.window.statusBar().currentMessage()
 
 
@@ -1544,20 +1545,20 @@ def test_the_settings_switch_round_trips(app):
 
 def test_the_prompt_fallback_claims_nothing(services, step, monkeypatch):
     """No shell was started, so nobody is working on the step yet."""
-    from dplanner.modules.step_status.aspect import read as status_of
+    from dplanner.planning.status import stored as status_of
 
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
     select(services, step)
     monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: None)
     _silence_fallback(monkeypatch)
     services.actions.run("agent.run", services.context.current())
-    assert status_of(step) == "pending"
+    assert status_of(step) is Status.PENDING
 
 
 def test_a_multiplexer_that_refuses_claims_nothing(services, step, monkeypatch):
     """A spawn that answers with a reason opened no shell: the fallback shows and the
     step stays where it was, exactly as when no command resolved."""
-    from dplanner.modules.step_status.aspect import read as status_of
+    from dplanner.planning.status import stored as status_of
 
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
     select(services, step)
@@ -1565,7 +1566,7 @@ def test_a_multiplexer_that_refuses_claims_nothing(services, step, monkeypatch):
     monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: "herdr is not installed")
     _silence_fallback(monkeypatch)
     services.actions.run("agent.run", services.context.current())
-    assert status_of(step) == "pending"
+    assert status_of(step) is Status.PENDING
     assert "marked in progress" not in services.window.statusBar().currentMessage()
 
 
@@ -1667,7 +1668,7 @@ def test_a_run_over_a_selection_claims_each_step_whose_shell_opened(services, st
     """The claim is per step, as each shell opens: a run that stops at its third step —
     no terminal opened for it — leaves the first two marked and the third where it was,
     and the status line counts what was marked."""
-    from dplanner.modules.step_status.aspect import read as status_of
+    from dplanner.planning.status import stored as status_of
 
     project = services.document.project_of(step.id)
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
@@ -1681,9 +1682,9 @@ def test_a_run_over_a_selection_claims_each_step_whose_shell_opened(services, st
     services.actions.run("agent.run", services.context.current())
 
     assert [status_of(services.document.step(s.id)) for s in chosen] == [
-        "in-progress",
-        "in-progress",
-        "pending",
+        Status.IN_PROGRESS,
+        Status.IN_PROGRESS,
+        Status.PENDING,
     ]
     assert services.window.statusBar().currentMessage() == "2 agents launched, 2 marked in progress"
 

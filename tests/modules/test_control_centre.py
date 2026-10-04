@@ -172,9 +172,9 @@ def test_a_change_in_any_project_reaches_the_board(services, projects):
 
 
 def test_a_step_behind_a_dated_wait_joins_the_board_on_its_day(services, projects):
-    from dplanner.domain.schedule import Wait
     from dplanner.modules.step_wait.aspect import MODULE_ID as WAIT_ID
     from dplanner.modules.step_wait.aspect import write as write_wait
+    from dplanner.planning.schedule import Wait
 
     _alpha, beta = projects
     services.clock.pin(date(2026, 9, 18))

@@ -36,9 +36,9 @@ from math import ceil, cos, sin, tau
 
 from dplanner.domain.model import Library, Project, Step, StepId
 from dplanner.domain.ordering import depths
-from dplanner.domain.schedule import earliest_starts
 from dplanner.modules.project_editor.positions import GRID, NODE_H, NODE_W, node_size, snapped
 from dplanner.modules.project_editor.stacks import FRAME_PAD, Folded, fold
+from dplanner.planning.schedule import earliest_starts
 
 type Point = tuple[float, float]
 type SizeFor = Callable[[Step], tuple[float, float]]

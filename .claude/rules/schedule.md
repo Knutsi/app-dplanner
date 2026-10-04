@@ -1,17 +1,19 @@
 ---
 paths:
   - "src/dplanner/modules/{time_estimates,progression,step_order,estimation,step_wait}/**"
-  - "src/dplanner/domain/{schedule,progression,ordering}.py"
+  - "src/dplanner/domain/ordering.py"
+  - "src/dplanner/planning/{schedule,progression,status}.py"
   - "src/dplanner/theme/palettes.py"
   - "tests/modules/test_{time_estimates,time_progress,time_present,time_pace,step_statuses_tab,control_centre,step_order,milestone_colors,estimation_bulk}.py"
-  - "tests/domain/test_{schedule,progression,ordering}.py"
+  - "tests/domain/test_ordering.py"
+  - "tests/planning/test_{schedule,progression,status}.py"
   - "tests/cli/test_{time_matrix,progression_verbs}.py"
   - "scripts/render_boards.py"
 ---
 
 # Schedule — order, progression, time estimates, progress and milestone colour
 
-- **Progression is derived, never stored** — `domain/progression.py` is the graph's
+- **Progression is derived, never stored** — `planning/progression.py` is the graph's
   readiness with a `status_for(step)` handed in like `days_for`; the Step statuses tab,
   the Control Centre, `dplanner progression show` and `--json` read one function, and the
   frontier is a per-step check, not `ordering.ready()`'s wave one. **Ready for review and
@@ -62,7 +64,7 @@ paths:
   `ARCHITECTURE.md`'s *Progression is the status-aware frontier* has the partition rules
   and why each was a decision.
 - **The order says what order, and how much — never when.** The Order tab is the index,
-  the step, its wave and its estimate, under one line of volume (`domain/schedule.py`'s
+  the step, its wave and its estimate, under one line of volume (`planning/schedule.py`'s
   `volume_words`: *62 days over 24 steps, 2 unestimated*, the sentence `order show`,
   `estimate rollup` and the Estimates tab's strip all print). It ran a serial calendar
   once — accumulated days, days since the last milestone, a landing date per row, from a
@@ -87,7 +89,7 @@ paths:
   a derivation somebody can add over the counts (`ARCHITECTURE.md`'s *Expenditure is the
   order, in tokens*).
 - **Staffing what-ifs are derived; only the assumptions are stored.** `dplanner schedule
-  matrix` and the Time tab are one derivation — `domain/schedule.py`'s `phases` over
+  matrix` and the Time tab are one derivation — `planning/schedule.py`'s `phases` over
   `parallel_finish`, a deterministic two-pool greedy simulation (longest remaining chain
   first, ties by project order) handed `days_for`, `is_agent` and `is_milestone` as
   functions. The matrix prints the grid of teams; **the tab runs one staffing, the stored
@@ -170,7 +172,7 @@ paths:
   the simulator's world (`test_time_waits.py`). **Elsewhere a wait is done when it is over
   and no work at all**: the Step statuses tab, its verb and report and the Run Agent gate read
   `schedule.wait_status` — done once what it waits on is done and its day has come or its
-  days are waited, `WAITING` until then — so what follows it is ready that day; the root's
+  days are waited, `Waiting` until then — so what follows it is ready that day; the root's
   one `_counts_as_work` keeps it off every row and out of every volume (`schedule.volume`:
   the Step statuses tab, the Estimates tab, `estimate rollup`, `schedule show`, `order show`, the Order
   tab) and lint; the Status verbs, the Agent and Test toggles and Run Agent refuse one,
@@ -205,7 +207,7 @@ paths:
   stretch; the count of steps is tallied and worded, never the share — is
   `time_estimates/progress.py` over the statuses (`status_for`, handed in like `days_for`),
   and the plan's expected curve is the simulation's own per-step landings
-  (`domain/schedule.py`'s `ParallelFinish.landings`, carried on each `Phase`). The one
+  (`planning/schedule.py`'s `ParallelFinish.landings`, carried on each `Phase`). The one
   thing that cannot be derived is the past: a `Snapshot` — one row per stretch, steps,
   done, days, done days, start, landing, and the **landing knots** the curve is drawn
   through — is written under a second module id, `progress_history` (format 3), in two

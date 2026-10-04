@@ -4,7 +4,7 @@ A wait is a step like any other in the graph: it requires what must come before 
 comes after requires it. What it carries is how long it holds them — ``{"until":
 "2026-11-04"}``, the first day they may start, or ``{"days": 3}``, that many working days from
 the moment it is reached. It is no work: it takes no worker, has no status of its own and is
-no part of any tally, so the schedule reads it as a wait (``domain/schedule.py``'s ``Wait``)
+no part of any tally, so the schedule reads it as a wait (``planning/schedule.py``'s ``Wait``)
 and the tallies leave it out. A step, not a kind of node, so it works unchanged in cones,
 ordering, cycles, copy and paste, and numbering.
 """
@@ -15,7 +15,7 @@ from typing import Any
 from dplanner.core.module_data import ModuleDataFormat, stamped
 from dplanner.domain.aspects import AspectSpec
 from dplanner.domain.model import Step
-from dplanner.domain.schedule import Wait, short_date
+from dplanner.planning.schedule import Wait, short_date
 
 MODULE_ID = "step_wait"
 DATA_FORMAT = ModuleDataFormat(MODULE_ID)

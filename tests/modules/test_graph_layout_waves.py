@@ -14,7 +14,6 @@ from tests.modules.test_graph_layout import assert_no_overlap, braided, steps_by
 from dplanner.domain.commands import SetEdgesCommand
 from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.ordering import depths
-from dplanner.domain.schedule import earliest_starts
 from dplanner.modules.project_editor.positions import GRID, NODE_H, NODE_W, node_size
 from dplanner.modules.project_editor.positions import write_position as seat_entry
 from dplanner.modules.project_editor.sorts import (
@@ -25,6 +24,7 @@ from dplanner.modules.project_editor.sorts import (
     waves,
 )
 from dplanner.modules.project_editor.stacks import FRAME_PAD
+from dplanner.planning.schedule import earliest_starts
 
 
 def default_size(_step):

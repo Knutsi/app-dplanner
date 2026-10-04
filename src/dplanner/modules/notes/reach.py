@@ -24,7 +24,6 @@ from datetime import date
 
 from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.ordering import upstream
-from dplanner.domain.schedule import format_date
 from dplanner.modules.notes.log import (
     LABELS,
     PROJECT,
@@ -34,6 +33,7 @@ from dplanner.modules.notes.log import (
     read_log,
     standing,
 )
+from dplanner.planning.schedule import format_date
 
 KeyOf = Callable[[Step], str]
 

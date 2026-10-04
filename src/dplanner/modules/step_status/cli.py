@@ -29,23 +29,17 @@ from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.lookup import find_project, find_step, project_arg, step_arg
 from dplanner.domain.model import Step
 from dplanner.domain.ordering import placed
-from dplanner.domain.progression import (
-    BLOCKED,
-    DONE,
-    READY_FOR_REVIEW,
-    READY_TO_MERGE,
+from dplanner.planning.status import (
     REVIEW_AND_MERGE,
-)
-from dplanner.modules.step_status.aspect import (
-    PENDING,
-    STATUSES,
+    Status,
     no_status,
-    read,
     status_command,
+    stored,
+    word,
 )
 
 # The statuses that say nobody is working a step any more: setting one ends its claim.
-STOPPED = (READY_FOR_REVIEW, READY_TO_MERGE, DONE, BLOCKED)
+STOPPED = frozenset({*REVIEW_AND_MERGE, Status.DONE, Status.BLOCKED})
 
 
 def commands(
@@ -66,22 +60,24 @@ def commands(
 
     def set_status(context: CliContext, args: Namespace) -> int:
         step = find_step(context.library, args.step, context.current)
-        if (kind := works_nobody(step)) and args.state != PENDING:
+        state = Status(args.state)
+        if (kind := works_nobody(step)) and state is not Status.PENDING:
             raise CliError(f"{step.title!r} is {kind}: {no_status(kind)}")
         because = (args.because or "").strip()
-        if args.because is not None and args.state != DONE:
+        if args.because is not None and state is not Status.DONE:
             raise CliError("--because says why a step is done without review; it goes with done")
         if (
-            args.state == DONE
+            state is Status.DONE
             and not because
-            and read(step) not in REVIEW_AND_MERGE  # Under review, a reviewing agent may finish it.
+            and stored(step)
+            not in REVIEW_AND_MERGE  # Under review, a reviewing agent may finish it.
             and is_agent(step)
             and in_agent_shell()
         ):
             raise CliError(_review_first(step, args.step))
         note, added = note_reason(context, step, because) if because else ("", True)
-        ended = args.state in STOPPED and end_claim(context, step)
-        _say(context, step, args.state, note, added, ended)
+        ended = state in STOPPED and end_claim(context, step)
+        _say(context, step, state, note, added, ended)
         return 0
 
     return [
@@ -121,7 +117,9 @@ def commands(
 
 def _configure_set(parser: ArgumentParser) -> None:
     step_arg(parser)
-    parser.add_argument("state", choices=STATUSES, help="where the step stands")
+    parser.add_argument(
+        "state", choices=[status.value for status in Status], help="where the step stands"
+    )
     parser.add_argument(
         "--because",
         metavar="REASON",
@@ -142,7 +140,7 @@ def _review_first(step: Step, needle: str) -> str:
 def _say(
     context: CliContext,
     step: Step,
-    status: str,
+    status: Status,
     note: str = "",
     added: bool = True,
     ended: bool = False,
@@ -151,7 +149,7 @@ def _say(
     already there that it did not replace, and the agent's claim it ended."""
     context.apply(status_command(step, status, today=context.clock.today()))
     data = (
-        {"step": step.id, "status": status}
+        {"step": step.id, "status": status.value}
         | ({"note": note} if note else {})
         | ({"claim_ended": True} if ended else {})
     )
@@ -161,29 +159,29 @@ def _say(
         else ""
     )
     released = " — no agent at work on it now" if ended else ""
-    context.report(data, f"{step.title}: {status}{kept}{released}")
+    context.report(data, f"{step.title}: {status.value}{kept}{released}")
 
 
 def _show(context: CliContext, args: Namespace) -> int:
     step = find_step(context.library, args.step, context.current)
-    status = read(step)
+    status = word(stored(step))
     context.report({"step": step.id, "status": status}, f"{step.title}: {status}")
     return 0
 
 
 def _clear(context: CliContext, args: Namespace) -> int:
-    _say(context, find_step(context.library, args.step, context.current), PENDING)
+    _say(context, find_step(context.library, args.step, context.current), Status.PENDING)
     return 0
 
 
 def _list(context: CliContext, args: Namespace) -> int:
     project = find_project(context.library, args.project)
     order = placed(context.library, project)
-    grouped = {status: [p.step for p in order if read(p.step) == status] for status in STATUSES}
+    grouped = {status: [p.step for p in order if stored(p.step) is status] for status in Status}
     data = {
         "project": project.id,
         "statuses": {
-            status: [{"id": step.id, "title": step.title} for step in steps]
+            status.value: [{"id": step.id, "title": step.title} for step in steps]
             for status, steps in grouped.items()
         },
     }
@@ -191,7 +189,7 @@ def _list(context: CliContext, args: Namespace) -> int:
     for status, steps in grouped.items():
         if not steps:
             continue
-        lines.append(f"{status} ({len(steps)}):")
+        lines.append(f"{status.value} ({len(steps)}):")
         lines.extend(f"  {step.title or 'Untitled step'}" for step in steps)
     context.report(data, "\n".join(lines) if lines else "No steps yet.")
     return 0

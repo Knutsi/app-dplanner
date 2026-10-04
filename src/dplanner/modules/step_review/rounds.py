@@ -30,7 +30,7 @@ from dplanner.core.module_data import ModuleDataFormat, stamped
 from dplanner.domain.aspects import AspectSpec
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, Project, Step, StepId
-from dplanner.domain.progression import BLOCKED, DONE, UNKNOWN
+from dplanner.planning.status import Status
 
 MODULE_ID = "review_rounds"
 DATA_FORMAT = ModuleDataFormat(MODULE_ID)
@@ -255,13 +255,14 @@ def due_turns(
     project: Project,
     is_agent: Callable[[Step], bool],
     running: Callable[[Step], bool],
-    status_for: Callable[[Step], str],
+    status_for: Callable[[Step], Status],
 ) -> list[TurnDue]:
     """Every side in ``project`` whose turn it is, whose agent has gone, and whom nobody
     launched for this turn yet — in project order of the asker, then its parties.
 
     A side a person has finished or blocked is theirs: never due — nor one whose status this
-    build cannot read (:data:`~dplanner.domain.progression.UNKNOWN`). A conversation's first
+    build cannot read, which ``status_for`` hands in as blocked (``status.held``): readiness
+    reads a :class:`~dplanner.planning.status.Status` and nothing else. A conversation's first
     turn — the asker's, before any round — is not here: a review is due to *start* the way
     any step is, by what it waits on (``progression.due``).
     """
@@ -280,7 +281,7 @@ def due_turns(
                 launched == began(held)
                 or not is_agent(step)
                 or running(step)
-                or status_for(step) in (DONE, BLOCKED, UNKNOWN)
+                or status_for(step) in (Status.DONE, Status.BLOCKED)
             ):
                 continue
             found.append(TurnDue(step, asker.id, party_id))

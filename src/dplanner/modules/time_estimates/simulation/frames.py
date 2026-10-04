@@ -19,8 +19,6 @@ from typing import Any
 
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, Project, Step
-from dplanner.domain.progression import IN_PROGRESS
-from dplanner.domain.schedule import Wait
 from dplanner.modules.time_estimates.schedule import (
     MODULE_ID,
     Assumptions,
@@ -30,6 +28,8 @@ from dplanner.modules.time_estimates.schedule import (
     write_assumptions,
     write_milestone,
 )
+from dplanner.planning.schedule import Wait
+from dplanner.planning.status import Status
 
 
 @dataclass(frozen=True)
@@ -46,7 +46,7 @@ class StepState:
     agent: bool
     created: date | None
     start: date | None  # A milestone's own start date.
-    status: str
+    status: Status
     since: date | None
     started: date | None
     wait: Wait | None = None  # What it waits for, when it is a wait.
@@ -145,8 +145,8 @@ def _through(state: StepState, day: date) -> tuple[StepState, ...]:
     """The states a step passed through on ``day``, in turn. A frame is the day's end, so
     work begun and finished within it shows only as finished — but it went in progress
     first, which is when its status stamps ``started``."""
-    if state.started == day and state.status != IN_PROGRESS:
-        return (replace(state, status=IN_PROGRESS), state)
+    if state.started == day and state.status is not Status.IN_PROGRESS:
+        return (replace(state, status=Status.IN_PROGRESS), state)
     return (state,)
 
 

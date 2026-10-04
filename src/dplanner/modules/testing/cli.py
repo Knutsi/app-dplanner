@@ -70,6 +70,7 @@ from dplanner.modules.testing.filing import (
 from dplanner.modules.testing.filing import catalog as all_categories
 from dplanner.modules.testing.format import FORMAT_VERB
 from dplanner.modules.testing.format import guide as format_guide
+from dplanner.planning.status import Status, Unknown
 
 _STATUS_GLYPH = {"ok": "✓", "failed": "✗", "skipped": "-", "pending": " "}
 
@@ -94,7 +95,6 @@ type StepNote = tuple[str, str, str, str]
 # every aspect, and `_scope_kinds()` names its predicates literally for the same reason.
 type NotesFor = Callable[[Project], Mapping[StepId, Sequence[StepNote]]]
 
-DONE = "done"
 DAY = 10  # An ISO stamp's date — the grain a note is written at, so the grain to compare.
 
 REVIEW_CLEAR = "every test on a done step has been run since the last note on it"
@@ -226,7 +226,10 @@ def _save_runs(context: CliContext, project: Project, records: list[runs.Run]) -
 
 
 def commands(
-    *, status_for: Callable[[Step], str], notes_for: NotesFor, note_read: Callable[[], None]
+    *,
+    status_for: Callable[[Step], Status | Unknown],
+    notes_for: NotesFor,
+    note_read: Callable[[], None],
 ) -> list[CliCommand]:
     """The test verbs. ``note_read`` is the gate's ear: ``test format`` calls it once it has
     printed the house shape, so the read is recorded where the gate will look."""
@@ -1035,7 +1038,7 @@ def _behind(notes: Sequence[StepNote], last_seen: str) -> StepNote | None:
 
 
 def _review_rows(
-    project: Project, status_for: Callable[[Step], str], notes_for: NotesFor
+    project: Project, status_for: Callable[[Step], Status | Unknown], notes_for: NotesFor
 ) -> list[dict[str, str]]:
     """One row per stale test, naming the newest note it is behind.
 
@@ -1050,7 +1053,7 @@ def _review_rows(
     for step in project.steps:
         notes = by_step.get(step.id)
         # Only a done step: work still in progress is *meant* to be ahead of its tests.
-        if not notes or status_for(step) != DONE:
+        if not notes or status_for(step) is not Status.DONE:
             continue
         for test in read(step):
             if test.archived:
@@ -1083,7 +1086,10 @@ def _review_rows(
 
 
 def _review(
-    context: CliContext, args: Namespace, status_for: Callable[[Step], str], notes_for: NotesFor
+    context: CliContext,
+    args: Namespace,
+    status_for: Callable[[Step], Status | Unknown],
+    notes_for: NotesFor,
 ) -> int:
     project = _scoped(context, args.project)
     rows = _review_rows(project, status_for, notes_for)

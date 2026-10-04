@@ -8,7 +8,6 @@ from dataclasses import replace
 from datetime import date
 
 from dplanner.domain.model import Library, Project, Step
-from dplanner.domain.schedule import SATURDAY, Wait, chain_tails, stretches
 from dplanner.modules import _time_readers, _time_writers
 from dplanner.modules.time_estimates.schedule import stretched
 from dplanner.modules.time_estimates.simulation.frames import Plan, StepState
@@ -22,6 +21,8 @@ from dplanner.modules.time_estimates.simulation.world import (
     run,
     wait_id,
 )
+from dplanner.planning.schedule import SATURDAY, Wait, chain_tails, stretches
+from dplanner.planning.status import Status
 
 MADE = date(2026, 10, 12)
 WEDNESDAY = date(2026, 11, 4)
@@ -114,7 +115,7 @@ def test_the_team_waits_the_held_step_starts_no_earlier_than_the_wait_allows():
     started = next(
         played.day
         for played in timeline.days
-        if next(step for step in played.steps if step.id == held).status != "pending"
+        if next(step for step in played.steps if step.id == held).status is not Status.PENDING
     )
     # It is picked up the moment the wait ends: as the day before Wednesday ends.
     assert started == date(2026, 11, 3)

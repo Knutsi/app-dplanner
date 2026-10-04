@@ -1,7 +1,7 @@
 """The Step statuses table: what needs a person right now, grouped, a box on every row —
 one project's, or every project's in the Control Centre.
 
-Pure rendering — the domain's :class:`~dplanner.domain.progression.Progression` arrives
+Pure rendering — the planning tier's :class:`~dplanner.planning.progression.Progression` arrives
 computed and the table is rebuilt wholesale, so nothing here can disagree with the model.
 The groups are the partitions a person acts on — Blocked and Waits for you, what is stuck
 on a person, then in the order the work is closest to done Ready to merge, Ready for
@@ -32,9 +32,9 @@ from PySide6.QtGui import QColor, QIcon
 from PySide6.QtWidgets import QWidget
 
 from dplanner.domain.model import Step, StepId
-from dplanner.domain.progression import Progression
 from dplanner.framework.list_rows import HOST_ROLE
 from dplanner.framework.table import Cell, Column, Table
+from dplanner.planning.progression import Progression
 from dplanner.theme.icons import glyph_painter, step_icon
 from dplanner.theme.tokens import SECONDARY_ALPHA
 

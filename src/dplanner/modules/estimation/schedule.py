@@ -1,6 +1,6 @@
 """The project's start date, and the schedule it turns the estimates into.
 
-The derivation is the domain's (``domain/schedule.py``); this is the module's half of it —
+The derivation is the domain's (``planning/schedule.py``); this is the module's half of it —
 where the start date is stored, and how a number becomes something a person reads. Both the
 order table and ``dplanner schedule show`` render through the formatters here, so the window
 and the terminal cannot show the same day count two different ways.
@@ -25,14 +25,14 @@ from typing import Any
 from dplanner.core.module_data import stamped
 from dplanner.domain.model import Library, Project
 from dplanner.domain.ordering import placed
-from dplanner.domain.schedule import (
+from dplanner.modules.estimation.aspect import DATA_FORMAT, MODULE_ID, read
+from dplanner.planning.schedule import (
     CriticalPath,
     Scheduled,
     critical_path,
     schedule,
     working_days_after,
 )
-from dplanner.modules.estimation.aspect import DATA_FORMAT, MODULE_ID, read
 
 START_KEY = "start"
 

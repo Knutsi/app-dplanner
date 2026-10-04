@@ -25,6 +25,7 @@ from dplanner.cli.report.assemble import Report, build
 from dplanner.cli.report.parts import ReportSource
 from dplanner.core.storage.locations import find_repo_root, origin_url
 from dplanner.domain.model import Project, Step
+from dplanner.planning.status import Status, Unknown
 
 
 def commands(
@@ -32,7 +33,7 @@ def commands(
     sources: Sequence[ReportSource],
     key_of: Callable[[Step], str],
     kind_of: Callable[[Step], str],
-    status_for: Callable[[Step], str],
+    status_for: Callable[[Step], Status | Unknown],
     reporting_site: Callable[[CliContext, Project], website.SiteTarget | None] = (
         lambda _context, _project: None
     ),

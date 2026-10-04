@@ -6,19 +6,14 @@ prerequisites have all been finished is launchable today, and no wave number say
 frontier here is a per-step check — every ``requires`` target reads done — not wave one,
 and the two only coincide in a project where nothing has been finished yet.
 
-**The domain never learns what a status is stored as.** ``status_for`` is a function the
-caller supplies, exactly the seam ``schedule.py`` uses for ``days_for``: the module that
-owns the status aspect owns its schema, and this file works for any other source of
-status somebody wires in later. The words this walk understands are ``done``,
-``in-progress``, ``ready-for-review``, ``ready-to-merge`` and ``blocked`` — the status
-aspect stores exactly these, importing them from here; anything else — including whatever
-a wilder function returns — reads as pending, because a derivation must not crash on a
-claim it does not recognise.
-
-**Except ``unknown``, which holds a step.** A source that stores a word this build cannot
-read — one a newer build wrote — says :data:`UNKNOWN` rather than guessing pending, and the
-walk treats it like ``blocked``: never due, in ``attention`` for a person to look at, and
-not done, so nothing waits past it. Reading it as pending would launch the step again.
+**Readiness accepts a :class:`~dplanner.planning.status.Status` only.** ``status_for`` is a
+function the caller supplies — the stored status, or the status on a day with waits read
+in — and it answers in the vocabulary ``status.py`` owns, never a word. A reading this
+walk must not guess at is turned into a status *before* it gets here, by ``status.held``:
+a word this build cannot read holds the step as blocked — never due, in ``attention`` for a
+person to look at, and not done, so nothing waits past it — and a wait not over is pending.
+The types make the caller decide; reading an unknown word as pending would launch the step
+again.
 
 **Review and merge are on the board, and not done.** A step whose agent has finished waits
 for a person (``ready-for-review``) or for its merge (``ready-to-merge``): it is claimed out
@@ -72,25 +67,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 from dplanner.domain.model import Library, Project, Step, StepId
-
-DONE = "done"
-IN_PROGRESS = "in-progress"
-# The agent's work is finished and a person — or a reviewing agent — looks next.
-READY_FOR_REVIEW = "ready-for-review"
-# Accepted, and waiting on its merge.
-READY_TO_MERGE = "ready-to-merge"
-# Finished work a person has yet to land — its review, then its merge: past in progress, not done.
-REVIEW_AND_MERGE = (READY_FOR_REVIEW, READY_TO_MERGE)
-BLOCKED = "blocked"
-# A stored word this build cannot read — perhaps a newer build's. It holds the step.
-UNKNOWN = "unknown"
-# A wait that is not over yet — a derived reading (``schedule.wait_status``), never stored.
-WAITING = "waiting"
-
-
-def phrase(status: str) -> str:
-    """A status word as running text shows it: its hyphens as spaces (*ready for review*)."""
-    return status.replace("-", " ")
+from dplanner.planning.status import REVIEW_AND_MERGE, Status
 
 
 def _all_work(_step: Step) -> bool:
@@ -108,7 +85,7 @@ def _answers_no(_step: Step) -> bool:
 def outstanding(
     library: Library,
     waiter: Step,
-    status_for: Callable[[Step], str],
+    status_for: Callable[[Step], Status],
     auto_progresses: Callable[[Step, Step], bool] = _never,
 ) -> list[Step]:
     """The resolved prerequisites ``waiter`` still waits on — dead ids skipped, as everywhere.
@@ -119,10 +96,12 @@ def outstanding(
     """
     waiting = []
     for source in library.requires(waiter.id):
-        word = status_for(source)
+        status = status_for(source)
         # The link is asked about only when its source reads a word the answer can change:
         # this runs for every link on every walk.
-        if word != DONE and not (word in REVIEW_AND_MERGE and auto_progresses(waiter, source)):
+        if status is not Status.DONE and not (
+            status in REVIEW_AND_MERGE and auto_progresses(waiter, source)
+        ):
             waiting.append(source)
     return waiting
 
@@ -130,7 +109,7 @@ def outstanding(
 def due(
     library: Library,
     project: Project,
-    status_for: Callable[[Step], str],
+    status_for: Callable[[Step], Status],
     auto_progresses: Callable[[Step, Step], bool],
     is_agent: Callable[[Step], bool],
     running: Callable[[Step], bool] = _answers_no,
@@ -151,7 +130,7 @@ def due(
     for step in project.steps:
         if not counts_as_work(step) or not is_agent(step) or running(step):
             continue
-        if status_for(step) in (DONE, IN_PROGRESS, BLOCKED, UNKNOWN, WAITING, *REVIEW_AND_MERGE):
+        if status_for(step) is not Status.PENDING:
             continue
         if outstanding(library, step, status_for, auto_progresses):
             continue
@@ -166,7 +145,7 @@ def due(
 def taken(
     library: Library,
     step: Step,
-    status_for: Callable[[Step], str],
+    status_for: Callable[[Step], Status],
     auto_progresses: Callable[[Step, Step], bool],
     is_agent: Callable[[Step], bool],
 ) -> bool:
@@ -178,7 +157,7 @@ def taken(
     """
     return any(
         is_agent(waiter)
-        and status_for(waiter) not in (BLOCKED, DONE)
+        and status_for(waiter) not in (Status.BLOCKED, Status.DONE)
         and auto_progresses(waiter, step)
         for waiter in library.dependents(step.id)
     )
@@ -255,7 +234,7 @@ class Progression:
 def progression(
     library: Library,
     project: Project,
-    status_for: Callable[[Step], str],
+    status_for: Callable[[Step], Status],
     counts_as_work: Callable[[Step], bool] = _all_work,
     auto_progresses: Callable[[Step, Step], bool] = _never,
     asks_person: Callable[[Step], bool] = _answers_no,
@@ -264,7 +243,7 @@ def progression(
     """One walk in project order, so the answer is deterministic — ``ordering.py``'s rule.
 
     Each step lands in the first partition that claims it: a stored status first (done,
-    blocked or unknown, in-progress, ready-for-review, ready-to-merge), then the graph
+    blocked, in-progress, ready-for-review, ready-to-merge), then the graph
     (ready, upcoming, waiting). A blocked prerequisite still counts towards ``upcoming`` — it sits
     visibly on the board with a warning, and a step must not churn out of the queue when
     its prerequisite flips between in-progress and blocked. A step that is no work
@@ -278,15 +257,15 @@ def progression(
     status = {step.id: status_for(step) for step in project.steps}
     work = [step for step in project.steps if counts_as_work(step)]
     # Claimed by a stored status and not done: on the board, one move from what waits on it.
-    on_board = {IN_PROGRESS, BLOCKED, UNKNOWN, READY_FOR_REVIEW, READY_TO_MERGE}
+    on_board = {Status.IN_PROGRESS, Status.BLOCKED, Status.READY_FOR_REVIEW, Status.READY_TO_MERGE}
 
-    def claiming(word: str) -> list[Step]:
-        return [step for step in work if status[step.id] == word]
+    def claiming(wanted: Status) -> list[Step]:
+        return [step for step in work if status[step.id] is wanted]
 
-    pending = [step for step in work if status[step.id] not in {DONE, *on_board}]
+    pending = [step for step in work if status[step.id] not in {Status.DONE, *on_board}]
 
-    def status_of(step: Step) -> str:
-        return status.get(step.id, "")
+    def status_of(step: Step) -> Status:
+        return status.get(step.id, Status.PENDING)
 
     def waits_on(step: Step) -> list[Step]:
         return outstanding(library, step, status_of, auto_progresses)
@@ -304,7 +283,7 @@ def progression(
     unlocks = {
         step.id: _unlocks(dependents, step, status, counted)
         for step in work
-        if status[step.id] != DONE
+        if status[step.id] != Status.DONE
     }
 
     def ranked(steps: list[Step]) -> tuple[Step, ...]:
@@ -321,21 +300,21 @@ def progression(
         else:
             waiting.append(step)
 
-    in_progress = claiming(IN_PROGRESS)
-    under_review = claiming(READY_FOR_REVIEW)
+    in_progress = claiming(Status.IN_PROGRESS)
+    under_review = claiming(Status.READY_FOR_REVIEW)
     handed_on = {
         step.id
         for step in under_review
         if taken(library, step, status_of, auto_progresses, is_agent)
     }
     return Progression(
-        done=tuple(claiming(DONE)),
+        done=tuple(claiming(Status.DONE)),
         running=tuple(step for step in in_progress if not asks_person(step)),
         asking=ranked([step for step in in_progress if asks_person(step)]),
         review=ranked([step for step in under_review if step.id not in handed_on]),
         taken=tuple(step for step in under_review if step.id in handed_on),
-        merge=ranked(claiming(READY_TO_MERGE)),
-        attention=ranked(claiming(BLOCKED) + claiming(UNKNOWN)),
+        merge=ranked(claiming(Status.READY_TO_MERGE)),
+        attention=ranked(claiming(Status.BLOCKED)),
         ready=ranked(frontier),
         upcoming=tuple(upcoming),
         waiting=tuple(waiting),
@@ -381,7 +360,7 @@ def merge(found: Iterable[Progression]) -> Progression:
 def across(
     library: Library,
     projects: Sequence[Project],
-    status_for: Callable[[Step], str],
+    status_for: Callable[[Step], Status],
     counts_as_work: Callable[[Step], bool] = _all_work,
     auto_progresses: Callable[[Step, Step], bool] = _never,
     asks_person: Callable[[Step], bool] = _answers_no,
@@ -403,7 +382,7 @@ def across(
 def _unlocks(
     dependents: dict[StepId, list[StepId]],
     step: Step,
-    status: dict[StepId, str],
+    status: dict[StepId, Status],
     counted: set[StepId],
 ) -> int:
     """How many not-done steps of work transitively wait on ``step``.
@@ -423,7 +402,7 @@ def _unlocks(
             visit(dependent)
 
     visit(step.id)
-    return sum(1 for found in seen if found in counted and status.get(found) != DONE)
+    return sum(1 for found in seen if found in counted and status.get(found) != Status.DONE)
 
 
 def estimated_progress(

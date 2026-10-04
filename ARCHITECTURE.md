@@ -4038,7 +4038,7 @@ reach. So the walk lives in the domain, and the canvas layout, the order view an
 `dplanner order show --json` are three readers of one implementation. Nothing can disagree
 with the graph, because there is nothing else to disagree.
 
-`domain/schedule.py` is the second reader of that same walk, and the one that shows what the
+`planning/schedule.py` is the second reader of that same walk, and the one that shows what the
 shape was for. "When does this land" is "in what order can this be done", carrying estimates
 instead of counting hops — so it takes `ordering.placed()`'s answer and lays the days end to
 end from a start date. The order table, `dplanner schedule show` and its `--json` are three
@@ -4102,15 +4102,15 @@ ready-for-review, ready-to-merge, done, blocked*, in the order work moves throug
 two in the middle came with agents doing the work: *ready-for-review* is the agent's work
 finished with somebody — a person or a reviewing agent — to look next, and
 *ready-to-merge* is accepted and waiting on its merge (*An agent finishes at Ready for
-review*, below, has why an agent stops there). The words are the progression walk's
-(`domain/progression.py`), and the aspect imports them rather than keeping a copy that a
-test had to pin. They cost **no format bump**: an older build reads a word it does not know
-as `unknown` and leaves the entry on disk. It once read such a word as pending, and the
-structural review's probe showed what that costs: an otherwise eligible agent step became
-due again, so a window on an older build would relaunch work a newer one had claimed.
-Unknown holds the step instead — `progression.due` and `rounds.due_turns` skip it, the board
-lists it with Blocked, and Run Agent refuses it, so no launch writes `in-progress` over the
-word. Absent data is the only thing that reads as pending. `started` is
+review*, below, has why an agent stops there). They are `planning/status.py`'s `Status`,
+and every reader compares members, never words (*Planning owns status*). They cost **no
+format bump**: an older build reads a word it does not know as `Unknown` and leaves the
+entry on disk. It once read such a word as pending, and the structural review's probe showed
+what that costs: an otherwise eligible agent step became due again, so a window on an older
+build would relaunch work a newer one had claimed. Unknown holds the step instead —
+`status.held` reads it as blocked, so `progression.due` and `rounds.due_turns` skip it and
+the board lists it with Blocked, and Run Agent refuses it, so no launch writes
+`in-progress` over the word. Absent data is the only thing that reads as pending. `started` is
 stamped the first time a step enters any *worked* status — in progress, under review or
 waiting on its merge — because a step an agent ran without the claim still began when it
 came back. And **a status verb acts on every chosen step as one undo step** (`chosen_steps`,
@@ -4527,7 +4527,7 @@ places to keep the flag were weighed:
 It follows *Status is an aspect*: the flag is a fact about the step that waits — *I take
 these steps' work from review on* — so it lives on that step, and the derivation that wants
 it is handed a function, `auto_progresses(waiter, source)`, exactly as it is handed
-`status_for`. `domain/progression.py`'s `outstanding()` is the one answer — a source is
+`status_for`. `planning/progression.py`'s `outstanding()` is the one answer — a source is
 fulfilled when it is done, or under review or waiting on its merge across a flagged link —
 and the Step statuses tab, `progression show`, the report and Run Agent's gate all read it.
 
@@ -4994,7 +4994,7 @@ in the act.
 The graph gates launching by *reading* status (`status_for`, the Step statuses tab's
 seam); a launch also *writes* one. When a shell opens, the step is claimed `in-progress`
 through `mark_started` — the writer half of the same seam, wired by the composition root
-to `step_status`'s own `record_started`, so the agent module never learns the vocabulary
+to `planning/status.py`'s own `record_started`, so the agent module never learns the vocabulary
 and the status module keeps the only place its words are spelled.
 
 Three decisions sit in that one line.
@@ -5919,6 +5919,53 @@ no step, like the Problems panel's run (`plan_profiles`, `reconcile_remote`). La
 the quit dialog answers *Stay*, because an agent at work on the repository is a reason to
 keep the window.
 
+## Planning owns status
+
+**A tier between the graph and the features, holding what every planning question reads.**
+`domain/` is the graph — nodes, edges and aspect entries it treats as opaque — and stays
+that way. `planning/` sits on top of it and *interprets* the few aspects every planning
+question needs: the status vocabulary and its stored format (`planning/status.py`), the
+readiness walk (`planning/progression.py`) and the schedule (`planning/schedule.py`). It
+imports `core` and `domain` only, never Qt and never a module, and `domain/` never imports
+it; `tests/test_architecture.py` holds both directions. Before it, status lived in three
+tiers at once — the words in `domain/progression.py`, the format in
+`modules/step_status/aspect.py`, the rules in the composition root — and every reader that
+compared a status compared a string. Dependencies now point toward what changes least:
+everything reads status, so status sits low, and a feature imports it rather than being
+handed it by the root. The structural review (`docs/research/2026-10-03-structural-review/`,
+§5, §12 and §14) has the measurements and the admission test for what may join it — an
+aspect belongs here only if a headless server or daemon must interpret it to order, claim,
+validate or merge.
+
+**`Status` is an `Enum`, not a `StrEnum`, so a copied word is a type error.** mypy's strict
+equality (on through `strict = true`) refuses `status == "done"` when the two types cannot
+overlap; a `StrEnum` *is* a `str`, overlaps every literal, and would let the copy through.
+`.value` is the word on disk, so the format did not change, and `status.word()` is the one
+place a reading turns back into a word on its way out — `--json`, a CSV cell, a report's
+class name. `tests/planning/test_status.py` runs mypy over a probe to keep the claim true.
+
+**What this build cannot read is a type, not a word.** `stored(step)` answers
+`Status | Unknown`: an `Unknown` carries the word a newer build wrote, and the entry stays on
+disk untouched. The wait-aware reading on a given day (`schedule.wait_status`) adds
+`Waiting`, a wait that is not over, never stored. Readiness — `progression.py`, the review
+turns, the Time tab's facts — accepts a `Status` and nothing else, so the caller has to
+decide, and `status.held` is the one decision: an unknown word holds its step as blocked
+(never due, listed with Blocked, nothing waits past it), and a wait not over is pending.
+Reading an unknown word as pending would launch the step again; the type makes forgetting
+that a mypy error rather than a duplicate agent. Run Agent's refusal is the one reader that
+looks at `Unknown` itself, to name the word.
+
+**Three meanings of done stay three functions.** The stored status (`status.stored`), the
+status a card wears (the root's `_card_status`: pending for a step nobody works) and the
+status on a day (the root's `_status_in`, waits read in) answer different questions, and a
+reader picks one by name rather than by remembering which helper folds what.
+
+**Transitions are not policed.** The graph gates *launching*, not *recording*: a step set
+done out of order is honoured (*Progression is the status-aware frontier*). The review's
+state-machine sketch would have broken that, so `planning/` owns the vocabulary and the
+readiness rules and stops there; who may set what is a workflow's question, asked by the
+verb that sets it.
+
 ## Progression is the status-aware frontier
 
 **The surface is named for the question; the derivation keeps the answer's name.** A person
@@ -5959,7 +6006,7 @@ chosen step for the same reason (*Status is an aspect*, above).
 
 `ordering.ready()` answers what the *graph* allows — wave one, nothing waited on. During
 execution that is the wrong question: a step deep in the graph whose prerequisites have all
-been finished is launchable today, and no wave number says so. `domain/progression.py`
+been finished is launchable today, and no wave number says so. `planning/progression.py`
 answers the execution question — every step in exactly one of *done / running / asking /
 review / merge / attention / ready / upcoming / waiting* — and it is deliberately a **new derivation
 beside the old one, not a refactor of it**: the frontier is a per-step check ("every
@@ -6087,7 +6134,7 @@ the plan is scheduled on. Two surfaces answering *when* with different arithmeti
 surface too many, and the one to drop is the one nobody schedules on.
 
 What an order *can* say without claiming to know who does the work is how much work it
-holds. That is `domain/schedule.py`'s `volume_words` — *62 days over 24 steps, 2
+holds. That is `planning/schedule.py`'s `volume_words` — *62 days over 24 steps, 2
 unestimated* — beside `format_days` and `format_day_count` for their reason: it has four
 readers (the tab, `dplanner order show`, `dplanner estimate rollup` and the Estimates tab's
 strip) and a total read in one place must not disagree with the same total read in another.
@@ -6137,7 +6184,7 @@ clock's*.
 
 `schedule()` and `critical_path()` print the honest brackets — one worker, unlimited
 workers. `dplanner schedule matrix` answers what lands between them:
-`domain/schedule.py`'s `parallel_finish` simulates the graph under a stated cap of
+`planning/schedule.py`'s `parallel_finish` simulates the graph under a stated cap of
 *humans* and *coding agents*, and a small grid of those simulations is its report; the
 Time tab runs the one the project is staffed for. The decisions worth writing down:
 
@@ -6383,7 +6430,7 @@ the day:
   prerequisite reads done — held whatever followed one for good. So they read
   `schedule.wait_status` instead of the stored status alone: a wait is done once what it
   waits on is done and its day has come, or its days have been waited (the model's own
-  `waited`), and `WAITING` until then. Derived on every read, like the rest of progression,
+  `waited`), and `Waiting` until then. Derived on every read, like the rest of progression,
   so a wait releases its steps the morning it may with nobody marking anything.
 - **A wait looks like one, and only as the plan dates it now.** Its key's letter is `W`,
   its key block wears the clock in the attention amber, its stat is how long it holds. On the Time tab the days it holds are
@@ -7340,7 +7387,7 @@ the origin, since every arrow leaves it. The noun is `start` (`dplanner start se
 `step add --start`), not to be confused with `schedule start`, which dates the plan's first
 day.
 
-**The schedule still dates the start.** `domain/schedule.py`'s `stretches()` stops at
+**The schedule still dates the start.** `planning/schedule.py`'s `stretches()` stops at
 milestones only, so `progress show`, the Time tab and milestone colours count the start in the
 first milestone while `scope show` and the coverage trace give it to none. That is on purpose:
 a stretch is the first milestone's whole cone and every later one's cone past the milestones
@@ -8390,7 +8437,7 @@ objects and 120 ms; the rest is the application. Generation 0 is 0.01 ms.
 
 **What does scale, and how.** The canvas sync is superlinear — 3 ms at 25 steps, 58 ms
 at 400 — and half of it at the top is `step_accents` → `_milestone_stats` →
-`project_schedule`, where `domain/schedule.py`'s `working_days_after` walks the calendar
+`project_schedule`, where `planning/schedule.py`'s `working_days_after` walks the calendar
 **day by day from the project start for every step**: 0.7 ms at 25 steps, 28 ms at 400,
 quadratic in the plan's length in days. The Time tab's `time_report` carries the same
 walk through `phases` and `parallel_finish` (10 → 201 ms), and so does the recorder's

@@ -197,7 +197,7 @@ class ProjectEditorDeps:
     strips: Callable[[str], frozenset[StepId]] = field(default=_no_strips)
 
     # How long a step takes, from whichever module owns estimates — the timeline sort reads
-    # time through this, the same seam domain/schedule.py uses one level down.
+    # time through this, the same seam planning/schedule.py uses one level down.
     days_for: Callable[[Step], float | None] = field(default=_no_days)
     # A copied step carries its attachments: the file areas to read are the asset catalog's
     # sources, and what a copy may not carry is each owner's policy — see clipboard.py.

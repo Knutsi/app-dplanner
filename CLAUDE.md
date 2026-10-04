@@ -71,7 +71,7 @@ uv run mypy --platform win32   # the same tree as Windows sees it
 **`--platform win32` is a check, not a curiosity.** The application ships on Windows, and
 almost none of the suite can run there from here, so the type checker is the only reader we
 have of the Windows half — mypy skips a `sys.platform == "win32"` branch entirely on Linux,
-so that code is otherwise read by nobody until somebody runs it. It takes thirty seconds.
+so that code is otherwise read by nobody until somebody runs it.
 Keeping it clean costs one habit: **compare `sys.platform` inline where you branch on the
 platform**, never through a module constant, because mypy narrows on the comparison and a
 constant is opaque to it (`core/storage/sparse.py` is the worked example).
@@ -157,26 +157,27 @@ callback on your `Deps`, or a registry.
 
 ## Architecture: the layers
 
-Bottom to top: `core/` → `domain/` → `cli/` → `framework/` → `modules/<name>/` → the
-composition root (`modules/__init__.py`) → `app.py` and `entry.py`.
+Bottom to top: `core/` → `domain/` → `planning/` → `cli/` → `framework/` → `modules/<name>/`
+→ the composition root (`modules/__init__.py`) → `app.py` and `entry.py`.
 
-**Two of these came with the template and four are yours.** `core/` (storage, persistence
-contracts, signals) and `framework/` (everything Qt) came from app-framework. `domain/` (the
-model and its store), `cli/` (the headless surface) and `modules/` (the features) are what
-makes this application itself. The framework is still ours to evolve here — see *Deliberate
-divergences* below.
+**`core/` (storage, persistence contracts, signals) and `framework/` (everything Qt) came
+from app-framework**; `domain/` (the graph and its store), `planning/` (status, readiness,
+the schedule), `cli/` (the headless surface) and `modules/` (the features) are this
+application. The framework is still ours to evolve — see *Deliberate divergences* below.
 
 1. `core/` imports no Qt and nothing from the rest of the application.
 2. `domain/` imports no Qt, and imports `core` only. It is tested with plain pytest.
-3. `cli/` imports no Qt and nothing above `domain/`. A module's `cli.py` and `aspect.py` are
+3. `planning/` imports `core` and `domain` only. A status is a `planning.status.Status`,
+   never a word — ARCHITECTURE.md's *Planning owns status*.
+4. `cli/` imports no Qt and nothing above `planning/`. A module's `cli.py` and `aspect.py` are
    the same: importable without a graphics stack. The CLI is how an agent drives DPlanner,
    and it has to start in milliseconds on a machine with no GUI libraries at all.
-4. `framework/` never imports `modules` or the entry points.
-5. Modules never import each other. Only `modules/__init__.py` may import them all.
-6. Modules never import `AppServices`, the builder, or the concrete window. Window
+5. `framework/` never imports `modules` or the entry points.
+6. Modules never import each other. Only `modules/__init__.py` may import them all.
+7. Modules never import `AppServices`, the builder, or the concrete window. Window
    capabilities come through the protocols in `framework/window.py`.
-7. `app.py` and `entry.py` import the composition root and nothing deeper.
-8. Only `core/storage/` and the composition root name a *concrete* storage provider.
+8. `app.py` and `entry.py` import the composition root and nothing deeper.
+9. Only `core/storage/` and the composition root name a *concrete* storage provider.
    Everything else depends on the protocols in `core/storage/provider.py` — which is what
    keeps the application runnable against a folder, a git checkout or a GitHub clone without
    a single `if` anywhere in a feature.
@@ -422,15 +423,14 @@ reasoning.
   Image…* to `createStandardContextMenu()`, because a verb acting on one widget's caret
   belongs in no menu bar and would be greyed everywhere else.
 - **Derived facts are computed, never stored** — the topological order in
-  `domain/ordering.py` is the reference, and `domain/schedule.py` is the same walk carrying
+  `domain/ordering.py` is the reference, and `planning/schedule.py` is the same walk carrying
   estimates. Storing one means it can disagree with what it came from, and the CLI is what
   catches you out: `dplanner step link` changes a graph with no window running to notice.
   Availability comes from exposing the function everywhere — the view, `dplanner order show`,
   `--json` — not from writing the answer down.
-- **A domain derivation is handed a function, never a schema.** `domain/schedule.py` asks for
+- **A derivation is handed a function, never a schema.** `planning/schedule.py` asks for
   `days_for(step)` rather than reading `module_data["estimation"]`, so the module that owns
-  the estimate still owns its shape and the domain works for whatever answers next. That is
-  the same seam a module's `Deps` uses on the module layer, one level down.
+  the estimate still owns its shape — the seam a module's `Deps` uses, one level down.
 
 ## Deliberate divergences from the template
 

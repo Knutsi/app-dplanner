@@ -10,6 +10,7 @@ import pytest
 
 from dplanner.domain.model import Step
 from dplanner.modules.time_estimates.schedule import PACE_STEPS, as_planned, pace_so_far
+from dplanner.planning.status import Status
 
 MONDAY = date(2026, 9, 7)
 THURSDAY = MONDAY + timedelta(days=3)
@@ -25,7 +26,7 @@ def pace(steps, *, today=LATER, agents=(), undone=(), unstamped=(), people=3):
         [Step(title=title) for title, *_rest in steps],
         lambda step: given[step.title],
         is_agent=lambda step: step.title in agents,
-        status_for=lambda step: "" if step.title in undone else "done",
+        status_for=lambda step: Status.PENDING if step.title in undone else Status.DONE,
         started_for=lambda step: None if step.title in unstamped else started[step.title],
         since_for=lambda step: done[step.title],
         start=MONDAY,

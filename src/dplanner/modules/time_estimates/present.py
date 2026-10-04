@@ -32,7 +32,6 @@ from datetime import date
 from math import floor, log10
 
 from dplanner.domain.model import Library, Project
-from dplanner.domain.schedule import format_days, short_date
 from dplanner.modules.time_estimates.cli import Readers
 from dplanner.modules.time_estimates.progress import (
     Pick,
@@ -46,6 +45,7 @@ from dplanner.modules.time_estimates.progress import (
     until,
 )
 from dplanner.modules.time_estimates.schedule import REMAINDER_COLOR, WHOLE_COLOR, milestone_colors
+from dplanner.planning.schedule import format_days, short_date
 
 # Two amounts of work closer than this are the same: a scope that did not change.
 SAME = 1e-9

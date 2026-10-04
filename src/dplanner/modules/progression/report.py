@@ -20,15 +20,16 @@ from dplanner.cli.report.parts import (
     Table,
 )
 from dplanner.domain.model import Library, Project, Step
-from dplanner.domain.progression import progression
 from dplanner.domain.store import FilesFor
+from dplanner.planning.progression import progression
+from dplanner.planning.status import Status
 
 READY_TABLE_ID = "ready"
 
 
 def report_source(
     *,
-    status_in: Callable[[Library, date], Callable[[Step], str]],
+    status_in: Callable[[Library, date], Callable[[Step], Status]],
     counts_as_work: Callable[[Step], bool],
     days_for: Callable[[Step], float | None],
     key_of: Callable[[Step], str],

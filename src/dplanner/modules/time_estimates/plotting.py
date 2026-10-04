@@ -16,7 +16,7 @@ from datetime import date, timedelta
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QFontMetricsF, QPainter, QPainterPath, QPen, QPolygonF
 
-from dplanner.domain.schedule import Tick, axis_ticks
+from dplanner.planning.schedule import Tick, axis_ticks
 from dplanner.theme.tokens import SECONDARY_ALPHA
 
 # How far apart the date labels under an axis sit at the least.

@@ -4,7 +4,7 @@ A plain link is fulfilled when its source is done. A step that exists to take pa
 and land it — three agents' branches merged by a fourth — cannot wait for that, because its
 sources are done only once it has landed them. So the step that waits may name some of the
 steps it requires, ``{"from": [source ids]}``, and each of those links is fulfilled as soon as
-its source reads ready for review or ready to merge (``domain/progression.py``'s
+its source reads ready for review or ready to merge (``planning/progression.py``'s
 ``outstanding``). The step then takes each source's work, lands it and sets the source done.
 
 **A listed id counts only while the link exists.** The flag is read *through* the edge —

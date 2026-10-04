@@ -23,6 +23,7 @@ from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_u
 from dplanner.modules.library_watch import module as watch_module
 from dplanner.modules.library_watch.view import AGENT, LATER, MINE, THEIRS
 from dplanner.modules.step_agent_instruction import launcher
+from dplanner.planning.status import Status
 
 
 def module(session):
@@ -339,7 +340,7 @@ def test_resolving_a_conflict_does_not_claim_the_step_is_in_progress(
 ):
     """That agent merges two writers' plan files; it is not doing the step's work, so the
     launch that starts it makes no claim about where the work stands."""
-    from dplanner.modules.step_status.aspect import read as status_of
+    from dplanner.planning.status import stored as status_of
 
     services = session.services
     services.undo.push(SetFieldCommand(step.id, "title", "Typed here"))
@@ -350,7 +351,7 @@ def test_resolving_a_conflict_does_not_claim_the_step_is_in_progress(
     monkeypatch.setattr(launcher, "spawn", lambda _command, _workdir, **_kw: None)
     FakeDialog.answer = AGENT
     module(session)._ask()
-    assert status_of(services.document.step(step.id)) == "pending"
+    assert status_of(services.document.step(step.id)) is Status.PENDING
 
 
 def test_a_conflict_is_settled_where_the_plan_lives_not_in_the_code_checkout(

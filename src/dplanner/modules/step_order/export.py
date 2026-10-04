@@ -14,8 +14,8 @@ Qt-free by design, so the rows could feed a CLI verb without touching a window.
 from collections.abc import Callable, Sequence
 
 from dplanner.domain.model import StepId
-from dplanner.domain.schedule import Scheduled
 from dplanner.modules.step_order.cli import wave_label
+from dplanner.planning.schedule import Scheduled
 
 HEADERS = (
     "#",

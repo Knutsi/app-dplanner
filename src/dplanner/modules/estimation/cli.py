@@ -17,15 +17,6 @@ from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import find_project, find_step, project_arg, step_arg
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, Project, Step
-from dplanner.domain.schedule import (
-    CriticalPath,
-    Scheduled,
-    format_date,
-    format_day_count,
-    format_days,
-    volume,
-    volume_words,
-)
 from dplanner.domain.shelf import turn_off
 from dplanner.domain.store import FilesFor
 from dplanner.modules.estimation.aspect import MODULE_ID, enabled, read, read_history, write
@@ -37,6 +28,15 @@ from dplanner.modules.estimation.schedule import (
     read_start,
     start_of,
     write_start,
+)
+from dplanner.planning.schedule import (
+    CriticalPath,
+    Scheduled,
+    format_date,
+    format_day_count,
+    format_days,
+    volume,
+    volume_words,
 )
 
 

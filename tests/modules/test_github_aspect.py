@@ -20,7 +20,8 @@ from dplanner.domain.store import LibraryStore
 from dplanner.modules.github import cli as github_cli
 from dplanner.modules.github.aspect import GithubRefs, read, summary, write
 from dplanner.modules.github.gh import PrInfo
-from dplanner.modules.step_status.aspect import read as status_read
+from dplanner.planning.status import Status, Unknown
+from dplanner.planning.status import stored as status_read
 
 MERGED = PrInfo(number=12, title="Add login flow", state="merged", url="u12", head_ref="feat/login")
 OPEN = PrInfo(number=7, title="Fix crash", state="open", url="u7", head_ref="fix/crash")
@@ -68,7 +69,7 @@ def first_step(library):
     return library.projects[0].steps[0]
 
 
-def status_of(library, title: str) -> str:
+def status_of(library, title: str) -> Status | Unknown:
     steps = (step for project in library.projects for step in project.steps)
     return status_read(next(step for step in steps if step.title == title))
 
@@ -230,16 +231,16 @@ def test_refresh_finishes_a_step_waiting_on_its_merge(cli, origin, reload, gh_pr
 
     report = json.loads(cli("github", "refresh", "--json"))
     assert report == {"checked": 2, "updated": 2, "finished": 1}
-    assert status_of(reload(), "Read the spec") == "done"
+    assert status_of(reload(), "Read the spec") is Status.DONE
     # A merged PR says nothing about work nobody has accepted.
-    assert status_of(reload(), "Write the docs") == "in-progress"
+    assert status_of(reload(), "Write the docs") is Status.IN_PROGRESS
 
     # Accepted after its PR merged: the stored state is enough, and nothing is fetched.
     cli("status", "set", "Write the docs", "ready-to-merge")
     monkeypatch.setattr(github_cli, "view_pr", lambda repo, number: pytest.fail("fetched"))
     report = json.loads(cli("github", "refresh", "--json"))
     assert report == {"checked": 0, "updated": 0, "finished": 1}
-    assert status_of(reload(), "Write the docs") == "done"
+    assert status_of(reload(), "Write the docs") is Status.DONE
 
 
 def test_each_projects_own_repository_answers_for_its_steps(

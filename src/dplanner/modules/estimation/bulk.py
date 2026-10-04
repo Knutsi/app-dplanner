@@ -33,7 +33,6 @@ from PySide6.QtWidgets import QComboBox, QHBoxLayout, QMenu, QVBoxLayout, QWidge
 
 from dplanner.domain.model import Library, NodeId, Project, Step, StepId
 from dplanner.domain.ordering import placed
-from dplanner.domain.schedule import volume, volume_words
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.activity import EntityActivity, follow_project, project_tab_title
 from dplanner.framework.context import (
@@ -61,6 +60,7 @@ from dplanner.modules.estimation.quick_input import (
     push_estimate,
     size_tip,
 )
+from dplanner.planning.schedule import volume, volume_words
 from dplanner.theme.tokens import CAPTION_GAP, FIELD_GAP, PANEL_MARGIN, SECTION_GAP
 
 if TYPE_CHECKING:

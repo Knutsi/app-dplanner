@@ -39,6 +39,7 @@ from dplanner.modules.time_estimates.progress import (
     volume,
     write_history,
 )
+from dplanner.planning.status import Status
 
 MONDAY = date(2026, 9, 7)
 NOBODY = None  # is_agent: nobody; every step is human work.
@@ -74,7 +75,7 @@ def milestones(*titles):
 
 
 def done(*titles):
-    return lambda step: "done" if step.title in titles else "pending"
+    return lambda step: Status.DONE if step.title in titles else Status.PENDING
 
 
 def snapshot(plan, *, finished=("A", "B"), closing=("B", "D"), today=date(2026, 9, 10)) -> Snapshot:

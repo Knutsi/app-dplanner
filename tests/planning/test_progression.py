@@ -1,8 +1,9 @@
 """What can be launched right now, given the graph and the stored statuses.
 
 No ``qapp`` fixture, like ``test_ordering.py``: the walk is a plain function over the
-model. Statuses arrive as a function built from a dict — the same shape the composition
-root wires in, and the same trick ``test_schedule.py`` plays with ``days_of``.
+model. Statuses arrive as a function built from a dict of the words on disk, read the way the
+composition root reads them (``status.held``) — the same trick ``test_schedule.py`` plays
+with ``days_of``.
 """
 
 from datetime import date, timedelta
@@ -10,7 +11,7 @@ from datetime import date, timedelta
 from dplanner.domain.commands import SetEdgesCommand
 from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.ordering import ready
-from dplanner.domain.progression import (
+from dplanner.planning.progression import (
     across,
     due,
     estimated_progress,
@@ -19,6 +20,7 @@ from dplanner.domain.progression import (
     progression,
     taken,
 )
+from dplanner.planning.status import Status, Unknown, Waiting, readiness_of
 
 
 def build(*titles):
@@ -41,9 +43,22 @@ def link(library, project, waiter, source):
     SetEdgesCommand(step.id, "requires", waiting).redo(library)
 
 
+WORDS = {status.value: status for status in Status}
+
+
+def stored_of(statuses):
+    """What each step stores, from a dict of titles to words, absent meaning pending."""
+
+    def stored(step):
+        word = statuses.get(step.title, "pending")
+        return WORDS[word] if word in WORDS else Unknown(word)
+
+    return stored
+
+
 def status_of(statuses):
-    """A ``status_for`` from a dict of titles, absent meaning pending."""
-    return lambda step: statuses.get(step.title, "pending")
+    """A ``status_for`` from a dict of titles to words, as readiness reads it."""
+    return readiness_of(stored_of(statuses))
 
 
 def titles(steps):
@@ -113,10 +128,12 @@ def test_out_of_order_completion_is_honoured_not_refused():
     assert found.percent == 25.0
 
 
-def test_an_unknown_status_word_reads_as_pending():
-    library, project = build("A")
+def test_an_unknown_status_word_holds_its_step_beside_the_blocked_ones():
+    library, project = build("A", "B")
+    link(library, project, "B", "A")
     found = progression(library, project, status_of({"A": "on-fire"}))
-    assert titles(found.ready) == ["A"]
+    assert titles(found.attention) == ["A"] and found.ready == ()
+    assert titles(found.upcoming[0].after) == ["A"]  # Not done: B still waits on it.
 
 
 def test_the_frontier_ranks_by_what_finishing_unlocks():
@@ -410,7 +427,7 @@ MONDAY = date(2026, 9, 7)
 
 def held_by_a_wait(wait, statuses, since=None, today=MONDAY):
     """A, then a wait W on A, then B on W: what the board makes of it on ``today``."""
-    from dplanner.domain.schedule import wait_status
+    from dplanner.planning.schedule import wait_status
 
     library, project = build("A", "W", "B")
     link(library, project, "W", "A")
@@ -419,49 +436,46 @@ def held_by_a_wait(wait, statuses, since=None, today=MONDAY):
     named["W"].created = "2026-09-01T12:00:00"  # made the week before, not the machine's day
     status = wait_status(
         library,
-        status_of(statuses),
+        stored_of(statuses),
         lambda step: (since or {}).get(step.title),
         lambda step: wait if step is named["W"] else None,
         today,
     )
-    found = progression(library, project, status, lambda step: step is not named["W"])
+    found = progression(library, project, readiness_of(status), lambda step: step is not named["W"])
     return found, status(named["W"])
 
 
 def test_a_wait_is_no_work_and_holds_what_follows_it_until_its_day():
-    from dplanner.domain.progression import DONE, WAITING
-    from dplanner.domain.schedule import Wait
+    from dplanner.planning.schedule import Wait
 
     wednesday = MONDAY + timedelta(days=2)
     found, wait = held_by_a_wait(Wait(until=wednesday), {"A": "done"}, today=MONDAY)
-    assert wait == WAITING
+    assert wait == Waiting()
     assert titles(found.done) == ["A"] and found.total == 2  # the wait is on no lane
     assert titles(found.waiting) == ["B"] and found.ready == ()
     found, wait = held_by_a_wait(Wait(until=wednesday), {"A": "done"}, today=wednesday)
-    assert wait == DONE
+    assert wait is Status.DONE
     assert titles(found.ready) == ["B"]
     assert found.percent == 50.0  # of the work: A of A and B
 
 
 def test_a_wait_holds_while_what_it_waits_on_is_not_done():
-    from dplanner.domain.progression import WAITING
-    from dplanner.domain.schedule import Wait
+    from dplanner.planning.schedule import Wait
 
     found, wait = held_by_a_wait(Wait(until=MONDAY), {}, today=MONDAY + timedelta(days=7))
-    assert wait == WAITING and titles(found.ready) == ["A"]
+    assert wait == Waiting() and titles(found.ready) == ["A"]
     assert found.unlocks[found.ready[0].id] == 1  # B, and not the wait: it is no work
 
 
 def test_a_days_wait_is_over_once_its_days_are_waited():
     """Three working days from A's Monday, middle to middle: over on Thursday."""
-    from dplanner.domain.progression import DONE, WAITING
-    from dplanner.domain.schedule import Wait
+    from dplanner.planning.schedule import Wait
 
     done = {"A": "done"}
     since = {"A": MONDAY}
     wednesday, thursday = MONDAY + timedelta(days=2), MONDAY + timedelta(days=3)
-    assert held_by_a_wait(Wait(days=3.0), done, since, wednesday)[1] == WAITING
-    assert held_by_a_wait(Wait(days=3.0), done, since, thursday)[1] == DONE
+    assert held_by_a_wait(Wait(days=3.0), done, since, wednesday)[1] == Waiting()
+    assert held_by_a_wait(Wait(days=3.0), done, since, thursday)[1] is Status.DONE
 
 
 # -- several projects, one board ----------------------------------------------------------------

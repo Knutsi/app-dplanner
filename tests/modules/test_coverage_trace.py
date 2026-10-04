@@ -20,6 +20,7 @@ from dplanner.modules.coverage.trace import (
     build,
     milestone_token,
 )
+from dplanner.planning.status import Status
 
 SPEC_TEXT = """# Auth
 
@@ -130,7 +131,7 @@ def readers(project) -> Readers:
         milestone_kind=ScopeKind("step_milestone", "Milestone", is_milestone, is_milestone),
         milestone_label=lambda step: "M1" if step.id == m1.id else "",
         step_key=lambda step: f"key-{step.title}",
-        status=lambda step: "done" if step.id == export.id else "",
+        status=lambda step: Status.DONE if step.id == export.id else Status.PENDING,
         tests=tests_of,
         results=lambda _p: {"T100": "ok", "T102": "failed"},
         docs=lambda _l, _p, step_id: {imp.id: "current", m1.id: "stale"}.get(step_id, ""),
@@ -188,7 +189,7 @@ def test_the_columns_hold_documents_passages_features_milestones_steps_tests_and
     # Nobody said who works the steps, so every block carries its key alone.
     assert item(trace, f"step:{work.id}").glyph == ("", "")
     assert item(trace, f"step:{export.id}").tone == "good"
-    assert item(trace, f"step:{export.id}").status == "done"
+    assert item(trace, f"step:{export.id}").status is Status.DONE
     assert item(trace, f"step:{login.id}").features == {milestone_token(m1.id)}
 
 
@@ -374,7 +375,7 @@ def test_a_feature_holds_what_its_kind_says_and_no_more():
         milestone_kind=ScopeKind("step_milestone", "Milestone", lambda _s: False, lambda _s: False),
         milestone_label=lambda _step: "",
         step_key=lambda step: step.title,
-        status=lambda _step: "",
+        status=lambda _step: Status.PENDING,
         tests=lambda _l, _p, _s, _stops: [],
         results=lambda _p: {},
         docs=lambda _l, _p, _s: "",

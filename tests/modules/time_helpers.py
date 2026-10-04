@@ -18,6 +18,7 @@ from typing import Any
 
 from dplanner.modules.time_estimates.schedule import FocusChange
 from dplanner.modules.time_estimates.simulation.frames import Frame, PlanState, StepState
+from dplanner.planning.status import Status
 
 FIXTURE = Path(__file__).parent.parent / "fixtures" / "time" / "parity.json.gz"
 
@@ -48,7 +49,7 @@ def _step_state(raw: dict[str, Any]) -> StepState:
         agent=raw["agent"],
         created=_day(raw["created"]),
         start=_day(raw["start"]),
-        status=raw["status"],
+        status=Status(raw["status"]),
         since=_day(raw["since"]),
         started=_day(raw["started"]),
     )

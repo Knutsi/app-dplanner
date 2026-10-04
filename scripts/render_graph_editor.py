@@ -77,7 +77,6 @@ from dplanner.cli.report.parts import Graph
 from dplanner.core.storage.locations import init_repo
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
 from dplanner.domain.model import Step, StepId
-from dplanner.domain.schedule import Wait
 from dplanner.domain.seed import create_library, seed_project
 from dplanner.framework.services import AppServices
 from dplanner.framework.session import AppSession
@@ -111,11 +110,12 @@ from dplanner.modules.step_milestone.aspect import write as milestone_write
 from dplanner.modules.step_review.aspect import MODULE_ID as REVIEW_ID
 from dplanner.modules.step_review.aspect import ReviewSettings
 from dplanner.modules.step_review.aspect import write as review_write
-from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
-from dplanner.modules.step_status.aspect import read as status_for
-from dplanner.modules.step_status.aspect import write as status_write
 from dplanner.modules.step_wait.aspect import MODULE_ID as WAIT_ID
 from dplanner.modules.step_wait.aspect import write as wait_write
+from dplanner.planning.schedule import Wait
+from dplanner.planning.status import MODULE_ID as STATUS_ID
+from dplanner.planning.status import Status, stored
+from dplanner.planning.status import write as status_write
 from dplanner.theme import apply_theme
 from dplanner.theme.themes import DARK, LIGHT, Theme
 
@@ -155,18 +155,21 @@ CARDS = (
     (
         (
             "Map the columns",
-            ((AGENT_ID, agent_write(True)), (STATUS_ID, status_write("in-progress", today=DAY))),
+            (
+                (AGENT_ID, agent_write(True)),
+                (STATUS_ID, status_write(Status.IN_PROGRESS, today=DAY)),
+            ),
         ),
         (
             "Parse the dates",
             (
                 (AGENT_ID, agent_write(True)),
-                (STATUS_ID, status_write("ready-for-review", today=DAY)),
+                (STATUS_ID, status_write(Status.READY_FOR_REVIEW, today=DAY)),
             ),
         ),
-        ("Stage the loader", ((STATUS_ID, status_write("ready-to-merge", today=DAY)),)),
-        ("Load the fixtures", ((STATUS_ID, status_write("blocked", today=DAY)),)),
-        ("Read the spec", ((STATUS_ID, status_write("done", today=DAY)),)),
+        ("Stage the loader", ((STATUS_ID, status_write(Status.READY_TO_MERGE, today=DAY)),)),
+        ("Load the fixtures", ((STATUS_ID, status_write(Status.BLOCKED, today=DAY)),)),
+        ("Read the spec", ((STATUS_ID, status_write(Status.DONE, today=DAY)),)),
     ),
 )
 CARDS_SIZE = (1400, 520)
@@ -553,7 +556,9 @@ def render_auto_progress(app: QApplication, theme: Theme, out: Path, workspace: 
         SetModuleDataCommand(step.id, "estimation", estimate_write(0.25)).redo(library)
         SetModuleDataCommand(step.id, AGENT_ID, agent_write(True)).redo(library)
         for status, run in states:
-            SetModuleDataCommand(step.id, STATUS_ID, status_write(status, today=DAY)).redo(library)
+            SetModuleDataCommand(step.id, STATUS_ID, status_write(Status(status), today=DAY)).redo(
+                library
+            )
             if run:
                 SetModuleDataCommand(step.id, AGENT_RUN_ID, agent_run_write(run)).redo(library)
         made.append(step.id)
@@ -648,7 +653,7 @@ def render_stacks(app: QApplication, theme: Theme, out: Path, workspace: Path) -
         _report_sources(),
         key_of=_step_key,
         kind_of=_step_kind,
-        status_for=status_for,
+        status_for=stored,
         today=DAY,
     )
     graph = next(part for part in report.sections["plan"] if isinstance(part, Graph))
@@ -694,7 +699,9 @@ def render_review(app: QApplication, theme: Theme, out: Path, workspace: Path) -
         SetModuleDataCommand(step.id, "estimation", estimate_write(0.25)).redo(library)
         SetModuleDataCommand(step.id, AGENT_ID, agent_write(True)).redo(library)
         if status:
-            SetModuleDataCommand(step.id, STATUS_ID, status_write(status, today=DAY)).redo(library)
+            SetModuleDataCommand(step.id, STATUS_ID, status_write(Status(status), today=DAY)).redo(
+                library
+            )
         if review:
             SetModuleDataCommand(step.id, REVIEW_ID, review_write(ReviewSettings())).redo(library)
             SetModuleDataCommand(step.id, AGENT_RUN_ID, agent_run_write("working")).redo(library)
@@ -761,7 +768,9 @@ def render_flow(app: QApplication, theme: Theme, out: Path, workspace: Path) -> 
         if agent:
             SetModuleDataCommand(step.id, AGENT_ID, agent_write(True)).redo(library)
         if status:
-            SetModuleDataCommand(step.id, STATUS_ID, status_write(status, today=DAY)).redo(library)
+            SetModuleDataCommand(step.id, STATUS_ID, status_write(Status(status), today=DAY)).redo(
+                library
+            )
         if run:
             SetModuleDataCommand(step.id, AGENT_RUN_ID, agent_run_write(run)).redo(library)
         if review:
@@ -1038,9 +1047,13 @@ def render_branches(app: QApplication, theme: Theme, out: Path, workspace: Path)
     for name, states in BRANCH_STATES.items():
         for index, step_id in enumerate(made):
             word = states.get(index, "pending")
-            SetModuleDataCommand(step_id, STATUS_ID, status_write(word, today=DAY)).redo(library)
+            SetModuleDataCommand(step_id, STATUS_ID, status_write(Status(word), today=DAY)).redo(
+                library
+            )
         word = states.get("land", "pending")
-        SetModuleDataCommand(land.id, STATUS_ID, status_write(word, today=DAY)).redo(library)
+        SetModuleDataCommand(land.id, STATUS_ID, status_write(Status(word), today=DAY)).redo(
+            library
+        )
         page.setParent(None)
         page.resize(*BRANCH_SIZE)
         page.show()
@@ -1082,7 +1095,9 @@ def render_waves(app: QApplication, theme: Theme, out: Path, workspace: Path) ->
         SetModuleDataCommand(step.id, "estimation", estimate_write(days)).redo(library)
         library.set_text(step.id, "step_description", f"{title}, in full.")
         if status:
-            SetModuleDataCommand(step.id, STATUS_ID, status_write(status, today=DAY)).redo(library)
+            SetModuleDataCommand(step.id, STATUS_ID, status_write(Status(status), today=DAY)).redo(
+                library
+            )
         made.append(step.id)
     for index, (*_rest, sources, _seat) in enumerate(WAVE_PLAN):
         if sources:

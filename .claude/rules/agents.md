@@ -34,7 +34,7 @@ paths:
   (below).
   **A launch that opened a shell claims the step is in progress** — `mark_started`, the
   writer half of that same seam, applied off the undo stack the way the launch stamp is
-  (`step_status`'s `record_started`), because Ctrl+Z must not file a step as pending while
+  (`planning/status.py`'s `record_started`), because Ctrl+Z must not file a step as pending while
   an agent works in it. Over a selection it is claimed per step as each shell opens, so a
   run that stopped at its third step has claimed two. It is the *Agent profiles ▸ On launch* switch
   beside *Max agents launched at once*, on by default: the agent's own first report is

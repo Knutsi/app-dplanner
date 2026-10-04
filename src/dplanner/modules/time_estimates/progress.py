@@ -9,7 +9,7 @@ days must not make. The count is still tallied and printed in words, never as th
 Everything here is derived on every read from the statuses and the estimates
 (``ordering.py``'s rule), never stored — except the past.
 
-**Expected progress is the simulation's own curve.** ``domain/schedule.py``'s
+**Expected progress is the simulation's own curve.** ``planning/schedule.py``'s
 ``parallel_finish`` says on which working day each step lands; ``phases`` carries that
 per stretch, and a :class:`Stretch` keeps it as :class:`Landing` knots — what lands on
 each date. :func:`expected` turns the knots into a share landed by date: the plan's own
@@ -65,8 +65,8 @@ from typing import Any, Literal
 from dplanner.core.module_data import ModuleDataFormat, stamped
 from dplanner.domain.model import Library, Project, Step, local_day
 from dplanner.domain.ordering import cyclic
-from dplanner.domain.progression import DONE
-from dplanner.domain.schedule import (
+from dplanner.modules.time_estimates.schedule import stretched
+from dplanner.planning.schedule import (
     Phase,
     ScheduleFacts,
     Wait,
@@ -77,7 +77,7 @@ from dplanner.domain.schedule import (
     phases,
     working_days_between,
 )
-from dplanner.modules.time_estimates.schedule import stretched
+from dplanner.planning.status import Status
 
 HISTORY_ID = "progress_history"
 ROWS_KEY = "days"
@@ -262,7 +262,7 @@ def take(
     project: Project,
     days_for: Callable[[Step], float | None],
     is_agent: Callable[[Step], bool],
-    status_for: Callable[[Step], str],
+    status_for: Callable[[Step], Status],
     changed_on: Callable[[Step], date | None],
     *,
     humans: int,
@@ -301,7 +301,7 @@ def snapshot_of(
     phases: Sequence[Phase],
     day: date,
     days_for: Callable[[Step], float | None],
-    status_for: Callable[[Step], str],
+    status_for: Callable[[Step], Status],
     changed_on: Callable[[Step], date | None],
     wait_of: Callable[[Step], Wait | None] = no_wait,
 ) -> Snapshot:
@@ -390,13 +390,13 @@ def landings(
 def tally(
     steps: Sequence[Step],
     days_for: Callable[[Step], float | None],
-    status_for: Callable[[Step], str],
+    status_for: Callable[[Step], Status],
 ) -> Tally:
     """What these steps amount to, and how much of it reads done."""
     total = Tally()
     for step in steps:
         days = days_for(step) or 0.0
-        landed = status_for(step) == DONE
+        landed = status_for(step) is Status.DONE
         total = total + Tally(1, int(landed), days, days if landed else 0.0)
     return total
 

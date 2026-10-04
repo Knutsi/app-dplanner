@@ -13,8 +13,6 @@ from typing import Any
 import pytest
 from tests.modules.time_helpers import frame_of, run_id, runs
 
-from dplanner.domain.progression import IN_PROGRESS
-from dplanner.domain.schedule import next_working_day
 from dplanner.modules import _time_readers, _time_writers
 from dplanner.modules.time_estimates.progress import read_history, read_saved
 from dplanner.modules.time_estimates.simulation.accuracy import timeline_accuracy
@@ -39,6 +37,8 @@ from dplanner.modules.time_estimates.simulation.scenarios import (
 )
 from dplanner.modules.time_estimates.simulation.timeline import Timeline, recorder_ran
 from dplanner.modules.time_estimates.simulation.world import run
+from dplanner.planning.schedule import next_working_day
+from dplanner.planning.status import Status
 
 MONDAY = SAMPLE_START
 
@@ -113,7 +113,7 @@ def test_a_milestone_lands_the_moment_its_work_does_however_busy_the_team_is():
 def test_a_person_multitasking_keeps_two_steps_going_and_never_three():
     played = _played("multitasking", 1)
     going = [
-        sum(1 for step in day.steps if not step.agent and step.status == IN_PROGRESS)
+        sum(1 for step in day.steps if not step.agent and step.status is Status.IN_PROGRESS)
         for day in played.days
     ]
     assert max(going) == 2
@@ -241,12 +241,12 @@ def test_time_reads_a_step_under_review_as_work_still_in_flight():
         (step for step in plan.steps if step.requires == (start.id,) and not step.agent),
         key=lambda step: step.estimate or 0.0,
     )
-    working = replace(first, status=IN_PROGRESS, since=MONDAY, started=MONDAY)
-    done = replace(start, status="done", since=MONDAY, started=MONDAY)
+    working = replace(first, status=Status.IN_PROGRESS, since=MONDAY, started=MONDAY)
+    done = replace(start, status=Status.DONE, since=MONDAY, started=MONDAY)
     replay.apply(Frame(day=MONDAY, steps=(done, working)))
     later = MONDAY + timedelta(days=2)  # Wednesday: two working days in.
     before = replay.forecast(later)
-    for word in ("ready-for-review", "ready-to-merge"):
+    for word in (Status.READY_FOR_REVIEW, Status.READY_TO_MERGE):
         replay.apply(Frame(day=later, steps=(replace(working, status=word, since=later),)))
         after = replay.forecast(later)
         assert before is not None and after is not None
@@ -261,4 +261,4 @@ def test_the_world_plays_the_prototypes_four_words_and_no_others(scenario):
     back over a plan, because nothing here writes one at all."""
     frames = scenario.play(1).frames()
     words = {state.status for frame in frames for state in frame.steps}
-    assert words <= {"pending", "in-progress", "done", "blocked"}
+    assert words <= {Status.PENDING, Status.IN_PROGRESS, Status.DONE, Status.BLOCKED}

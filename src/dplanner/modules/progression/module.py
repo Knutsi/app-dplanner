@@ -7,7 +7,7 @@ person — Blocked, Waits for you, Ready to merge, Ready for review, Ready to st
 Waiting, what cannot start yet, last. Work an agent is doing is not listed: it needs
 nobody — unless the agent waits on a person, a plan to approve or a question to answer,
 which is *Waits for you* (``asks_person``, the agent-run aspect's reading). The walk
-itself is the domain's (``domain/progression.py``) — this module renders it and adds
+itself is the domain's (``planning/progression.py``) — this module renders it and adds
 nothing to the model, so the tabs, ``dplanner progression show`` and ``--json`` can never
 disagree.
 
@@ -57,7 +57,6 @@ from PySide6.QtWidgets import QHBoxLayout, QMenu, QVBoxLayout, QWidget
 
 from dplanner.core.clock import Clock
 from dplanner.domain.model import Library, NodeId, Project, Step, StepId
-from dplanner.domain.progression import Progression, merge, progression
 from dplanner.domain.short_titles import UNTITLED
 from dplanner.framework.action_menu import Band, build_menu, fill_bands
 from dplanner.framework.action_registry import (
@@ -91,6 +90,8 @@ from dplanner.framework.tabs import TabHost
 from dplanner.framework.toolbar import FilterButton, Toolbar
 from dplanner.framework.widgets import EmptyState
 from dplanner.modules.progression.view import ALL, GROUPS, StatusTable, needing_a_person
+from dplanner.planning.progression import Progression, merge, progression
+from dplanner.planning.status import Status
 from dplanner.theme.icons import gauge_icon
 from dplanner.theme.tokens import FIELD_GAP, PANEL_MARGIN, SECTION_GAP
 
@@ -112,8 +113,8 @@ NOTHING_NEEDED = "Nothing needs you right now."
 ROW_MENU: Final = (Band("Step", ("agent", "open", "surfaces")),)
 
 
-def _pending(_step: Step) -> str:
-    return "pending"
+def _pending(_step: Step) -> Status:
+    return Status.PENDING
 
 
 def _no_badge(_step_id: StepId) -> QIcon | None:
@@ -142,7 +143,7 @@ class ProgressionDeps:
     # The status claims, as answers — a wait read done once it is over. Wired by the
     # composition root from the status aspect's Qt-free reader; the honest default is a
     # build where nothing is claimed.
-    status_for: Callable[[Step], str] = field(default=_pending)
+    status_for: Callable[[Step], Status] = field(default=_pending)
     # Whose day it is: a wait is over on a day, so the boards re-run when it turns.
     clock: Clock = field(default_factory=Clock)
     # Whether a step is work at all: a wait is not, and is on no row and in no count.

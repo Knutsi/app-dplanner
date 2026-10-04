@@ -49,12 +49,13 @@ from dplanner.modules.spec.documents import SpecIndex, import_document, write_in
 from dplanner.modules.step_agent_instruction.aspect import write_state as agent_state
 from dplanner.modules.step_check.aspect import write as check
 from dplanner.modules.step_milestone.aspect import write as milestone
-from dplanner.modules.step_status.aspect import write as status
 from dplanner.modules.testing import runs
 from dplanner.modules.testing.aspect import Test
 from dplanner.modules.testing.aspect import write as tests
 from dplanner.modules.testing.filing import Category, write_catalog
 from dplanner.modules.time_estimates.schedule import write_project
+from dplanner.planning.status import Status
+from dplanner.planning.status import write as status
 
 PROJECTS = (("big", "Big"), ("sibling", "Sibling"), ("small", "Small"))
 SMALL_STEPS = 20
@@ -134,7 +135,7 @@ def _fill(library: Library, project: Project, count: int, unplaced: float) -> No
                 library
             )
         word = _status(index, count)
-        if word != "pending":
+        if word is not Status.PENDING:
             SetModuleDataCommand(step.id, "step_status", status(word, today=date.today())).redo(
                 library
             )
@@ -213,14 +214,14 @@ def _title(index: int) -> str:
     return f"{verbs[index % len(verbs)]} the {words[(index // 3) % len(words)]}"
 
 
-def _status(index: int, count: int) -> str:
+def _status(index: int, count: int) -> Status:
     if index < count * 0.3:
-        return "done"
+        return Status.DONE
     if index < count * 0.4:
-        return "in-progress"
+        return Status.IN_PROGRESS
     if index % 37 == 0:
-        return "blocked"
-    return "pending"
+        return Status.BLOCKED
+    return Status.PENDING
 
 
 def _runs(test_ids: list[str]) -> list[runs.Run]:
