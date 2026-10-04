@@ -11,8 +11,8 @@ it is accepted and waits on its merge — where an agent stops, never at done.
 
 The words are the progression walk's (``domain/progression.py``), imported rather than
 copied, so the derivation and the store cannot disagree about one. Two new words cost no
-format bump: an older build reads a word it does not know as pending and leaves it on
-disk (:func:`read`).
+format bump: an older build reads a word it does not know as ``unknown`` — which holds the
+step — and leaves it on disk (:func:`read`).
 
 **A status remembers two days** (format 2), the facts the Time tab dates work by:
 ``since``, the day it last changed, and ``started``, the day the step first went into any
@@ -37,6 +37,7 @@ from dplanner.domain.progression import (
     READY_FOR_REVIEW,
     READY_TO_MERGE,
     REVIEW_AND_MERGE,
+    UNKNOWN,
     phrase,
 )
 
@@ -79,15 +80,19 @@ MERGED_ORIGIN: Final[object] = object()
 
 
 def read(step: Step) -> str:
-    """The step's status. Absent or unreadable data reads as ``pending``, never as an error.
+    """The step's status: a word of :data:`STATUSES`, or :data:`UNKNOWN` — never an error.
 
-    An unknown word — perhaps written by a newer build — is also read as ``pending``: this
-    build cannot act on a state it does not know, but it must not crash over one either.
-    The unknown entry itself is left on disk untouched.
+    Three cases, kept apart: a known word reads as itself; no entry, or one with no
+    ``status`` key, reads as ``pending`` (absence encodes the default); any other word —
+    perhaps written by a newer build — reads as ``unknown``. Reading that as pending would
+    make the step due again, so ``unknown`` holds it instead (``domain/progression.py``),
+    and the entry itself is left on disk untouched.
     """
     entry = step.module_data.get(MODULE_ID)
     status = entry.get("status") if entry else None
-    return status if status in STATUSES else PENDING
+    if status is None:
+        return PENDING
+    return status if status in STATUSES else UNKNOWN
 
 
 def _day(entry: dict[str, Any] | None, key: str) -> date | None:

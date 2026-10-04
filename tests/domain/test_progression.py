@@ -291,6 +291,16 @@ def test_only_an_agent_step_nobody_started_and_no_run_holds_is_due():
     assert launched == []
 
 
+def test_an_unknown_status_holds_a_step_it_is_never_due_and_never_ready():
+    """A word a newer build wrote: guessing pending would launch the step again."""
+    library, project, auto = collector()
+    statuses = status_of({**ALL_SOURCES_IN, "P": "done", "C": "unknown"})
+    assert due(library, project, statuses, auto, agents("C")) == []
+    found = progression(library, project, statuses, auto_progresses=auto)
+    assert "C" not in titles(found.ready)
+    assert titles(found.attention) == ["C"]
+
+
 def test_a_wait_is_never_due():
     library, project, auto = collector()
     statuses = status_of({**ALL_SOURCES_IN, "P": "done"})

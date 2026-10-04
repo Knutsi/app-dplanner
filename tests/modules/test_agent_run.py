@@ -1086,6 +1086,20 @@ def test_a_described_agent_step_is_runnable_without_a_separate_instruction(servi
     assert state.enabled
 
 
+def test_a_step_whose_status_a_newer_build_wrote_is_greyed_with_the_reason(services, step):
+    """An unknown status holds the step: a launch would claim in-progress over the word."""
+    from dplanner.domain.commands import SetModuleDataCommand
+    from dplanner.modules.step_agent_instruction.aspect import MODULE_ID, write_state
+
+    services.undo.push(SetModuleDataCommand(step.id, MODULE_ID, write_state(True)))
+    services.document.set_text(step.id, "step_description", "What this step is.")
+    services.undo.push(SetModuleDataCommand(step.id, "step_status", {"status": "paused"}))
+    select(services, step)
+    state = services.actions.spec("agent.run").state(services.context.current())
+    assert state.visible and not state.enabled
+    assert state.label is not None and "newer DPlanner" in state.label
+
+
 def test_without_a_repository_the_reason_says_so(services, step, library_repo):
     """A project whose folder lost its repository: greyed, and the label explains."""
     import shutil
