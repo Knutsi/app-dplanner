@@ -4949,3 +4949,38 @@ a foreign change, which makes a mid-gesture refusal ordinary rather than rare.
 
 **Upstream?** Yes. Any application whose commands can refuse needs a gesture that is atomic
 on replay, and the template's `_Gesture` is the same loop.
+
+## 77. From S2 (two writers): `write_atomic` writes through a unique temporary
+
+### `core/fsio.py` — `write_atomic` takes its temporary from `mkstemp`, not `.<name>.tmp`
+
+**What.** Every write of a path used to go through the same `.<name>.tmp` beside it. Now each
+call gets its own (`tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")`), is chmodded
+to the target's mode (or 0644 for a new file, what `write_text` gave — mkstemp makes 0600),
+replaced into place with `os.replace`, and unlinked if anything fails on the way.
+
+**Why.** Two processes write one path here — a window and the CLI, or two windows — and the
+review's probe paused writer A before its rename, let writer B finish, and A's `replace`
+raised `FileNotFoundError`: B had renamed A's temporary away. Worse, an interleaving one step
+earlier renames the other writer's half-written bytes. `tests/core/test_fsio.py` reproduces
+the interleaving without threads.
+
+**Upstream?** Yes. The template's `write_atomic` has the same shared name, and any
+application with a second writer (a CLI, a sync) meets it.
+
+## 78. From the structural review (S6): one detached spawn
+
+### `core/process.py` — new: `spawn_detached()` and `detached_flags()`
+
+**What.** One function starts a process the user owns — `start_new_session` on POSIX, and
+`DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP` on Windows, output to `DEVNULL`. The flags and
+`detached_flags(platform)` moved here from the agent launcher; the launcher, *Library ▸ New
+Library*'s second window and the debug module's RDP launcher all call it.
+
+**Why.** There were three detached spawns and only the launcher's was Windows-safe: the other
+two relied on `start_new_session`, which Windows ignores, so the child kept the parent's
+console and its Ctrl+C. The flags are spelled as Win32 values rather than read off
+`subprocess` so `detached_flags("win32")` is checkable from Linux.
+
+**Upstream?** Yes. Any desktop application that opens a second window of itself, or a
+terminal, meets the same Windows trap, and the template has no seam for it.

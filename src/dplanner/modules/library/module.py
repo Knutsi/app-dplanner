@@ -10,7 +10,6 @@ two libraries is what a person wants anyway.
 """
 
 import shutil
-import subprocess
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -19,6 +18,7 @@ from pathlib import Path
 from PySide6.QtWidgets import QFileDialog, QMainWindow, QWidget
 
 from dplanner.cli.main import WINDOW_WORD
+from dplanner.core.process import spawn_detached
 from dplanner.domain.library_file import default_library_path
 from dplanner.domain.model import Library
 from dplanner.domain.seed import create_library
@@ -46,12 +46,7 @@ def spawn_instance(library_path: Path) -> None:
     """Start a new detached DPlanner window on ``library_path`` — the user owns it from here."""
     dplanner = shutil.which("dplanner")
     command = [dplanner] if dplanner else [sys.executable, "-m", "dplanner"]
-    subprocess.Popen(
-        [*command, WINDOW_WORD, "--library", str(library_path)],
-        start_new_session=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    spawn_detached([*command, WINDOW_WORD, "--library", str(library_path)])
 
 
 class LibraryModule:

@@ -147,7 +147,7 @@ def default_modules(
     from dplanner.modules.feature.aspect import is_feature
     from dplanner.modules.feature.aspect import read as feature_read
     from dplanner.modules.feature.module import FeatureDeps, FeatureModule
-    from dplanner.modules.github.aspect import pr_label
+    from dplanner.modules.github.aspect import PR_CLOSED, PR_MERGED, PR_OPEN, pr_label
     from dplanner.modules.github.aspect import read as github_read
     from dplanner.modules.github.module import GithubDeps, GithubModule
     from dplanner.modules.home.module import HomeDeps, HomeModule
@@ -206,6 +206,13 @@ def default_modules(
         StepAgentInstructionModule,
     )
     from dplanner.modules.step_agent_instruction.profiles import default_profile
+    from dplanner.modules.step_agent_run.aspect import (
+        LAUNCHED,
+        NEEDS_INPUT,
+        PENDING_APPROVAL,
+        PLAN_FOR_REVIEW,
+        WORKING,
+    )
     from dplanner.modules.step_agent_run.aspect import read as agent_run_state
     from dplanner.modules.step_agent_run.module import StepAgentRunDeps, StepAgentRunModule
     from dplanner.modules.step_check.module import StepCheckDeps, StepCheckModule
@@ -215,6 +222,7 @@ def default_modules(
         StepDescriptionModule,
     )
     from dplanner.modules.step_description.section import SeparateInstructionLink
+    from dplanner.modules.step_milestone.aspect import is_milestone
     from dplanner.modules.step_milestone.aspect import read as milestone_read
     from dplanner.modules.step_milestone.module import StepMilestoneDeps, StepMilestoneModule
     from dplanner.modules.step_order.module import StepOrderDeps, StepOrderModule
@@ -380,7 +388,7 @@ def default_modules(
         return [
             PullRequest(number=row.number, title=row.title, head_ref=row.head_ref, url=row.url)
             for row in rows
-            if row.state == "open"
+            if row.state == PR_OPEN
         ]
 
     def publish(root: Path, name: str) -> str:
@@ -504,7 +512,7 @@ def default_modules(
         if not library.has(step_id):
             return None
         step = library.step(step_id)
-        if not milestone_read(step):
+        if not is_milestone(step):
             return None
         return key_badge_icon(_step_key(step), milestone_color(step_id))
 
@@ -689,11 +697,11 @@ def default_modules(
         if refs is not None and refs.has_pr():
             pill = pr_label(refs)
         chip_text, chip_tone = {
-            "launched": ("launched", "info"),
-            "working": ("working", "info"),
-            "plan-for-review": ("plan ready", "attention"),
-            "pending-approval": ("needs approval", "attention"),
-            "needs-input": ("needs input", "attention"),
+            LAUNCHED: ("launched", "info"),
+            WORKING: ("working", "info"),
+            PLAN_FOR_REVIEW: ("plan ready", "attention"),
+            PENDING_APPROVAL: ("needs approval", "attention"),
+            NEEDS_INPUT: ("needs input", "attention"),
         }.get(agent_run_state(step), ("", ""))
         status = _card_status(step)
         milestone = milestone_read(step)
@@ -710,7 +718,7 @@ def default_modules(
             muted=status is Status.DONE,
             badge=milestone,
             pill_text=pill,
-            pill_tone={"merged": "good", "closed": "bad"}.get(refs.pr_state, "") if refs else "",
+            pill_tone={PR_MERGED: "good", PR_CLOSED: "bad"}.get(refs.pr_state, "") if refs else "",
             branch=bool(refs is not None and refs.branch),
             key_text=_step_key(step),
             key_tone=STEP_STATUS_TONES.get(word(status), ""),
@@ -1039,7 +1047,7 @@ def default_modules(
                 step_id if library.has(step_id) and is_feature(library.step(step_id)) else None
             ),
             is_milestone=lambda step_id: (
-                bool(milestone_read(library.step(step_id))) if library.has(step_id) else False
+                library.has(step_id) and is_milestone(library.step(step_id))
             ),
             tests_of=lambda step_id: (
                 [test.id for test in tests_read(library.step(step_id))]
@@ -2742,12 +2750,6 @@ def _branch_plan(
     )
 
 
-def _is_milestone(step: "Step") -> bool:
-    from dplanner.modules.step_milestone.aspect import read as milestone_read
-
-    return bool(milestone_read(step))
-
-
 def _pr_base(step: "Step") -> str:
     """The branch a step's PR merges into, as GitHub last said; "" when unknown."""
     from dplanner.modules.github.aspect import read as github_read
@@ -2855,7 +2857,7 @@ def _step_key(step: "Step") -> str:
     """
     from dplanner.modules.feature.aspect import is_feature
     from dplanner.modules.step_check.aspect import read as check_read
-    from dplanner.modules.step_milestone.aspect import read as milestone_read
+    from dplanner.modules.step_milestone.aspect import is_milestone
     from dplanner.modules.step_review.aspect import is_review
     from dplanner.modules.step_wait.aspect import is_wait
 
@@ -2863,7 +2865,7 @@ def _step_key(step: "Step") -> str:
         return ""
     letter = (
         "M"
-        if milestone_read(step)
+        if is_milestone(step)
         else "F"
         if is_feature(step)
         else "C"
@@ -2886,11 +2888,11 @@ def _step_kind(step: "Step") -> str:
     from dplanner.modules.feature.aspect import is_feature
     from dplanner.modules.step_agent_instruction.aspect import enabled as agent_enabled
     from dplanner.modules.step_check.aspect import read as check_read
-    from dplanner.modules.step_milestone.aspect import read as milestone_read
+    from dplanner.modules.step_milestone.aspect import is_milestone
     from dplanner.modules.step_review.aspect import is_review
     from dplanner.modules.step_wait.aspect import is_wait
 
-    if milestone_read(step):
+    if is_milestone(step):
         return "milestone"
     if is_feature(step):
         return "feature"
@@ -2918,15 +2920,15 @@ def _milestone_stats(library: "Library", project: "Project") -> dict[str, str]:
     milestone, which costs the sync no walk at all.
     """
     from dplanner.modules.estimation.schedule import project_schedule
-    from dplanner.modules.step_milestone.aspect import read as milestone_read
+    from dplanner.modules.step_milestone.aspect import is_milestone
     from dplanner.planning.schedule import format_date, format_days
 
-    if not any(milestone_read(step) for step in project.steps):
+    if not any(is_milestone(step) for step in project.steps):
         return {}
     stats: dict[str, str] = {}
     for scheduled in project_schedule(library, project):
         step = scheduled.place.step
-        if not milestone_read(step):
+        if not is_milestone(step):
             continue
         if scheduled.finish is not None:
             stats[step.id] = (
@@ -2951,10 +2953,10 @@ def _milestone_colors(library: "Library", project: "Project") -> dict[str, str]:
     picker would otherwise name a map it was not painting.
     ARCHITECTURE.md's *Colour is a place on one map* has the rest.
     """
-    from dplanner.modules.step_milestone.aspect import read as milestone_read
+    from dplanner.modules.step_milestone.aspect import is_milestone
     from dplanner.modules.time_estimates.schedule import milestone_colors
 
-    return milestone_colors(library, project, lambda step: bool(milestone_read(step)))
+    return milestone_colors(library, project, is_milestone)
 
 
 def _step_stats(library: "Library", project: "Project") -> dict[str, str]:
@@ -2989,12 +2991,12 @@ def _step_type_icons(step: "Step") -> tuple[str, ...]:
     says a thing once."""
     from dplanner.modules.feature.aspect import is_feature
     from dplanner.modules.step_check.aspect import read as check_read
-    from dplanner.modules.step_milestone.aspect import read as milestone_read
+    from dplanner.modules.step_milestone.aspect import is_milestone
     from dplanner.modules.step_review.aspect import is_review
     from dplanner.modules.testing.aspect import enabled as test_enabled
 
     return (
-        *(("tag",) if milestone_read(step) else ()),
+        *(("tag",) if is_milestone(step) else ()),
         *(("layers",) if is_feature(step) else ()),
         *(("beaker",) if test_enabled(step) else ()),
         *(("shield",) if check_read(step) else ()),
@@ -4143,6 +4145,7 @@ def _lint_checks() -> tuple["LintCheck", ...]:
     from dplanner.modules.step_agent_instruction import cli as agent_cli
     from dplanner.modules.step_description import cli as description_cli
     from dplanner.modules.step_description.aspect import read as description_read
+    from dplanner.modules.step_milestone.aspect import is_milestone
     from dplanner.modules.step_review import cli as review_cli
     from dplanner.modules.step_review.aspect import is_review
     from dplanner.modules.step_start import cli as start_cli
@@ -4159,7 +4162,7 @@ def _lint_checks() -> tuple["LintCheck", ...]:
         *branches_cli.lint_checks(
             is_done=_is_done,
             is_agent=_is_agent_step,
-            is_milestone=_is_milestone,
+            is_milestone=is_milestone,
             pr_base_of=_pr_base,
         ),
         # A review needs an agent, one subject and an agent this build knows.

@@ -45,6 +45,8 @@ from dplanner.framework.tasks import TaskService
 from dplanner.framework.undo import UndoService
 from dplanner.modules.github.aspect import (
     MODULE_ID,
+    PR_CLOSED,
+    PR_MERGED,
     GithubRefs,
     branch_url,
     pr_label,
@@ -70,7 +72,7 @@ from dplanner.theme.icons import external_icon
 MERGED_COLOUR = QColor(110, 180, 130)
 CLOSED_COLOUR = QColor(200, 110, 110)
 
-STATE_MARKS = {"merged": "✓ merged", "closed": "✗ closed"}
+STATE_MARKS = {PR_MERGED: "✓ merged", PR_CLOSED: "✗ closed"}
 
 # How long a fetched answer serves before showing a step asks GitHub again.
 LISTS_TTL_S = 60.0
@@ -238,7 +240,7 @@ class GithubSection(ModuleDataSection):
         for index, pr in enumerate(pr_infos):
             mark = STATE_MARKS.get(pr.state, "")
             self.pr_edit.addItem(f"#{pr.number}  {pr.title}" + (f"  {mark}" if mark else ""))
-            colour = {"merged": MERGED_COLOUR, "closed": CLOSED_COLOUR}.get(pr.state)
+            colour = {PR_MERGED: MERGED_COLOUR, PR_CLOSED: CLOSED_COLOUR}.get(pr.state)
             if colour is not None:
                 role = Qt.ItemDataRole.ForegroundRole
                 self.pr_edit.setItemData(index, QBrush(colour), role)
