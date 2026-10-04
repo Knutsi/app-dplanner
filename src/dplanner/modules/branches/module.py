@@ -36,7 +36,9 @@ from dplanner.framework.inspector import InspectorSection, InspectorSectionRegis
 from dplanner.framework.step_selection import chosen_steps
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import confirm
-from dplanner.modules.branches.aspect import (
+from dplanner.modules.branches.edits import put_command, put_refusal, remove_command, stretch_picked
+from dplanner.modules.branches.section import CutSection
+from dplanner.planning.branches import (
     CUT_FORMAT,
     CUT_ID,
     CUT_SPEC,
@@ -51,8 +53,6 @@ from dplanner.modules.branches.aspect import (
     write_cut,
     write_land,
 )
-from dplanner.modules.branches.edits import put_command, put_refusal, remove_command, stretch_picked
-from dplanner.modules.branches.section import CutSection
 from dplanner.theme.icons import branch_icon, merge_icon
 
 

@@ -25,7 +25,8 @@ from dplanner.domain.model import Library, Node, Project, Step, TextEdit
 from dplanner.domain.repositories import repository_facts
 from dplanner.domain.shelf import turn_off, turn_on
 from dplanner.domain.store import FilesFor
-from dplanner.modules.step_agent_instruction.aspect import (
+from dplanner.modules.step_agent_instruction.prompt import Briefing, assemble
+from dplanner.planning.agent import (
     MODULE_ID,
     asset_paths,
     enabled,
@@ -38,7 +39,6 @@ from dplanner.modules.step_agent_instruction.aspect import (
     workplace,
     write_state,
 )
-from dplanner.modules.step_agent_instruction.prompt import Briefing, assemble
 
 
 def step_author() -> StepAuthor:

@@ -11,6 +11,8 @@ from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.workflow import Actor, AgentRun, Daemon, EndClaim, Person, PlanView
 from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
 from dplanner.modules.step_status.workflows import STOPPED, Kept, StatusWorkflow, perform
+from dplanner.planning import agent, wait
+from dplanner.planning.schedule import Wait
 from dplanner.planning.status import MODULE_ID, Status, stored
 
 MONDAY = date(2026, 9, 21)
@@ -23,11 +25,7 @@ def _keep_reason(view: PlanView, step: Step, reason: str, today: date):
     return "N1", SetModuleDataCommand(step.id, "notes_probe", {"reason": reason})
 
 
-WORKFLOW = StatusWorkflow(
-    works_nobody=lambda step: "a wait" if step.title == "Hold a day" else "",
-    is_agent=lambda step: step.title == "Build the modal",
-    keep_reason=_keep_reason,
-)
+WORKFLOW = StatusWorkflow(keep_reason=_keep_reason)
 
 
 @pytest.fixture
@@ -37,6 +35,12 @@ def library():
     library.add_child(library.id, project)
     for title in ("Read the spec", "Build the modal", "Hold a day"):
         library.add_child(project.id, Step(title=title))
+    library.set_module_data(
+        _step(library, "Build the modal").id, agent.MODULE_ID, agent.write_state(True)
+    )
+    library.set_module_data(
+        _step(library, "Hold a day").id, wait.MODULE_ID, wait.write(Wait(days=1.0))
+    )
     return library
 
 

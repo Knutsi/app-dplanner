@@ -31,11 +31,11 @@ from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_u
 from dplanner.modules.github.aspect import MODULE_ID as GITHUB_ID
 from dplanner.modules.github.aspect import GithubRefs
 from dplanner.modules.github.aspect import write as github_write
-from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_ID
-from dplanner.modules.step_agent_instruction.aspect import write_state
-from dplanner.modules.step_review.aspect import MODULE_ID as REVIEW_ID
-from dplanner.modules.step_review.aspect import ReviewSettings
-from dplanner.modules.step_review.aspect import write as review_write
+from dplanner.planning.agent import MODULE_ID as AGENT_ID
+from dplanner.planning.agent import write_state
+from dplanner.planning.review import MODULE_ID as REVIEW_ID
+from dplanner.planning.review import ReviewSettings
+from dplanner.planning.review import write as review_write
 from dplanner.theme import apply_theme
 from dplanner.theme.themes import DARK, LIGHT, Theme
 

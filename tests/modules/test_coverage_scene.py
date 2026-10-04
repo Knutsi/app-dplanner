@@ -18,13 +18,13 @@ from dplanner.modules.coverage.scene import (
     LaneItem,
 )
 from dplanner.modules.coverage.trace import FEATURES, MILESTONES, OUTCOMES, SPEC, STEPS
-from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
-from dplanner.modules.feature.aspect import FeatureSource
-from dplanner.modules.feature.aspect import write as feature_write
-from dplanner.modules.step_milestone.aspect import MODULE_ID as MILESTONE_ID
-from dplanner.modules.step_milestone.aspect import write as write_milestone
 from dplanner.modules.testing.aspect import MODULE_ID as TESTING_ID
 from dplanner.modules.testing.aspect import Test, write
+from dplanner.planning.feature import MODULE_ID as FEATURE_ID
+from dplanner.planning.feature import FeatureSource
+from dplanner.planning.feature import write as feature_write
+from dplanner.planning.milestone import MODULE_ID as MILESTONE_ID
+from dplanner.planning.milestone import write as write_milestone
 
 GUIDE = "# Guide\n\nOperators MUST import a CSV.\n\nEvery login is logged.\n\nNothing else.\n"
 

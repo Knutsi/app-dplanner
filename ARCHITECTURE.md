@@ -4010,8 +4010,8 @@ them in — and sets the mark past the last.
 `M7` when it becomes a milestone, because the letter says what the step *is* and the
 kind is a set of toggles (*A kind is what a node is*): a stored letter would go stale the
 moment a toggle flipped, and renumbering on a kind change would break the branch. The
-root's `_step_key` ranks the kinds the way the body tone does — milestone over feature
-over check over step — and every reader takes the answer from there: the key block, every
+ranking in `planning/kinds.py` orders the kinds — milestone over feature over check over
+wait, cut and review, then step — and every reader takes the answer from there: the key block, every
 CLI row, `find_step` (which accepts `S7`, `s7` and bare `7`, and refuses a bare number
 that names a step in several projects the way it refuses a shared title), the run name,
 and the briefing's verbs, which address the step by key because a key is unambiguous
@@ -4122,7 +4122,7 @@ The *Type* submenu is the same idea one step further: one checkable toggle per t
 aspect (Milestone, Feature, Agent, Ticket), each independent, because a Type radio group
 would reintroduce the exclusive type field this section rules out. Toggling Milestone on
 generates the next label from the project's existing ones (`next_milestone_label` in
-`step_milestone/aspect.py`, shared with `dplanner milestone set`); toggling any of them off
+`planning/milestone.py`, shared with `dplanner milestone set`); toggling any of them off
 shelves what it held, so nothing asks and the next toggle-on brings it back.
 
 **A tab follows its aspect.** An `InspectorSection` may carry a `shown_for(step_id)`
@@ -4880,8 +4880,8 @@ emergent* rules out a type field, and the bracket did not need one: a cut is a s
 carrying `branch_cut` (`{"branch": …}`), key `B`, nobody's work — no worker, no status of
 its own, done once what it waits on is, which is a wait of no days composed in the root's
 `_status_in` (never through the schedule's `wait_of`, or reports would name every cut a
-wait) — and a landing is an agent step carrying `branch_land` (`{"cut": id}`). The root's
-`_works_nobody` became the one predicate a wait and a cut share, and every module that
+wait) — and a landing is an agent step carrying `branch_land` (`{"cut": id}`). `planning.kinds`'s
+`works_nobody` became the one predicate a wait and a cut share, and every module that
 refuses such a step a status, an agent, a review or a test words its refusal from the name
 it hands back, where each had a wait's sentence of its own.
 
@@ -5227,7 +5227,7 @@ any agent that died. Never the main checkout by accident.
 last component and the start of the terminal's title. The key first so `git branch` sorts
 by step, the ticket so the branch answers the tracker too, the slug for the person reading
 the list. The pieces are aspects the launcher never reads, so the root composes them
-(`_step_key`, `_ticket_key`) and hands them to the module; the root's `_run_name` applies
+(`planning.kinds.key_of`, `_ticket_key`) and hands them to the module; the root's `_run_name` applies
 the same launcher rule, because the **briefing names the worktree**: its preamble tells the
 agent to confirm `git rev-parse --show-toplevel` ends in that directory and the branch is
 `agent/<name>`, and to stop if either differs. The check costs the agent two commands and
@@ -5997,6 +5997,26 @@ state-machine sketch would have broken that, so `planning/` owns the vocabulary 
 readiness rules and stops there; who may set what is a workflow's question, asked by the
 verb that sets it.
 
+### Planning owns what a step is
+
+**The kind aspects are facts in `planning/`, and the key's letter comes from one ranking.**
+Milestone, feature, check, wait, start, branch cut and landing, review and the agent mark
+are each a file in `planning/` (`milestone.py`, `feature.py`, …) under the module id they
+always had; the module that edits each keeps its section, its verbs and its UI. Before,
+the ranking *milestone over feature over check over wait over cut over review over agent*
+was written six times in the composition root, once per question that read it.
+`planning/kinds.py` now holds it once, as `RANKING`: a `Kind` enum, the key's letter and
+the predicate, coarsest first. `key_of` and `kind_word` read that list and nothing else.
+
+**One ranking, not one policy.** The structural review first proposed that every question
+about a kind read one ordered list; Codex's correction, accepted in its §12, was that only
+the key and the kind word share a ranking. The others are separate policies that *read*
+the facts and stay written out in the root, each where a reader can check it by eye: the
+primary glyph says who works a step (an agent's spark, a wait's clock), the medallions show
+several marks at once, the body tone lets *done* outrank any kind, and the scope rules say
+where a collector's walk stops. Folding them into the ranking would have made each one an
+exception to it.
+
 ### What holds the tier and the workflows in place
 
 A rule kept by convention erodes, so the review's guards are tests (`tests/test_architecture.py`,
@@ -6012,7 +6032,10 @@ Two ceilings record where the move started on 4 October and may only fall — th
 lines, and the domain commands built and pushed in place outside a `workflows.py` (a
 verb that builds its own command is one a second surface will copy). They are lowered by
 hand, never raised. The ids a module stores data under are pinned as a set of values, so
-a package can move or be renamed and no plan on disk loses its entries.
+a package can move or be renamed and no plan on disk loses its entries. And what `planning/`
+interprets is a list, `PLANNING_ASPECTS` (rule 14), so admitting an aspect is a diff somebody
+reviews; past about fifteen entries the tier has become "the important aspects" and wants
+rethinking rather than another line.
 
 ## Progression is the status-aware frontier
 
@@ -7870,7 +7893,7 @@ composition root: the aspect belongs to one module and the document to another.
 
 **The catalogue moves onto the steps at open, and that needs an `absorb`.** One module id
 served both the project's catalogue and the step's marker, and a per-entry converter never
-sees the project — so `modules/feature/migrate.py` is the format's `absorb` pass
+sees the project — so `planning/feature_migrate.py` is the format's `absorb` pass
 (`modules/notes/migrate.py` is the other one). A placed record's passages go onto its step;
 its description joins the step's prose, with a *Catalogued as "…"* line above it where the
 two titles differed, so nothing a person wrote is dropped and nothing is invented; an

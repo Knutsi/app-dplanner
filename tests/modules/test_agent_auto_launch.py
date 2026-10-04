@@ -23,7 +23,6 @@ from dplanner.framework.user_config import set_global
 from dplanner.modules.auto_progress.aspect import MODULE_ID as AUTO_PROGRESS_ID
 from dplanner.modules.auto_progress.aspect import write as write_flags
 from dplanner.modules.step_agent_instruction import launcher
-from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_ID
 from dplanner.modules.step_agent_instruction.auto_launch import (
     ANOTHER_WINDOW,
     NOTICE_ID,
@@ -34,11 +33,12 @@ from dplanner.modules.step_agent_run.aspect import MODULE_ID as RUN_ID
 from dplanner.modules.step_agent_run.aspect import asks_person
 from dplanner.modules.step_agent_run.aspect import read as run_state
 from dplanner.modules.step_agent_run.aspect import write as write_run
-from dplanner.modules.step_review.aspect import MODULE_ID as REVIEW_ID
-from dplanner.modules.step_review.aspect import ReviewSettings
-from dplanner.modules.step_review.aspect import write as write_review
 from dplanner.modules.step_review.rounds import MODULE_ID as ROUNDS_ID
 from dplanner.modules.step_review.rounds import last, opened, said
+from dplanner.planning.agent import MODULE_ID as AGENT_ID
+from dplanner.planning.review import MODULE_ID as REVIEW_ID
+from dplanner.planning.review import ReviewSettings
+from dplanner.planning.review import write as write_review
 from dplanner.planning.status import MODULE_ID as STATUS_ID
 from dplanner.planning.status import Status
 from dplanner.planning.status import stored as status_of

@@ -12,7 +12,7 @@ from dplanner.cli import CliCommand, CliContext
 from dplanner.cli.lookup import find_step, step_arg
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.shelf import turn_off
-from dplanner.modules.step_check.aspect import MODULE_ID, read, write
+from dplanner.planning.check import MODULE_ID, read, write
 
 
 def commands() -> list[CliCommand]:

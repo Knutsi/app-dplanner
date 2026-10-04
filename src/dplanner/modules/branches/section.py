@@ -8,7 +8,7 @@ from dplanner.domain.model import Library, Step
 from dplanner.framework.module_data_section import FIELD_GAP, ModuleDataSection
 from dplanner.framework.signalling import StatusLine
 from dplanner.framework.undo import UndoService
-from dplanner.modules.branches.aspect import CUT_ID, branch_of, name_problem, write_cut
+from dplanner.planning.branches import CUT_ID, branch_of, name_problem, write_cut
 
 
 class CutSection(ModuleDataSection):

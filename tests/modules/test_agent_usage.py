@@ -220,8 +220,8 @@ def test_a_run_whose_minted_session_was_found_resumes_by_it(services, step, tmp_
 
 
 def test_the_agent_tab_says_what_the_step_has_consumed(services, step):
-    from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_ID
-    from dplanner.modules.step_agent_instruction.aspect import write_state
+    from dplanner.planning.agent import MODULE_ID as AGENT_ID
+    from dplanner.planning.agent import write_state
 
     services.document.set_module_data(step.id, AGENT_ID, write_state(True))
     services.context.set_scope(SCOPE_SELECTION, (ContextNode(selection_uri("step", step.id)),))

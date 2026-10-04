@@ -20,10 +20,6 @@ from dplanner.domain.model import Step, TextEdit
 from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATION_ID
 from dplanner.modules.estimation.aspect import write as write_days
 from dplanner.modules.estimation.schedule import write_start
-from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_ID
-from dplanner.modules.step_agent_instruction.aspect import write_state
-from dplanner.modules.step_milestone.aspect import MODULE_ID as MILESTONE_ID
-from dplanner.modules.step_milestone.aspect import write as write_milestone_label
 from dplanner.modules.time_estimates.activity import NO_STEPS
 from dplanner.modules.time_estimates.progress import (
     HISTORY_ID,
@@ -43,6 +39,10 @@ from dplanner.modules.time_estimates.schedule import (
     stretched,
 )
 from dplanner.modules.time_estimates.section import MilestoneScheduleSection
+from dplanner.planning.agent import MODULE_ID as AGENT_ID
+from dplanner.planning.agent import write_state
+from dplanner.planning.milestone import MODULE_ID as MILESTONE_ID
+from dplanner.planning.milestone import write as write_milestone_label
 from dplanner.planning.schedule import format_date
 from dplanner.planning.status import MODULE_ID as STATUS_ID
 from dplanner.planning.status import Status
@@ -928,10 +928,10 @@ def test_a_wait_is_hatched_on_the_work_page_and_the_calendar_and_named_in_its_mi
     from dplanner.cli.report.drawings import LIGHT, chart_svg
     from dplanner.cli.report.parts import Chart
     from dplanner.modules import _time_readers
-    from dplanner.modules.step_wait.aspect import MODULE_ID as WAIT_ID
-    from dplanner.modules.step_wait.aspect import write as write_wait
     from dplanner.modules.time_estimates.report import report_source
     from dplanner.planning.schedule import Wait
+    from dplanner.planning.wait import MODULE_ID as WAIT_ID
+    from dplanner.planning.wait import write as write_wait
 
     library = services.document
     _read, draft, _docs, ship = staged.steps

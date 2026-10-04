@@ -70,7 +70,6 @@ from dplanner.framework.table import Cell, Column, Table
 from dplanner.framework.toolbar import Toolbar
 from dplanner.framework.user_config import get_global, set_global
 from dplanner.framework.widgets import block, caption, captioned, note
-from dplanner.modules.step_agent_instruction.aspect import MODULE_ID
 from dplanner.modules.step_agent_instruction.detect_dialog import DetectedProfilesDialog
 from dplanner.modules.step_agent_instruction.launcher import (
     TerminalPreset,
@@ -88,6 +87,7 @@ from dplanner.modules.step_agent_instruction.profiles import (
     update_profile,
     write_profiles,
 )
+from dplanner.planning.agent import MODULE_ID
 from dplanner.theme.icons import find_icon, plus_icon, star_icon, trash_icon
 from dplanner.theme.tokens import FIELD_GAP, SECTION_GAP
 

@@ -24,7 +24,7 @@ from typing import Any
 from dplanner.core.module_data import ModuleDataFormat, Takeover, stamped
 from dplanner.domain.aspects import AspectSpec
 from dplanner.domain.model import Project, Step, StepId
-from dplanner.modules.feature.migrate import absorb_catalogue
+from dplanner.planning.feature_migrate import absorb_catalogue
 
 MODULE_ID = "feature"
 
@@ -131,7 +131,7 @@ def _to_format_3(data: dict[str, Any]) -> dict[str, Any]:
 
     Format 3 collapses the project's catalogue into each feature step's own entry, and a
     per-entry converter cannot see the project — so the work is
-    :func:`~dplanner.modules.feature.migrate.absorb_catalogue`, which runs after every
+    :func:`~dplanner.planning.feature_migrate.absorb_catalogue`, which runs after every
     per-entry pass and reads both old shapes exactly as they were written.
     """
     return dict(data)

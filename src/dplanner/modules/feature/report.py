@@ -12,7 +12,7 @@ from datetime import date
 from dplanner.cli.report.parts import Contribution, Facet, ReportSource
 from dplanner.domain.model import Library, Project
 from dplanner.domain.store import FilesFor
-from dplanner.modules.feature.aspect import read
+from dplanner.planning.feature import read
 
 
 def report_source() -> ReportSource:

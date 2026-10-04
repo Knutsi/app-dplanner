@@ -9,8 +9,8 @@ import pytest
 
 from dplanner.domain.commands import AddNodeCommand, SetModuleDataCommand
 from dplanner.domain.model import Step
-from dplanner.modules.feature.aspect import MODULE_ID, FeatureSource, read, write
 from dplanner.modules.feature.editor import FeatureEditor
+from dplanner.planning.feature import MODULE_ID, FeatureSource, read, write
 
 
 def cites(step):

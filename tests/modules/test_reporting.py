@@ -193,7 +193,7 @@ def test_a_cancelled_site_export_writes_nothing(qapp, services, project, monkeyp
 
 
 def test_the_milestones_csv_writes_the_report_table(services, project, tmp_path, monkeypatch):
-    from dplanner.modules.step_milestone.aspect import write as milestone
+    from dplanner.planning.milestone import write as milestone
 
     services.undo.push(SetModuleDataCommand(project.steps[0].id, "step_milestone", milestone("v1")))
     target = tmp_path / "milestones.csv"

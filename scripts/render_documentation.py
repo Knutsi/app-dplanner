@@ -41,9 +41,9 @@ from dplanner.modules.docs.activity import DOCS_KIND
 from dplanner.modules.docs.aspect import COMPILED_ID, MODULE_ID, write_stamp, write_state
 from dplanner.modules.docs.collect import digest, sources_for
 from dplanner.modules.docs.module import COMPILE_ACTION, LAUNCHES_KEY
-from dplanner.modules.feature.aspect import write as feature_write
 from dplanner.modules.step_agent_run.aspect import record_launch
-from dplanner.modules.step_milestone.aspect import write as milestone_write
+from dplanner.planning.feature import write as feature_write
+from dplanner.planning.milestone import write as milestone_write
 from dplanner.theme import apply_theme
 from dplanner.theme.themes import DARK, LIGHT, Theme
 

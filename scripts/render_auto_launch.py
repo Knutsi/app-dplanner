@@ -38,9 +38,9 @@ from dplanner.modules.progression.module import PROGRESSION_KIND
 from dplanner.modules.settings.dialog import DIALOG_SIZE as SETTINGS_SIZE
 from dplanner.modules.settings.module import SettingsModule
 from dplanner.modules.step_agent_instruction import launcher
-from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_ID
 from dplanner.modules.step_agent_instruction.auto_launch import LaunchLocks
 from dplanner.modules.step_agent_instruction.settings_page import AUTO_LAUNCH_KEY
+from dplanner.planning.agent import MODULE_ID as AGENT_ID
 from dplanner.planning.status import MODULE_ID as STATUS_ID
 from dplanner.planning.status import Status
 from dplanner.planning.status import write as write_status

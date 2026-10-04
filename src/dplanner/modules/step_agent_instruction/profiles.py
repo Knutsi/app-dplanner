@@ -42,13 +42,13 @@ from typing import Any
 
 from dplanner.domain.agents import AgentHarness
 from dplanner.framework.user_config import get_global, set_global
-from dplanner.modules.step_agent_instruction.aspect import MODULE_ID
 from dplanner.modules.step_agent_instruction.launcher import (
     current_command,
     harness_of,
     is_installed,
     terminals_for,
 )
+from dplanner.planning.agent import MODULE_ID
 
 PROFILES_KEY = "profiles"
 # Whether the known pairings have been added once — a person's later removals stand.

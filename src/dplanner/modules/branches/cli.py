@@ -19,7 +19,8 @@ from dplanner.domain.model import Library, Project, Step, StepId
 from dplanner.domain.ordering import upstream
 from dplanner.domain.shelf import turn_off
 from dplanner.domain.store import FilesFor
-from dplanner.modules.branches.aspect import (
+from dplanner.modules.branches.edits import put_command, put_refusal, remove_command, stretch_picked
+from dplanner.planning.branches import (
     CUT_ID,
     LAND_ID,
     branch_of,
@@ -30,7 +31,6 @@ from dplanner.modules.branches.aspect import (
     write_cut,
     write_land,
 )
-from dplanner.modules.branches.edits import put_command, put_refusal, remove_command, stretch_picked
 
 # Makes a stretch's two ends, dressed as the window's Put on a Branch makes them — every
 # other module's word on them (no estimate on a cut, the agent on a landing) is the root's.

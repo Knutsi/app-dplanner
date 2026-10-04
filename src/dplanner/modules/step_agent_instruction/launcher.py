@@ -137,7 +137,7 @@ from dplanner.domain.ledger import new_run_id
 from dplanner.domain.locations import Placement
 from dplanner.domain.model import Step
 from dplanner.domain.repositories import RepositoryFacts
-from dplanner.modules.step_agent_instruction.aspect import workplace
+from dplanner.planning.agent import workplace
 
 BRANCH_PREFIX = "agent/"
 
