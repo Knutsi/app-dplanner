@@ -3122,7 +3122,13 @@ underneath. The check is **per project** — flush verifies exactly the projects
 to write, so an agent editing project B never blocks saving project A, and the refusal
 names the project. The library file is a third written thing with the same treatment under
 its own stamp, because two instances can both add a project; membership reaches disk
-through the ordinary flush, as a structure mark on the library root. Around that one check:
+through the ordinary flush, as a structure mark on the library root. **A stamp says what
+was seen, so it is taken before the read and never over a change this store did not take
+in**: `load` and the adoption stat the file before reading it, and `set_checkout` — which
+writes one key straight into the file outside the flush — re-stamps only when the file was
+already as last seen. Its old unconditional re-stamp hid another writer's new project from
+the watcher, and the next membership flush wrote that project out of the file (the
+structural review's probe, `tests/domain/test_store_adoption.py`). Around that one check:
 
 - A **CLI run** reports it as one line and writes nothing. A run is a transaction, so
   running it again picks up the change and is correct.

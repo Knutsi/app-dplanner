@@ -4930,3 +4930,21 @@ workaround is one line at the construction site (`step_order/module.py`'s `_new_
 **Upstream?** Yes, as a note in the table primitive's docstring until somebody finds the
 cause — or a `Table.with_columns()` that rebuilds the header in place, which would retire the
 swap altogether.
+
+## 76. From S2 (two writers): `write_atomic` writes through a unique temporary
+
+### `core/fsio.py` — `write_atomic` takes its temporary from `mkstemp`, not `.<name>.tmp`
+
+**What.** Every write of a path used to go through the same `.<name>.tmp` beside it. Now each
+call gets its own (`tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")`), is chmodded
+to the target's mode (or 0644 for a new file, what `write_text` gave — mkstemp makes 0600),
+replaced into place with `os.replace`, and unlinked if anything fails on the way.
+
+**Why.** Two processes write one path here — a window and the CLI, or two windows — and the
+review's probe paused writer A before its rename, let writer B finish, and A's `replace`
+raised `FileNotFoundError`: B had renamed A's temporary away. Worse, an interleaving one step
+earlier renames the other writer's half-written bytes. `tests/core/test_fsio.py` reproduces
+the interleaving without threads.
+
+**Upstream?** Yes. The template's `write_atomic` has the same shared name, and any
+application with a second writer (a CLI, a sync) meets it.
