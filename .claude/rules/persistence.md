@@ -14,6 +14,10 @@ paths:
 
 # Persistence — save, two writers, outside changes, reload and repositories
 
+- **A background sync of an external fact applies its command directly, off the undo
+  stack, with its own origin** — undoing the user's edit must never restore a stale PR
+  state instead. `modules/github/refresh.py` is the example; `ARCHITECTURE.md`'s *Syncing
+  an external fact* has the reasoning.
 - **There is no Save-file action.** Autosave writes 1.5 s after the last change; *Save*
   means recording a version: **one commit per dirty repository, scoped to that repository's
   project directories and its `.dplanner` index** — several projects in one repo save as one

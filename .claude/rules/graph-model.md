@@ -14,6 +14,15 @@ paths:
 
 # Graph model — edges, auto-progress links, step numbers and isolation
 
+- **Every model change goes through a command** on the single undo stack, and carries an
+  `origin` so the view that made the edit can ignore its own echo. Two kinds of change
+  bypass the stack, never the vocabulary: an external fact (the bullet below) and
+  **reading disk** — `load`, membership, and the store adopting another writer's change —
+  which apply the library's mutators directly with an origin of their own.
+- **`Library.link_refusal()` is the only authority on a legal edge.** `set_edges` asks it
+  before writing, and `steps.link`'s state asks it to decide whether the menu entry is enabled
+  and what a greyed one says. Never write a second reachability check in a view (ARCHITECTURE.md
+  has the fortnight it cost).
 - **Isolate is one domain question and one domain command.** `Library.boundary_edges()`
   names every edge with exactly one end in a set (both kinds, skipping edges to a deleted
   step, as the canvas skips them) and `remove_edges_command()` turns edges into one

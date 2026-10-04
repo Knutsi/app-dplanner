@@ -17,6 +17,54 @@ paths:
 
 # Shell — seams, panes, primitives, menus, toolbars, glyphs and themes
 
+- **Only the active pane speaks for the user.** The window can show two or three tab groups
+  side by side, and there is still exactly one context. An activity that publishes a
+  selection must do it only while it is the current one — see `ProjectActivity._is_active`.
+- **One dock panel per window, one side panel per tab — and a page of tabs is a modal.** A
+  dock panel is anchored in a window area and follows the window by reading the context:
+  one instance however many tabs are open. A side panel is built by the tab and follows
+  *that* tab's rows (Problems beside the canvas, the Test panel beside a roster), so two
+  Tests tabs each carry one. The step editor left the areas entirely — `steps.details` is
+  the *only* place a step's aspects are edited, since nine tabs do not fit a 360 px column
+  — and a project's forms are the tabs of **Project ▸ Settings…**, a dialog aimed at one
+  project like the modal about one step. The areas hold the index alone, and an area no
+  panel stands in hides its View toggle. `ARCHITECTURE.md`'s *Where a panel goes* and the
+  sections it points at have the rest.
+- **The context is announced once per event-loop turn, and a gesture changes the
+  selection once.** `ContextService.set_scope`/`clear_scope`/`refresh` update the snapshot
+  synchronously — `current()` is always true, which is all a verb run right after a
+  publish reads — but the fan-out to every action state, toolbar, panel and the menu bar
+  goes through `announce`, a 0 ms `Debounced` the builder wires, so a gesture that
+  publishes seven times costs one re-evaluation over the final state and never shows a
+  panel a selection that was empty for a microsecond. Three rules keep it that way:
+  `GraphScene.select_steps` announces once; a verb that needs a selection the user did not make is
+  handed a **constructed `Context`** (`_on_link_requested`) rather than having the canvas
+  select for it; and **a panel that steps aside keeps its content** (a side panel is fed
+  while hidden). **No subprocess in an action state or a structure
+  listener**: `origin_url` is memoised on the config file's mtime, and the sync module
+  asks git about membership only when the *library's* children change. **And no walk
+  over a project in an action state**: a state runs on every announce, so a derivation
+  over every step is paid per keystroke. The pattern
+  is the Problems count's: the module settles the answer once per burst in a `Debounced`
+  and the state *reads* it (`DocsModule._frontier_of`), with the settle announcing the
+  context so the label catches up; the gesture itself computes fresh.
+  `scripts/measure_scaling.py --scenarios connect,paste` is the number to quote.
+  `ARCHITECTURE.md`'s *The context is announced once per turn* has the reasoning.
+- **An action that exists but does not apply right now is DISABLED, never HIDDEN.** A greyed
+  entry teaches the precondition — its `label` carries the reason where there is one. HIDDEN
+  is reserved for a capability absent from this build (a feature flag, a storage provider
+  without history) and for a verb whose opposite occupies its slot (`steps.link` stands down
+  while Unlink is offered). The palette filters on runnable; every other presenter — menu
+  bar, toolbars, `build_menu` popups — shows the greyed entry. `ARCHITECTURE.md`'s *Hidden
+  means absent; disabled means not now* has the reasoning.
+- **A right-click renders a menu, never a copy of one.** `build_menu` takes a name from
+  `MENU_STRUCTURE` — the index tree has `Project`, the tab bar View's Tabs submenu (the
+  `submenu` filter) — and `fill_bands` composes bands of them: the canvas's by what is under
+  the cursor (`menus.py`). Make the thing under the cursor current *first*, then
+  build; the menu then reads the same context every other presenter does.
+  **A text widget's own standard menu is the exception**: `ProseEdit` appends *Insert
+  Image…* to `createStandardContextMenu()`, because a verb acting on one widget's caret
+  belongs in no menu bar and would be greyed everywhere else.
 - **Two surfaces meet at a seam, and the seam belongs to the splitter.** A 1 px `$BORDER`
   hairline inside a 7 px handle, from one `QSplitter::handle` rule that reaches every splitter
   the application builds — between two tab groups, between a panel area and the tabs, between

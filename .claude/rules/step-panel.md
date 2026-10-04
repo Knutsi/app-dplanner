@@ -17,6 +17,12 @@ paths:
 
 # Step panel — aspect toggles, the shelf, Details blocks, prose editors and assets
 
+- **Double-clicking a step anywhere runs `steps.details`.** It is the one gesture across
+  canvas, order, progression and estimates; a table runs it against a context naming exactly
+  the row's step. Reveal-in-graph is `steps.reveal` in the Step menu, not a double-click.
+  **The one exception is a table whose row is not a step**: in the Tests tabs a row *is* a
+  test and its step is a column, so a double-click runs `test.details` and reveals the Test
+  panel beside that tab's roster — `ARCHITECTURE.md`'s *A test is run from a panel*.
 - **The panel has one host: the `steps.details` modal.** It is not anchored in a window area
   and does not follow the selection — nine tabs do not fit a 360 px column, and an editor
   that appeared on a selection sat above whichever panel the reader had opened. It is driven

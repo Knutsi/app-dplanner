@@ -8,6 +8,16 @@ paths:
 
 # Canvas — the graph editor's modes, gestures, cards and marks
 
+- **A canvas key names action ids; it is never an `ActionSpec.shortcut`.** A bare `h` on a
+  menu-bar QAction fires application-wide and eats a keystroke in the step editor. Bind it in
+  `modules/canvas/keymap.py`, where a key names the verbs it means in order and the
+  first the context allows runs — that is how one Delete key covers links and steps.
+- **A painter never trusts `option.palette`.** Qt fills `QStyleOptionGraphicsItem.palette`
+  once, when the scene is created, and never refreshes it, so every canvas item kept the
+  colours of whatever theme its tab opened in. `items.live_palette()` is the only source of
+  colour on the canvas. Its cousin: **a colour copied out of the palette onto a widget goes
+  stale** — `TabHost` tints its tab titles, so it re-tints on `QEvent.PaletteChange`. If a
+  surface stores a colour, it owes that hook.
 - **The Problems list stands beside the canvas, inside the tab.** Where clicking a problem
   and landing on its step is a short trip. It is a `SidePanel(title, icon, build)` on
   `CanvasDeps`, named by the composition root and hosted through

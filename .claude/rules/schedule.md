@@ -13,6 +13,15 @@ paths:
 
 # Schedule — order, progression, time estimates, progress and milestone colour
 
+- **Derived facts are computed, never stored** — the topological order in
+  `domain/ordering.py` is the reference, and `planning/schedule.py` is the same walk carrying
+  estimates. Storing one means it can disagree with what it came from, and the CLI is what
+  catches you out: `dplanner step link` changes a graph with no window running to notice.
+  Availability comes from exposing the function everywhere — the view, `dplanner order show`,
+  `--json` — not from writing the answer down.
+- **Planning reads its own facts; a function is handed in only where it varies.**
+  `planning/schedule.py` reads `planning/estimate.py` by default — `days_for` stays a keyword
+  for stretched days and the simulator — and an aspect a module still owns is handed in.
 - **Progression is derived, never stored** — `planning/progression.py` is the graph's
   readiness with a `status_for(step)` handed in (a wait's status depends on the day); the
   Step statuses tab, the Control Centre, `dplanner progression show` and `--json` read one
