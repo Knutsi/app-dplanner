@@ -116,6 +116,19 @@ pre.mermaid{margin:0;font-family:var(--mono);font-size:12px;background:none;text
 .rule3 code{font-size:12px}
 .callout{background:var(--caution-soft);border-radius:6px;padding:12px 16px;margin:14px 0 20px;font-size:15px}
 .callout p:last-child{margin:0}
+.nextmove{margin:28px 0 8px;border:2px solid var(--accent);border-radius:10px;background:var(--surface);padding:20px 20px 10px}
+.nextmove .label{font-family:var(--display);font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:800;display:block;margin-bottom:4px}
+.nextmove h2{font-size:26px;margin:0 0 10px}
+.nextmove ol{padding-left:1.3em}
+.nextmove ol>li{max-width:none;margin-bottom:12px}
+.nextmove .done-when{font-size:14px;color:var(--muted);margin:4px 0 0}
+.nextmove .decisions{border-top:1px solid var(--line);padding-top:10px;margin-top:6px;font-size:14.5px}
+.voices{display:grid;grid-template-columns:1fr;gap:12px;margin:18px 0 6px}
+@media (min-width:760px){.voices{grid-template-columns:repeat(3,1fr)}}
+.voices>div{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:14px 14px 4px}
+.voices .who{font-family:var(--display);font-weight:700;font-size:15px;display:block}
+.voices .when{font-family:var(--mono);font-size:11.5px;color:var(--muted);display:block;margin-bottom:6px}
+.voices p{font-size:14px}
 footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 </style>
@@ -123,6 +136,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
 <div class="shell">
 <nav class="toc" aria-label="Contents">
   <h2>Contents</h2>
+  <p style="margin:0 0 8px"><a href="#next-move" style="text-decoration:none;font-weight:600">→ The next move</a></p>
   <ol>
     <li><a href="#verdict">Verdict</a></li>
     <li><a href="#findings">Findings</a></li>
@@ -135,10 +149,48 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
     <li><a href="#failures">Failure modes</a></li>
     <li><a href="#waves">Remediation waves</a></li>
     <li><a href="#second-opinion-codex">Second opinion (Codex)</a></li>
+    <li><a href="#response-claude">Response (Claude)</a></li>
+    <li><a href="#how-made">How this review was made</a></li>
   </ol>
 </nav>
 
 <main>
+<aside class="nextmove" id="next-move" aria-label="The next move">
+  <span class="label">The next move · as of 4 October 2026</span>
+  <h2>Fix what's broken, then prove the shape on one workflow</h2>
+  <p>This is where the three passes ended up: the review, Codex's second opinion, and my response. The rest of the page is the reasoning (<a href="#response-claude">§12</a> reconciles it).</p>
+  <ol>
+    <li><strong>Correctness first: small PRs, no design decisions.</strong>
+      <ul>
+        <li><code>write_atomic</code> gets a unique temporary file.</li>
+        <li><code>set_checkout</code> stops hiding the other writer's membership change.</li>
+        <li><code>CompositeCommand</code> becomes all-or-nothing.</li>
+        <li>An <strong>unknown status is never due</strong>.</li>
+        <li><code>touch</code> stops bringing back ended claims.</li>
+        <li>Undo refuses to overwrite a value another writer changed.</li>
+      </ul>
+      <p class="done-when">Done when each of Codex's six probes is a regression test that passes.</p></li>
+    <li><strong>Pilot one complete workflow, <em>set status</em>, end to end.</strong>
+      <ul>
+        <li><code>planning/status.py</code> owns the vocabulary as an <code>Enum</code>, with <code>Unknown</code> as its own type, plus the readiness rules. There's no state machine; out-of-order recording stays.</li>
+        <li><code>step_status/actions.py: set_status(...) -&gt; Action</code> is called by both the window and <code>dplanner status set</code>. The window gains the claim release it lacks today.</li>
+        <li>The first architecture tests:
+          <ul>
+            <li><code>planning/</code> imports only <code>core</code> and <code>domain</code>.</li>
+            <li>One module reaches another only through <code>aspect.py</code> or <code>actions.py</code>.</li>
+            <li>The module graph is acyclic.</li>
+          </ul></li>
+      </ul>
+      <p class="done-when">Done when the GUI and CLI give the same outcome for every status change, the literal-<code>"done"</code> comparisons are type errors, and a status change touches measurably fewer places than today.</p></li>
+  </ol>
+  <p>After the pilot, extend the same pattern: the kind facts, then the root's clusters, then launch as an external effect before the daemon. The multiplayer design waits for the decision below.</p>
+  <div class="decisions"><strong>Waiting on Knut:</strong>
+    <ol>
+      <li>Should the multiplayer server only <em>coordinate</em> (presence, claims, messages), or be the <em>authority</em> over plan edits?</li>
+      <li>Should the GUI's <em>Set Status</em> release an agent's claim, as the CLI does?</li>
+      <li>Should the <code>actions.py</code> pattern go into CLAUDE.md once the pilot has landed?</li>
+    </ol></div>
+</aside>
 <header class="masthead">
   <div class="eyebrow">main @ 0472101 · 3 October 2026 · review, no code changed</div>
   <h1>Where DPlanner is starting to crack</h1>
@@ -152,10 +204,17 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
   </div>
 </header>
 
-<div class="inshort" aria-label="Second opinion (Codex) summary">
-  <span class="label">Second opinion (Codex) · 4 October 2026</span>
-  <p><strong>The diagnosis largely holds; the remediation needs a stronger application boundary.</strong> Keep the root as wiring and give shared planning rules an owner. Add small headless APIs for complete actions, with validation and transactional changes shared by the GUI, CLI, daemon and future server. Headless imports and an acyclic graph help, but do not by themselves contain coupling or make concurrent writes safe.</p>
-  <p>Fix the reproduced persistence bugs first, preserve the different meanings of identity, presentation and readiness, and decide whether multiplayer coordinates workers or owns plan edits before redesigning storage. <a href="#second-opinion-codex">Read the evidence, qualifications and alternatives in §11.</a> The original review follows unchanged.</p>
+<div aria-label="Where the discussion stands">
+  <h3 style="margin-top:22px">Where the discussion stands</h3>
+  <div class="voices">
+    <div><span class="who">The review (Claude)</span><span class="when">3–4 October · §1–§10</span>
+      <p>Keep the composition root as wiring. Give the planning ontology a headless home in a <code>planning/</code> tier, and let what's left cross modules along an acyclic graph. Fix the seams for two writers before the daemon.</p></div>
+    <div><span class="who">Second opinion (Codex)</span><span class="when">4 October · §11</span>
+      <p><strong>The diagnosis largely holds; the remediation needs a stronger application boundary.</strong> Headless actions for complete workflows, shared by every writer. Reproduced the bugs and found two more. Decide what multiplayer is the authority for before redesigning storage.</p></div>
+    <div><span class="who">Response (Claude)</span><span class="when">4 October · §12</span>
+      <p>Agrees with about 80% of it and takes three corrections. Actions should be a per-module <code>actions.py</code>, not a layer. Import facts, inject effects. Enforce all of it with mypy and architecture tests.</p></div>
+  </div>
+  <p style="font-size:14px;color:var(--muted)">§13 records how the three of us worked on this and the open questions. The original review below is unchanged.</p>
 </div>
 
 <!-- 1 -->
@@ -1084,8 +1143,245 @@ class Op:
   <p><strong>4,382 tests passed, 25 skipped</strong>, with four Qt deprecation warnings. Ruff and both mypy runs (default platform and <code>--platform win32</code>, 797 source files each) passed. The six diagnostic probes ran separately and changed no application or test files. Passing the existing suite confirms the baseline; it does not cover the additional cases demonstrated by the probes.</p>
 </section>
 
+<!-- 12 -->
+<section id="response-claude">
+  <h2><span class="num">12</span>Response to the second opinion (Claude)</h2>
+  <div class="inshort"><span class="label">In short</span>
+    <p>It's a strong second opinion and I agree with roughly 80% of it. It corrects three overreaches in my review, adds two real defects, and names the decision my report assumed without asking: what the multiplayer server is the authority for. Its central proposal is application actions ("units of work"). That idea is right, and the code proves the need. But it should be a <strong>per-module pattern</strong>, an <code>actions.py</code> of plain builder functions next to <code>aspect.py</code>, not a central application layer, which would become the next composition root. All of it is kept honest by <strong>mypy and architecture tests</strong>, not by convention.</p>
+  </div>
+  <p class="eyebrow">Assessed for performance, readiness for v2, modularity, scaling with features, ease of refactoring and debugging, and the risk of over-engineering · same source, <code>0472101</code></p>
+
+  <h3>The code proves the case for actions</h3>
+  <p>CLAUDE.md promises that a menu action and a CLI verb "build the same object from <code>domain/commands.py</code>", so that "neither can grow a behaviour the other lacks". For setting a status they already have:</p>
+  <div class="tree">
+    <div class="code"><div class="src"><span><b>window</b> · step_status/module.py:120</span></div><pre><code>def run(context: Context) -&gt; None:
+    steps = self._chosen(context)
+    if any(self._deps.works_nobody(step) for step in steps):
+        return
+    today = self._deps.clock.today()
+    with self._deps.undo.gesture("Set Status"):
+        for step in steps:
+            if read(step) == status:
+                continue
+            self._deps.undo.push(
+                status_command(step, status, today=today, ...))</code></pre></div>
+    <div class="code"><div class="src"><span><b>CLI</b> · step_status/cli.py:67</span></div><pre><code>def set_status(context, args) -&gt; int:
+    step = find_step(...)
+    if (kind := works_nobody(step)) and args.state != PENDING:
+        raise CliError(...)
+    <span class="hl">if args.state == DONE and not because and ... is_agent(step) and in_agent_shell():</span>
+<span class="hl">        raise CliError(_review_first(step, args.step))</span>
+<span class="hl">    note, added = note_reason(context, step, because) if because else ("", True)</span>
+<span class="hl">    ended = args.state in STOPPED and end_claim(context, step)</span>
+    _say(context, step, args.state, note, added, ended)</code></pre></div>
+  </div>
+  <p>The shared <code>status_command</code> is there, but the <em>workflow</em> isn't. Only the CLI refuses an agent's done-without-review, records the reason as a note, and <strong>ends the at-work claim</strong> (the only path to that is <code>modules/__init__.py:4368</code>). A person marking a step done in the window leaves the agent's claim standing. That proves Codex's point that sharing <code>SetModuleDataCommand</code> doesn't share the action.</p>
+  <p>I checked three more of Codex's claims in the code:</p>
+  <ul>
+    <li>An unknown status reads as <code>pending</code> (<code>step_status/aspect.py:81</code>), so a word written by a newer build is <em>due again</em>.</li>
+    <li><code>launch_due</code> spawns, then claims (<code>step_agent_instruction/module.py:824-827</code>).</li>
+    <li><code>CompositeCommand.redo</code> runs its commands with no rollback (<code>domain/commands.py:329-331</code>).</li>
+  </ul>
+
+  <h3>Corrections I accept</h3>
+  <ul class="findings">
+    <li><h4>One ordered kind list was too much <span class="tag good">accepted</span></h4>
+      <p>The key and the kind word share one ranking. The primary glyph (who works it), the medallions (several marks), the body tone (includes done) and the scope rules (where traversal stops) are separate policies. <code>planning/</code> owns the <em>facts</em> and that one ranking. The policies stay explicit and read the facts.</p></li>
+    <li><h4>No restrictive state machine <span class="tag good">accepted</span></h4>
+      <p><code>domain/progression.py:36</code>: "the graph gates <em>launching</em>, not <em>recording</em>". My <code>TRANSITIONS</code> sketch in §5 would have broken out-of-order recording. <code>planning/</code> owns the vocabulary and the readiness rules, and doesn't police transitions.</p></li>
+    <li><h4>Off-stack writes were overstated <span class="tag good">accepted</span></h4>
+      <p><code>record_started</code> and <code>record_merged</code> are documented external facts. Only the membership calls with no origin remain a finding.</p></li>
+    <li><h4>Smaller points <span class="tag good">accepted</span></h4>
+      <ul>
+        <li>The commitment is <em>ownership plus versioned contracts</em>, not a "fixed" model.</li>
+        <li>Step numbers are public references, so repairing them by lint is not harmless.</li>
+        <li>Per-entry versions miss graph-wide invariants, so <code>link_refusal</code> runs when a change is accepted.</li>
+        <li>A lease needs fencing.</li>
+        <li>A launch is an external effect: record the run intent before spawning, then reconcile.</li>
+      </ul></li>
+  </ul>
+
+  <h3>Where I qualify Codex</h3>
+  <ul class="findings">
+    <li><h4>Actions belong to their owner, not a layer <span class="tag caution">qualified</span></h4>
+      <p>A complete workflow is a plain headless function in the owning module's <code>actions.py</code>. It returns one composite command plus the effects that follow it. It's the existing "both surfaces build the same object" rule, moved up from command to workflow. <code>status_command</code> and <code>rewire_command</code> are already builders. There's no registry, no bus and no handler interface. A central <code>application/</code> package would be a horizontal layer every feature edits, the composition root's problem all over again.</p></li>
+    <li><h4>Import facts, inject effects <span class="tag good">we converge</span></h4>
+      <p>Pure readers are imported. A module's importable surface is <strong>only <code>aspect.py</code> (facts) and <code>actions.py</code> (workflows)</strong>, which is tighter than my earlier "any headless file" and testable. Effectful services stay injected, even with one implementation, because tests need fakes: the store, clock, launcher, claim board and network. Actions don't call those services. They <em>name</em> the effects as values, and the surface performs them.</p></li>
+    <li><h4>Don't block the facts refactor on the authority decision <span class="tag caution">qualified</span></h4>
+      <p>Extracting the planning facts and narrowing the root are pure refactors, independent of multiplayer. Only operations, versions and the server wait. <code>build-order.md</code> already puts the server last, behind "git plus advisory claims", which is Codex's first option: a coordination service.</p></li>
+    <li><h4>Versions don't belong in git files <span class="tag caution">added</span></h4>
+      <p>A per-entry version counter stored in the plan files conflicts in <em>every</em> concurrent git merge, because both sides bump it. Versions live in the authority's log.</p></li>
+    <li><h4>No SQLite for now <span class="tag caution">qualified</span></h4>
+      <p>Git-mergeable plan files are a product pillar: FORMAT.md, plan repositories, review in PRs. A second writable source of truth would be worse, and Codex itself notes SQLite doesn't coordinate machines.</p></li>
+  </ul>
+
+  <h3>How the planning tier and actions scale, and fit with the modules</h3>
+  <p>Knut asked how both would hold up over time and stay friendly to the modules, and to rely on type checks and architecture checks wherever possible. Every arrow below is an import direction, kept acyclic and checked by a test:</p>
+  <div class="mermaid-wrap"><pre class="mermaid">
+flowchart TB
+  PL["planning/&lt;br/&gt;facts + readiness · pure&lt;br/&gt;imports core, domain only"]
+  AS["&lt;module&gt;/aspect.py&lt;br/&gt;storage of non-planning aspects"]
+  AC["&lt;module&gt;/actions.py&lt;br/&gt;complete workflows → Action"]
+  OTHER["another module's&lt;br/&gt;aspect.py / actions.py"]
+  CLI["&lt;module&gt;/cli.py&lt;br/&gt;applies, flushes, performs effects"]
+  QT["&lt;module&gt;/module.py (Qt)&lt;br/&gt;one undo gesture, performs effects"]
+  D["daemon root · (server)"]
+  AS --> PL
+  AC --> PL
+  AC --> AS
+  AC --> OTHER
+  CLI --> AC
+  QT --> AC
+  D --> AC
+  </pre></div>
+  <div class="code"><div class="src"><span>sketch · planning/status.py</span><span>the type makes the unknown-status probe impossible</span></div><pre><code>class Status(Enum):                 <span class="c"># Enum, not StrEnum: --strict-equality rejects status == "done"</span>
+    PENDING = "pending"
+    IN_PROGRESS = "in-progress"
+    READY_FOR_REVIEW = "ready-for-review"
+    READY_TO_MERGE = "ready-to-merge"
+    DONE = "done"
+    BLOCKED = "blocked"             <span class="c"># .value is the word on disk; the format is unchanged</span>
+
+@dataclass(frozen=True)
+class Unknown:
+    word: str                       <span class="c"># written by a newer build, left on disk untouched</span>
+
+def stored(step: Step) -&gt; Status | Unknown: ...
+
+def launchable(view: PlanView, step: Step) -&gt; bool:
+    match stored(step):
+        case Unknown():
+            return False            <span class="c"># never due on a word this build can't read</span>
+        case Status.PENDING:
+            return prerequisites_recorded(view, step)
+        case _:
+            return False</code></pre></div>
+  <div class="code"><div class="src"><span>sketch · step_status/actions.py</span><span>one workflow, every surface</span></div><pre><code>def refusal(view: PlanView, step: Step, status: Status, actor: Actor) -&gt; str:
+    ...                             <span class="c"># why not, or "": the CLI's error and the menu's greyed label</span>
+
+def set_status(view: PlanView, step: Step, status: Status, *,
+               actor: Actor, today: date, because: str = "") -&gt; Action:
+    commands = [status_command(step, status, today=today)]
+    if because:
+        commands.append(notes_actions.decision(view, step, because).command)
+    effects = (EndClaim(step.id),) if status in STOPPED else ()
+    return Action(CompositeCommand("Set Status", commands), effects)
+
+<span class="c"># window:  action = set_status(...); undo.push(action.command); perform(action.effects)</span>
+<span class="c"># CLI:     action = set_status(...); apply(action.command); flush(); perform(action.effects)</span></code></pre></div>
+
+  <h4>How each one grows</h4>
+  <ul>
+    <li><strong>The planning tier grows with the ontology, not with features</strong>: about ten aspects plus readiness. A new feature lands as a module. Creep is how this fails. The guard is a short, explicit <code>PLANNING_ASPECTS</code> list in <code>test_architecture.py</code>, so adding to it is a deliberate, reviewed diff. If it passes about 15 entries, stop and rethink.</li>
+    <li><strong>Actions grow with verbs</strong>, about one per verb that changes the plan. That's the same curve as <code>CliCommand</code>s today, spread across the modules that own them. Nothing central lists them, so there's no hotspot. A workflow that spans modules composes by calling: approving a review calls <code>step_status.actions.set_status(...)</code> and combines the result. The risk is an <code>actions.py</code> that grows into a god file. The guard is one function per verb, and splitting the module when its actions outgrow its CLI.</li>
+    <li><strong>Modules stay vertical slices.</strong> The only cross-module surface is two files per module, both visible to a test.</li>
+  </ul>
+
+  <h4>Enforced by mypy</h4>
+  <p>mypy already runs with <code>strict = true</code>, which includes <code>--strict-equality</code>, and with <code>warn_unreachable</code>.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>Type</th><th>What it makes impossible</th></tr></thead>
+    <tbody>
+      <tr><td><code>Status</code> and <code>Kind</code> as <code>enum.Enum</code></td><td><code>status == "done"</code> against a literal: the bug class at root:704/719 and <code>coverage/trace.py:361,452</code></td></tr>
+      <tr><td><code>stored() -&gt; Status | Unknown</code></td><td>asking whether an unreadable status is due. It has to be handled first, and <code>warn_unreachable</code> flags a forgotten branch.</td></tr>
+      <tr><td><code>PlanView</code>, a <code>Protocol</code> with only <code>Library</code>'s queries</td><td>an action that mutates the model instead of building a command</td></tr>
+      <tr><td><code>Actor = Person | AgentRun | Daemon</code></td><td>actor-specific rules hidden in an <code>in_agent_shell()</code> check. It's also the author field v2 needs, at no cost now.</td></tr>
+      <tr><td><code>Action(command, effects, label)</code> with effects as frozen dataclasses (<code>EndClaim</code> first)</td><td>an action quietly calling a service: effects are values a test can compare</td></tr>
+    </tbody>
+  </table></div>
+
+  <h4>Enforced by <code>tests/test_architecture.py</code></h4>
+  <ol>
+    <li><code>planning/</code> imports only <code>core</code> and <code>domain</code>.</li>
+    <li>One module imports another only through <code>aspect.py</code> or <code>actions.py</code>. Both are headless, checked per package rather than by bare file name.</li>
+    <li>The module import graph is acyclic, and a failure names the cycle.</li>
+    <li><code>actions.py</code> imports no <code>framework</code>, no Qt and no <code>domain.store</code>: it builds, and its callers persist.</li>
+    <li><strong>Ratchets</strong>, counts that may only fall: the root's line count, and how many built-in commands are pushed or applied directly outside <code>actions.py</code>.</li>
+    <li>The set of declared <code>MODULE_ID</code>s doesn't change.</li>
+  </ol>
+  <p>A rule kept "by convention" erodes. A test that names the offending import doesn't.</p>
+
+  <h3>Performance</h3>
+  <ul>
+    <li><strong>Actions</strong> are plain function calls that build commands. There's no dispatch.</li>
+    <li><strong>An all-or-nothing composite</strong> costs nothing extra unless something fails.</li>
+    <li><strong>Validating the whole graph when a change is accepted</strong> is O(V+E) per batch, well under a millisecond at today's plan sizes; <code>scripts/measure_scaling.py</code> is the check.</li>
+    <li><strong>Enums</strong> cost an attribute lookup.</li>
+    <li>None of this touches the debounce or announce paths.</li>
+  </ul>
+
+  <h3>Reconciled order</h3>
+  <div class="scroll"><table>
+    <thead><tr><th>Step</th><th>What</th><th>Who argued for it</th></tr></thead>
+    <tbody>
+      <tr class="rec"><td>1 Correctness</td><td><code>write_atomic</code>, <code>set_checkout</code>, an all-or-nothing composite, unknown status never due, <code>touch</code>, refusing stale undo</td><td>both</td></tr>
+      <tr class="rec"><td>2 Pilot: <em>set status</em></td><td><code>planning/</code> status; <code>step_status/actions.py</code> for both surfaces; the first architecture tests</td><td>both (Codex: one workflow; Claude: the planning tier and the tests)</td></tr>
+      <tr><td>3 Planning facts, narrower root</td><td>kind predicates and one key ranking, with separate policies; imports only through <code>aspect.py</code> and <code>actions.py</code></td><td>Claude; Codex would settle the boundaries first</td></tr>
+      <tr><td>4 Launch as an external effect</td><td>durable run intent and reconciliation, before the daemon</td><td>Codex</td></tr>
+      <tr><td>5 Multiplayer authority</td><td>decide first, then design operations and versions (kept out of git files)</td><td>Codex; Claude agrees</td></tr>
+      <tr><td>6 Renames and docs</td><td>as responsibilities settle</td><td>both</td></tr>
+    </tbody>
+  </table></div>
+  <p>The durable source is <a href="response-claude.md">response-claude.md</a>.</p>
+</section>
+
+<!-- 13 -->
+<section id="how-made">
+  <h2><span class="num">13</span>How this review was made</h2>
+  <div class="inshort"><span class="label">In short</span>
+    <p>Three participants over two days. Knut asked the questions and makes the decisions. Claude reviewed first. Codex reviewed Claude's review independently. Claude responded. Every claim was checked against the tree, by citation, measurement, simulation or probe, and the disagreements are kept visible, each in its own voice.</p>
+  </div>
+  <h3>How we worked</h3>
+  <ul>
+    <li><strong>Independent passes over the same source.</strong> Codex reviewed without being steered, then Claude answered Codex.</li>
+    <li><strong>Claims are checked.</strong> Each one has a <code>file:line</code>, a measurement, a simulation over the real composition root, or, for Codex, a one-off probe over temporary files.</li>
+    <li><strong>Voices stay separate.</strong> §11 is Codex's and §12 is Claude's. Nothing is merged into one blended text.</li>
+    <li><strong>Knut decides.</strong> The reviews recommend; the open questions are his.</li>
+  </ul>
+  <h3>The conversation</h3>
+  <div class="scroll"><table>
+    <thead><tr><th>When</th><th>Who</th><th>Question or position</th></tr></thead>
+    <tbody>
+      <tr><td>3 Oct</td><td>Knut</td><td>Asked for an entropy and structural review covering (a) entropy and over-engineering, (b) bad patterns emerging, and (c) seams starting to crack, to keep scaling and keep the modularity, with multiplayer and autonomous workers ahead.</td></tr>
+      <tr><td>3 Oct</td><td>Claude</td><td>The root holds about 1,900 lines of business logic and is touched by 36% of commits. The step ontology is written six times. There are two bugs that need two writers. Persistence assumes a single writer.</td></tr>
+      <tr><td>3 Oct</td><td>Knut</td><td>"What is better than the composition root? It has kept scale working so far. Would we be better off with another architectural pattern?"</td></tr>
+      <tr><td>3 Oct</td><td>Claude</td><td>Keep the root as wiring and add the hybrid: headless imports along an acyclic graph, plus extension points. The event bus and the service locator are rejected.</td></tr>
+      <tr><td>3 Oct</td><td>Knut</td><td>Asked for a report first, with code examples, diagrams, alternatives and renaming in detail, and only then a decision.</td></tr>
+      <tr><td>4 Oct</td><td>Knut</td><td>"What if a new layer held more of the domain, like estimation and statuses?"</td></tr>
+      <tr><td>4 Oct</td><td>Claude</td><td>A <code>planning/</code> tier, if it holds the ontology only. It absorbs 23 of 62 root helpers in simulation. Its risk is creep.</td></tr>
+      <tr><td>4 Oct</td><td>Codex</td><td>Second opinion: reproduced the bugs with probes and found two more. Argued for headless application actions and an explicit multiplayer authority. Qualified the kind ranking, the state machine and "fixed".</td></tr>
+      <tr><td>4 Oct</td><td>Knut</td><td>Asked Claude to assess Codex on performance, v2, modularity, scaling, ease of refactoring and debugging, and over-engineering. Then: how would the planning tier and units of work scale and fit with the modules? Rely on type checks and architecture checks to stop creeping entropy.</td></tr>
+      <tr><td>4 Oct</td><td>Claude</td><td>Agreed with about 80% and accepted three corrections. Proposed actions as a per-module <code>actions.py</code>; importing facts and injecting effects; enforcement by types and tests; and the reconciled order with the next move at the top of this page.</td></tr>
+    </tbody>
+  </table></div>
+  <h3>Where each of us stands on 4 October</h3>
+  <ul>
+    <li><strong>Agreed:</strong>
+      <ul>
+        <li>the diagnosis</li>
+        <li>bugs first</li>
+        <li>a planning home for status, readiness, estimates and scope</li>
+        <li>pure facts may be imported, and effects stay injected</li>
+        <li>no message bus and no microservices</li>
+        <li>on-disk ids stay stable</li>
+      </ul></li>
+    <li><strong>Open between Claude and Codex:</strong>
+      <ul>
+        <li>Should the facts refactor wait for the transaction and authority boundaries (Codex), or go ahead independently (Claude)?</li>
+        <li>Should actions be a small application layer (Codex's phrasing), or a per-module pattern (Claude)?</li>
+      </ul></li>
+    <li><strong>Waiting on Knut:</strong>
+      <ul>
+        <li>the multiplayer authority</li>
+        <li>whether the GUI's <em>Set Status</em> releases claims</li>
+        <li>whether <code>actions.py</code> goes into CLAUDE.md after the pilot</li>
+      </ul></li>
+  </ul>
+  <p>The durable source is <a href="how-this-review-was-made.md">how-this-review-was-made.md</a>.</p>
+</section>
+
 <footer>
-  This page is <code>docs/research/2026-10-03-structural-review/report.html</code>. Source notes in the same folder: README, alternatives, planning-tier, renaming, seams, waves, second-opinion-codex. Updated 4 October 2026 with the planning tier (§5) and Second opinion (Codex) (§11). Original measurements on <code>main</code> at <code>0472101</code>; the second opinion records its own validation baseline. Code excerpts are quoted from the tree with their <code>file:line</code>. Sketches are marked as sketches.
+  This page is <code>docs/research/2026-10-03-structural-review/report.html</code>. Source notes in the same folder: README, alternatives, planning-tier, renaming, seams, waves, second-opinion-codex, response-claude, how-this-review-was-made. Updated 4 October 2026 with the planning tier (§5), Second opinion (Codex) (§11), the response (§12), how the review was made (§13) and the next move at the top. Original measurements on <code>main</code> at <code>0472101</code>; the second opinion records its own validation baseline. Code excerpts are quoted from the tree with their <code>file:line</code>. Sketches are marked as sketches.
 </footer>
 </main>
 </div>

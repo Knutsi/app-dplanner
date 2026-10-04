@@ -12,3 +12,26 @@ docs. Wave 6 is groundwork for the daemon and the server. Nothing here is commit
 | 4 Names | The seven renames in renaming.md, the file-role names, test folders per package, `HEADLESS_FILES` per package. | ~8 PRs | 3 (moves first) |
 | 5 Docs | NOTES-FOR-APPFRAME per framework file (current divergence only). ARCHITECTURE.md split per rule area, with a dated `decisions.md` for history. *Mechanical facts* into the rules files. | 3 PRs | any |
 | 6 Groundwork for the daemon and the server | A per-project flush lock. A headless claim lease. Auto-launch's decision out of Qt. No migration writes on load, plus a minimum-reader stamp. Store slots that don't swallow. Finer conflict entries. Commands into operations (design doc first). | design doc, then ~6 PRs | 1; the operations work before v2 step 6 |
+
+## Reconciled order (4 October, after the second opinion)
+
+The waves above were the first review's proposal. After Codex's second opinion and Claude's
+response ([response-claude.md](response-claude.md)), the order both reviews support is:
+
+1. **Correctness.**
+   - `write_atomic` and `set_checkout`.
+   - An atomic composite.
+   - An unknown status is never due.
+   - `touch` no longer revives ended claims.
+   - A stale undo is refused.
+2. **Pilot *set status* end to end.**
+   - `planning/` owns the status vocabulary, readers and readiness.
+   - `step_status/actions.py` serves both surfaces.
+   - The first architecture tests land with it.
+3. **Planning facts, and a narrower root.**
+   - Kind predicates and one key ranking, with the policies kept separate.
+   - Cross-module imports go only through `aspect.py` and `actions.py`.
+4. **Launch as an external effect.** Durable run intent and reconciliation, before the daemon.
+5. **Decide the multiplayer authority.** Then design operations and versions.
+6. **Renames and docs**, as responsibilities settle.
+
