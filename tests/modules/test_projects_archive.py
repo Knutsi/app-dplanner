@@ -12,10 +12,14 @@ import pytest
 from dplanner.domain.library_file import read_library_file
 from dplanner.framework.builder import INDEX_PANEL_ID
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
-from dplanner.modules.projects import module as projects_module
-from dplanner.modules.projects import verbs
-from dplanner.modules.projects.archive_tab import ARCHIVE_KIND, NOTHING_ARCHIVED, ArchiveActivity
-from dplanner.modules.projects.verbs import ARCHIVED_KIND
+from dplanner.modules.project_archive import module as archive_module
+from dplanner.modules.project_archive import verbs
+from dplanner.modules.project_archive.archive_tab import (
+    ARCHIVE_KIND,
+    NOTHING_ARCHIVED,
+    ArchiveActivity,
+)
+from dplanner.modules.project_archive.verbs import ARCHIVED_KIND
 
 
 @pytest.fixture
@@ -73,7 +77,7 @@ def test_a_project_whose_edits_cannot_reach_disk_is_not_archived(services, proje
     """An archived project is never saved again, so it leaves only once its edits have."""
     told = []
     monkeypatch.setattr(services.autosave, "flush_now", lambda: None)
-    monkeypatch.setattr(projects_module, "notice", lambda _p, title, text: told.append(text))
+    monkeypatch.setattr(archive_module, "notice", lambda _p, title, text: told.append(text))
     services.document.set_field(project.id, "summary", "not yet on disk")
 
     services.actions.run("projects.archive", select(services, "project", project.id))

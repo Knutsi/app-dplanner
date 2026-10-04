@@ -4,7 +4,7 @@ paths:
   - "src/dplanner/core/storage/**"
   - "src/dplanner/core/{fsio,repository}.py"
   - "src/dplanner/framework/{autosave,session,window_watch,project_list_segment}.py"
-  - "src/dplanner/modules/{sync,library,library_watch,agent_at_work,projects,github}/**"
+  - "src/dplanner/modules/{sync,library,library_watch,agent_at_work,projects,project_archive,github}/**"
   - "src/dplanner/cli/discovery.py"
   - "tests/domain/test_{store,library_file,plan_repo,relocate,repositories,at_work,project_locations,migration_v3}*.py"
   - "tests/core/test_{storage_contract,locations,pointer,remotes,sparse}.py"
@@ -137,8 +137,9 @@ paths:
   always writes outside any store; Open Project and Remove from Library only remember and
   forget. Neither is honestly reversible, so they apply directly with `LIBRARY_ORIGIN` —
   the root's `connect_project` — and the library file is rewritten by the ordinary flush
-  (a structure mark on the library root). The verbs live in `modules/projects/`; the
-  library module keeps New/Open Project Library and the title. **The store lets go before
+  (a structure mark on the library root). New, Open and Share live in `modules/projects/`,
+  Archive, Restore and Remove from Library in `modules/project_archive/`; the library
+  module keeps New/Open Project Library and the title. **The store lets go before
   the model does** — `store.detach`/`store.archive`, then `remove_child` — because sync
   rewires on the structure signal from the store's records; the root's
   `disconnect_project` and `archive_project` are the one spelling.

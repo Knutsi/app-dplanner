@@ -5,7 +5,7 @@ requirement links, and each of those belongs to a different module. Five command
 step is what that costs when every module keeps to its own verb — most of a real plan's
 invocations, measured. So ``step add`` takes contributions: each module's Qt-free
 ``cli.py`` exports a :class:`StepAuthor` — the flags it registers and what it does with
-them — and the composition root hands the list to ``projects_cli.commands()``, exactly
+them — and the composition root hands the list to ``steps_cli.commands()``, exactly
 as it hands lint its checks. The shape lives here, like :class:`~dplanner.cli.lint.LintCheck`,
 because the contributing modules may not import each other and ``cli/`` sits below them all.
 

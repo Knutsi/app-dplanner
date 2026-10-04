@@ -36,7 +36,7 @@ from dplanner.framework.list_rows import HOST_ROLE
 from dplanner.framework.table import Cell, Column, Table
 from dplanner.framework.toolbar import Toolbar
 from dplanner.framework.widgets import EmptyState, caption
-from dplanner.modules.projects.verbs import ARCHIVED_KIND
+from dplanner.modules.project_archive.verbs import ARCHIVED_KIND
 from dplanner.theme.tokens import CAPTION_GAP, FIELD_GAP, PANEL_MARGIN, SECTION_GAP
 
 ARCHIVE_KIND = "archive"

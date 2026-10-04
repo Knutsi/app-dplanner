@@ -39,9 +39,10 @@ git repository, opened through its own storage provider. A **Step** is a node in
 repository and always writes files outside any store; removing one only forgets it. Neither
 is something Ctrl+Z could honestly reverse, so File ▸ New Project, Open Project and Remove
 from Library apply their model change directly with their own origin — the same discipline
-as syncing an external fact, below. The membership verbs live with the project verbs
-(`modules/projects/`): New Project is the Project dialog in create mode and Open Project is
-a wizard over the two ways in, and all of them start from the same question — *which plan
+as syncing an external fact, below. New and Open live with the project verbs
+(`modules/projects/`), Remove from Library with the archive (`modules/project_archive/`,
+since it forgets an archived row as readily as a live project): New Project is the Project
+dialog in create mode and Open Project is a wizard over the two ways in, and all of them start from the same question — *which plan
 repository?* — answered by one picker. The library module keeps only the question of
 *which library*.
 
@@ -1289,7 +1290,8 @@ removing a project from the library, a release, an outside edit.
 A copied step is a `StepClip` (`canvas/clipboard/clip.py`): its title, its links, every
 module's data and prose, and the bytes of every file beside it, plus where it sat. A paste
 turns a list of clips into **one** `CompositeCommand` — the same object the window pushes
-and `dplanner step duplicate` applies — so a paste is one undo step and one transaction.
+and `dplanner step duplicate` applies (`modules/steps/cli.py`, handed the canvas's
+`duplicator` by the root) — so a paste is one undo step and one transaction.
 Duplicate is that paste with the clipboard left alone: what the user had copied stays copied.
 
 Four rules, each a decision:
@@ -3677,7 +3679,7 @@ The split is what makes it right rather than merely legal. `cli/lint.py` owns th
 `cli.py` exports `lint_checks()`, so the knowledge of *what missing looks like* — and which
 verb closes the gap, which every message names — stays with the module that owns the aspect.
 `default_cli_commands()` assembles the list, and its order is the report's order. The
-alternative — a verb inside `projects/cli.py` with injected predicates — would put a
+alternative — a verb inside `steps/cli.py` with injected predicates — would put a
 cross-feature report inside one feature and grow that module's signature with facts that are
 not its business.
 
@@ -3703,7 +3705,7 @@ realises and its figures — five modules' facts, and five commands when every m
 its own verb. Measured against a real plan, that was most of the invocations. So `step add`
 takes **authors**: each contributing module's Qt-free `cli.py` exports a `StepAuthor` — the
 flags it registers on the verb's parser, and what it applies to the fresh step — and the
-composition root assembles the list into `projects_cli.commands(step_authors=…)`, exactly
+composition root assembles the list into `steps_cli.commands(step_authors=…)`, exactly
 as it assembles lint's checks. The shape lives in `cli/authoring.py` for lint's reason: the
 contributing modules may not import each other, and `cli/` sits below them all.
 
@@ -8318,7 +8320,7 @@ judgement `.claude/rules/collectors.md` records for uncovered spec text, which i
 either direction is on no graph, the canvas already rings it in the refusal red — the one
 mark that says *something is wrong here* — and lint saying so is the two surfaces agreeing.
 It is silent on both real plans. Its derivation, `ports()`, moved from the canvas's
-`marks.py` into `domain/ordering.py` for it: `modules/projects/cli.py` may not import
+`marks.py` into `domain/ordering.py` for it: `modules/steps/cli.py` may not import
 another module, and a second copy of a derivation is the thing that goes stale.
 
 ## A view refresh is coalesced, and hears one project

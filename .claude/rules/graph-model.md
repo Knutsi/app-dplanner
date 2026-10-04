@@ -2,6 +2,7 @@
 paths:
   - "src/dplanner/domain/{model,commands,ids}.py"
   - "src/dplanner/cli/lookup.py"
+  - "src/dplanner/modules/steps/**"
   - "src/dplanner/modules/auto_progress/**"
   - "src/dplanner/modules/branches/**"
   - "src/dplanner/domain/branches.py"

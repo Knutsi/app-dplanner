@@ -445,6 +445,7 @@ paths:
   command, and a `PastePolicy` per module with a say (`testing` re-mints ids,
   `step_agent_run` forgets, `feature` keeps the marker and drops the passages — they were
   read into *that* feature, and citing them again is a claim only a person can make).
-  `dplanner step duplicate` is the same function.
+  `dplanner step duplicate` is the same function (`canvas/cli.py`'s `duplicator`, handed to
+  `modules/steps/cli.py` by the root).
   `ARCHITECTURE.md`'s *Edit verbs belong to the surface whose things they act on* and *Copy
   and paste are a clone through the same command* have the reasoning.
