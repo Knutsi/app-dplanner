@@ -468,7 +468,9 @@ claim ended. The CLI applies the command and owes the follow-ups to
 nor said it did. The window keeps the same order: it pushes the composite, then asks
 autosave's `saved()` — flush now, and is everything on disk — and performs the follow-ups
 only on yes; while the save is paused or refused they stand on a notice whose retry saves
-first. Both run `perform`, which attempts every follow-up on its own and reports
+first, then ends only the claims whose step still reads stopped — between the gesture and
+the retry an undo or another writer may have taken the status back, and a claim ended for a
+done that never reached disk is the very lie the order exists to prevent. Both run `perform`, which attempts every follow-up on its own and reports
 the ones that failed (a notice with a retry in the window, a refusal naming the written
 status in the CLI); a model change is never rolled back for an effect. `refusal()` is the same function behind the
 menu's greyed label and the CLI's error, and because it runs in an action state it reads only

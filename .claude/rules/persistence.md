@@ -47,7 +47,8 @@ paths:
   runs only once everything is written, and the verb's report goes with it, so a refused
   flush has released nothing and claimed no success. The window keeps the same order through
   `AutosaveService.saved()`, handed to a module as a `flush: Callable[[], bool]` seam: no
-  effect owed to a change runs until it answers True. `docs/architecture/persistence.md`'s *Save
+  effect owed to a change runs until it answers True, and a deferred one is re-checked
+  against the saved model first — an undo or another writer may have taken its cause back. `docs/architecture/persistence.md`'s *Save
   spans repositories; the exit dialog says what it records* and *A workflow is one function under
   both surfaces* have the reasoning.
 - **Two writers are expected.** An agent runs `dplanner` against a project a window has

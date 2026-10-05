@@ -316,6 +316,28 @@ def test_the_window_ends_no_claim_until_the_status_is_on_disk(
     assert NOTICE_ID not in [n.id for n in services.window.notices.notices()]
 
 
+def test_a_retry_after_the_status_was_undone_ends_no_claim(services, make_project, at_work_board):
+    """A deferred release is owed only while the saved plan still says the work stopped:
+    Done undone before it was saved leaves the agent's claim standing."""
+    from dplanner.domain.store import LibraryStore
+    from dplanner.modules.step_status.module import NOTICE_ID
+
+    steps, context = _window_steps(services, make_project, at_work_board, ["One"])
+    services.actions.run("status.in-progress", context)
+    services.autosave.flush_now()
+    services.autosave.pause()
+    services.actions.run("status.done", context)
+    services.undo.undo()
+    services.autosave.resume()
+    (notice,) = [n for n in services.window.notices.notices() if n.id == NOTICE_ID]
+    assert notice.act is not None
+    notice.act()
+    on_disk = LibraryStore(services.repo.library_path).load().step(steps[0].id)
+    assert stored(on_disk) is Status.IN_PROGRESS
+    assert [claim.doing for claim in at_work_board.claims()] == ["One"]
+    assert NOTICE_ID not in [n.id for n in services.window.notices.notices()]
+
+
 def test_a_refused_review_approval_is_a_refusal_not_a_traceback(cli, monkeypatch):
     """An agent approving a source that was never put up for review is held at review like
     any agent's done — said as one line, with nothing written."""

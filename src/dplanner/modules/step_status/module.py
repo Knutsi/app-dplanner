@@ -37,7 +37,7 @@ from dplanner.framework.notices import Notice
 from dplanner.framework.step_selection import chosen_steps
 from dplanner.framework.undo import UndoService
 from dplanner.framework.window import NoticeHost
-from dplanner.modules.step_status.workflows import LABEL, StatusWorkflow, perform
+from dplanner.modules.step_status.workflows import LABEL, STOPPED, StatusWorkflow, perform
 from dplanner.planning.status import DATA_FORMAT, MODULE_ID, Status, label, phrase, stored
 from dplanner.theme.icons import (
     check_icon,
@@ -149,6 +149,7 @@ class StepStatusModule:
                 claims, f"the plan is not saved yet, so {len(claims)} agent claim(s) still stand"
             )
             return
+        claims = [claim for claim in claims if self._still_stopped(claim)]
         failed = perform(claims, self._deps.end_claim).failed
         if not failed:
             self._deps.notices.clear_notice(NOTICE_ID)
@@ -157,6 +158,13 @@ class StepStatusModule:
             [claim for claim, _why in failed],
             f"{len(failed)} agent claim(s) could not be ended: {failed[0][1]}",
         )
+
+    def _still_stopped(self, claim: EndClaim) -> bool:
+        """Whether the saved plan still says the work on ``claim``'s step stopped. A retry
+        comes later than the status that owed it — an undo or another writer may have taken
+        that status back, and then the claim is no longer owed."""
+        library = self._deps.library
+        return library.has(claim.step) and stored(library.step(claim.step)) in STOPPED
 
     def _owed(self, claims: list[EndClaim], why: str) -> None:
         self._deps.notices.show_notice(

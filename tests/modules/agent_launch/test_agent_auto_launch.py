@@ -285,6 +285,34 @@ def test_a_shell_slow_to_start_is_claimed_once_it_has(
     assert intents.pending() == []
 
 
+def test_a_late_shell_keeps_its_intent_until_its_claim_is_saved(
+    services, plan, library_file, launch_locks, monkeypatch, tmp_path
+):
+    """The pass's own claim is no person answering: with the save held back the intent
+    stays, so a window that died now would claim the run rather than launch it again."""
+    opened_for = fake_terminal(monkeypatch)
+    run_dir = tmp_path / "run"
+    intents = interrupted_launch(
+        launch_locks, library_file, plan["C"], run_dir, shell_started=False
+    )
+    launch_when_due(services)
+    another_writer(library_file, "A1", "A2", "A3")
+    take_in(services)
+
+    services.autosave.pause()
+    (run_dir / launcher.SHELL_FILE).write_text("pid=1\n", encoding="utf-8")
+    module(services, "agent_launch").settle_launches()
+    settle(services)
+    assert status_of(by_title(LibraryStore(library_file).load(), "C")) is Status.PENDING
+    assert [each.step for each in intents.pending()] == [plan["C"].id]
+
+    services.autosave.resume()
+    a_fresh_launcher(services)._pass()  # The restart: it claims, saves and forgets.
+    assert opened_for == []
+    assert status_of(by_title(LibraryStore(library_file).load(), "C")) is Status.IN_PROGRESS
+    assert intents.pending() == []
+
+
 def test_a_launch_beside_an_interrupted_one_does_not_forget_it(
     services, plan, library_file, launch_locks, monkeypatch, tmp_path
 ):

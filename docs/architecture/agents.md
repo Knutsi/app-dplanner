@@ -283,7 +283,8 @@ retried blind**, since a shell slow to start would otherwise be a second one. Th
 intent stays on disk, because the refusal in memory dies with the window and the next one
 would find the step due with nothing to stop it; it goes when a person edits that step, which
 is the answer the refusal waited for, or when a later pass finds the shell file after all and
-claims it. The intent is
+claims it — and that claim, made by the pass itself, is not taken for the person's answer, so
+the intent stays until the claim is saved. The intent is
 this machine's fact, beside the lock, never the plan's: a run directory and a pid mean
 nothing on another machine. Only the unattended launch records one; a person's Run Agent is
 watched by the person who clicked it.

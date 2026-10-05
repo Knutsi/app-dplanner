@@ -181,7 +181,12 @@ class AutoLauncher:
 
     def _answered(self, step_id: str) -> bool:
         """Forget the refusal on ``step_id`` — and an interrupted launch's intent with it,
-        since a person touching the step is the retry it waited for. True when there was one."""
+        since a person touching the step is the retry it waited for. True when there was one.
+
+        A change made while a pass runs is the pass's own claim, never an answer: taken for
+        one, a late shell's claim would drop its intent before the claim reached disk."""
+        if self._busy:
+            return False
         reason = self._refused.pop(step_id, None)
         if reason == INTERRUPTED and (lock := self._deps.launch_lock) is not None:
             for intent in lock.intents.pending():
