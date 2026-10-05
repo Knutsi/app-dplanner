@@ -120,6 +120,7 @@ class SetFieldCommand:
             not isinstance(other, SetFieldCommand)
             or other.node_id != self.node_id
             or other.field != self.field
+            or other._before != self._after
         ):
             return False
         self.value = other.value
@@ -351,6 +352,7 @@ class SetModuleDataCommand:
             or other.node_id != self.node_id
             or other.module_id != self.module_id
             or other.label != self.label
+            or other._before != self._after
         ):
             return False
         self.data = other.data

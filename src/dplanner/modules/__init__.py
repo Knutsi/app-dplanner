@@ -57,7 +57,6 @@ if TYPE_CHECKING:
     from dplanner.domain.repositories import RepositoryFacts
     from dplanner.domain.store import FilesFor
     from dplanner.domain.workflow import Actor, EndClaim, PlanView
-    from dplanner.framework.autosave import AutosaveService
     from dplanner.framework.context import ContextService
     from dplanner.framework.debounce import DebounceService
     from dplanner.framework.mime_files import Payload
@@ -684,7 +683,7 @@ def _agents(
             repo=store,
             notices=services.window,
             clock=services.clock,
-            flush=lambda: _flushed(services.autosave),
+            flush=services.autosave.saved,
             launch_lock=(
                 launch_locks.for_library(store.library_path) if launch_locks is not None else None
             ),
@@ -2080,6 +2079,7 @@ def _aspects(
                 workflow=_status_workflow(),
                 end_claim=lambda claim: board.end(claim.project, claim.step),
                 notices=services.window,
+                flush=services.autosave.saved,
             )
         ),
         # No tab either: a check carries nothing, and the Covers tab that shows what it
@@ -2453,12 +2453,6 @@ def _due_steps(
     from dplanner.modules.agent_launch.due import due_now
 
     return [each.step for each in due_now(library, project, status_for)]
-
-
-def _flushed(autosave: "AutosaveService") -> bool:
-    """Autosave's flush now, and whether everything is on disk after it."""
-    autosave.flush_now()
-    return not autosave.has_pending()
 
 
 def _inherit_refs(subject: "Step", review: "Step") -> "Command | None":

@@ -26,14 +26,15 @@ def test_started_is_the_wrapper_having_written_its_shell_file(tmp_path):
     assert intent.started
 
 
-def test_a_file_this_build_cannot_read_is_skipped_and_outlives_clear(tmp_path):
+def test_a_file_this_build_cannot_read_is_skipped_and_never_dropped(tmp_path):
     directory = tmp_path / "intents"
     intents = LaunchIntents(directory)
     intents.record(an_intent(tmp_path))
     stranger = directory / "newer.json"
     stranger.write_text('{"format": 9, "actor": "robot"}', encoding="utf-8")
     assert [each.step for each in intents.pending()] == ["s1"]
-    intents.clear()
+    for intent in intents.pending():
+        intents.drop(intent.run)
     assert intents.pending() == [] and stranger.exists()
 
 

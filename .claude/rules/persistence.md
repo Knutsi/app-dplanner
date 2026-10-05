@@ -45,7 +45,9 @@ paths:
   nothing if the verb failed. **What a run owes outside the plan waits for that flush** —
   ending an agent's claim is appended to `CliContext.after_flush`, which `open_library`
   runs only once everything is written, and the verb's report goes with it, so a refused
-  flush has released nothing and claimed no success. `docs/architecture/persistence.md`'s *Save
+  flush has released nothing and claimed no success. The window keeps the same order through
+  `AutosaveService.saved()`, handed to a module as a `flush: Callable[[], bool]` seam: no
+  effect owed to a change runs until it answers True. `docs/architecture/persistence.md`'s *Save
   spans repositories; the exit dialog says what it records* and *A workflow is one function under
   both surfaces* have the reasoning.
 - **Two writers are expected.** An agent runs `dplanner` against a project a window has

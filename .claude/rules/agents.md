@@ -103,8 +103,9 @@ paths:
   opens; launches through `launch_due`, which asks nothing (no confirmation, no clone, no
   fallback — a refusal is a status line, remembered until that step, the switch or a
   profile changes); **records its intent before the spawn** (`intents.py`, beside the lock,
-  forgotten once the flush says the claim is on disk — a leftover is reconciled first: a
-  started shell is claimed, an unstarted one refused, neither relaunched); and writes the
+  forgotten only once a flush succeeded and its step no longer reads due — a leftover is
+  reconciled first: a started shell is claimed, an unstarted one refused and *kept*, so a
+  window built later refuses it too, until a person edits that step; and writes the
   claim at the spawn — in progress whatever *On launch*
   says, or the round's stamp for a turn — flushing at once. It must run **after** the
   adoption that woke it (the store mutes dirty forwarding while adopting), so its tests turn

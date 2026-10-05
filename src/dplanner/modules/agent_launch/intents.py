@@ -4,10 +4,11 @@ An unattended launch spawns a detached shell and then claims its step; the claim
 plan file only at the next flush. A process that died between the spawn and that flush left
 no trace, and the next window found the step due and launched it a second time. So the
 launcher writes its intent first — which step, which run, who launched — and forgets it only
-once the claim is on disk. An intent still here when the launcher next runs is a launch that
-was interrupted, and it is **reconciled, never retried blind**: a shell that started (the
-wrapper script wrote its shell file into the run directory) is a run, and its step is
-claimed; one that never started is refused for a person to start again.
+once its step no longer reads due in a plan that is on disk. An intent still here when the
+launcher next runs is a launch that was interrupted, and it is **reconciled, never retried
+blind**: a shell that started (the wrapper script wrote its shell file into the run
+directory) is a run, and its step is claimed; one that never started is refused for a person
+to start again.
 
 Like the launch lock it sits beside, this is this machine's fact — a temp directory, a shell
 that may or may not exist here — so it lives under the config directory, never in the plan.
@@ -93,11 +94,6 @@ class LaunchIntents:
 
     def drop(self, run: str) -> None:
         self._file(run).unlink(missing_ok=True)
-
-    def clear(self) -> None:
-        """Forget every intent this build reads; one it cannot is left for whoever can."""
-        for intent in self.pending():
-            self.drop(intent.run)
 
     def pending(self) -> list[LaunchIntent]:
         """Every intent still recorded, oldest first; a file this build cannot read is

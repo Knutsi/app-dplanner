@@ -289,6 +289,33 @@ def test_a_claim_that_cannot_be_ended_leaves_the_others_ended_and_says_so(
     assert NOTICE_ID not in [n.id for n in services.window.notices.notices()]
 
 
+def test_the_window_ends_no_claim_until_the_status_is_on_disk(
+    services, make_project, at_work_board
+):
+    """The window keeps the CLI's order: persist, then perform. While the save is held back
+    the status stands in memory only, so the claim stands too — on a notice with a retry
+    that saves and ends it once saving is possible again."""
+    from dplanner.domain.store import LibraryStore
+    from dplanner.modules.step_status.module import NOTICE_ID
+
+    steps, context = _window_steps(services, make_project, at_work_board, ["One"])
+    services.autosave.flush_now()
+    services.autosave.pause()
+    services.actions.run("status.done", context)
+    on_disk = LibraryStore(services.repo.library_path).load().step(steps[0].id)
+    assert stored(on_disk) is Status.PENDING
+    assert [claim.doing for claim in at_work_board.claims()] == ["One"]
+    (notice,) = [n for n in services.window.notices.notices() if n.id == NOTICE_ID]
+    assert "not saved" in notice.words and notice.act is not None
+
+    services.autosave.resume()
+    notice.act()
+    on_disk = LibraryStore(services.repo.library_path).load().step(steps[0].id)
+    assert stored(on_disk) is Status.DONE
+    assert at_work_board.claims() == []
+    assert NOTICE_ID not in [n.id for n in services.window.notices.notices()]
+
+
 def test_a_refused_review_approval_is_a_refusal_not_a_traceback(cli, monkeypatch):
     """An agent approving a source that was never put up for review is held at review like
     any agent's done — said as one line, with nothing written."""

@@ -351,9 +351,11 @@ def workspace(tmp_path):
 
 @pytest.fixture
 def cli_library(tmp_path):
+    """The CLI's library file — never ``library_file``: a test that builds a window too would
+    have the window's library replaced under it, and its saves refused as stale."""
     from dplanner.domain.seed import create_library
 
-    path = tmp_path / "library.json"
+    path = tmp_path / "cli-library.json"
     create_library(path)
     return path
 

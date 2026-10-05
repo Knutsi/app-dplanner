@@ -273,11 +273,17 @@ reaches the plan file at the pass's flush, so spawning, claiming in memory and f
 afterwards leaves no trace when the window dies in between, and the next one launches the
 step again. So `launch_due` writes an intent (`intents.py`: step, run id,
 actor, run directory) under the lock's own directory before it spawns, drops it when no
-shell opened, and the pass forgets it only once autosave says everything is on disk. A
+shell opened, and the pass forgets it only once autosave says everything is on disk *and*
+its step no longer reads due — a successful flush says nothing about an intent whose launch
+was never claimed. A
 pass that finds one left over reconciles it before launching anything: a shell that
 started (its wrapper wrote the `shell` file into the run directory) is a run, so its step
 is claimed; one that never started is refused with a sentence for a person — **never
-retried blind**, since a shell slow to start would otherwise be a second one. The intent is
+retried blind**, since a shell slow to start would otherwise be a second one. The refused
+intent stays on disk, because the refusal in memory dies with the window and the next one
+would find the step due with nothing to stop it; it goes when a person edits that step, which
+is the answer the refusal waited for, or when a later pass finds the shell file after all and
+claims it. The intent is
 this machine's fact, beside the lock, never the plan's: a run directory and a pid mean
 nothing on another machine. Only the unattended launch records one; a person's Run Agent is
 watched by the person who clicked it.

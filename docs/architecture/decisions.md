@@ -557,3 +557,15 @@ spawned, claimed in memory and flushed afterwards, so a window that died in betw
 the step again; `launch_due` now writes an intent before it spawns. Now: `persistence.md`'s
 *Adopting the other writer's changes in place*; `agents.md`'s *Auto-progress is launched by
 the window*.
+
+## 2026-10-04 — Effects wait for the save in the window too; intents outlive a refusal
+
+R26's review of the landing found three seams the revision had left open. The window's Set
+Status ended an agent's claim the moment the command was pushed, before autosave wrote it;
+it now waits for `AutosaveService.saved()`, as the CLI waits for its flush. Every launch
+intent was cleared after any successful flush, including an interrupted one that had only
+been refused in memory, so a new window launched the step again; an intent now goes only when
+its step no longer reads due. Coalescing merged a value command across another writer's edit,
+so undo restored the older value over theirs; a merge now requires continuity. Now:
+`core.md`'s *A workflow is one function under both surfaces*; `persistence.md`'s *Adopting
+the other writer's changes in place*; `agents.md`'s *Auto-progress is launched by the window*.

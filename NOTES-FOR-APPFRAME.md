@@ -174,6 +174,11 @@ reload that discards a build.
 
 Each flush is an `autosave` telemetry span, because it is disk I/O on the GUI thread.
 
+**`saved()` flushes now and answers whether everything is on disk after it** — False while
+paused or when the write was refused. An effect that may only follow a saved change (ending
+an agent's claim after the window sets a stopped status, forgetting a launch intent once its
+claim is written) is handed `saved` as a `Callable[[], bool]` seam.
+
 **Upstream?** yes — the template assumes one writer, and this is the minimum a second writer needs.
 
 ## `framework/builder.py`

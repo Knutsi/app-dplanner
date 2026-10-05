@@ -168,7 +168,10 @@ recorded — reverses what the composite had already applied and then goes on, s
 is either wholly before the gesture or wholly after it; a composite that half applied
 before the stack dropped it left a graph neither surface had asked for (Codex's probes,
 structural review §11). Text undo needed nothing: `apply_text_edit` already refuses a
-removal that does not match.
+removal that does not match. **Coalescing never merges across another writer's edit**: a
+value command merges into the one before it only when its own *before* is what that one
+left, because a merged command's *after* would otherwise match the model again and undo would
+restore the older value over the foreign one with nothing to refuse.
 
 **The conflict modal hands the merge to an agent** because the user asked for that over a
 banner. `modules/library_watch/` names the entries and the agent module writes the window's
@@ -278,8 +281,9 @@ run is `status set` — the epilogue ends at `ready-for-review` and the CLI hold
 so `ready-for-review`, `ready-to-merge`, `done` and `blocked` each end the claim on the step
 they are set on, in the same run and whoever runs them, because each says nobody is working
 it and a claim saying otherwise contradicts it. The composition root hands the board to
-`step_status/cli.py` as one callback (`end_claim`); a status set in the window ends nothing,
-since the window's only write to the board is the clear, and the lapse covers it. The
+`step_status/cli.py` and to the window's Set Status as one callback (`end_claim`), and both
+end the claim only once the status is on disk (*A workflow is one function under both
+surfaces*, `core.md`). The
 briefing says it once, where it happens: *once the PR is open, set the status straight away
 — it takes the window's banner down with it*.
 

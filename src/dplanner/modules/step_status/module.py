@@ -12,7 +12,9 @@ there, and a wait among them greys it, saying why — a wait has no status to se
 
 **The verb is the workflow's, not this module's.** Whether it applies and what it writes come
 from ``workflows.py``, the same calls ``dplanner status set`` makes; the window's actor is
-the director, so a status that says the work stopped ends the agent's claim on the step.
+the director, so a status that says the work stopped ends the agent's claim on the step —
+**only once that status is on disk**, as the CLI does: a claim ended over a status that never
+reached the file would tell another reader the work stopped when the plan says it did not.
 """
 
 from collections.abc import Callable
@@ -66,6 +68,7 @@ class StepStatusDeps:
     workflow: StatusWorkflow
     end_claim: Callable[[EndClaim], bool]  # The at-work board's; answers whether one stood.
     notices: NoticeHost  # Where a claim that could not be ended stands, with a retry.
+    flush: Callable[[], bool]  # Autosave's flush now: whether everything is on disk after it.
 
 
 NOTICE_ID = "step_status.unreleased"
@@ -135,24 +138,34 @@ class StepStatusModule:
         return run
 
     def _release(self, claims: list[EndClaim]) -> None:
-        """End the claims a stopped status owes, each on its own. Any that could not be
-        ended stand on a notice with a retry — the statuses are true, and are not undone
+        """End the claims a stopped status owes, each on its own, once the statuses are on
+        disk. Any that could not be ended — or all of them, while the save is held back or
+        refused — stand on a notice with a retry: the statuses are true, and are not undone
         for an effect."""
+        if not claims:
+            return
+        if not self._deps.flush():
+            self._owed(
+                claims, f"the plan is not saved yet, so {len(claims)} agent claim(s) still stand"
+            )
+            return
         failed = perform(claims, self._deps.end_claim).failed
         if not failed:
             self._deps.notices.clear_notice(NOTICE_ID)
             return
-        unreleased = [claim for claim, _why in failed]
+        self._owed(
+            [claim for claim, _why in failed],
+            f"{len(failed)} agent claim(s) could not be ended: {failed[0][1]}",
+        )
+
+    def _owed(self, claims: list[EndClaim], why: str) -> None:
         self._deps.notices.show_notice(
             Notice(
                 id=NOTICE_ID,
-                words=(
-                    f"The status is set, but {len(failed)} agent claim(s) could not be ended:"
-                    f" {failed[0][1]}"
-                ),
+                words=f"The status is set, but {why}",
                 tone="error",
                 action="Retry",
-                tip="End the claims again",
-                act=lambda: self._release(unreleased),
+                tip="Save the plan and end the claims again",
+                act=lambda: self._release(claims),
             )
         )

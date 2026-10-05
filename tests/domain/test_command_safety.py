@@ -106,3 +106,27 @@ def test_coalesced_edits_still_undo_and_redo_cleanly(library):
     undo.redo()
     undo.redo()
     assert step.title == "Mine" and step.module_data["step_estimation"] == {"days": 2.0}
+
+
+def test_an_edit_after_another_writers_change_does_not_merge_across_it(library):
+    step = steps(library)[0]
+    undo = UndoService(library)
+    undo.push(SetFieldCommand(step.id, "title", "Mine"))
+    library.set_field(step.id, "title", "Theirs")
+    undo.push(SetFieldCommand(step.id, "title", "Mine again"))
+    undo.undo()
+    assert step.title == "Theirs"
+    undo.undo()
+    assert step.title == "Theirs"
+
+
+def test_module_data_after_another_writers_change_does_not_merge_across_it(library):
+    step = steps(library)[0]
+    undo = UndoService(library)
+    undo.push(SetModuleDataCommand(step.id, "step_estimation", {"days": 1.0}))
+    library.set_module_data(step.id, "step_estimation", {"days": 4.0})
+    undo.push(SetModuleDataCommand(step.id, "step_estimation", {"days": 2.0}))
+    undo.undo()
+    assert step.module_data["step_estimation"] == {"days": 4.0}
+    undo.undo()
+    assert step.module_data["step_estimation"] == {"days": 4.0}

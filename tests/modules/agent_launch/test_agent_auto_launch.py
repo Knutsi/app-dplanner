@@ -236,11 +236,76 @@ def test_a_crash_between_intent_and_spawn_is_refused_never_retried_blind(
     assert opened_for == []
     assert status_of(services.document.step(plan["C"].id)) is Status.PENDING
     assert INTERRUPTED in status_line(services)
-    assert intents.pending() == []
+    assert [each.step for each in intents.pending()] == [plan["C"].id]
     # A person answering for the step — its briefing touched — lets the next pass launch it.
     services.document.set_text(plan["C"].id, AGENT_ID, "Carry out C, again.")
     settle(services)
     assert len(opened_for) == 1
+    assert intents.pending() == []
+
+
+def a_fresh_launcher(services):
+    """What a restart or a reload builds: an AutoLauncher that has refused nothing yet."""
+    from dplanner.modules.agent_launch.auto_launch import AutoLauncher
+
+    agents = next(m for m in services.modules if hasattr(m, "launch_due"))
+    return AutoLauncher(agents._deps, agents.launch_due)
+
+
+def test_an_interrupted_launch_is_refused_again_by_a_window_built_later(
+    services, plan, library_file, launch_locks, monkeypatch, tmp_path
+):
+    opened_for = fake_terminal(monkeypatch)
+    interrupted_launch(launch_locks, library_file, plan["C"], tmp_path / "run", shell_started=False)
+    launch_when_due(services)
+    another_writer(library_file, "A1", "A2", "A3")
+    take_in(services)
+    a_fresh_launcher(services)._pass()
+    assert opened_for == []
+    assert status_of(services.document.step(plan["C"].id)) is Status.PENDING
+
+
+def test_a_shell_slow_to_start_is_claimed_once_it_has(
+    services, plan, library_file, launch_locks, monkeypatch, tmp_path
+):
+    opened_for = fake_terminal(monkeypatch)
+    run_dir = tmp_path / "run"
+    intents = interrupted_launch(
+        launch_locks, library_file, plan["C"], run_dir, shell_started=False
+    )
+    launch_when_due(services)
+    another_writer(library_file, "A1", "A2", "A3")
+    take_in(services)
+    assert INTERRUPTED in status_line(services)
+
+    (run_dir / launcher.SHELL_FILE).write_text("pid=1\n", encoding="utf-8")
+    a_fresh_launcher(services)._pass()
+    assert opened_for == []
+    assert status_of(by_title(LibraryStore(library_file).load(), "C")) is Status.IN_PROGRESS
+    assert intents.pending() == []
+
+
+def test_a_launch_beside_an_interrupted_one_does_not_forget_it(
+    services, plan, library_file, launch_locks, monkeypatch, tmp_path
+):
+    opened_for = fake_terminal(monkeypatch)
+    project = next(each for each in services.document.projects if plan["C"] in each.steps)
+    beside = agent_step(services, project, "D")
+    SetEdgesCommand(beside.id, "requires", [plan["A1"].id]).redo(services.document)
+    SetModuleDataCommand(beside.id, AUTO_PROGRESS_ID, write_flags([plan["A1"].id])).redo(
+        services.document
+    )
+    services.autosave.flush_now()
+    intents = interrupted_launch(
+        launch_locks, library_file, plan["C"], tmp_path / "run", shell_started=False
+    )
+    launch_when_due(services)
+    another_writer(library_file, "A1", "A2", "A3")
+    take_in(services)
+
+    assert len(opened_for) == 1
+    assert status_of(services.document.step(beside.id)) is Status.IN_PROGRESS
+    assert [each.step for each in intents.pending()] == [plan["C"].id]
 
 
 def test_a_crash_between_spawn_and_claim_claims_the_run_and_launches_nothing(

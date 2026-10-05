@@ -14,10 +14,12 @@ stamp and in progress for what auto-progress made due, the round's stamp for a t
 very next pass, another window or the terminal reads it as no longer due.
 
 **A launch is an external effect, so its intent is written first** (``intents.py``): before
-the shell is spawned, beside the lock, and forgotten only once the claim is on disk. An intent
-a pass finds left over is a launch a crash interrupted, reconciled before anything else is
-launched: a shell that started is claimed, one that never did is refused for a person —
-neither is launched again.
+the shell is spawned, beside the lock, and forgotten only once its step reads no longer due
+in a plan that is on disk. An intent a pass finds left over is a launch a crash interrupted,
+reconciled before anything else is launched: a shell that started is claimed, one that never
+did is refused for a person — neither is launched again. The refused intent stays, so a
+window built later refuses it too (its shell may only be slow to start), until somebody
+edits that step: that is the person answering, and the intent goes with the refusal.
 
 **It never writes over a plan it has not seen.** While the plan changed underneath and is
 not taken in yet the pass stands down, and the library watcher's ``settled`` hook, not only
@@ -169,13 +171,23 @@ class AutoLauncher:
     # -- the pass ------------------------------------------------------------------------------
 
     def _changed(self, node_id: str) -> None:
-        self._refused.pop(node_id, None)
+        self._answered(node_id)
         self.settle()
 
     def _edited(self, node_id: str) -> None:
         """A step's words changed — a briefing written, say: a refusal may be answered."""
-        if self._refused.pop(node_id, None) is not None:
+        if self._answered(node_id):
             self.settle()
+
+    def _answered(self, step_id: str) -> bool:
+        """Forget the refusal on ``step_id`` — and an interrupted launch's intent with it,
+        since a person touching the step is the retry it waited for. True when there was one."""
+        reason = self._refused.pop(step_id, None)
+        if reason == INTERRUPTED and (lock := self._deps.launch_lock) is not None:
+            for intent in lock.intents.pending():
+                if intent.step == step_id:
+                    lock.intents.drop(intent.run)
+        return reason is not None
 
     def _pass(self) -> None:
         # The claims written below re-enter here inline when the debounce runs immediately
@@ -240,14 +252,15 @@ class AutoLauncher:
                 launched.append(fresh.step_id)
                 self._launched.add(fresh.step_id)
         if launched and deps.flush():  # The claims on disk now, not after autosave's pause.
-            lock.intents.clear()
+            self._forget_settled(lock.intents)
         self._say(launched, refused)
         self._show_notice()
 
     def _reconcile(self, intents: LaunchIntents, leftover: list[LaunchIntent]) -> None:
         """Settle launches a crash interrupted: claim a step whose shell started, refuse one
         whose shell never did — and launch neither again. Forgotten once the claims are on
-        disk; until then the next pass reconciles them again, which finds them claimed."""
+        disk; until then the next pass reconciles them again, which finds them claimed. One
+        refused stays recorded, and is refused again by every pass until a person answers it."""
         deps = self._deps
         due = {each.step_id: each for each in deps.due()}
         adopted: list[StepId] = []
@@ -259,16 +272,25 @@ class AutoLauncher:
             if intent.started:
                 claim(deps.library, found, deps.clock.today())
                 adopted.append(found.step_id)
-            else:
+                self._refused.pop(found.step_id, None)
+            elif self._refused.get(found.step_id) != INTERRUPTED:
                 self._refused[found.step_id] = INTERRUPTED
                 refused.append(found.step_id)
         if deps.flush():
-            intents.clear()
+            self._forget_settled(intents)
         self._say([], refused)
         if adopted:
             deps.status.show_status(
                 f"Claimed {self._keys(adopted)}: its agent started before the window closed", 8000
             )
+
+    def _forget_settled(self, intents: LaunchIntents) -> None:
+        """Forget each intent whose step no longer reads due — its claim is on disk, or it
+        was settled otherwise. One still due is unresolved, and stays."""
+        due = {each.step_id for each in self._deps.due()}
+        for intent in intents.pending():
+            if intent.step not in due:
+                intents.drop(intent.run)
 
     def _hold_back(self, held: list[Due], why: str) -> None:
         ids = tuple(due.step_id for due in held)

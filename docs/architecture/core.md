@@ -465,7 +465,10 @@ composite is all-or-nothing: a refusal on the third step leaves the first two un
 claim ended. The CLI applies the command and owes the follow-ups to
 `CliContext.after_flush`, which `open_library` runs only once the whole invocation is written
 — and the verb's report goes with them, so a run that wrote nothing neither released a claim
-nor said it did. Both run `perform`, which attempts every follow-up on its own and reports
+nor said it did. The window keeps the same order: it pushes the composite, then asks
+autosave's `saved()` — flush now, and is everything on disk — and performs the follow-ups
+only on yes; while the save is paused or refused they stand on a notice whose retry saves
+first. Both run `perform`, which attempts every follow-up on its own and reports
 the ones that failed (a notice with a retry in the window, a refusal naming the written
 status in the CLI); a model change is never rolled back for an effect. `refusal()` is the same function behind the
 menu's greyed label and the CLI's error, and because it runs in an action state it reads only

@@ -93,3 +93,24 @@ def test_flushing_announces_itself(parts):
     dirty.emit("a", "text")
     service.flush_now()
     assert seen == [1]
+
+
+def test_saved_says_whether_everything_reached_disk(parts):
+    dirty, persister, service = parts
+    assert service.saved()
+    dirty.emit("a", "text")
+    service.pause()
+    assert not service.saved() and persister.batches == []
+    service.resume()
+    assert service.saved() and persister.batches == [{("a", "text")}]
+
+
+def test_saved_is_false_when_the_write_is_refused(parts):
+    dirty, persister, service = parts
+
+    def refuse(marks):
+        raise OSError("the disk is full")
+
+    persister.flush = refuse
+    dirty.emit("a", "text")
+    assert not service.saved() and service.has_pending()
