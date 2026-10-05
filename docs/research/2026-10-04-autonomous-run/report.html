@@ -1,0 +1,321 @@
+<title>Autonomous Arch Revision</title>
+<style>
+:root{
+  --ground:#F3F4F0; --surface:#FFFFFF; --sunken:#E9EBE5; --ink:#1A1F23; --muted:#5B646A; --line:#D5D9D2;
+  --accent:#1E6B59; --accent-soft:#DCEDE6; --crack:#A9481A; --crack-soft:#F6E3D8; --caution:#8C6A0C; --caution-soft:#F3EBD2;
+  --code-bg:#ECEEE8; --code-ink:#22292E; --mark:#FFF1B8;
+  --display:"Archivo","Arial Narrow",system-ui,sans-serif;
+  --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --ground:#101416; --surface:#171C1F; --sunken:#1D2327; --ink:#E3E8E6; --muted:#97A2A6; --line:#2A3236;
+    --accent:#62C3A5; --accent-soft:#16302A; --crack:#EE9466; --crack-soft:#3A2116; --caution:#DDB84E; --caution-soft:#33290F;
+    --code-bg:#1B2125; --code-ink:#D7DEDB; --mark:#4A3F12;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --ground:#101416; --surface:#171C1F; --sunken:#1D2327; --ink:#E3E8E6; --muted:#97A2A6; --line:#2A3236;
+  --accent:#62C3A5; --accent-soft:#16302A; --crack:#EE9466; --crack-soft:#3A2116; --caution:#DDB84E; --caution-soft:#33290F;
+  --code-bg:#1B2125; --code-ink:#D7DEDB; --mark:#4A3F12;
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.6;padding-inline:16px;padding-block:0 64px}
+.shell{max-width:1180px;margin:0 auto;display:grid;grid-template-columns:1fr;gap:40px}
+@media (min-width:1000px){.shell{grid-template-columns:230px minmax(0,1fr)}}
+nav.toc{font-size:14px;padding-top:28px}
+@media (min-width:1000px){nav.toc{position:sticky;top:env(safe-area-inset-top,0px);align-self:start;max-height:100vh;overflow-y:auto;padding-bottom:24px}}
+nav.toc h2{font-family:var(--display);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:0 0 10px;font-weight:700}
+nav.toc ol{list-style:none;margin:0;padding:0;display:grid;gap:2px;counter-reset:toc}
+nav.toc li{counter-increment:toc}
+nav.toc a{display:flex;gap:10px;color:var(--ink);text-decoration:none;padding:5px 8px;border-radius:4px}
+nav.toc a::before{content:counter(toc);font-family:var(--mono);font-size:12px;color:var(--muted);min-width:1.2em;padding-top:2px}
+nav.toc a:hover,nav.toc a:focus-visible{background:var(--sunken)}
+main{min-width:0;max-width:820px}
+header.masthead{padding:40px 0 8px;border-bottom:1px solid var(--line);margin-bottom:8px}
+.eyebrow{font-family:var(--mono);font-size:12.5px;color:var(--muted);letter-spacing:.02em}
+h1{font-family:var(--display);font-stretch:85%;font-weight:800;font-size:clamp(34px,6vw,54px);line-height:1.02;margin:10px 0 14px;text-wrap:balance;letter-spacing:-.01em}
+.lede{font-size:18px;color:var(--ink);max-width:62ch;margin:0 0 18px}
+.meta-row{display:flex;flex-wrap:wrap;gap:8px 20px;font-size:13.5px;color:var(--muted);padding-bottom:22px}
+.meta-row b{color:var(--ink);font-weight:600;font-family:var(--mono);font-size:13px}
+section{padding-top:44px}
+section+section{border-top:1px solid var(--line);margin-top:44px}
+h2{font-family:var(--display);font-stretch:88%;font-weight:750;font-size:30px;line-height:1.1;margin:0 0 16px;text-wrap:balance}
+h2 .num{font-family:var(--mono);font-size:15px;color:var(--muted);font-weight:500;margin-right:10px;vertical-align:4px}
+h3{font-family:var(--display);font-weight:700;font-size:20px;margin:30px 0 8px;text-wrap:balance}
+h4{font-family:var(--body);font-weight:600;font-size:15.5px;margin:20px 0 6px}
+p,li{max-width:68ch}
+p{margin:0 0 14px}
+ul,ol{padding-left:1.25em;margin:0 0 14px}
+li{margin-bottom:6px}
+a{color:var(--accent)}
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);color:var(--code-ink);padding:1px 5px;border-radius:3px}
+.inshort{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:16px 18px 6px;margin:0 0 22px}
+.inshort .label{font-family:var(--display);font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:700;margin-bottom:6px;display:block}
+.inshort p,.inshort li{font-size:15.5px}
+figure{margin:18px 0 22px}
+figcaption{font-size:13px;color:var(--muted);margin-top:6px}
+.code{background:var(--code-bg);border-radius:6px;overflow:hidden;margin:14px 0 20px}
+.code .src{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-family:var(--mono);font-size:12px;color:var(--muted);padding:8px 14px;border-bottom:1px solid var(--line)}
+.code pre{margin:0;padding:12px 14px;overflow-x:auto;font-family:var(--mono);font-size:13px;line-height:1.55;color:var(--code-ink)}
+.code pre code{background:none;padding:0;font-size:inherit}
+.code .hl{background:var(--mark);display:inline-block;min-width:100%}
+.c{color:var(--muted)}
+.tag{display:inline-block;font-family:var(--mono);font-size:11.5px;font-weight:500;padding:2px 7px;border-radius:999px;vertical-align:2px;white-space:nowrap}
+.tag.crack{background:var(--crack-soft);color:var(--crack)}
+.tag.caution{background:var(--caution-soft);color:var(--caution)}
+.tag.good{background:var(--accent-soft);color:var(--accent)}
+.findings{list-style:none;padding:0;display:grid;gap:14px;margin:0 0 18px}
+.findings>li{max-width:none;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:14px 16px 4px}
+.findings>li>h4{margin:0 0 6px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.findings>li p{font-size:15px}
+.scroll{overflow-x:auto;margin:14px 0 22px}
+table{border-collapse:collapse;font-size:14px;min-width:560px;width:100%}
+th,td{text-align:left;vertical-align:top;padding:8px 10px;border-bottom:1px solid var(--line)}
+th{font-family:var(--display);font-weight:700;font-size:12.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border-bottom:1.5px solid var(--ink)}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono);font-size:13px}
+tr.rec td{background:var(--accent-soft)}
+.bars{display:grid;gap:7px;margin:14px 0 6px}
+.bar{display:grid;grid-template-columns:minmax(120px,240px) 1fr;gap:10px;align-items:center;font-size:13px}
+.bar .name{font-family:var(--mono);font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right}
+.bar .track{position:relative;height:20px}
+.bar .fill{height:100%;background:var(--muted);opacity:.45;border-radius:2px}
+.bar.hot .fill{background:var(--crack);opacity:1}
+.bar .val{position:absolute;top:0;left:calc(var(--w) + 6px);line-height:20px;font-family:var(--mono);font-size:12px;font-variant-numeric:tabular-nums}
+@media (max-width:520px){.bar{grid-template-columns:1fr}.bar .name{text-align:left}}
+.stack{display:flex;height:30px;border-radius:4px;overflow:hidden;margin:12px 0 8px}
+.stack span{display:block;height:100%}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px;color:var(--muted);margin-bottom:16px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:0}
+.approach{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:18px 18px 8px;margin:22px 0}
+.approach.recommended{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.approach header{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px}
+.approach header h3{margin:0}
+.approach .verdict{font-size:15px}
+.pc{display:grid;grid-template-columns:1fr;gap:6px 22px;margin:6px 0 10px}
+@media (min-width:640px){.pc{grid-template-columns:1fr 1fr}}
+.pc h4{margin:6px 0 4px;font-size:13px;font-family:var(--display);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.pc ul{font-size:14.5px;margin-bottom:6px}
+.mermaid-wrap{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:12px;overflow-x:auto;margin:14px 0 6px}
+pre.mermaid{margin:0;font-family:var(--mono);font-size:12px;background:none;text-align:center}
+.tree{display:grid;grid-template-columns:1fr;gap:12px;margin:12px 0 18px}
+@media (min-width:640px){.tree{grid-template-columns:1fr 1fr}}
+.tree .code{margin:0}
+.tree .code .src b{color:var(--ink)}
+.rule3{display:grid;grid-template-columns:1fr;gap:12px;margin:16px 0 22px}
+@media (min-width:720px){.rule3{grid-template-columns:repeat(3,1fr)}}
+.rule3 div{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:14px}
+.rule3 .k{font-family:var(--display);font-weight:700;font-size:16px;margin-bottom:4px;display:block}
+.rule3 p{font-size:14px;margin:0 0 8px}
+.rule3 code{font-size:12px}
+.callout{background:var(--caution-soft);border-radius:6px;padding:12px 16px;margin:14px 0 20px;font-size:15px}
+.callout p:last-child{margin:0}
+.nextmove{margin:28px 0 8px;border:2px solid var(--accent);border-radius:10px;background:var(--surface);padding:20px 20px 10px}
+.nextmove .label{font-family:var(--display);font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:800;display:block;margin-bottom:4px}
+.nextmove h2{font-size:26px;margin:0 0 10px}
+.nextmove ol{padding-left:1.3em}
+.nextmove ol>li{max-width:none;margin-bottom:12px}
+.nextmove .done-when{font-size:14px;color:var(--muted);margin:4px 0 0}
+.nextmove .decisions{border-top:1px solid var(--line);padding-top:10px;margin-top:6px;font-size:14.5px}
+.voices{display:grid;grid-template-columns:1fr;gap:12px;margin:18px 0 6px}
+@media (min-width:760px){.voices{grid-template-columns:repeat(3,1fr)}}
+.voices>div{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:14px 14px 4px}
+.voices .who{font-family:var(--display);font-weight:700;font-size:15px;display:block}
+.voices .when{font-family:var(--mono);font-size:11.5px;color:var(--muted);display:block;margin-bottom:6px}
+.voices p{font-size:14px}
+footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+<div class="shell">
+<nav class="toc" aria-label="Contents">
+  <h2>Contents</h2>
+  <ol>
+    <li><a href="#outcome">Outcome</a></li>
+    <li><a href="#how">How it was run</a></li>
+    <li><a href="#steps">The steps</a></li>
+    <li><a href="#steering">Steering in numbers</a></li>
+    <li><a href="#learned">What it taught</a></li>
+    <li><a href="#bugs">Bugs found</a></li>
+    <li><a href="#friction">Friction</a></li>
+    <li><a href="#failures">Failure modes</a></li>
+    <li><a href="#next">What should change</a></li>
+  </ol>
+</nav>
+<main>
+<header class="masthead">
+  <div class="eyebrow">2026-10-04 13:24 → 2026-10-05 06:31 · DPlanner arch revision · directed from herdr</div>
+  <h1>An autonomous run, end to end</h1>
+  <p class="lede">One Claude Code session directed 20 step agents and 3 Codex reviewers through a 26-step DPlanner plan. The run started from an empty feature branch and ended with a reviewed PR into <code>main</code>. It doubled as a field test of autonomous execution: what worked, what broke, and what a daemon would need.</p>
+  <div class="meta-row"><span><b>23/26</b> steps done</span><span><b>21</b> PRs</span><span><b>+32,413 −25,869</b> on #221</span><span><b>4,923 → 3,551</b> root lines</span><span><b>14</b> Codex findings</span><span><b>~17 h</b> wall clock</span></div>
+</header>
+
+<section id="outcome">
+  <h2><span class="num">1</span>Outcome</h2>
+  <div class="inshort"><span class="label">In short</span><p><strong>It worked, with a director.</strong> Every work step merged into <code>refactor/arch-revision</code> and was verified on the integrated branch. Codex approved the landing (<a href="https://github.com/Knutsi/app-dplanner/pull/221">PR #221</a>) in round 2. What remains is Knut's S23: test the branch, then merge.</p></div>
+  <ul>
+    <li><strong>Correctness:</strong> two-writer file safety, all-or-nothing commands with undo that refuses a foreign value, unknown statuses never due, ended claims stay ended.</li>
+    <li><strong>The pilot:</strong> <code>planning/</code> owns status as an <code>Enum</code> (mypy rejects literal comparisons), and Set Status is one workflow under the context system. The window and the CLI now agree on all four rules (before, the window enforced 1 of 4). Architecture tests enforce the cross-module surface, an acyclic graph, ceilings and pinned stored ids.</li>
+    <li><strong>The composition root:</strong> kinds, estimates, schedule, briefing (a headless <code>agent_briefing</code> package), branch planning, coverage, the ledger and the headless due decision with launch intents all moved to their owners. 4,923 → 3,551 lines.</li>
+    <li><strong>Names:</strong> <code>canvas</code>, <code>project_archive</code> + <code>steps/cli.py</code>, <code>agent_launch</code>, <code>agent_usage</code>, <code>status_board</code>, <code>schedule</code>, and file roles enforced by a test.</li>
+    <li><strong>Docs:</strong> <code>ARCHITECTURE.md</code> went from 9,103 lines to a 171-line index over area files plus a dated <code>decisions.md</code>. <code>NOTES-FOR-APPFRAME.md</code> is now organised per file, and CLAUDE.md went from 32.7 KB to 23.4 KB.</li>
+  </ul>
+</section>
+
+<section id="how">
+  <h2><span class="num">2</span>How it was run</h2>
+  <div class="inshort"><span class="label">In short</span><p>No CLI verb launches an agent, and auto-launch never fires for plain links, so the director rebuilt Run Agent by hand: worktree, briefing, herdr tab, in-progress status. A watcher woke it on <code>blocked</code> or finished agents. Every plan was approved by reading it, every PR reviewed and merged, and every merge verified.</p></div>
+  <div class="mermaid-wrap"><pre class="mermaid">
+flowchart LR
+  D["Director&lt;br/&gt;Claude Code in herdr"] -- "launch: worktree, briefing,&lt;br/&gt;tab, in-progress" --> A["Step agent&lt;br/&gt;claude --permission-mode plan"]
+  A -- "plan / question (blocked)" --> D
+  D -- "approve / answer / correct" --> A
+  A -- "subagents" --> SA["Explore / forked helpers"]
+  A -- "PR into refactor/arch-revision" --> G[("GitHub")]
+  D -- "review, compare real output,&lt;br/&gt;merge, verify" --> G
+  C["Codex reviewer"] -- "dplanner review start/post/approve" --> P[("plan repo")]
+  A -- "status, notes, github refs" --> P
+  D -- "sandbox approvals" --> C
+  </pre></div>
+  <ul>
+    <li><strong>One herdr workspace</strong> held one tab per live agent, closed when the agent was taken down; the sidebar gained one entry.</li>
+    <li><strong>Concurrency:</strong> 3 agents, then 2 after memory pressure. The renames ran one at a time.</li>
+    <li><strong>Delegation:</strong> Knut delegated the two person steps, S10 (pilot verdict) and S17 (renames), to the director. Both are recorded as decision notes (N39, N72 → N77).</li>
+  </ul>
+</section>
+
+<section id="steps">
+  <h2><span class="num">3</span>The steps</h2>
+  <div class="inshort"><span class="label">In short</span><p>Active agent time per step, from launch to PR. The long ones are the pilot (S7), the briefing extraction (S13), estimates and schedule (S12), the largest rename (S21) and the landing with its two review rounds. Waits for review, merges and verification come on top.</p></div>
+  <div class="bars" role="img" aria-label="Agent minutes per step">
+<div class="bar"><span class="name">S5 · An ended claim stays ended</span><span class="track"><span class="fill" style="display:block;width:calc((100% - 40px) * 12 / 60)"></span><span class="val" style="--w:calc((100% - 40px) * 12 / 60)">12′</span></span></div>
+<div class="bar"><span class="name">S3 · All-or-nothing composites, safe undo</span><span class="track"><span class="fill" style="display:block;width:calc((100% - 40px) * 21 / 60)"></span><span class="val" style="--w:calc((100% - 40px) * 21 / 60)">21′</span></span></div>
+<div class="bar"><span class="name">S4 · An unknown status is never due</span><span class="track"><span class="fill" style="display:block;width:calc((100% - 40px) * 16 / 60)"></span><span class="val" style="--w:calc((100% - 40px) * 16 / 60)">16′</span></span></div>
+<div class="bar"><span class="name">S2 · Two writers: temp file, membership</span><span class="track"><span class="fill" style="display:block;width:calc((100% - 40px) * 16 / 60)"></span><span class="val" style="--w:calc((100% - 40px) * 16 / 60)">16′</span></span></div>
+<div class="bar"><span class="name">S6 · Hygiene</span><span class="track"><span class="fill" style="display:block;width:calc((100% - 40px) * 18 / 60)"></span><span class="val" style="--w:calc((100% - 40px) * 18 / 60)">18′</span></span></div>
+<div class="bar hot"><span class="name">S7 · planning/ owns status</span><span class="track"><span class="fill" style="display:block;width:calc((100% - 40px) * 57 / 60)"></span><span class="val" style="--w:calc((100% - 40px) * 57 / 60)">57′</span></span></div>
+<div class="bar"><span class="name">S8 · Set Status is one workflow</span><span class="track"><span class="fill" style="display:block;width:calc((100% - 40px) * 38 / 60)"></span><span class="val" style="--w:calc((100% - 40px) * 38 / 60)">38′</span></span></div>
+<div class="bar"><span class="name">S9 · Architecture tests</span><span class="track"><span class="fill" style="display:block;width:calc((100% - 40px) * 14 / 60)"></span><span class="val" style="--w:calc((100% - 40px) * 14 / 60)">14′</span></span></div>
+<div class="bar"><span class="name">S11 · Kind facts in planning/</span><span class="track"><span class="fill" style="display:block;width:calc((100% - 40px) * 17 / 60)"></span><span class="val" style="--w:calc((100% - 40px) * 17 / 60)">17′</span></span></div>
+<div class="bar hot"><span class="name">S12 · Estimates, schedule, scope</span><span class="track"><span class="fill" style="display:block;width:calc((100% - 40px) * 42 / 60)"></span><span class="val" style="--w:calc((100% - 40px) * 42 / 60)">42′</span></span></div>
+<div class="bar"><span class="name">S14 · Branches, coverage, ledger</span><span class="track"><span class="fill" style="display:block;width:calc((100% - 40px) * 13 / 60)"></span><span class="val" style="--w:calc((100% - 40px) * 13 / 60)">13′</span></span></div>
+<div class="bar hot"><span class="name">S13 · Agent briefing leaves the root</span><span class="track"><span class="fill" style="display:block;width:calc((100% - 40px) * 44 / 60)"></span><span class="val" style="--w:calc((100% - 40px) * 44 / 60)">44′</span></span></div>
+<div class="bar"><span class="name">S15 · Launch is an external effect</span><span class="track"><span class="fill" style="display:block;width:calc((100% - 40px) * 20 / 60)"></span><span class="val" style="--w:calc((100% - 40px) * 20 / 60)">20′</span></span></div>
+<div class="bar"><span class="name">S16 · default_modules() split</span><span class="track"><span class="fill" style="display:block;width:calc((100% - 40px) * 31 / 60)"></span><span class="val" style="--w:calc((100% - 40px) * 31 / 60)">31′</span></span></div>
+<div class="bar"><span class="name">S18 · project_editor → canvas</span><span class="track"><span class="fill" style="display:block;width:calc((100% - 40px) * 16 / 60)"></span><span class="val" style="--w:calc((100% - 40px) * 16 / 60)">16′</span></span></div>
+<div class="bar"><span class="name">S19 · Archive and step noun leave projects</span><span class="track"><span class="fill" style="display:block;width:calc((100% - 40px) * 33 / 60)"></span><span class="val" style="--w:calc((100% - 40px) * 33 / 60)">33′</span></span></div>
+<div class="bar"><span class="name">S20 · agent_launch, agent_usage</span><span class="track"><span class="fill" style="display:block;width:calc((100% - 40px) * 29 / 60)"></span><span class="val" style="--w:calc((100% - 40px) * 29 / 60)">29′</span></span></div>
+<div class="bar hot"><span class="name">S21 · status_board, schedule, file roles</span><span class="track"><span class="fill" style="display:block;width:calc((100% - 40px) * 52 / 60)"></span><span class="val" style="--w:calc((100% - 40px) * 52 / 60)">52′</span></span></div>
+<div class="bar"><span class="name">S22 · Docs become references</span><span class="track"><span class="fill" style="display:block;width:calc((100% - 40px) * 22 / 60)"></span><span class="val" style="--w:calc((100% - 40px) * 22 / 60)">22′</span></span></div>
+<div class="bar hot"><span class="name">S25 · Landing (+ two review rounds)</span><span class="track"><span class="fill" style="display:block;width:calc((100% - 40px) * 60 / 60)"></span><span class="val" style="--w:calc((100% - 40px) * 60 / 60)">60′</span></span></div>
+  </div>
+</section>
+
+<section id="steering">
+  <h2><span class="num">4</span>Steering in numbers</h2>
+  <div class="inshort"><span class="label">In short</span><p>The director's work was mostly reading and coordinating: 20 plans, 12 decisions, 21 Codex sandbox prompts, 2 overlapping plans caught before any code collided, and 16 full verifications.</p></div>
+  <div class="scroll"><table>
+    <thead><tr><th>Act</th><th class="n">Count</th></tr></thead>
+    <tbody>
+      <tr><td>Claude step agents launched</td><td class="n">20</td></tr>
+      <tr><td>Codex reviewers launched</td><td class="n">3</td></tr>
+      <tr><td>Plans approved</td><td class="n">20</td></tr>
+      <tr><td>Design questions answered (decisions)</td><td class="n">6 (12)</td></tr>
+      <tr><td>Coordination messages queued to running agents</td><td class="n">9</td></tr>
+      <tr><td>Codex sandbox approvals</td><td class="n">21</td></tr>
+      <tr><td>Overlaps caught before code was written</td><td class="n">2</td></tr>
+      <tr><td>Merge conflicts sent back</td><td class="n">4</td></tr>
+      <tr><td>Full verifications of the integrated branch</td><td class="n">16</td></tr>
+      <tr><td>Knut's interventions</td><td class="n">6</td></tr>
+    </tbody>
+  </table></div>
+  <p>The full account is in <a href="steering.md">steering.md</a>, and the minute-by-minute log in <a href="timeline.md">timeline.md</a>.</p>
+</section>
+
+<section id="learned">
+  <h2><span class="num">5</span>What it taught</h2>
+  <div class="inshort"><span class="label">In short</span><p>Five lessons, ranked. The first is about the architecture itself. The rest are about running agents unattended.</p></div>
+  <ol>
+    <li><strong>The effect boundary is the hard part of "units of work".</strong> Saving before the side effect (releasing a claim, dropping a launch intent) failed three review rounds in a row: Codex on S8, then R26 rounds 1 and 2. Each fix opened a narrower case. The pattern is right, but it needs one owed-effects mechanism shared by the CLI, the window and auto-launch, tested at its boundary.</li>
+    <li><strong>Cross-vendor review earns its cost.</strong> Codex found 14 real issues the step agents, their tests and the director missed, most with a failing reproduction. When the director stood in for one round, it missed a hole that R26 later found.</li>
+    <li><strong>Parallel plans against shared code overlap reliably.</strong> Two collisions were caught only by reading plans side by side, and four merges conflicted anyway.</li>
+    <li><strong>Decisions made from a report are proposals.</strong> Twice the rename list met coupling the report couldn't see. The agents' questions led to better calls, recorded as amending notes.</li>
+    <li><strong>Unattended means bounded.</strong> One hung suite cost 7.5 hours. Memory and <code>/tmp</code> (RAM-backed here) were the binding resources, not cores, and model usage limits stopped the reviewer twice.</li>
+  </ol>
+</section>
+
+<section id="bugs">
+  <h2><span class="num">6</span>Bugs found</h2>
+  <div class="inshort"><span class="label">In short</span><p>Found by running the plan. The worst: step keys resolve across the library (a command wrote to another project), the window segfaulted in table sizing under load, and the test suite could launch real agents.</p></div>
+  <ol>
+    <li>Step keys and titles resolve across the library; <code>review set R26</code> changed another project's step (reverted).</li>
+    <li>The window segfaulted in <code>rich_row_height</code> ← <code>table.sizeHint</code> under load (<a href="evidence/crash-2026-10-04-1332.log">crash log</a>).</li>
+    <li>A stub in <code>test_sync</code> missed after a refactor, and the suite opened real Ghostty windows running <code>claude</code>.</li>
+    <li><code>status set … done</code> on a step that is already done is refused from an agent shell, with a misleading message.</li>
+    <li>A stray <code>/tmp/.dplanner</code> from <code>test_move_plan</code> broke another test's upward walk.</li>
+    <li>Two render scripts had been silently broken for weeks (now on a ratchet).</li>
+    <li>The focus-dependent double-click tests in <code>test_testing.py</code> failed in 5 of 16 parallel runs.</li>
+  </ol>
+  <p>Reproductions are in <a href="bugs.md">bugs.md</a>.</p>
+</section>
+
+<section id="friction">
+  <h2><span class="num">7</span>Friction</h2>
+  <div class="inshort"><span class="label">In short</span><p>DPlanner lacks a headless launch, and its own herdr row opens a workspace per run. herdr's "idle" doesn't mean "finished". Codex prompts per command and runs into usage limits.</p></div>
+  <ul>
+    <li><strong>DPlanner:</strong>
+      <ul>
+        <li>No <code>agent run</code> verb; the director forgot in-progress, and missed that a landing works on the feature branch itself.</li>
+        <li>Auto-launch ignores plain links.</li>
+        <li>The standing instruction reaches review and landing briefings, where it doesn't apply.</li>
+        <li>The PR refresher marks a step done before it has been verified.</li>
+      </ul></li>
+    <li><strong>herdr:</strong>
+      <ul>
+        <li>"Done" while waiting on its own shell or subagents.</li>
+        <li>A plan approval sometimes reads as done.</li>
+        <li>No scrollback while blocked.</li>
+      </ul></li>
+    <li><strong>Codex:</strong> 21 sandbox prompts; the plan repo is outside its writable roots; two usage limits.</li>
+  </ul>
+  <p>Details are in <a href="ergonomics.md">ergonomics.md</a>.</p>
+</section>
+
+<section id="failures">
+  <h2><span class="num">8</span>Failure modes</h2>
+  <div class="inshort"><span class="label">In short</span><p>Six were caught in time; two cost real time (the overnight hang, and the stray windows on Knut's desktop). Each needs a guard a daemon would carry itself, because nobody reads plans at night.</p></div>
+  <div class="scroll"><table>
+    <thead><tr><th>What happened</th><th>Caught by</th><th>Guard</th></tr></thead>
+    <tbody>
+      <tr><td>Suite hung 7.5 h (xdist workers dead)</td><td>Knut, 05:00</td><td>A timeout on every suite; a heartbeat that wakes the director; an alarm on silence</td></tr>
+      <tr><td>Memory pressure reaped the director's checks</td><td>Claude Code</td><td>A lean <code>/tmp</code>; concurrency limited by memory; <code>-n 4</code></td></tr>
+      <tr><td>The test suite launched real agents</td><td>Knut</td><td>A spawn guard for the test session</td></tr>
+      <tr><td>Parallel plans claimed the same code</td><td>Director</td><td>Overlap detection between in-flight steps</td></tr>
+      <tr><td>Effect before save</td><td>Codex, three times</td><td>One owed-effects mechanism</td></tr>
+      <tr><td>The director stood in for the reviewer</td><td>R26, later</td><td>Never replace a cross-vendor gate; pause or switch its model</td></tr>
+      <tr><td>A command wrote to another project</td><td>Director (<code>git status</code>)</td><td>Project-scoped keys</td></tr>
+    </tbody>
+  </table></div>
+  <p>The full table is in <a href="failure-modes.md">failure-modes.md</a>.</p>
+</section>
+
+<section id="next">
+  <h2><span class="num">9</span>What should change</h2>
+  <div class="inshort"><span class="label">In short</span><p>In order of value. The first two would have removed most of the director's hand-work and all three review rounds on the same seam.</p></div>
+  <ol>
+    <li><strong><code>dplanner agent run &lt;step&gt;</code></strong>: a headless launch that sets the worktree, briefing, in-progress and run intent. It's also the daemon's door.</li>
+    <li><strong>One owed-effects mechanism</strong> after the save, shared by the CLI, the window and auto-launch, tested at its boundary.</li>
+    <li><strong>A spawn guard</strong> in the test session.</li>
+    <li><strong>Timeouts and a heartbeat</strong> that survive the night.</li>
+    <li><strong>Overlap warnings</strong> when two in-flight steps plan to touch the same symbol.</li>
+    <li><strong>One inbox for every agent's questions</strong> (Knut's idea), fed by agent-state and the multiplexer's blocked state, shown in the window and future factory views.</li>
+    <li><strong>Project-scoped keys.</strong></li>
+    <li><strong>DPlanner's herdr row</strong> should open one workspace per project with a tab per run; <strong>Codex reviewers</strong> launched with the plan repo and test commands pre-allowed.</li>
+  </ol>
+</section>
+
+<footer>The durable sources are in this folder: README, timeline (the verbatim log), steering, bugs, ergonomics, failure-modes and evidence/. The plan is "DPlanner arch revision" in <code>app-dplanner-planning</code>, and it carries about 100 decision, later and handoff notes written by the agents.</footer>
+</main>
+</div>

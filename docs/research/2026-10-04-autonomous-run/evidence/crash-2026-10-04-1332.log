@@ -1,0 +1,100 @@
+Timeout (0:00:02)!
+Thread 0x00007f8c521fe6c0 (most recent call first):
+  File "/home/knut/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/lib/python3.13/threading.py", line 363 in wait
+  File "/home/knut/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/lib/python3.13/threading.py", line 660 in wait
+  File "/home/knut/Code/app-dplanner/src/dplanner/framework/diagnostics.py", line 112 in _watch
+  File "/home/knut/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/lib/python3.13/threading.py", line 995 in run
+  File "/home/knut/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/lib/python3.13/threading.py", line 1044 in _bootstrap_inner
+  File "/home/knut/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/lib/python3.13/threading.py", line 1015 in _bootstrap
+
+Thread 0x00007f8cb7111780 (most recent call first):
+  File "/home/knut/Code/app-dplanner/src/dplanner/app.py", line 117 in main
+  File "/home/knut/Code/app-dplanner/src/dplanner/entry.py", line 73 in main
+  File "/home/knut/Code/app-dplanner/.venv/bin/dplanner", line 10 in <module>
+Timeout (0:00:02)!
+Thread 0x00007f2477fff6c0 (most recent call first):
+  File "/home/knut/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/lib/python3.13/threading.py", line 363 in wait
+  File "/home/knut/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/lib/python3.13/threading.py", line 660 in wait
+  File "/home/knut/Code/app-dplanner/src/dplanner/framework/diagnostics.py", line 112 in _watch
+  File "/home/knut/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/lib/python3.13/threading.py", line 995 in run
+  File "/home/knut/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/lib/python3.13/threading.py", line 1044 in _bootstrap_inner
+  File "/home/knut/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/lib/python3.13/threading.py", line 1015 in _bootstrap
+
+Thread 0x00007f24c7812780 (most recent call first):
+  File "/home/knut/Code/app-dplanner/src/dplanner/app.py", line 151 in main
+  File "/home/knut/Code/app-dplanner/src/dplanner/entry.py", line 140 in main
+  File "/home/knut/Code/app-dplanner/.venv/bin/dplanner", line 10 in <module>
+Timeout (0:00:02)!
+Thread 0x00007f2477fff6c0 (most recent call first):
+  File "/home/knut/Code/app-dplanner/src/dplanner/core/telemetry.py", line 281 in open_spans
+  File "/home/knut/Code/app-dplanner/src/dplanner/framework/diagnostics.py", line 148 in _sample
+  File "/home/knut/Code/app-dplanner/src/dplanner/framework/diagnostics.py", line 123 in _watch
+  File "/home/knut/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/lib/python3.13/threading.py", line 995 in run
+  File "/home/knut/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/lib/python3.13/threading.py", line 1044 in _bootstrap_inner
+  File "/home/knut/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/lib/python3.13/threading.py", line 1015 in _bootstrap
+
+Thread 0x00007f24c7812780 (most recent call first):
+  File "/home/knut/Code/app-dplanner/src/dplanner/app.py", line 151 in main
+  File "/home/knut/Code/app-dplanner/src/dplanner/entry.py", line 140 in main
+  File "/home/knut/Code/app-dplanner/.venv/bin/dplanner", line 10 in <module>
+Timeout (0:00:02)!
+Thread 0x00007fad70ff96c0 (most recent call first):
+  File "/home/knut/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/lib/python3.13/threading.py", line 363 in wait
+  File "/home/knut/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/lib/python3.13/threading.py", line 660 in wait
+  File "/home/knut/Code/app-dplanner/src/dplanner/framework/diagnostics.py", line 112 in _watch
+  File "/home/knut/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/lib/python3.13/threading.py", line 995 in run
+  File "/home/knut/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/lib/python3.13/threading.py", line 1044 in _bootstrap_inner
+  File "/home/knut/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/lib/python3.13/threading.py", line 1015 in _bootstrap
+
+Thread 0x00007fadaec8e780 (most recent call first):
+  File "/home/knut/Code/app-dplanner/src/dplanner/modules/project_editor/renderers.py", line 623 in paint_pulse
+  File "/home/knut/Code/app-dplanner/src/dplanner/modules/project_editor/renderers.py", line 303 in paint_node
+  File "/home/knut/Code/app-dplanner/src/dplanner/modules/project_editor/items.py", line 378 in paint
+  File "/home/knut/Code/app-dplanner/src/dplanner/app.py", line 156 in main
+  File "/home/knut/Code/app-dplanner/src/dplanner/entry.py", line 126 in main
+  File "/home/knut/Code/app-dplanner/src/dplanner/entry.py", line 153 in window_main
+  File "/home/knut/.local/bin/dpw", line 10 in <module>
+Timeout (0:00:02)!
+Thread 0x00007fa091ffd6c0 (most recent call first):
+  File "/home/knut/Code/app-dplanner/src/dplanner/framework/diagnostics.py", line 145 in _sample
+  File "/home/knut/Code/app-dplanner/src/dplanner/framework/diagnostics.py", line 123 in _watch
+  File "/home/knut/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/lib/python3.13/threading.py", line 995 in run
+  File "/home/knut/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/lib/python3.13/threading.py", line 1044 in _bootstrap_inner
+  File "/home/knut/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/lib/python3.13/threading.py", line 1015 in _bootstrap
+
+Thread 0x00007fa0dd5c6780 (most recent call first):
+  File "/home/knut/Code/app-dplanner/src/dplanner/framework/diagnostics.py", line 103 in _beat
+  File "/home/knut/Code/app-dplanner/src/dplanner/app.py", line 156 in main
+  File "/home/knut/Code/app-dplanner/src/dplanner/entry.py", line 126 in main
+  File "/home/knut/Code/app-dplanner/src/dplanner/entry.py", line 153 in window_main
+  File "/home/knut/.local/bin/dpw", line 10 in <module>
+Timeout (0:00:02)!
+Thread 0x00007fa091ffd6c0 (most recent call first):
+  File "/home/knut/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/lib/python3.13/threading.py", line 363 in wait
+  File "/home/knut/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/lib/python3.13/threading.py", line 660 in wait
+  File "/home/knut/Code/app-dplanner/src/dplanner/framework/diagnostics.py", line 112 in _watch
+  File "/home/knut/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/lib/python3.13/threading.py", line 995 in run
+  File "/home/knut/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/lib/python3.13/threading.py", line 1044 in _bootstrap_inner
+  File "/home/knut/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/lib/python3.13/threading.py", line 1015 in _bootstrap
+
+Thread 0x00007fa0dd5c6780 (most recent call first):
+  File "/home/knut/Code/app-dplanner/src/dplanner/framework/list_rows.py", line 92 in rich_row_height
+  File "/home/knut/Code/app-dplanner/src/dplanner/framework/table.py", line 370 in text_width
+  File "/home/knut/Code/app-dplanner/src/dplanner/framework/table.py", line 1012 in sizeHint
+  <invalid frame>
+Fatal Python error: Segmentation fault
+
+Thread 0x00007fea7ffff6c0 (most recent call first):
+  File "/home/knut/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/lib/python3.13/threading.py", line 363 in wait
+  File "/home/knut/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/lib/python3.13/threading.py", line 660 in wait
+  File "/home/knut/Code/app-dplanner/src/dplanner/framework/diagnostics.py", line 112 in _watch
+  File "/home/knut/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/lib/python3.13/threading.py", line 995 in run
+  File "/home/knut/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/lib/python3.13/threading.py", line 1044 in _bootstrap_inner
+  File "/home/knut/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/lib/python3.13/threading.py", line 1015 in _bootstrap
+
+Current thread 0x00007feadccbf780 (most recent call first):
+  File "/home/knut/Code/app-dplanner/src/dplanner/app.py", line 156 in main
+  File "/home/knut/Code/app-dplanner/src/dplanner/entry.py", line 126 in main
+  File "/home/knut/.local/bin/dplanner", line 10 in <module>
+
+Extension modules: shiboken6.Shiboken, PySide6.QtCore, PySide6.QtGui, PySide6.QtWidgets, PySide6.QtSvg, _cffi_backend (total: 6)
