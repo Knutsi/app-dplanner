@@ -25,3 +25,8 @@ changes, write a new note and link back.
   layers (format, git, an advisory coordination service), one set of events with a local and
   a remote transport, the director rule, what still collides in the format, and the failure
   modes to work through. Not designed yet.
+- [2026-10-04 — An autonomous run of the arch revision](2026-10-04-autonomous-run/README.md): one
+  director session took the 26-step "DPlanner arch revision" plan through 20 step agents and 3
+  Codex reviewers in herdr, to a reviewed PR into `main`. A field test of autonomous execution:
+  steering counts, bugs found, friction in DPlanner, herdr and Codex, failure modes, and what a
+  daemon would need. The effect boundary failed three review rounds, and cross-vendor review earned its cost.
