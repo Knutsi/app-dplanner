@@ -1,0 +1,456 @@
+"""What a person can do to a step, as action specs.
+
+**Linking is here, and it is here rather than in the canvas on purpose.** A drop on the canvas
+runs :data:`steps.link` exactly as the menu does, so the verb is in the command palette too,
+its refusals come from one place, and it can be tested by handing it a constructed ``Context``
+with no widget in sight. See ``docs/architecture/core.md`` for the chain this is one link of.
+
+It reads **two selected steps, in the order they were selected: the second waits on the
+first.** That is the drag written down — dragging from A's handle onto B means "A, then B" —
+so the canvas and the menu cannot come to mean different things.
+
+**A link is removed two ways, filed by where it was picked.** ``links.remove`` acts on the
+picked *arrows* — Graph ▸ links, what a right-click on an arrow offers — and ``steps.unlink``
+on the link between two picked *steps*, a step verb that works in a table with no arrow in
+sight. Both end in :meth:`StepVerbs._removal_of`, so the two cannot come to remove different
+things. **Delete removes everything picked**: the steps, the links into them, and any arrow
+picked beside them, in one command — :func:`~dplanner.framework.step_selection.chosen_steps`
+is the step half written once, so Cut, Copy and Duplicate next door act on exactly the steps
+Delete would, and so does Run Agent in a module that cannot import this one.
+
+**Delete asks nothing.** Every removal is one undo step, and a prompt in front of an undoable
+verb teaches the wrong lesson — that the gesture is dangerous, when Ctrl+Z is the safety net.
+The CLI's ``step remove`` has said so all along; the window now agrees.
+
+**Isolate cuts a selection loose.** Every link into or out of the selected steps goes and
+every link among them stays — which edges those are is ``Library.boundary_edges``, and the
+command is ``remove_edges_command``, both in the domain so ``dplanner step isolate`` builds
+the same object.
+
+**A verb that can act on nothing is disabled, not hidden.** These render as toolbar buttons
+now, and a row that reflows as the selection changes is unreadable. ``build_menu`` filters on
+*enabled*, so the right-click menu is unchanged and the menu bar greys the entry instead — which
+is the better answer there too, since a verb you cannot see is one you cannot learn.
+"""
+
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+
+from PySide6.QtWidgets import QInputDialog, QWidget
+
+from dplanner.domain.commands import (
+    AddNodeCommand,
+    Command,
+    CompositeCommand,
+    SetEdgesCommand,
+    SetFieldCommand,
+    SetModuleDataCommand,
+    remove_edges_command,
+)
+from dplanner.domain.model import Library, NodeId, Step, StepId
+from dplanner.framework.action_registry import (
+    DISABLED,
+    ENABLED,
+    ActionRegistry,
+    ActionSpec,
+    ActionState,
+)
+from dplanner.framework.context import Context
+from dplanner.framework.step_selection import chosen_steps, focused_step
+from dplanner.framework.undo import UndoService
+from dplanner.modules.canvas.layouts.positions import MODULE_ID as POSITION_KEY
+from dplanner.modules.canvas.layouts.positions import write_position
+from dplanner.modules.canvas.selection import EDGE_KIND, EdgeRef, parse_edge_id
+from dplanner.modules.canvas.stacks.edits import bridged_removal, insert_before_command
+from dplanner.theme.icons import (
+    edit_icon,
+    isolate_icon,
+    link_icon,
+    plus_icon,
+    trash_icon,
+    unlink_icon,
+)
+
+# What a step is called until somebody types over it in the details dialog.
+NEW_STEP_TITLE = "New step"
+
+
+def _nowhere() -> tuple[float, float] | None:
+    return None
+
+
+def _unnoticed(_step_ids: list[StepId]) -> None:
+    return None
+
+
+def _unnoticed_one(_step_id: StepId) -> None:
+    return None
+
+
+def picked_edges(library: Library, context: Context) -> list[EdgeRef]:
+    """The selected arrows the model still agrees exist — :func:`chosen_steps` for links.
+
+    Remove Link and Delete act on them and so does a redirect, which lives next door in
+    ``view_verbs`` because it switches a mode rather than pushing a command; one
+    definition, so no verb can come to a different view of what "these links" means.
+    """
+    found = [parse_edge_id(entity) for entity in context.selected_entities(EDGE_KIND)]
+    return [
+        ref
+        for ref in found
+        if ref is not None
+        and library.has(ref.waiter)
+        and ref.source in library.step(ref.waiter).edges.get(ref.kind, [])
+    ]
+
+
+@dataclass(frozen=True)
+class StepVerbs:
+    library: Library
+    undo: UndoService[Library]
+    parent: QWidget
+    # Which project a new step goes into: the one the current tab is showing.
+    current_project: Callable[[], NodeId | None]
+    # Where a new node goes — the top-left the canvas's last click asks for, or None when
+    # the gesture came from somewhere with no canvas under it (the menu bar over a table).
+    # None falls back to the ambient layout, which is what New has always done.
+    new_position: Callable[[], tuple[float, float] | None] = _nowhere
+    # Steps have just been placed — born here, or pasted. The canvas selects them — so the
+    # panel beside it is already showing what was made, ready to be described — and steps
+    # its remembered point on, so pressing New twice stacks two nodes rather than hiding one
+    # under the other. Both belong to whoever placed them; a verb bench in a test has no
+    # canvas and needs neither.
+    placed: Callable[[list[StepId]], None] = _unnoticed
+    # One step has just been *born* — by New or a double-click, never a paste. The canvas
+    # opens the details dialog on it, so naming it is the gesture's second half; a paste
+    # arrives named and gets ``placed`` only.
+    created: Callable[[StepId], None] = _unnoticed_one
+
+    def register_into(self, actions: ActionRegistry) -> None:
+        for spec in self._specs():
+            actions.register(spec)
+
+    def _specs(self) -> list[ActionSpec]:
+        return [
+            # One New, not a submenu of kinds: a step is born plain and configured in the
+            # details dialog that opens on it (through the ``created`` seam), where the
+            # aspect bar offers every kind and facet at once. ``steps.new`` keeps its id —
+            # it is bound to ``N`` in the keymap and wears the toolbar's plus. It is the
+            # Graph menu's because what it needs is a place: the canvas's last click.
+            ActionSpec(
+                id="steps.new",
+                label="&New Step",
+                menu="Graph",
+                group="new",
+                order=10,
+                icon=plus_icon,
+                tip="Add a step to the project in this tab and open its details",
+                state=self._in_a_project,
+                run=self._new,
+            ),
+            ActionSpec(
+                id="steps.rename",
+                label="&Rename Step…",
+                menu="Step",
+                group="edit",
+                order=20,
+                icon=edit_icon,
+                tip="Change what this step is called",
+                state=self._on_a_step,
+                run=self._rename,
+            ),
+            ActionSpec(
+                id="steps.link",
+                label="&Link Steps",
+                menu="Step",
+                group="link",
+                order=10,
+                icon=link_icon,
+                tip="The last selected step waits on every other selected step",
+                state=self._can_link,
+                run=self._link,
+            ),
+            ActionSpec(
+                id="steps.unlink",
+                label="&Unlink Steps",
+                menu="Step",
+                group="link",
+                order=20,
+                icon=unlink_icon,
+                tip="Remove the link between the two selected steps",
+                state=self._can_unlink,
+                run=self._unlink,
+            ),
+            # The arrow's own verb, where a right-click on one finds it. Auto-progress joins
+            # this band from its own module.
+            ActionSpec(
+                id="links.remove",
+                label="Remove &Link",
+                menu="Graph",
+                group="links",
+                order=10,
+                icon=unlink_icon,
+                tip="Remove the picked links",
+                state=self._can_remove_links,
+                run=self._remove_links,
+            ),
+            ActionSpec(
+                id="steps.isolate",
+                label="&Isolate Steps",
+                menu="Step",
+                group="link",
+                order=30,
+                icon=isolate_icon,
+                tip="Remove every link into or out of the selected steps; links among them stay",
+                state=self._can_isolate,
+                run=self._isolate,
+            ),
+            ActionSpec(
+                id="steps.delete",
+                label="&Delete Step",
+                menu="Step",
+                group="edit",
+                order=30,
+                icon=trash_icon,
+                tip="Remove these steps, the links into them and any link picked beside them",
+                state=self._can_delete,
+                run=self._delete,
+            ),
+            # The same verb's second seat, on the Edit menu beside Cut and Copy. Its home
+            # stays Step: a card's right-click, five tables and the toolbar render that menu.
+            ActionSpec(
+                id="steps.delete_edit",
+                label="&Delete Step",
+                menu="Edit",
+                group="clipboard",
+                order=50,
+                palette=False,
+                tip="Remove these steps, the links into them and any link picked beside them",
+                state=self._can_delete,
+                run=self._delete,
+            ),
+        ]
+
+    # -- state ---------------------------------------------------------------------------------
+
+    def _in_a_project(self, _context: Context) -> ActionState:
+        return ENABLED if self.current_project() is not None else DISABLED
+
+    def _on_a_step(self, context: Context) -> ActionState:
+        step_id = context.focus_entity("step")
+        if step_id is None:
+            return DISABLED
+        return ENABLED if self.library.has(step_id) else DISABLED
+
+    # -- linking -------------------------------------------------------------------------------
+
+    def _pair(self, context: Context) -> tuple[StepId, StepId] | None:
+        """The two selected steps as ``(waited on, waiting)``, or None if that is not what
+        is selected."""
+        chosen = context.selected_entities("step")
+        if len(chosen) != 2:
+            return None
+        source, waiter = chosen
+        if not (self.library.has(source) and self.library.has(waiter)):
+            return None
+        return source, waiter
+
+    def _existing_link(self, context: Context) -> tuple[StepId, str] | None:
+        """``(waiter, kind)`` for a link between the pair, whichever way round it runs."""
+        pair = self._pair(context)
+        if pair is None:
+            return None
+        source, waiter = pair
+        for waits, other in ((waiter, source), (source, waiter)):
+            for kind, targets in self.library.step(waits).edges.items():
+                if other in targets:
+                    return waits, kind
+        return None
+
+    def _fan_in(self, context: Context) -> tuple[list[StepId], StepId] | None:
+        """The selected steps as ``(waited on, waiting)``: the last one picked waits on every
+        other — a pair is the case of one — or None if fewer than two known steps are
+        selected."""
+        chosen = context.selected_entities("step")
+        if len(chosen) < 2 or not all(self.library.has(step_id) for step_id in chosen):
+            return None
+        *sources, waiter = chosen
+        return sources, waiter
+
+    def _new_sources(self, sources: list[StepId], waiter: StepId) -> list[StepId]:
+        waiting = self.library.step(waiter).edges.get("requires", [])
+        return [source for source in sources if source not in waiting]
+
+    def _can_link(self, context: Context) -> ActionState:
+        fan = self._fan_in(context)
+        if fan is None:
+            return DISABLED
+        if self._existing_link(context) is not None:
+            # The documented exception to "disabled, never hidden": Link and Unlink are one
+            # slot, and a greyed "Already linked" beside an enabled Unlink Steps would say the
+            # same fact twice. The label travels anyway, for the canvas reporting a drop onto
+            # an already-linked node.
+            return ActionState(visible=False, enabled=False, label="Already linked")
+        sources, waiter = fan
+        new = self._new_sources(sources, waiter)
+        if not new:
+            return ActionState(enabled=False, label="Already linked")
+        for source in new:
+            refusal = self.library.link_refusal(waiter, "requires", source)
+            if refusal is not None:
+                # The label carries the reason, so a greyed entry says why rather than just
+                # being grey — and the canvas reuses it for the status bar after a refused
+                # drop. One refusal refuses the lot: half a fan-in is a surprise to undo.
+                return ActionState(enabled=False, label=f"Cannot Link — {refusal}")
+        return ENABLED
+
+    def _link(self, context: Context) -> None:
+        fan = self._fan_in(context)
+        if fan is None:
+            return  # The state gate already prevents this; stay honest.
+        sources, waiter = fan
+        waiting = self.library.step(waiter).edges.get("requires", [])
+        new = self._new_sources(sources, waiter)
+        self.undo.push(SetEdgesCommand(waiter, "requires", [*waiting, *new]))
+
+    def _can_unlink(self, context: Context) -> ActionState:
+        return ENABLED if self._existing_link(context) is not None else DISABLED
+
+    def _unlink(self, context: Context) -> None:
+        found = self._existing_link(context)
+        pair = self._pair(context)
+        if found is None or pair is None:
+            return
+        waiter, kind = found
+        other = pair[0] if pair[1] == waiter else pair[1]
+        self.undo.push(self._removal_of([EdgeRef(waiter=waiter, kind=kind, source=other)]))
+
+    def _can_remove_links(self, context: Context) -> ActionState:
+        picked = picked_edges(self.library, context)
+        if not picked:
+            return ActionState(enabled=False, label="Remove &Link — pick links first")
+        if len(picked) == 1:
+            return ENABLED
+        return ActionState(label=f"Remove {len(picked)} &Links")
+
+    def _remove_links(self, context: Context) -> None:
+        picked = picked_edges(self.library, context)
+        if picked:
+            self.undo.push(self._removal_of(picked))
+
+    def _removal_of(self, refs: list[EdgeRef]) -> Command:
+        label = "Remove Link" if len(refs) == 1 else f"Remove {len(refs)} Links"
+        return remove_edges_command(self.library, [ref.as_edge() for ref in refs], label)
+
+    # -- isolating ------------------------------------------------------------------------------
+
+    def _boundary(self, context: Context) -> tuple[list[StepId], list[tuple[StepId, str, StepId]]]:
+        chosen = chosen_steps(context, self.library)
+        return chosen, self.library.boundary_edges(chosen)
+
+    def _can_isolate(self, context: Context) -> ActionState:
+        chosen, boundary = self._boundary(context)
+        if not chosen:
+            return DISABLED
+        if not boundary:
+            return ActionState(enabled=False, label="Isolate — already isolated")
+        if len(chosen) == 1:
+            return ENABLED
+        return ActionState(label=f"&Isolate {len(chosen)} Steps")
+
+    def _isolate(self, context: Context) -> None:
+        chosen, boundary = self._boundary(context)
+        if not boundary:
+            return  # The state gate already prevents this; stay honest.
+        label = "Isolate Step" if len(chosen) == 1 else f"Isolate {len(chosen)} Steps"
+        self.undo.push(remove_edges_command(self.library, boundary, label))
+
+    # -- run -----------------------------------------------------------------------------------
+
+    def _new(self, _context: Context) -> None:
+        """No prompt: the step is born as "New step" and named in the details dialog
+        that ``created`` opens on it, where the name field is already selected."""
+        project_id = self.current_project()
+        if project_id is None:
+            return  # The state gate already prevents this; stay honest.
+        self.create(project_id, NEW_STEP_TITLE, at=self.new_position())
+
+    def create(
+        self,
+        project_id: NodeId,
+        title: str,
+        *,
+        at: tuple[float, float] | None = None,
+        carrying: Callable[[Step], Sequence[Command]] | None = None,
+        label: str = "New Step",
+        before: StepId | None = None,
+    ) -> Step:
+        """Add a step, placed where it was asked for, as **one** undo step.
+
+        The one place a step is born on the canvas: New comes here, so does the
+        double-click on empty space, and so does a drop. A gesture is one undo, so the
+        position rides with the node rather than arriving as a second entry on the stack —
+        and so does whatever the step is ``carrying``: the marker a dropped feature arrives
+        with, handed in as commands over the not-yet-added step.
+
+        ``before`` puts the step in front of another: it takes over what that step waited
+        on, and that step waits on it — joining its stack in its slot when it stands in one,
+        where the column seats it and ``at`` means nothing (``stacks/edits.py``).
+
+        A placed step earns a *stored* position, unlike the ambient layout, for the same
+        reason a dragged one does: somebody chose where it goes. A step that arrives
+        carrying something arrives *named* — a feature has its title — so it is placed but
+        not ``created``: the dialog that names a new step has nothing to ask it.
+        """
+        step = Step(title=title)
+        carried = [] if carrying is None else list(carrying(step))
+        command: Command
+        if before is not None:
+            command = insert_before_command(
+                self.library, step, before, label, carrying=carried, seat=at
+            )
+        else:
+            commands: list[Command] = [AddNodeCommand(project_id, step), *carried]
+            if at is not None:
+                commands.append(SetModuleDataCommand(step.id, POSITION_KEY, write_position(*at)))
+            command = commands[0] if len(commands) == 1 else CompositeCommand(label, commands)
+        self.born(step, command, named=carrying is not None)
+        return step
+
+    def born(self, step: Step, command: Command, *, named: bool = False) -> None:
+        """Push the command that makes ``step``, then place it and — unless it arrived
+        ``named`` — open its details: the one tail of every birth on the canvas, whether
+        :meth:`create` built the command or a stack verb did (New Stack, a stack's "+")."""
+        self.undo.push(command)
+        self.placed([step.id])
+        if not named:
+            self.created(step.id)
+
+    def _rename(self, context: Context) -> None:
+        step = focused_step(context, self.library)
+        if step is None:
+            return
+        title, accepted = QInputDialog.getText(
+            self.parent, "Rename Step", "Step name:", text=step.title
+        )
+        if accepted and title.strip():
+            self.undo.push(SetFieldCommand(step.id, "title", title.strip()))
+
+    def _can_delete(self, context: Context) -> ActionState:
+        doomed = chosen_steps(context, self.library)
+        if not doomed:
+            return DISABLED
+        picked = picked_edges(self.library, context)
+        if picked:
+            return ActionState(label=f"&Delete {len(doomed) + len(picked)} Items")
+        if len(doomed) == 1:
+            return ENABLED
+        return ActionState(label=f"&Delete {len(doomed)} Steps")
+
+    def _delete(self, context: Context) -> None:
+        """Everything picked goes, in one undo step: a Delete that left the picked arrows
+        behind would be a second Delete the user did not know they owed."""
+        doomed = chosen_steps(context, self.library)
+        if doomed:
+            links = [ref.as_edge() for ref in picked_edges(self.library, context)]
+            self.undo.push(bridged_removal(self.library, doomed, "Delete", links=links))

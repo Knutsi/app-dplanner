@@ -18,7 +18,6 @@ from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import find_project, find_step, project_arg, project_of_step
 from dplanner.domain.commands import CompositeCommand, SetEdgesCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, Project, Step
-from dplanner.domain.progression import phrase
 from dplanner.domain.store import FilesFor
 from dplanner.modules.auto_progress.aspect import (
     MODULE_ID,
@@ -27,12 +26,13 @@ from dplanner.modules.auto_progress.aspect import (
     with_sources,
     write,
 )
+from dplanner.planning.status import Status, Unknown, phrase, word
 
 
 def commands(
     *,
     is_agent: Callable[[Step], bool],
-    status_for: Callable[[Step], str],
+    status_for: Callable[[Step], Status | Unknown],
     key_of: Callable[[Step], str],
 ) -> list[CliCommand]:
     """``is_agent`` and ``status_for`` are other modules' readers and ``key_of`` the root's
@@ -120,7 +120,7 @@ def _set(
 def _list(
     context: CliContext,
     args: Namespace,
-    status_for: Callable[[Step], str],
+    status_for: Callable[[Step], Status | Unknown],
     key_of: Callable[[Step], str],
 ) -> int:
     library = context.library
@@ -140,7 +140,7 @@ def _list(
                         "step": source.id,
                         "key": key_of(source),
                         "title": source.title,
-                        "status": status_for(source),
+                        "status": word(status_for(source)),
                     }
                     for source in collected
                 ],

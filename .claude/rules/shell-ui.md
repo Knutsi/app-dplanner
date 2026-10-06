@@ -1,14 +1,15 @@
 ---
 paths:
   - "src/dplanner/menus.py"
-  - "src/dplanner/framework/{action_registry,action_menu,menubar,toolbar,palette,picker,list_rows,panels,side_panel,tabs,main_window,window,dialog,table,row_well,widgets,signalling,notices,index_panel,theme_service,user_config,zoom}.py"
+  - "src/dplanner/framework/{action_registry,action_menu,menubar,toolbar,palette,picker,list_rows,panels,side_panel,tabs,main_window,window,dialog,table,step_table,row_well,widgets,signalling,notices,index_panel,theme_service,user_config,zoom}.py"
   - "src/dplanner/framework/motion/**"
   - "src/dplanner/theme/**"
   - "src/dplanner/modules/{appshell,appearance,theme_omarchy,theme_system,reopen_tabs,home,settings,debug}/**"
-  - "src/dplanner/modules/project_editor/canvas_{toolbar,menus}.py"
+  - "src/dplanner/modules/canvas/{toolbar,menus}.py"
   - "tests/test_theme.py"
   - "tests/framework/test_{action_menu,actions,menubar,toolbar,palette,picker,list_rows,panels,side_panel,tabs,dialog,table,row_well,widgets,signalling,notices,index_panel,theme_service}.py"
-  - "tests/modules/test_{appshell,appearance,theme_providers,reopen_tabs,home,debug}.py"
+  - "tests/modules/{appshell,appearance,reopen_tabs,home,settings,debug}/**"
+  - "tests/modules/test_{theme_providers,menu_bar}.py"
   - "tests/framework/test_motion.py"
   - "tests/index_helpers.py"
   - "scripts/{vendor_tabler_icons,import_omarchy_themes,render_design_example,render_about,render_icon,render_signalling,render_home}.py"
@@ -16,6 +17,54 @@ paths:
 
 # Shell — seams, panes, primitives, menus, toolbars, glyphs and themes
 
+- **Only the active pane speaks for the user.** The window can show two or three tab groups
+  side by side, and there is still exactly one context. An activity that publishes a
+  selection must do it only while it is the current one — see `ProjectActivity._is_active`.
+- **One dock panel per window, one side panel per tab — and a page of tabs is a modal.** A
+  dock panel is anchored in a window area and follows the window by reading the context:
+  one instance however many tabs are open. A side panel is built by the tab and follows
+  *that* tab's rows (Problems beside the canvas, the Test panel beside a roster), so two
+  Tests tabs each carry one. The step editor left the areas entirely — `steps.details` is
+  the *only* place a step's aspects are edited, since nine tabs do not fit a 360 px column
+  — and a project's forms are the tabs of **Project ▸ Settings…**, a dialog aimed at one
+  project like the modal about one step. The areas hold the index alone, and an area no
+  panel stands in hides its View toggle. `docs/architecture/shell-ui.md`'s *Where a panel goes* and
+  the sections it points at have the rest.
+- **The context is announced once per event-loop turn, and a gesture changes the
+  selection once.** `ContextService.set_scope`/`clear_scope`/`refresh` update the snapshot
+  synchronously — `current()` is always true, which is all a verb run right after a
+  publish reads — but the fan-out to every action state, toolbar, panel and the menu bar
+  goes through `announce`, a 0 ms `Debounced` the builder wires, so a gesture that
+  publishes seven times costs one re-evaluation over the final state and never shows a
+  panel a selection that was empty for a microsecond. Three rules keep it that way:
+  `GraphScene.select_steps` announces once; a verb that needs a selection the user did not make is
+  handed a **constructed `Context`** (`_on_link_requested`) rather than having the canvas
+  select for it; and **a panel that steps aside keeps its content** (a side panel is fed
+  while hidden). **No subprocess in an action state or a structure
+  listener**: `origin_url` is memoised on the config file's mtime, and the sync module
+  asks git about membership only when the *library's* children change. **And no walk
+  over a project in an action state**: a state runs on every announce, so a derivation
+  over every step is paid per keystroke. The pattern
+  is the Problems count's: the module settles the answer once per burst in a `Debounced`
+  and the state *reads* it (`DocsModule._frontier_of`), with the settle announcing the
+  context so the label catches up; the gesture itself computes fresh.
+  `scripts/measure_scaling.py --scenarios connect,paste` is the number to quote.
+  `docs/architecture/shell-ui.md`'s *The context is announced once per turn* has the reasoning.
+- **An action that exists but does not apply right now is DISABLED, never HIDDEN.** A greyed
+  entry teaches the precondition — its `label` carries the reason where there is one. HIDDEN
+  is reserved for a capability absent from this build (a feature flag, a storage provider
+  without history) and for a verb whose opposite occupies its slot (`steps.link` stands down
+  while Unlink is offered). The palette filters on runnable; every other presenter — menu
+  bar, toolbars, `build_menu` popups — shows the greyed entry. `docs/architecture/core.md`'s *Hidden
+  means absent; disabled means not now* has the reasoning.
+- **A right-click renders a menu, never a copy of one.** `build_menu` takes a name from
+  `MENU_STRUCTURE` — the index tree has `Project`, the tab bar View's Tabs submenu (the
+  `submenu` filter) — and `fill_bands` composes bands of them: the canvas's by what is under
+  the cursor (`menus.py`). Make the thing under the cursor current *first*, then
+  build; the menu then reads the same context every other presenter does.
+  **A text widget's own standard menu is the exception**: `ProseEdit` appends *Insert
+  Image…* to `createStandardContextMenu()`, because a verb acting on one widget's caret
+  belongs in no menu bar and would be greyed everywhere else.
 - **Two surfaces meet at a seam, and the seam belongs to the splitter.** A 1 px `$BORDER`
   hairline inside a 7 px handle, from one `QSplitter::handle` rule that reaches every splitter
   the application builds — between two tab groups, between a panel area and the tabs, between
@@ -24,7 +73,8 @@ paths:
   orientations are built differently on purpose** — Qt gives a horizontal handle the box model
   and fills a vertical one's whole rect, so the rule that centres a line in the first renders a
   7 px slab in the second, and nothing says so. `tests/test_theme.py` renders both rather than
-  reading them. `ARCHITECTURE.md`'s *A seam belongs to the splitter* has the reasoning.
+  reading them. `docs/architecture/shell-ui.md`'s *A seam belongs to the splitter* has the
+  reasoning.
 - **A primitive names its parts; a dialog is never added to a selector list.** The frame
   sets `#DialogBody` and `#DialogFooter`, the table `#Table`, and the one accent rule is
   `QPushButton#PrimaryButton` — type-prefixed and **last of the button rules in
@@ -43,8 +93,8 @@ paths:
   the dialog can still show goes in its own status slot. **A verb in a dialog's body is
   `quiet()`** — the footer's look through a property rule, never `#DialogBody QPushButton`,
   which would outrank every id-only button rule inside a body — and a `GlyphButton`, quiet
-  already, when its glyph must follow the theme. `ARCHITECTURE.md`'s *A primitive carries
-  the rule* has the reasoning.
+  already, when its glyph must follow the theme. `docs/architecture/shell-ui.md`'s *A primitive
+  carries the rule* has the reasoning.
 - **A standing notice is a band in its tone, and the band is its meter.** The notice bar
   (`framework/notices.py`) is the one surface that wears a tone as a whole row rather than
   as a glyph beside the words, because it is the one a person must not read past: the row is
@@ -55,8 +105,8 @@ paths:
   `QProgressBar` is *not* the answer: a strip at nought per cent is a hairline nobody reads
   as a meter. **A band that stands for several things opens them**: `Notice.open` makes
   the whole row the target (pointing hand, `open_tip`), the verb keeping its own click —
-  one band per owner, never a band per thing it counts. `ARCHITECTURE.md`'s *The banner is
-  a band, and the band is the meter* and *An agent at work says so* have the reasoning.
+  one band per owner, never a band per thing it counts. `docs/architecture/persistence.md`'s *The
+  banner is a band, and the band is the meter* and *An agent at work says so* have the reasoning.
 - **A roster has three shapes, and each is a primitive.** A `Table` when a reader compares
   across rows — and a value set in the row is the column's `editor` (`NumberEditor`,
   `DateEditor`, `TextEditor`) or its `chips`, painted and hit-tested by the table, never a
@@ -64,7 +114,7 @@ paths:
   things. A `RowWell` when every row carries verbs of its own and has to outlive a refresh
   (the task and Agents browsers). A strip control that comes and goes is
   `Toolbar.set_shown`, never `hide()`, which the next reflow undoes.
-  `ARCHITECTURE.md`'s *A roster has three shapes* has the reasoning.
+  `docs/architecture/shell-ui.md`'s *A roster has three shapes* has the reasoning.
 - **A setting a menu cannot hold is a `PopoverButton`, and a surface's pages are a
   `Segmented` group.** A `QMenu` owns the keys and closes at the first click, so a slider
   (`SliderRow`) or choices that stay lit go in a `Popover` the setting's face drops — the
@@ -94,7 +144,7 @@ paths:
   picked row wears beside its edge, because it is the selection's own target rather than a
   second answer: **never keep a *ticked* set beside the selection**, or the strip and the
   Step menu act on two different things. The Step statuses tab is the example;
-  `ARCHITECTURE.md`'s *Progression is the status-aware frontier* has the reasoning.
+  `docs/architecture/schedule.md`'s *Progression is the status-aware frontier* has the reasoning.
 - **A table row's own verbs are a ⋮ at its end, painted by the table.** `Column(menu=True)`
   paints `MENU_GLYPH` on every row and hit-tests the whole cell, like the box; a press
   announces `Table.menu_requested(row, where)` and picks nothing, and the host builds the
@@ -103,8 +153,8 @@ paths:
   never `selectRow`, which adds to the pick under a held Ctrl), where a right-click
   keeps a pick the row is in: the verbs about one step read the first picked, so a ⋮ on the
   third of three ticked rows would otherwise show the first one's terminal. A menu column
-  never takes the table's slack. `ARCHITECTURE.md`'s *A roster has three shapes* has why
-  it is painted rather than a button in a cell.
+  never takes the table's slack. `docs/architecture/shell-ui.md`'s *A roster has three shapes* has
+  why it is painted rather than a button in a cell.
 - **A group heading may fold, and the table remembers by key.** `Table.add_heading(text,
   key=…)` makes the rows after it a collapsible group: a disclosure chevron (drawn, not
   vendored — it is a picture of *state*, like the key badge and the filter funnel), and the
@@ -117,12 +167,13 @@ paths:
   `GROUP_INDENT`, the chevron's slot, on the first column alone, so a row's name begins
   past the disclosure triangle rather than under it. The indent is the name's
   and not the row's: the accent edge and the hover wash still run the full width, and no
-  other column moves. `ARCHITECTURE.md`'s *The category headings fold* has the reasoning.
+  other column moves. `docs/architecture/collectors.md`'s *The category headings fold* has the
+  reasoning.
 - **A right-click may render more than one menu, and still copies none.** `fill_bands`
   (`framework/action_menu.py`) lays `Band`s — a menu, a group of one, a child menu's band,
   optionally as a child of its own — into one pop-up, a rule only between two bands that
   each drew something and none between two child menus. The canvas's right-click is a row
-  of bands per thing under the cursor (`project_editor/canvas_menus.py`, *A right-click is
+  of bands per thing under the cursor (`canvas/menus.py`, *A right-click is
   composed by what is under it* in `canvas.md`); a Tests tab's is its step's Step menu, as
   every table's is. Naming a `group` **with** a `submenu` means that child menu's band — two
   groups may feed one child menu, and a surface about one of them offers that one. What the
@@ -159,8 +210,8 @@ paths:
   stamp, no migration, the check is the lookup. The tree's folders are the index panel's own
   bookkeeping; tabs are `modules/reopen_tabs/`, which must be listed after every module that
   registers an activity factory and carries the *Settings ▸ Startup* switch.
-  `ARCHITECTURE.md`'s *Where the user left off is remembered by key* has the reasoning,
-  including why the write happens on every change rather than at close.
+  `docs/architecture/shell-ui.md`'s *Where the user left off is remembered by key* has the
+  reasoning, including why the write happens on every change rather than at close.
 - **A single click in the index opens a preview tab** (`tabs.open(..., preview=True)`): at
   most one preview exists, the next preview replaces it, and a deliberate act — activation,
   or moving the tab — pins it. A preview-open of anything already open is a plain focus.
@@ -168,8 +219,8 @@ paths:
   with no tab open is blank; its entry rows preview their surfaces. **A folder's
   own row is its segment's to answer** — a click, an activation and a right-click reach the
   segment like any row's: the Home row opens Home, and the Projects folder's right-click
-  renders File's `project` group. `ARCHITECTURE.md`'s *A click is a glance* has the rules
-  and why no timer is involved.
+  renders File's `project` group. `docs/architecture/shell-ui.md`'s *A click is a glance* has the
+  rules and why no timer is involved.
 - **Home is a tab like any other, and the program starts on it.** `modules/home/` registers
   the `home` tab (the index's first row, *Go ▸ Home*), reopened like any tab. The root's
   `start_window` opens it when the startup reopen left no tab open, and only
@@ -185,8 +236,8 @@ paths:
   sparkle their cards wear rain on what is ready — painted from `garden.py`'s Qt-free state
   in the plan's own tones, ticking only while shown and resting still after two seasons
   until hovered, turned off in *Settings ▸ Home* (a global preference). Nothing
-  else earns motion by being pleasant. `ARCHITECTURE.md`'s *Home is where a window starts*
-  has the reasoning.
+  else earns motion by being pleasant. `docs/architecture/shell-ui.md`'s *Home is where a window
+  starts* has the reasoning.
 - **Anything that moves moves through `framework/motion/`.** A `FrameClock` per surface —
   Qt's own animation driver, sixty ticks a second, handing listeners seconds since the last
   tick — `follow(widget)`s its surface so it runs only while shown, and a test or a render
@@ -194,9 +245,9 @@ paths:
   What moves is Qt-free state (`curves` for easings, tweens, springs and the breeze;
   `particles`) so it is tested without a window, and it is drawn with `draw`'s batched
   shapes — a glow is a gradient never a blur, a particle system one fill per tone. Layers
-  that change slowly are cached pictures redrawn a few times a second (`garden_view.py`'s
-  `_slow_layers`). `ARCHITECTURE.md`'s *Motion is a library* has the reasoning, and what
-  the canvas would use it for.
+  that change slowly are cached pictures redrawn a few times a second (`garden_widget.py`'s
+  `_slow_layers`). `docs/architecture/shell-ui.md`'s *Motion is a library* has the reasoning, and
+  what the canvas would use it for.
 - **A panel inside a tab is a `SidePanel`, hosted through `HostedSidePanel`**
   (`framework/side_panel.py`). A dock panel follows the *window* — one instance, retargeted
   by the context; a panel inside a tab follows *that tab* — one per tab, handed a
@@ -208,8 +259,8 @@ paths:
   things — the `SidePanel` the root names for it, a preference verb the button and the
   close both run (`canvas.side_panel` on `Look`; `tests.side_panel`, one bool for every
   Tests tab), and `dispose()` with the tab. Feed the panel while it is hidden too: off
-  screen keeps its content. `ARCHITECTURE.md`'s *A panel inside a tab follows the tab* has
-  the reasoning.
+  screen keeps its content. `docs/architecture/shell-ui.md`'s *A panel inside a tab follows the tab*
+  has the reasoning.
 - **The menu bar is sorted by subject.** Each top-level menu names one: File the library and
   what it writes, Edit history and the clipboard, View the window, **Go the places** (a
   project's surfaces — `views`, the index's rows; `survey`, Estimate Steps and Preview Report;
@@ -225,7 +276,8 @@ paths:
   (`order.open_step`). **No two entries in one menu share a mnemonic**, and the bar deals each
   title the first letter no earlier menu took (`marked_titles`). `tests/modules/
   test_menu_bar.py` holds the first and the last, and every band a composition names to what
-  is registered. `ARCHITECTURE.md`'s *The menu bar is sorted by subject* has the reasoning.
+  is registered. `docs/architecture/shell-ui.md`'s *The menu bar is sorted by subject* has the
+  reasoning.
 - **View is the window; Graph is the canvas — and a verb is filed by where its subject is
   picked.** The graph editor's own verbs are a top-level **Graph** menu, not a group inside
   View, which is about panels *around the tabs*, tabs, theme and zoom (`Project ▸ tests`
@@ -237,17 +289,17 @@ paths:
   Background — the band the strip's *Options* face renders whole) and `panels` (what stands
   beside the canvas inside the tab). A verb about picked **steps** is Step's — Rename,
   Delete, Connect, Link, Unlink (the pair), Isolate, Show in ▸ Graph — and so is offered by
-  every table that renders Step, where nothing canvas-only is left to be greyed. `ARCHITECTURE.md`'s *View is
-  the window; Graph is the canvas* has the reasoning.
+  every table that renders Step, where nothing canvas-only is left to be greyed.
+  `docs/architecture/shell-ui.md`'s *View is the window; Graph is the canvas* has the reasoning.
 - **A palette row says where the verb lives.** The command palette renders the two-line
   row (`framework/list_rows.py`): the label, its **menu path** (`Graph ▸ Divide`) under it,
   the shortcut at the right and the spec's glyph at the left — because a submenu entry's
   label is written for its submenu and *Vertical* alone is a riddle. The path is
   searchable, and a match on the label always outranks one that needed it.
-  `ARCHITECTURE.md`'s *The command palette says where a verb lives* has the reasoning.
+  `docs/architecture/shell-ui.md`'s *The command palette says where a verb lives* has the reasoning.
 - **A strip of verbs is glyphs in named bands, and a band folds whole.** The canvas strip
   is `framework/toolbar.py`'s `Toolbar`, cut into bands by `add_group(label)` —
-  *Go · Step · Link · Arrange · History · Options* in `canvas_toolbar.py`'s `GROUPS` —
+  *Go · Step · Link · Arrange · History · Options* in `toolbar.py`'s `GROUPS` —
   because nineteen glyphs in a row are nineteen riddles and six named bands are a thing to
   learn once. **The glyph is the spec's**: every verb on the strip carries `ActionSpec.icon`
   and the module keeps no icon table, so adding a button is adding a string to `GROUPS`.
@@ -274,14 +326,14 @@ paths:
   through `fill_menu`'s `group` filter and wears the layout picker's look, because a
   hairline down its middle would say two halves do different things.
 - **What DPlanner is built on is asked of the installation, never written down.**
-  Help ▸ *About DPlanner…* (`modules/appshell/about.py`) is a `DialogFrame` over a `Table`:
+  Help ▸ *About DPlanner…* (`modules/appshell/about_dialog.py`) is a `DialogFrame` over a `Table`:
   the list of components and what each *does here* is written — no package's metadata can
   say that — and every version and licence beside it comes from the installed
   distribution's own metadata, asked in the order the answers got vaguer
   (`License-Expression`, then `License`, then the trove classifiers). A hand-kept licence
   table drifts, and the one thing an acknowledgement must not do is claim the wrong
   licence. A component this build does not have says so in its row rather than being
-  dropped. `ARCHITECTURE.md`'s *An acknowledgement is asked, not written* has the
+  dropped. `docs/architecture/shell-ui.md`'s *An acknowledgement is asked, not written* has the
   reasoning.
 - **Find is a picker, and landing on a step is centring on it.** `framework/picker.py`
   is the one fuzzy picker — a field over `PickerRow`s, the label outranking whatever else a
@@ -300,11 +352,12 @@ paths:
   a child menu sits at its first entry's `order`, siblings in one group claim bands of it —
   the one place `order` says more than "rank inside this group", written down in
   `menus.py`.
-  `ARCHITECTURE.md`'s *A submenu is one child menu per title* has the reasoning. **A child
-  menu whose entries are data carries a `fill` instead of specs** — `DataMenuSpec`, placed
+  `docs/architecture/shell-ui.md`'s *A submenu is one child menu per title* has the reasoning. **A
+  child menu whose entries are data carries a `fill` instead of specs** — `DataMenuSpec`, placed
   by the same table, cleared and refilled every time it opens (Tools ▸ Agent List is the
-  example; a fixed verb inside one renders through `append_action`). `ARCHITECTURE.md`'s
-  *A child menu of data is rebuilt when it opens* has the reasoning.
+  example; a fixed verb inside one renders through `append_action`).
+  `docs/architecture/shell-ui.md`'s *A child menu of data is rebuilt when it opens* has the
+  reasoning.
 - **The glyphs are Tabler's SVGs, vendored — a glyph key is ours, the picture is theirs.**
   `theme/glyphs/` holds the fifty-odd this application uses (MIT; the notice is beside
   them and Help ▸ About names the set and its version), fetched by
@@ -344,5 +397,5 @@ paths:
   `modules/appearance/` renders View ▸ Theme (specs, so the palette keeps them; long
   lists nest through `submenu="Theme ▸ Omarchy"`) and Settings ▸ Appearance. Never
   construct a `ThemeService` over the machine's providers in a test: `new_session()` and
-  `configure_application()` default to the built-in alone. `ARCHITECTURE.md`'s *A theme
-  is provided, never listed* has the reasoning.
+  `configure_application()` default to the built-in alone. `docs/architecture/shell-ui.md`'s *A
+  theme is provided, never listed* has the reasoning.

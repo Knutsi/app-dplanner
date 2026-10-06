@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 from PySide6.QtWidgets import QWidget
 
+from dplanner.core.process import spawn_detached
 from dplanner.core.telemetry import Telemetry
 from dplanner.framework.action_registry import ActionRegistry, ActionSpec, ActionState
 from dplanner.framework.context import Context, ContextService
@@ -20,16 +21,16 @@ from dplanner.framework.tabs import TabHost
 from dplanner.framework.task_runner import TaskRunner
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.theme_service import ThemeService
-from dplanner.modules.debug.design_example import (
+from dplanner.modules.debug.design_example_activity import (
     DESIGN_TABLE_KIND,
     DESIGN_TOOLBARS_KIND,
     DesignExampleActivity,
-    DesignExampleDialog,
     DesignExampleToolbars,
 )
-from dplanner.modules.debug.design_rows import DESIGN_ROWS_KIND, DesignExampleRows
-from dplanner.modules.debug.telemetry_view import TELEMETRY_KIND, TelemetryActivity
-from dplanner.modules.debug.view import LLM_CALLS_KIND, LLMCallsActivity
+from dplanner.modules.debug.design_example_dialog import DesignExampleDialog
+from dplanner.modules.debug.design_rows_activity import DESIGN_ROWS_KIND, DesignExampleRows
+from dplanner.modules.debug.llm_calls_activity import LLM_CALLS_KIND, LLMCallsActivity
+from dplanner.modules.debug.telemetry_activity import TELEMETRY_KIND, TelemetryActivity
 from dplanner.modules.debug.windows_check import DESKTOP_COMMAND, command, probe
 
 # The child menu every design example hangs from: the list of them, in one seat.
@@ -42,9 +43,7 @@ def launch_desktop(argv: tuple[str, ...]) -> None:
     Detached because the session is the developer's, not the application's: closing DPlanner
     must not take the RDP window down with it.
     """
-    subprocess.Popen(
-        list(argv), start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-    )
+    spawn_detached(argv)
 
 
 @dataclass(frozen=True)

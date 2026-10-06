@@ -77,45 +77,47 @@ from dplanner.cli.report.parts import Graph
 from dplanner.core.storage.locations import init_repo
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
 from dplanner.domain.model import Step, StepId
-from dplanner.domain.schedule import Wait
 from dplanner.domain.seed import create_library, seed_project
 from dplanner.framework.services import AppServices
 from dplanner.framework.session import AppSession
-from dplanner.modules import _report_sources, _step_key, _step_kind
+from dplanner.modules import _report_sources
 from dplanner.modules.auto_progress.aspect import MODULE_ID as AUTO_PROGRESS_ID
 from dplanner.modules.auto_progress.aspect import write as auto_progress_write
-from dplanner.modules.estimation.aspect import write as estimate_write
-from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
-from dplanner.modules.feature.aspect import write as feature_write
-from dplanner.modules.project_editor.items import StepNodeItem
-from dplanner.modules.project_editor.layout_verbs import set_wave_view
-from dplanner.modules.project_editor.modes import RestackMode
-from dplanner.modules.project_editor.module import ProjectActivity, ProjectEditorModule
-from dplanner.modules.project_editor.positions import (
+from dplanner.modules.canvas.activity import ProjectActivity
+from dplanner.modules.canvas.items import StepNodeItem
+from dplanner.modules.canvas.layouts.positions import (
     MIN_NODE_H,
     MIN_NODE_W,
     write_member,
     write_position,
 )
-from dplanner.modules.project_editor.positions import MODULE_ID as POSITION_KEY
-from dplanner.modules.project_editor.renderers import PULSE_PERIOD
-from dplanner.modules.project_editor.selection import EdgeRef
-from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_ID
-from dplanner.modules.step_agent_instruction.aspect import write_state as agent_write
+from dplanner.modules.canvas.layouts.positions import MODULE_ID as POSITION_KEY
+from dplanner.modules.canvas.layouts.verbs import set_wave_view
+from dplanner.modules.canvas.modes import RestackMode
+from dplanner.modules.canvas.module import CanvasModule
+from dplanner.modules.canvas.renderers import PULSE_PERIOD
+from dplanner.modules.canvas.selection import EdgeRef
 from dplanner.modules.step_agent_run.aspect import MODULE_ID as AGENT_RUN_ID
 from dplanner.modules.step_agent_run.aspect import write as agent_run_write
-from dplanner.modules.step_check.aspect import MODULE_ID as CHECK_ID
-from dplanner.modules.step_check.aspect import write as check_write
-from dplanner.modules.step_milestone.aspect import MODULE_ID as MILESTONE_ID
-from dplanner.modules.step_milestone.aspect import write as milestone_write
-from dplanner.modules.step_review.aspect import MODULE_ID as REVIEW_ID
-from dplanner.modules.step_review.aspect import ReviewSettings
-from dplanner.modules.step_review.aspect import write as review_write
-from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
-from dplanner.modules.step_status.aspect import read as status_for
-from dplanner.modules.step_status.aspect import write as status_write
-from dplanner.modules.step_wait.aspect import MODULE_ID as WAIT_ID
-from dplanner.modules.step_wait.aspect import write as wait_write
+from dplanner.planning.agent import MODULE_ID as AGENT_ID
+from dplanner.planning.agent import write_state as agent_write
+from dplanner.planning.check import MODULE_ID as CHECK_ID
+from dplanner.planning.check import write as check_write
+from dplanner.planning.estimate import write as estimate_write
+from dplanner.planning.feature import MODULE_ID as FEATURE_ID
+from dplanner.planning.feature import write as feature_write
+from dplanner.planning.kinds import key_of, kind_word
+from dplanner.planning.milestone import MODULE_ID as MILESTONE_ID
+from dplanner.planning.milestone import write as milestone_write
+from dplanner.planning.review import MODULE_ID as REVIEW_ID
+from dplanner.planning.review import ReviewSettings
+from dplanner.planning.review import write as review_write
+from dplanner.planning.status import MODULE_ID as STATUS_ID
+from dplanner.planning.status import Status, stored
+from dplanner.planning.status import write as status_write
+from dplanner.planning.wait import MODULE_ID as WAIT_ID
+from dplanner.planning.wait import Wait
+from dplanner.planning.wait import write as wait_write
 from dplanner.theme import apply_theme
 from dplanner.theme.themes import DARK, LIGHT, Theme
 
@@ -155,18 +157,21 @@ CARDS = (
     (
         (
             "Map the columns",
-            ((AGENT_ID, agent_write(True)), (STATUS_ID, status_write("in-progress", today=DAY))),
+            (
+                (AGENT_ID, agent_write(True)),
+                (STATUS_ID, status_write(Status.IN_PROGRESS, today=DAY)),
+            ),
         ),
         (
             "Parse the dates",
             (
                 (AGENT_ID, agent_write(True)),
-                (STATUS_ID, status_write("ready-for-review", today=DAY)),
+                (STATUS_ID, status_write(Status.READY_FOR_REVIEW, today=DAY)),
             ),
         ),
-        ("Stage the loader", ((STATUS_ID, status_write("ready-to-merge", today=DAY)),)),
-        ("Load the fixtures", ((STATUS_ID, status_write("blocked", today=DAY)),)),
-        ("Read the spec", ((STATUS_ID, status_write("done", today=DAY)),)),
+        ("Stage the loader", ((STATUS_ID, status_write(Status.READY_TO_MERGE, today=DAY)),)),
+        ("Load the fixtures", ((STATUS_ID, status_write(Status.BLOCKED, today=DAY)),)),
+        ("Read the spec", ((STATUS_ID, status_write(Status.DONE, today=DAY)),)),
     ),
 )
 CARDS_SIZE = (1400, 520)
@@ -312,7 +317,7 @@ def render(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
     settle(app)
 
     # Find, while the tab is still the window's current one — it is what the verb asks.
-    editor = next(m for m in services.modules if isinstance(m, ProjectEditorModule))
+    editor = next(m for m in services.modules if isinstance(m, CanvasModule))
     picker = editor.find_picker()
     assert picker is not None
     picker.resize(*PICKER_SIZE)
@@ -553,7 +558,9 @@ def render_auto_progress(app: QApplication, theme: Theme, out: Path, workspace: 
         SetModuleDataCommand(step.id, "estimation", estimate_write(0.25)).redo(library)
         SetModuleDataCommand(step.id, AGENT_ID, agent_write(True)).redo(library)
         for status, run in states:
-            SetModuleDataCommand(step.id, STATUS_ID, status_write(status, today=DAY)).redo(library)
+            SetModuleDataCommand(step.id, STATUS_ID, status_write(Status(status), today=DAY)).redo(
+                library
+            )
             if run:
                 SetModuleDataCommand(step.id, AGENT_RUN_ID, agent_run_write(run)).redo(library)
         made.append(step.id)
@@ -646,9 +653,9 @@ def render_stacks(app: QApplication, theme: Theme, out: Path, workspace: Path) -
         project,
         services.repo.files,
         _report_sources(),
-        key_of=_step_key,
-        kind_of=_step_kind,
-        status_for=status_for,
+        key_of=key_of,
+        kind_of=kind_word,
+        status_for=stored,
         today=DAY,
     )
     graph = next(part for part in report.sections["plan"] if isinstance(part, Graph))
@@ -694,7 +701,9 @@ def render_review(app: QApplication, theme: Theme, out: Path, workspace: Path) -
         SetModuleDataCommand(step.id, "estimation", estimate_write(0.25)).redo(library)
         SetModuleDataCommand(step.id, AGENT_ID, agent_write(True)).redo(library)
         if status:
-            SetModuleDataCommand(step.id, STATUS_ID, status_write(status, today=DAY)).redo(library)
+            SetModuleDataCommand(step.id, STATUS_ID, status_write(Status(status), today=DAY)).redo(
+                library
+            )
         if review:
             SetModuleDataCommand(step.id, REVIEW_ID, review_write(ReviewSettings())).redo(library)
             SetModuleDataCommand(step.id, AGENT_RUN_ID, agent_run_write("working")).redo(library)
@@ -761,7 +770,9 @@ def render_flow(app: QApplication, theme: Theme, out: Path, workspace: Path) -> 
         if agent:
             SetModuleDataCommand(step.id, AGENT_ID, agent_write(True)).redo(library)
         if status:
-            SetModuleDataCommand(step.id, STATUS_ID, status_write(status, today=DAY)).redo(library)
+            SetModuleDataCommand(step.id, STATUS_ID, status_write(Status(status), today=DAY)).redo(
+                library
+            )
         if run:
             SetModuleDataCommand(step.id, AGENT_RUN_ID, agent_run_write(run)).redo(library)
         if review:
@@ -939,7 +950,7 @@ def render_stack_edits(app: QApplication, theme: Theme, out: Path, workspace: Pa
     # Another writer's edit: the stack's last member no longer waits on its first. Carried
     # the way the store adopts it — no rule judges another writer's links.
     library.set_edges(made[3], "requires", [], rules=False)
-    editor = next(m for m in services.modules if isinstance(m, ProjectEditorModule))
+    editor = next(m for m in services.modules if isinstance(m, CanvasModule))
     services.actions.run("canvas.side_panel", services.context.current())
     tab.set_look(editor._look)
     tab.frame()
@@ -978,8 +989,8 @@ def render_branches(app: QApplication, theme: Theme, out: Path, workspace: Path)
     lane, since it is not on main yet) and landed (the lane gone, the strips quiet) — and
     the right-click on the picked stretch offering Put on a Branch."""
     from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
-    from dplanner.modules import _branch_births
     from dplanner.modules.branches.edits import put_command
+    from dplanner.modules.branches.plan import branch_births
 
     QSettings().clear()
     apply_theme(app, theme)
@@ -1029,7 +1040,7 @@ def render_branches(app: QApplication, theme: Theme, out: Path, workspace: Path)
     discard(menu)
     tab._scene.select_steps([])
 
-    cut, land = _branch_births(project, "feature/stacks")
+    cut, land = branch_births(project, "feature/stacks")
     seats = [
         SetModuleDataCommand(cut.id, POSITION_KEY, write_position(280, 160)),
         SetModuleDataCommand(land.id, POSITION_KEY, write_position(1400, 160)),
@@ -1038,9 +1049,13 @@ def render_branches(app: QApplication, theme: Theme, out: Path, workspace: Path)
     for name, states in BRANCH_STATES.items():
         for index, step_id in enumerate(made):
             word = states.get(index, "pending")
-            SetModuleDataCommand(step_id, STATUS_ID, status_write(word, today=DAY)).redo(library)
+            SetModuleDataCommand(step_id, STATUS_ID, status_write(Status(word), today=DAY)).redo(
+                library
+            )
         word = states.get("land", "pending")
-        SetModuleDataCommand(land.id, STATUS_ID, status_write(word, today=DAY)).redo(library)
+        SetModuleDataCommand(land.id, STATUS_ID, status_write(Status(word), today=DAY)).redo(
+            library
+        )
         page.setParent(None)
         page.resize(*BRANCH_SIZE)
         page.show()
@@ -1082,7 +1097,9 @@ def render_waves(app: QApplication, theme: Theme, out: Path, workspace: Path) ->
         SetModuleDataCommand(step.id, "estimation", estimate_write(days)).redo(library)
         library.set_text(step.id, "step_description", f"{title}, in full.")
         if status:
-            SetModuleDataCommand(step.id, STATUS_ID, status_write(status, today=DAY)).redo(library)
+            SetModuleDataCommand(step.id, STATUS_ID, status_write(Status(status), today=DAY)).redo(
+                library
+            )
         made.append(step.id)
     for index, (*_rest, sources, _seat) in enumerate(WAVE_PLAN):
         if sources:

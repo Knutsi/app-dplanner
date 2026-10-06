@@ -2,7 +2,7 @@
 hardened and left ordinary."""
 
 import pytest
-from tests.modules.spec_git_helpers import clean_git, git, make_remote  # noqa: F401
+from tests.modules.spec_git.spec_git_helpers import clean_git, git, make_remote  # noqa: F401
 
 from dplanner.core.storage.kept import CHECKOUTS_DIR, clone_full, is_kept, kept_dir
 

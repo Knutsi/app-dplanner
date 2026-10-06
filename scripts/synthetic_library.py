@@ -35,26 +35,27 @@ from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.seed import create_library, seed_project
 from dplanner.domain.store import ModuleFileArea
 from dplanner.modules import default_module_formats
-from dplanner.modules.estimation.aspect import write as estimate
-from dplanner.modules.estimation.schedule import write_start
-from dplanner.modules.feature.aspect import FeatureSource
-from dplanner.modules.feature.aspect import write as feature_marker
-from dplanner.modules.notes.log import MODULE_ID as NOTES_ID
-from dplanner.modules.notes.log import Note, write_log
-from dplanner.modules.project_editor.positions import MODULE_ID as EDITOR_ID
-from dplanner.modules.project_editor.positions import write_position
-from dplanner.modules.project_editor.sorts import layered_flow
+from dplanner.modules.canvas.layouts.positions import MODULE_ID as EDITOR_ID
+from dplanner.modules.canvas.layouts.positions import write_position
+from dplanner.modules.canvas.layouts.sorts import layered_flow
+from dplanner.modules.notes.aspect import MODULE_ID as NOTES_ID
+from dplanner.modules.notes.aspect import Note, write_log
+from dplanner.modules.schedule.assumptions import write_project
 from dplanner.modules.spec.aspect import MODULE_ID as SPEC_ID
 from dplanner.modules.spec.documents import SpecIndex, import_document, write_index
-from dplanner.modules.step_agent_instruction.aspect import write_state as agent_state
-from dplanner.modules.step_check.aspect import write as check
-from dplanner.modules.step_milestone.aspect import write as milestone
-from dplanner.modules.step_status.aspect import write as status
 from dplanner.modules.testing import runs
 from dplanner.modules.testing.aspect import Test
 from dplanner.modules.testing.aspect import write as tests
 from dplanner.modules.testing.filing import Category, write_catalog
-from dplanner.modules.time_estimates.schedule import write_project
+from dplanner.planning.agent import write_state as agent_state
+from dplanner.planning.check import write as check
+from dplanner.planning.estimate import write as estimate
+from dplanner.planning.estimate import write_start
+from dplanner.planning.feature import FeatureSource
+from dplanner.planning.feature import write as feature_marker
+from dplanner.planning.milestone import write as milestone
+from dplanner.planning.status import Status
+from dplanner.planning.status import write as status
 
 PROJECTS = (("big", "Big"), ("sibling", "Sibling"), ("small", "Small"))
 SMALL_STEPS = 20
@@ -134,7 +135,7 @@ def _fill(library: Library, project: Project, count: int, unplaced: float) -> No
                 library
             )
         word = _status(index, count)
-        if word != "pending":
+        if word is not Status.PENDING:
             SetModuleDataCommand(step.id, "step_status", status(word, today=date.today())).redo(
                 library
             )
@@ -213,14 +214,14 @@ def _title(index: int) -> str:
     return f"{verbs[index % len(verbs)]} the {words[(index // 3) % len(words)]}"
 
 
-def _status(index: int, count: int) -> str:
+def _status(index: int, count: int) -> Status:
     if index < count * 0.3:
-        return "done"
+        return Status.DONE
     if index < count * 0.4:
-        return "in-progress"
+        return Status.IN_PROGRESS
     if index % 37 == 0:
-        return "blocked"
-    return "pending"
+        return Status.BLOCKED
+    return Status.PENDING
 
 
 def _runs(test_ids: list[str]) -> list[runs.Run]:

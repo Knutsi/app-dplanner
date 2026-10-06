@@ -27,8 +27,8 @@ and a double-click on a row is what puts it on screen (``test.details`` — see
 ``module.py``).
 
 **Next and Previous move the *table's* selection, never the panel's own.** A panel may not
-publish a selection (``section.py``'s rule; ``ARCHITECTURE.md``'s *Where a panel goes*), so
-these ask the tab to pick the neighbouring row and then simply follow what it feeds back.
+publish a selection (``section.py``'s rule; ``docs/architecture/shell-ui.md``'s *Where a panel
+goes*), so these ask the tab to pick the neighbouring row and then simply follow what it feeds back.
 It is the tab's own order they walk, and at either end of it they are greyed saying so —
 which is also honest: "next" has no meaning past the end of the list.
 
@@ -55,14 +55,14 @@ from dplanner.framework.toolbar import Toolbar
 from dplanner.framework.widgets import note
 from dplanner.modules.testing import runs
 from dplanner.modules.testing.aspect import Test, find, read, test_ids
-from dplanner.modules.testing.preview_dialog import preview
-from dplanner.modules.testing.references import mentions
-from dplanner.modules.testing.view import (
+from dplanner.modules.testing.cards import (
     RESULT_ORDER,
     TestBody,
     TestHead,
     test_images,
 )
+from dplanner.modules.testing.preview_dialog import preview
+from dplanner.modules.testing.references import mentions
 from dplanner.theme.icons import chevron_left_icon, chevron_right_icon, step_icon
 from dplanner.theme.tokens import PANEL_MARGIN, SECTION_GAP
 

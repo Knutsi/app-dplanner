@@ -22,17 +22,9 @@ from dplanner.cli.command import CliCommand, CliContext, CliError
 from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import find_step, step_arg
 from dplanner.domain.model import Library, Project, Step, StepId
-from dplanner.domain.scope import (
-    ScopeKind,
-    StepPredicate,
-    cone,
-    gatherers,
-    handoffs,
-    kind_of,
-    leaders,
-    stops_for,
-)
+from dplanner.domain.ordering import StepPredicate, cone
 from dplanner.domain.store import FilesFor
+from dplanner.planning.scope import ScopeKind, gatherers, handoffs, kind_of, leaders, stops_for
 
 # What a scope covers, as the module that owns tests answers it: (id, title, step title).
 type CoveredTest = tuple[str, str, str]

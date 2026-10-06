@@ -26,28 +26,9 @@ from dplanner.cli.lookup import body_from, find_step, step_arg
 from dplanner.domain.agents import AgentHarness
 from dplanner.domain.commands import Command, SetModuleDataCommand
 from dplanner.domain.model import Library, Project, Step, now_stamp
-from dplanner.domain.progression import (
-    BLOCKED,
-    DONE,
-    IN_PROGRESS,
-    READY_FOR_REVIEW,
-    READY_TO_MERGE,
-    REVIEW_AND_MERGE,
-)
 from dplanner.domain.shelf import turn_off
 from dplanner.domain.store import FilesFor, LibraryStore
 from dplanner.modules.step_review.aspect import (
-    DEFAULT_AGENT,
-    MODULE_ID,
-    ReviewSettings,
-    is_review,
-    lens_words,
-    no_review,
-    settings,
-    subjects,
-    write,
-)
-from dplanner.modules.step_review.rounds import (
     APPROVED,
     ASKER,
     ENDED,
@@ -66,7 +47,19 @@ from dplanner.modules.step_review.rounds import (
     turn,
     with_party,
 )
-from dplanner.modules.step_review.rounds import MODULE_ID as ROUNDS_ID
+from dplanner.modules.step_review.aspect import MODULE_ID as ROUNDS_ID
+from dplanner.planning.review import (
+    DEFAULT_AGENT,
+    MODULE_ID,
+    ReviewSettings,
+    is_review,
+    lens_words,
+    no_review,
+    settings,
+    subjects,
+    write,
+)
+from dplanner.planning.status import REVIEW_AND_MERGE, Status, Unknown, word
 
 # How long `review wait` blocks by default: under the ten minutes an agent CLI's tool call
 # may run, so the agent that waits is never killed mid-wait by its own harness.
@@ -79,7 +72,7 @@ TIMED_OUT = 3
 DEFAULT_WORD = "default"
 NO_LENSES = "none"
 
-SetStatus = Callable[[CliContext, Step, str], bool]
+SetStatus = Callable[[CliContext, Step, Status], None]
 
 
 @dataclass(frozen=True)
@@ -94,7 +87,7 @@ class _Talk:
 def commands(
     *,
     auto_progresses: Callable[[Step, Step], bool],
-    status_for: Callable[[Step], str],
+    status_for: Callable[[Step], Status | Unknown],
     set_status: SetStatus,
     inherit_refs: Callable[[Step, Step], Command | None],
     note_escalation: Callable[[CliContext, Step, str, str], str],
@@ -302,7 +295,7 @@ class _Conversations:
     def __init__(
         self,
         auto_progresses: Callable[[Step, Step], bool],
-        status_for: Callable[[Step], str],
+        status_for: Callable[[Step], Status | Unknown],
         key_of: Callable[[Step], str],
     ) -> None:
         self.auto_progresses = auto_progresses
@@ -512,7 +505,7 @@ def _post(context: CliContext, args: Namespace, talk: _Conversations, set_status
             asker.id, ROUNDS_ID, said(asker, party.id, findings=findings, posted=now_stamp())
         )
     )
-    set_status(context, party, IN_PROGRESS)
+    set_status(context, party, Status.IN_PROGRESS)
     context.report(
         {"step": asker.id, "party": party.id, "round": number, "state": POSTED},
         f"{talk.named(asker)}: round {number}'s findings posted to {talk.ref(party)}, which is "
@@ -572,7 +565,7 @@ def _reply(
             asker.id, ROUNDS_ID, said(asker, party.id, reply=reply, replied=now_stamp())
         )
     )
-    set_status(context, party, READY_FOR_REVIEW)
+    set_status(context, party, Status.READY_FOR_REVIEW)
     context.report(
         {"step": party.id, "asker": asker.id, "round": number, "state": REPLIED},
         f"{talk.named(party)}: answered round {number} from {talk.ref(asker)}, and is ready "
@@ -609,8 +602,8 @@ def _approve(
     context.apply(
         SetModuleDataCommand(asker.id, ROUNDS_ID, said(asker, party.id, approved=now_stamp()))
     )
-    set_status(context, party, DONE)
-    set_status(context, asker, READY_TO_MERGE)
+    set_status(context, party, Status.DONE)
+    set_status(context, asker, Status.READY_TO_MERGE)
     refs = inherit_refs(party, asker)
     if refs is not None:
         context.apply(refs)
@@ -652,7 +645,7 @@ def _escalate(
         )
     )
     number = len(with_party(asker, party.id))
-    set_status(context, asker, BLOCKED)
+    set_status(context, asker, Status.BLOCKED)
     title = (
         f"{talk.ref(asker)}'s review of {talk.ref(party)} needs a person after "
         f"{number} round{'' if number == 1 else 's'}"
@@ -792,7 +785,7 @@ def _arrived(held: _Talk, side: str, talk: _Conversations) -> bool:
     if side == PARTY:
         return whose == PARTY
     if held.last is None:
-        return talk.status_for(held.party) in (*REVIEW_AND_MERGE, DONE)
+        return talk.status_for(held.party) in {*REVIEW_AND_MERGE, Status.DONE}
     return whose == ASKER
 
 
@@ -873,7 +866,7 @@ def _talk_data(held: _Talk, talk: _Conversations) -> dict[str, object]:
         "asker_key": talk.key_of(held.asker),
         "party": held.party.id,
         "party_key": talk.key_of(held.party),
-        "party_status": talk.status_for(held.party),
+        "party_status": word(talk.status_for(held.party)),
         "turn": turn(held.last),
         "standing": talk.standing(held),
         "rounds": [

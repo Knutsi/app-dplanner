@@ -9,7 +9,7 @@ import json
 import pytest
 
 from dplanner.domain.store import LibraryStore
-from dplanner.modules.branches.aspect import CUT_ID, LAND_ID, branch_of, cut_of
+from dplanner.planning.branches import CUT_ID, LAND_ID, branch_of, cut_of
 
 
 def data(text):

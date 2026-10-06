@@ -45,7 +45,7 @@ from PySide6.QtWidgets import (
 
 from dplanner.domain.commands import Command, SetModuleDataCommand
 from dplanner.domain.model import Library, NodeId, Project, Step, StepId
-from dplanner.domain.scope import ScopeKind, cone, handoffs, kind_of, leaders, stops_for
+from dplanner.domain.ordering import cone
 from dplanner.domain.store import FilesFor
 from dplanner.framework.activity import follow_target
 from dplanner.framework.cards import CARD_PADDING, STACK_SPACING
@@ -71,8 +71,9 @@ from dplanner.modules.testing.aspect import (
     replace,
     write,
 )
+from dplanner.modules.testing.cards import StatusChip, outcome_line, tint, word
 from dplanner.modules.testing.filing import UNCATEGORISED, catalog, sort_keys
-from dplanner.modules.testing.view import StatusChip, outcome_line, tint, word
+from dplanner.planning.scope import ScopeKind, handoffs, kind_of, leaders, stops_for
 
 BLOCK_GAP = 12
 BUTTON_GAP = 8

@@ -1,0 +1,306 @@
+"""Launch profiles: which agent runs, and in which terminal or multiplexer — named, per user.
+
+A profile is one answer to Run Agent's two questions — the agent command and the terminal
+template — under a name a person picks: *Claude in Ghostty*, *Codex in herdr*. The first
+profile is the **default**, what *Run Agent…* itself runs; all of them are the entries of
+*Step ▸ Run Agent*. Both texts keep the meaning they had as single settings: a blank
+agent command is the first harness, a blank terminal template is *Automatic*.
+
+Stored per user, per machine (``user_config``), never in the plan: which terminal a
+person prefers is not the project's business. **The two settings they replace are read
+as the default profile** when no list has been stored yet, so a machine configured before
+profiles existed keeps its choices without anybody retyping them — the same idea as a
+harness carrying the command texts it shipped earlier.
+
+**The list is seeded once, and the seed is every known pairing.** A person should not
+have to build *Codex in herdr* by hand to find out it exists: :func:`seed_profiles` adds
+one profile per harness and per terminal worth naming — Ghostty, herdr and the platform's
+own default (*Automatic*) — skipping any pairing a stored profile already means, by its
+choices rather than its name, so a hand-named *Claude in Ghostty* is never doubled. It
+runs when the window is built and records that it has (``profiles_seeded``), so a
+profile the person removes afterwards stays removed; whatever was the default before
+stays the default. **And the same pairing can be asked for on purpose**:
+:func:`detect_pairings` is every harness in every terminal of this platform with what
+the machine has of each — the agent on PATH, the terminal by its row's probe — which
+*Add Detected Profiles…* on the settings page (``detect_dialog.py``) lists as tickable
+rows and :func:`add_profiles` appends, through the same skip-what-is-meant rule.
+
+**A name follows the choices until somebody types one.** :func:`suggested_name` words a
+profile by its agent and terminal — *Claude Code in herdr* — and :func:`update_profile`
+renames a profile whose name still reads as what its old choices suggested; a name that
+reads as anything else is a person's and is kept. Names are unique among the profiles
+either way, numbered rather than refused.
+"""
+
+import os
+import re
+import shutil
+import sys
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, replace
+from typing import Any
+
+from dplanner.domain.agents import AgentHarness
+from dplanner.framework.user_config import get_global, set_global
+from dplanner.modules.agent_launch.launcher import (
+    current_command,
+    harness_of,
+    is_installed,
+    terminals_for,
+)
+from dplanner.planning.agent import MODULE_ID
+
+PROFILES_KEY = "profiles"
+# Whether the known pairings have been added once — a person's later removals stand.
+SEEDED_KEY = "profiles_seeded"
+# The terminal rows the seed pairs every harness with, by label; "" is Automatic.
+SEEDED_TERMINALS = ("Ghostty", "herdr", "")
+# The two settings profiles replaced; read only when no profile list is stored.
+AGENT_COMMAND_KEY = "agent_command"
+LAUNCH_COMMAND_KEY = "launch_command"
+
+DEFAULT_NAME = "Default"
+
+
+@dataclass(frozen=True)
+class Profile:
+    name: str
+    agent_command: str = ""  # "" means the first harness.
+    launch_command: str = ""  # "" means Automatic — the first installed terminal.
+
+    def to_json(self) -> dict[str, Any]:
+        return {"name": self.name, "agent": self.agent_command, "terminal": self.launch_command}
+
+    @classmethod
+    def from_json(cls, raw: Any) -> "Profile | None":
+        if not isinstance(raw, dict) or not isinstance(raw.get("name"), str):
+            return None
+        return cls(
+            name=raw["name"],
+            agent_command=str(raw.get("agent", "")),
+            launch_command=str(raw.get("terminal", "")),
+        )
+
+
+def read_profiles() -> list[Profile]:
+    """Every profile, the default first. Never empty: with nothing stored, the two
+    single settings profiles replaced are the one profile."""
+    stored = get_global(MODULE_ID, PROFILES_KEY)
+    profiles = (
+        [p for p in map(Profile.from_json, stored) if p is not None]
+        if isinstance(stored, list)
+        else []
+    )
+    if profiles:
+        return profiles
+    return [
+        Profile(
+            DEFAULT_NAME,
+            agent_command=str(get_global(MODULE_ID, AGENT_COMMAND_KEY, "")),
+            launch_command=str(get_global(MODULE_ID, LAUNCH_COMMAND_KEY, "")),
+        )
+    ]
+
+
+def write_profiles(profiles: list[Profile]) -> None:
+    set_global(MODULE_ID, PROFILES_KEY, [profile.to_json() for profile in profiles])
+
+
+def default_profile() -> Profile:
+    return read_profiles()[0]
+
+
+def profile_named(name: str) -> Profile | None:
+    return next((profile for profile in read_profiles() if profile.name == name), None)
+
+
+def unique_name(base: str, taken: list[str]) -> str:
+    """``base``, or ``base 2``, ``base 3``… — the first not in ``taken``."""
+    name, count = base, 1
+    while name in taken:
+        count += 1
+        name = f"{base} {count}"
+    return name
+
+
+def _first_word(command: str) -> str:
+    words = command.split()
+    return words[0] if words else ""
+
+
+def suggested_name(
+    profile: Profile, harnesses: tuple[AgentHarness, ...], platform: str = sys.platform
+) -> str:
+    """The name a profile's two choices suggest: *Claude Code in herdr*, or the agent's
+    name alone when the terminal is Automatic. A command or template nothing here knows
+    is named by its first word, which is usually the program."""
+    harness = harness_of(profile.agent_command, harnesses)
+    agent = harness.label if harness else _first_word(profile.agent_command) or "Agent"
+    template = profile.launch_command.strip()
+    if not template:
+        return agent
+    row = next((r for r in terminals_for(platform) if r.command == template), None)
+    terminal = row.label.split(" (")[0] if row else _first_word(template)
+    return f"{agent} in {terminal}" if terminal else agent
+
+
+def follows_choices(
+    profile: Profile, harnesses: tuple[AgentHarness, ...], platform: str = sys.platform
+) -> bool:
+    """Whether the name is the one its choices suggest, or that name numbered — a name
+    nobody typed, free to follow the next change. Anything else is a person's word."""
+    base = re.escape(suggested_name(profile, harnesses, platform))
+    return re.fullmatch(rf"{base}( \d+)?", profile.name) is not None
+
+
+def _choices(profile: Profile, harnesses: tuple[AgentHarness, ...]) -> tuple[str, str]:
+    """What a profile means, for telling two apart: the harness command a text resolves
+    to and the terminal template as typed."""
+    return current_command(profile.agent_command, harnesses), profile.launch_command.strip()
+
+
+def pairings(
+    harnesses: tuple[AgentHarness, ...], templates: Sequence[str], platform: str = sys.platform
+) -> list[Profile]:
+    """Every harness in every terminal template, named by its choices — the candidates a
+    seed or a detection offers, agent-major so one agent's rows read together."""
+    candidates = [
+        Profile("", harness.command, template) for harness in harnesses for template in templates
+    ]
+    return [
+        replace(candidate, name=suggested_name(candidate, harnesses, platform))
+        for candidate in candidates
+    ]
+
+
+def add_profiles(
+    candidates: Sequence[Profile],
+    harnesses: tuple[AgentHarness, ...],
+    platform: str = sys.platform,
+) -> list[Profile]:
+    """``candidates`` appended after the stored profiles, skipping any pairing a stored
+    profile already means — by its choices, never its name — and numbering a taken name.
+    The stored default keeps its place. Returns what was added.
+
+    The two old settings read as a profile nobody named: written now among named ones,
+    it is named by its choices rather than left as a *Default* row.
+    """
+    profiles = read_profiles()
+    if get_global(MODULE_ID, PROFILES_KEY) is None and profiles[0].name == DEFAULT_NAME:
+        profiles[0] = replace(profiles[0], name=suggested_name(profiles[0], harnesses, platform))
+    known = {_choices(profile, harnesses) for profile in profiles}
+    added: list[Profile] = []
+    for candidate in candidates:
+        if _choices(candidate, harnesses) in known:
+            continue
+        known.add(_choices(candidate, harnesses))
+        names = [profile.name for profile in profiles + added]
+        added.append(replace(candidate, name=unique_name(candidate.name, names)))
+    write_profiles(profiles + added)
+    return added
+
+
+def seed_profiles(
+    harnesses: tuple[AgentHarness, ...], platform: str = sys.platform
+) -> list[Profile]:
+    """Once per user and machine: every harness in every terminal of
+    :data:`SEEDED_TERMINALS`, through :func:`add_profiles`. The flag is written with the
+    list, so a seeded profile the person removes stays removed. With no harnesses there
+    is nothing to seed and nothing is recorded. Returns what was added."""
+    if not harnesses or get_global(MODULE_ID, SEEDED_KEY):
+        return []
+    rows = terminals_for(platform)
+    templates = [
+        next((row.command for row in rows if row.label == label), "") for label in SEEDED_TERMINALS
+    ]
+    added = add_profiles(pairings(harnesses, templates, platform), harnesses, platform)
+    set_global(MODULE_ID, SEEDED_KEY, True)
+    return added
+
+
+@dataclass(frozen=True)
+class Detected:
+    """One pairing this machine could run, as :func:`detect_pairings` found it."""
+
+    profile: Profile
+    agent_found: bool
+    terminal_found: bool  # Automatic counts as found: the launch resolves it itself.
+    present: bool  # A stored profile already means this pairing.
+
+    @property
+    def runnable(self) -> bool:
+        return self.agent_found and self.terminal_found
+
+    @property
+    def remark(self) -> str:
+        """Why a row is not ticked, in words; "" for one that is."""
+        if self.present:
+            return "already in the list"
+        missing = [
+            words
+            for found, words in (
+                (self.agent_found, f"{_first_word(self.profile.agent_command)} not found"),
+                (self.terminal_found, "terminal not found"),
+            )
+            if not found
+        ]
+        return ", ".join(missing)
+
+
+def detect_pairings(
+    harnesses: tuple[AgentHarness, ...],
+    platform: str = sys.platform,
+    which: Callable[[str], str | None] = shutil.which,
+    env: Mapping[str, str] = os.environ,
+    app_exists: Callable[[str], bool] | None = None,
+) -> list[Detected]:
+    """Every harness in every terminal of this platform, and Automatic, with what this
+    machine has of each: the agent's command on PATH, the terminal by its row's probe,
+    and whether the list already holds the pairing. The Qt-free half of *Add Detected
+    Profiles…*, so a later checklist can ask the same question."""
+    rows = terminals_for(platform)
+    found = {row.command: is_installed(row, which, env, app_exists) for row in rows}
+    found[""] = True
+    # ``binary`` is the harness's own answer; its command's first word is the guess for
+    # one that does not say. The checklist's agent row reads the same field.
+    agents = {h.command: which(h.binary or _first_word(h.command)) is not None for h in harnesses}
+    known = {_choices(profile, harnesses) for profile in read_profiles()}
+    detected = [
+        Detected(
+            profile,
+            agent_found=agents[profile.agent_command],
+            terminal_found=found[profile.launch_command],
+            present=_choices(profile, harnesses) in known,
+        )
+        for profile in pairings(harnesses, [*(row.command for row in rows), ""], platform)
+    ]
+    # What can be added leads, then what is already there, then what a missing tool
+    # would unlock — agent-major within each, so a long list reads from the top.
+    return sorted(detected, key=lambda row: (not row.runnable, row.present))
+
+
+def update_profile(
+    index: int,
+    *,
+    harnesses: tuple[AgentHarness, ...] = (),
+    platform: str = sys.platform,
+    **changes: str,
+) -> None:
+    """Fields of one stored profile changed; the rest kept as they are.
+
+    A name that was never typed follows the choices: when the agent or the terminal
+    changes and the name still reads as what the old choices suggested, it becomes what
+    the new ones suggest. A name a person typed stays theirs. Either way the name ends up
+    unique among the profiles — a typed duplicate is numbered rather than refused, since
+    *Run Agent* and the default lookup both go by name.
+    """
+    profiles = read_profiles()
+    if not 0 <= index < len(profiles):
+        return
+    before = profiles[index]
+    after = replace(before, **changes)
+    if "name" not in changes and after != before and follows_choices(before, harnesses, platform):
+        after = replace(after, name=suggested_name(after, harnesses, platform))
+    others = [p.name for i, p in enumerate(profiles) if i != index]
+    profiles[index] = replace(after, name=unique_name(after.name, others))
+    write_profiles(profiles)

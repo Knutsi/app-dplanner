@@ -11,7 +11,7 @@ agent's shell, ``status set <agent step> done`` on a step nobody has reviewed is
 naming ``ready-for-review`` — unless ``--because`` says why nothing needs reviewing, which
 is kept as a ``decision`` note on the step. A person in their own terminal is never asked,
 and neither is the window: the rule is about who is reporting, not about the word.
-ARCHITECTURE.md's *An agent finishes at Ready for review* has the reasoning.
+`docs/architecture/agents.md`'s *An agent finishes at Ready for review* has the reasoning.
 
 **A status that says nobody is working the step ends the claim on it.** An agent says it is
 at work with ``dplanner agent-work`` (``domain/at_work.py``), and the window stands a banner
@@ -19,9 +19,11 @@ for it; ``ready-for-review``, ``ready-to-merge``, ``done`` and ``blocked`` each 
 has stopped, so setting one ends that step's claim in the same run, whoever sets it. The
 banner an agent forgot to take down was the common case, and the one verb every finishing
 agent is sure to run is this one.
+
+Both rules are ``workflows.py``'s, and the window's Status verbs call the same functions:
+this file only reads the arguments, names the actor and says what happened.
 """
 
-import shlex
 from argparse import ArgumentParser, Namespace
 from collections.abc import Callable
 
@@ -29,60 +31,63 @@ from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.lookup import find_project, find_step, project_arg, step_arg
 from dplanner.domain.model import Step
 from dplanner.domain.ordering import placed
-from dplanner.domain.progression import (
-    BLOCKED,
-    DONE,
-    READY_FOR_REVIEW,
-    READY_TO_MERGE,
-    REVIEW_AND_MERGE,
-)
-from dplanner.modules.step_status.aspect import (
-    PENDING,
-    STATUSES,
-    no_status,
-    read,
-    status_command,
-)
-
-# The statuses that say nobody is working a step any more: setting one ends its claim.
-STOPPED = (READY_FOR_REVIEW, READY_TO_MERGE, DONE, BLOCKED)
+from dplanner.domain.workflow import Actor, AgentRun, EndClaim, Person
+from dplanner.modules.step_status.workflows import Kept, Performed, StatusWorkflow, perform
+from dplanner.planning.status import Status, stored, word
 
 
 def commands(
     *,
-    works_nobody: Callable[[Step], str],
-    is_agent: Callable[[Step], bool],
+    workflow: StatusWorkflow,
     in_agent_shell: Callable[[], bool],
-    note_reason: Callable[[CliContext, Step, str], tuple[str, bool]],
-    end_claim: Callable[[CliContext, Step], bool],
+    end_claim: Callable[[EndClaim], bool],
 ) -> list[CliCommand]:
-    """``works_nobody`` names a step nobody works — "a wait" — which has no status to set;
-    ``is_agent`` says an agent executes a step, and ``in_agent_shell`` that this command
-    runs inside an agent CLI's shell — together, a done that skips review. ``note_reason``
-    keeps a ``--because`` as a
-    decision note on the step and answers the note's id, and whether it was added — False
-    when the step already carried that note, which then stands as it was. ``end_claim`` ends
-    an agent's at-work claim on the step and answers whether one stood."""
+    """``in_agent_shell`` says this command runs inside an agent CLI's shell — the actor is
+    then an agent run; ``end_claim`` ends an agent's at-work claim and answers whether one
+    stood."""
+
+    def actor() -> Actor:
+        return AgentRun() if in_agent_shell() else Person()
 
     def set_status(context: CliContext, args: Namespace) -> int:
         step = find_step(context.library, args.step, context.current)
-        if (kind := works_nobody(step)) and args.state != PENDING:
-            raise CliError(f"{step.title!r} is {kind}: {no_status(kind)}")
-        because = (args.because or "").strip()
-        if args.because is not None and args.state != DONE:
-            raise CliError("--because says why a step is done without review; it goes with done")
-        if (
-            args.state == DONE
-            and not because
-            and read(step) not in REVIEW_AND_MERGE  # Under review, a reviewing agent may finish it.
-            and is_agent(step)
-            and in_agent_shell()
-        ):
-            raise CliError(_review_first(step, args.step))
-        note, added = note_reason(context, step, because) if because else ("", True)
-        ended = args.state in STOPPED and end_claim(context, step)
-        _say(context, step, args.state, note, added, ended)
+        state = Status(args.state)
+        _set(context, step, state, actor(), (args.because or "").strip())
         return 0
+
+    def clear(context: CliContext, args: Namespace) -> int:
+        step = find_step(context.library, args.step, context.current)
+        _set(context, step, Status.PENDING, actor())
+        return 0
+
+    def _set(
+        context: CliContext, step: Step, status: Status, who: Actor, because: str = ""
+    ) -> None:
+        """Write ``status`` through the workflow, and say so once it is written — naming the
+        note a ``--because`` was kept as, or the one already there that it did not replace,
+        and the agent's claim it ended."""
+
+        def say(kept: Kept | None, done: Performed) -> None:
+            data = (
+                {"step": step.id, "status": status.value}
+                | ({"note": kept.note} if kept else {})
+                | ({"claim_ended": True} if done.ended else {})
+            )
+            reason = (
+                (
+                    f" — the reason kept as {kept.note}"
+                    if kept.added
+                    else f" — a reason is already recorded as {kept.note}"
+                )
+                if kept
+                else ""
+            )
+            released = " — no agent at work on it now" if done.ended else ""
+            context.report(data, f"{step.title}: {status.value}{reason}{released}")
+
+        write_status(
+            context, workflow, end_claim, step, status, actor=who, because=because, then=say
+        )
 
     return [
         CliCommand(
@@ -106,7 +111,7 @@ def commands(
             path=("status", "clear"),
             summary="Back to pending; the step keeps the days it started and changed on.",
             configure=step_arg,
-            run=_clear,
+            run=clear,
             examples=("dplanner status clear 'Read the spec'",),
         ),
         CliCommand(
@@ -119,9 +124,49 @@ def commands(
     ]
 
 
+def write_status(
+    context: CliContext,
+    workflow: StatusWorkflow,
+    end_claim: Callable[[EndClaim], bool],
+    step: Step,
+    status: Status,
+    *,
+    actor: Actor,
+    because: str = "",
+    then: Callable[[Kept | None, Performed], None] = lambda _kept, _done: None,
+) -> None:
+    """Set a status the way every verb does: refused as one line, applied now, and its
+    follow-ups owed to after the invocation is written — ``then`` hears what came of them.
+    A claim that could not be ended is refused once the rest is done, saying the status
+    stands."""
+    if why := workflow.refusal([step], status, actor, because):
+        raise CliError(why)
+    change, kept = workflow.set_status(
+        context.library, step, status, actor=actor, today=context.clock.today(), because=because
+    )
+    if change.command is not None:
+        context.apply(change.command)
+
+    def settle() -> None:
+        done = perform(change.follow_ups, end_claim)
+        then(kept, done)
+        if done.failed:
+            raise CliError(
+                "; ".join(
+                    f"{step.title}: {status.value} is written, but the agent's claim on it"
+                    f" could not be ended ({why}) — `dplanner agent-work end` ends it"
+                    for _claim, why in done.failed
+                )
+            )
+
+    context.after_flush.append(settle)
+
+
 def _configure_set(parser: ArgumentParser) -> None:
     step_arg(parser)
-    parser.add_argument("state", choices=STATUSES, help="where the step stands")
+    parser.add_argument(
+        "state", choices=[status.value for status in Status], help="where the step stands"
+    )
     parser.add_argument(
         "--because",
         metavar="REASON",
@@ -129,61 +174,21 @@ def _configure_set(parser: ArgumentParser) -> None:
     )
 
 
-def _review_first(step: Step, needle: str) -> str:
-    ref = shlex.quote(needle)
-    return (
-        f"{step.title!r} is an agent step, and an agent's work ends at ready-for-review:"
-        f" `dplanner status set {ref} ready-for-review` — a person or a reviewing agent"
-        f" sets it done. If nothing needs reviewing, say why:"
-        f" `dplanner status set {ref} done --because '<reason>'`."
-    )
-
-
-def _say(
-    context: CliContext,
-    step: Step,
-    status: str,
-    note: str = "",
-    added: bool = True,
-    ended: bool = False,
-) -> None:
-    """Write ``status``, and say so — naming the note a ``--because`` was kept as, or the one
-    already there that it did not replace, and the agent's claim it ended."""
-    context.apply(status_command(step, status, today=context.clock.today()))
-    data = (
-        {"step": step.id, "status": status}
-        | ({"note": note} if note else {})
-        | ({"claim_ended": True} if ended else {})
-    )
-    kept = (
-        (f" — the reason kept as {note}" if added else f" — a reason is already recorded as {note}")
-        if note
-        else ""
-    )
-    released = " — no agent at work on it now" if ended else ""
-    context.report(data, f"{step.title}: {status}{kept}{released}")
-
-
 def _show(context: CliContext, args: Namespace) -> int:
     step = find_step(context.library, args.step, context.current)
-    status = read(step)
+    status = word(stored(step))
     context.report({"step": step.id, "status": status}, f"{step.title}: {status}")
-    return 0
-
-
-def _clear(context: CliContext, args: Namespace) -> int:
-    _say(context, find_step(context.library, args.step, context.current), PENDING)
     return 0
 
 
 def _list(context: CliContext, args: Namespace) -> int:
     project = find_project(context.library, args.project)
     order = placed(context.library, project)
-    grouped = {status: [p.step for p in order if read(p.step) == status] for status in STATUSES}
+    grouped = {status: [p.step for p in order if stored(p.step) is status] for status in Status}
     data = {
         "project": project.id,
         "statuses": {
-            status: [{"id": step.id, "title": step.title} for step in steps]
+            status.value: [{"id": step.id, "title": step.title} for step in steps]
             for status, steps in grouped.items()
         },
     }
@@ -191,7 +196,7 @@ def _list(context: CliContext, args: Namespace) -> int:
     for status, steps in grouped.items():
         if not steps:
             continue
-        lines.append(f"{status} ({len(steps)}):")
+        lines.append(f"{status.value} ({len(steps)}):")
         lines.extend(f"  {step.title or 'Untitled step'}" for step in steps)
     context.report(data, "\n".join(lines) if lines else "No steps yet.")
     return 0

@@ -3,7 +3,7 @@
 Rendered by `uv run python scripts/render_graph_editor.py --contract --out docs/screenshots/f15-contract`,
 which builds a whole application over a throwaway library. The drag is driven with real mouse
 events, as a person's would be. Re-run it after changing the cut modes in
-`project_editor/modes.py` or the Divide family in `canvas_verbs.py`, and commit the result.
+`canvas/modes.py` or the Divide family in `view_verbs.py`, and commit the result.
 
 | Image | What it shows |
 |---|---|

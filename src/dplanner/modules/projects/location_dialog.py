@@ -54,11 +54,11 @@ from dplanner.framework.task_runner import TaskRunner
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.widgets import block, caption, note
+from dplanner.modules.projects.repo_list_dialog import github_listing
 from dplanner.modules.projects.repo_picker import (
     Entry,
     RepoAction,
     field_row,
-    github_listing,
     menu_button,
     popup_menu,
     tool_button,

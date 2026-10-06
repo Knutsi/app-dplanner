@@ -6,7 +6,7 @@ import pytest
 from tests.old_canvas import PLAN, SEATS, old_export, plant
 
 from dplanner.domain.store import LibraryStore
-from dplanner.modules.project_editor.positions import (
+from dplanner.modules.canvas.layouts.positions import (
     DATA_FORMAT,
     MODULE_ID,
     NODE_H,
@@ -382,9 +382,9 @@ def estimated(cli, days):
 def test_sorting_into_waves_writes_what_keep_this_arrangement_writes(cli, cli_library, stacked):
     """The headless form of *Keep This Arrangement* (N41): the same function, the same
     days, so the window and the terminal keep one arrangement."""
-    from dplanner.modules.estimation.aspect import read as days_for
-    from dplanner.modules.project_editor.placement import positions
-    from dplanner.modules.project_editor.sorts import waves
+    from dplanner.modules.canvas.layouts.placement import positions
+    from dplanner.modules.canvas.layouts.sorts import waves
+    from dplanner.planning.estimate import read as days_for
 
     estimated(cli, {"Kick-off": 1, "Two": 2})
     # Three seats: a stack's is its first member's, and its column is derived from it.
@@ -395,7 +395,7 @@ def test_sorting_into_waves_writes_what_keep_this_arrangement_writes(cli, cli_li
 
 
 def test_show_says_when_each_wave_runs(cli, stacked):
-    from dplanner.modules.project_editor.sorts import EN_DASH
+    from dplanner.modules.canvas.layouts.sorts import EN_DASH
 
     estimated(cli, {"Kick-off": 1, "One": 1, "Two": 2, "Three": 0.5, "Wrap-up": 1})
     said = cli("layout", "show", "Stacks")

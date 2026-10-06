@@ -5,13 +5,13 @@ requirement links, and each of those belongs to a different module. Five command
 step is what that costs when every module keeps to its own verb — most of a real plan's
 invocations, measured. So ``step add`` takes contributions: each module's Qt-free
 ``cli.py`` exports a :class:`StepAuthor` — the flags it registers and what it does with
-them — and the composition root hands the list to ``projects_cli.commands()``, exactly
+them — and the composition root hands the list to ``steps_cli.commands()``, exactly
 as it hands lint its checks. The shape lives here, like :class:`~dplanner.cli.lint.LintCheck`,
 because the contributing modules may not import each other and ``cli/`` sits below them all.
 
 There is deliberately no rollback in an author: a run is a transaction, and an author
 that raises aborts the whole ``step add`` with nothing written — the step included.
-``ARCHITECTURE.md``'s *Authoring a step is one verb, many modules* holds that reasoning,
+``docs/architecture/cli.md``'s *Authoring a step is one verb, many modules* holds that reasoning,
 and holds it against any future refactor that would flush eagerly.
 """
 

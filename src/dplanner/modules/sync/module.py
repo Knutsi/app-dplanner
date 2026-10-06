@@ -46,15 +46,16 @@ from dplanner.framework.tasks import TaskService
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.window import StatusHost, UnsavedChangesHost
 from dplanner.framework.window_watch import POLL_MS
-from dplanner.modules.sync.diverged import Divergence, NotPushedDialog, Profiles, Reconcile
+from dplanner.modules.sync.diff_dialog import DiffDialog
 from dplanner.modules.sync.exit_dialog import DirtyRepoRow, ExitDialog
-from dplanner.modules.sync.save_progress import SaveProgressDialog
+from dplanner.modules.sync.not_pushed_dialog import Divergence, NotPushedDialog, Profiles, Reconcile
+from dplanner.modules.sync.save_progress_dialog import SaveProgressDialog
 from dplanner.modules.sync.service import (
     SAVE_TASK,
     RepoGroup,
     SyncService,
 )
-from dplanner.modules.sync.view import DiffDialog, IconLabel, UnsavedChangesButton
+from dplanner.modules.sync.status_widget import IconLabel, UnsavedChangesButton
 from dplanner.theme.icons import branch_icon, folder_icon
 from dplanner.theme.themes import Theme
 

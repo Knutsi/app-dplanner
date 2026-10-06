@@ -7,7 +7,7 @@ kept in the user's own store so a rebuilt window re-adopts the runs it launched 
 and never in a file that travels with the project.
 
 Every run is watched through two files the wrapper script writes beside the prompt (see
-``step_agent_instruction/launcher.py``): the shell's facts on start, and the agent's exit
+``agent_launch/launcher.py``): the shell's facts on start, and the agent's exit
 status when it ends. :func:`settle` reads them and answers what became of the run —
 ``finished`` (exit 0), ``failed`` (any other status), ``closed`` (the terminal was shut on
 it, whether the script's trap said so or the shell's pid is simply gone) or ``lost`` (the

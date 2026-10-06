@@ -30,14 +30,15 @@ from dplanner.app import configure_application, new_session, set_early_attribute
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, Project, Step
 from dplanner.framework.services import AppServices
-from dplanner.modules.progression.module import (
+from dplanner.modules.status_board.activity import (
     CONTROL_CENTRE_KIND,
     PROGRESSION_KIND,
     ControlCentreActivity,
 )
-from dplanner.modules.step_order.module import ORDER_KIND
-from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
-from dplanner.modules.step_status.aspect import write as write_status
+from dplanner.modules.step_order.activity import ORDER_KIND
+from dplanner.planning.status import MODULE_ID as STATUS_ID
+from dplanner.planning.status import Status
+from dplanner.planning.status import write as write_status
 from dplanner.theme import apply_theme
 from dplanner.theme.themes import DARK, LIGHT, Theme
 
@@ -90,7 +91,7 @@ def add_ready_agents(
         AddNodeCommand(project.id, step).redo(library)
         library.set_text(step.id, "step_agent_instruction", f"{title}, carefully.")
         if word:
-            entry = write_status(word, today=date.today())
+            entry = write_status(Status(word), today=date.today())
             SetModuleDataCommand(step.id, STATUS_ID, entry).redo(library)
         made.append(step)
     follower = Step(title=follower_title)

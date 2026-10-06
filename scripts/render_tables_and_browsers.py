@@ -36,14 +36,14 @@ from dplanner.domain.assets import attach
 from dplanner.framework.palette import CommandPalette
 from dplanner.framework.services import AppServices
 from dplanner.modules.coverage.activity import COVERAGE_KIND
-from dplanner.modules.estimation.bulk import ESTIMATE_KIND
+from dplanner.modules.estimation.bulk_activity import ESTIMATE_KIND
 from dplanner.modules.notes.activity import NOTES_KIND
 from dplanner.modules.project_assets.activity import ASSETS_KIND
+from dplanner.modules.schedule.module import TIME_KIND
 from dplanner.modules.step_agent_run.module import StepAgentRunModule
 from dplanner.modules.step_description.aspect import MODULE_ID as DESCRIPTION_ID
 from dplanner.modules.taskcenter.module import TaskCenterModule
 from dplanner.modules.testing.activity import ALL_TESTS_KIND, TESTS_KIND
-from dplanner.modules.time_estimates.module import TIME_KIND
 from dplanner.theme import apply_theme
 from dplanner.theme.themes import DARK, LIGHT, Theme
 

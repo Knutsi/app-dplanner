@@ -6,7 +6,9 @@ the one part of a workspace a person reads in a file browser.
 """
 
 import csv
+import os
 import re
+import tempfile
 import unicodedata
 from collections.abc import Sequence
 from pathlib import Path
@@ -42,8 +44,11 @@ def write_atomic(path: Path, text: str) -> None:
     """Write ``text`` to ``path`` so a crash never leaves a truncated file.
 
     The temporary lives in the same directory as the target because the rename is only
-    atomic within one filesystem. No fsync: git is the durability layer for this project,
-    and the failure this guards against is a partial write, not a lost one.
+    atomic within one filesystem, and its name is unique to this call because two
+    processes write one path — a window and the CLI — and a shared name let one writer
+    rename the other's half-written file, or find its own gone. No fsync: git is the
+    durability layer for this project, and the failure this guards against is a partial
+    write, not a lost one.
 
     ``newline="\n"`` because every file that comes through here is part of the on-disk
     format, and that format is LF (FORMAT.md's *Bytes on disk*). Left to itself
@@ -52,9 +57,17 @@ def write_atomic(path: Path, text: str) -> None:
     quietly rewriting every line of a format whose whole purpose is to be shared and
     merged.
     """
-    tmp = path.with_name(f".{path.name}.tmp")
-    tmp.write_text(text, encoding="utf-8", newline="\n")
-    tmp.replace(path)
+    fd, name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    tmp = Path(name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(text)
+        # mkstemp makes the file 0600; keep what the target had, or what write_text gave.
+        tmp.chmod(path.stat().st_mode if path.exists() else 0o644)
+        tmp.replace(path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def write_csv(path: Path, rows: Sequence[Sequence[str]]) -> None:

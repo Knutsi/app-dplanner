@@ -292,7 +292,7 @@ def _no_greeting(monkeypatch):
     once the modal is open, a network request — so a suite that let it fire would be asking
     the developer's PATH what it should be asserting, and would open a modal over whatever
     build a test had just made. The surface itself is tested with fake probes in
-    ``tests/modules/test_checklist_dialog.py``, which turns this off deliberately.
+    ``tests/modules/checklist/test_checklist_dialog.py``, which turns this off deliberately.
     """
     from dplanner.modules.checklist import module as checklist
 
@@ -351,9 +351,11 @@ def workspace(tmp_path):
 
 @pytest.fixture
 def cli_library(tmp_path):
+    """The CLI's library file — never ``library_file``: a test that builds a window too would
+    have the window's library replaced under it, and its saves refused as stale."""
     from dplanner.domain.seed import create_library
 
-    path = tmp_path / "library.json"
+    path = tmp_path / "cli-library.json"
     create_library(path)
     return path
 
@@ -446,9 +448,9 @@ def step_editor(services, monkeypatch):
     """A step's editor, as the application offers it: ``steps.details``, briefly modal.
 
     There is no anchored step panel to reach for — the editor has one seat and it is this
-    dialog (``ARCHITECTURE.md``'s *The step editor is a modal*) — so a test that drives an
-    aspect editor opens it the way a double-click does and reads ``.panel``. It is opened on
-    a **constructed** context naming one step, which is the documented way to run a verb on
+    dialog (``docs/architecture/step-panel.md``'s *The step editor is a modal*) — so a test that
+    drives an aspect editor opens it the way a double-click does and reads ``.panel``. It is opened
+    on a **constructed** context naming one step, which is the documented way to run a verb on
     something nobody selected, and leaves the window's own selection alone for the tests
     that assert on it.
 

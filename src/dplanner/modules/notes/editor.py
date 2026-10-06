@@ -7,7 +7,7 @@ with ``ModuleDataSection``'s echo rule — its own write is ignored while one of
 fields has the focus. The body is prose in a record (a string, not a ``.md``), so it goes
 through ``TextBinding`` the way a feature's description does: :class:`NoteBodyField`
 describes it, and typing is undoable and coalesced for free. The editor has no buttons of
-its own: every edit is already live and undoable, and the view hosting it (``view.py``)
+its own: every edit is already live and undoable, and the view hosting it (``activity.py``)
 carries the verbs.
 """
 
@@ -30,7 +30,7 @@ from dplanner.domain.model import Library, NodeId, Project, Step
 from dplanner.framework.dictation import DictationService
 from dplanner.framework.prose_section import ProseSection
 from dplanner.framework.undo import UndoService
-from dplanner.modules.notes.log import (
+from dplanner.modules.notes.aspect import (
     LABELS,
     MODULE_ID,
     PROJECT,

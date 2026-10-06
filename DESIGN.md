@@ -14,15 +14,15 @@ checklist). The rules are kept by shared **primitives**, and the primitives are 
 shows which primitive and where to see it rendered. When a rule here is ambiguous, match the
 example; for a panel, match the Test panel in `modules/testing/panel.py` (hosted beside the
 roster through `framework/side_panel.py`), and for a page of
-controls the Step Details dialog. `CLAUDE.md` points agents here; `ARCHITECTURE.md`'s *A
-primitive carries the rule* is why a rule lives in a primitive rather than in a stylesheet
+controls the Step Details dialog. `CLAUDE.md` points agents here; `docs/architecture/shell-ui.md`'s
+*A primitive carries the rule* is why a rule lives in a primitive rather than in a stylesheet
 entry per surface.
 
 ## Primitives
 
 What a surface is made of, where the primitive lives, and where to see it. The example
-surfaces are **Debug ▸ Design Examples** (`modules/debug/design_example.py` and
-`design_rows.py`); `scripts/render_design_example.py` renders them in both themes into
+surfaces are **Debug ▸ Design Examples** (`modules/debug/design_example_activity.py` and
+`design_rows_activity.py`); `scripts/render_design_example.py` renders them in both themes into
 `docs/screenshots/f1-design-example/` (its `README.md` names each image). Improving the
 system means changing the primitive and its rule together, then re-rendering — never
 styling one surface by name.
@@ -190,7 +190,7 @@ well is `$BG_BASE`, and the canvas already is.
   viewport, and that carries the viewport's children away with the pixels.
 
 A **ruler** is the other overlay: a band pinned across the top of the view, not a panel in a
-corner — Wave view's column headings (`ruler.py`). It is 36 px of `$BG_BASE` at about 72 %
+corner — Wave view's column headings (`layouts/ruler.py`). It is 36 px of `$BG_BASE` at about 72 %
 over the ground, so cards pass under it and are still seen, with the `$BORDER` hairline under
 it; no frame, no radius, since it is an edge of the canvas and not a thing on it. Each
 heading stands over its column at every scroll and zoom and never moves down: the label in
@@ -452,15 +452,15 @@ and a path elides from the left, because a path's tail is what names it. `Elided
 that line, and it **requires no width**: a label that never wraps is otherwise as wide as
 its words at the least, and a tab behind the others still sets how narrow the window's
 centre may go.
-`ARCHITECTURE.md`'s *The Project dialog is the Locations table over two log columns* has the
-reasoning, including why the count of fields was the symptom rather than the disease.
+`docs/architecture/persistence.md`'s *The Project dialog is the Locations table over two log
+columns* has the reasoning, including why the count of fields was the symptom rather than the disease.
 
 ## Colour
 
 - One warm accent, used sparingly: the primary button, the checked state, focus.
 - Semantic region tints (diff added/removed, status colours) are low-alpha constant
   `QColor`s that read on every theme (deliberate exception #2 — see the diff highlighter
-  in `modules/sync/view.py`); never opaque theme-specific backgrounds.
+  in `modules/sync/diff_dialog.py`); never opaque theme-specific backgrounds.
 - Every other colour comes from a `Theme` field, through `theme.qss` or the palette.
 - **A milestone wears its place in the sequence, not one purple.** The project picks a
   colour map (`theme/palettes.py`; *View ▸ Milestone Colours* and the Time tab's picker set
@@ -847,7 +847,7 @@ and one stylesheet rule for the progress bar:
   message — agents make the plan bloom — in the plan's own tones, still while off screen or
   after two seasons, and turned off in *Settings ▸ Home*. It is not a precedent: a
   surface where people work stays still, and what the canvas might do with
-  `framework/motion/` is ARCHITECTURE.md's *Motion is a library*, not yet a rule.
+  `framework/motion/` is `docs/architecture/shell-ui.md`'s *Motion is a library*, not yet a rule.
   **The pulse** (`f20-flow/flow-*`) is a card a person moves next — ready to merge, and
   ready for review with no live agent to take it on — breathing a glow in its key block's
   own tone, amber or green, once every 3.2 s. It may move because it is the one fact on the
@@ -856,8 +856,8 @@ and one stylesheet rule for the progress bar:
   waiting on a person. It is slow so it never competes with the ring's crawl — the ring
   says somebody is at work, the pulse that somebody is waited on — and it runs on the
   ring's clock, so an idle canvas still ticks nothing. What it marks is the boards' *Ready
-  to merge* and *Ready for review*, one answer (ARCHITECTURE.md's *A card pulses where a
-  person moves next*). The talk bubble on a link into a review is a medallion, and still.
+  to merge* and *Ready for review*, one answer (`docs/architecture/canvas.md`'s *A card pulses where
+  a person moves next*). The talk bubble on a link into a review is a medallion, and still.
   **The one slide** is a stack making way (`f19-restack/make-way-*`): while a card is
   dragged through a stack, the cards between ease aside over about 120 ms to open
   the slot it would drop into, and close up behind one dragged out. It is allowed because
@@ -981,7 +981,7 @@ Dialogs:
 - *(done — S16)* The Run Agent confirmation — a `RunAnywayDialog` on the frame: the launch
   count in its title, what each chosen step waits on in its body, *Run Anyway* the primary.
   Of the fourteen `QInputDialog.getText` prompts, the Project family's four are
-  `LinePrompt`s; feature, project_editor, testing and sync still have theirs.
+  `LinePrompt`s; feature, canvas, testing and sync still have theirs.
 - *(done — the graph editor pass)* Help ▸ About was a `QMessageBox.about` still naming the
   template's product. It is a `DialogFrame` over a `Table` now: the name and version, then
   what DPlanner is built on, a row per component with its licence.

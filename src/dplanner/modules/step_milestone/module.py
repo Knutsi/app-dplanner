@@ -14,7 +14,8 @@ from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.aspect_toggle import aspect_toggle
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.undo import UndoService
-from dplanner.modules.step_milestone.aspect import (
+from dplanner.modules.step_milestone.section import MilestoneSection
+from dplanner.planning.milestone import (
     DATA_FORMAT,
     MODULE_ID,
     SPEC,
@@ -23,7 +24,6 @@ from dplanner.modules.step_milestone.aspect import (
     read,
     write,
 )
-from dplanner.modules.step_milestone.section import MilestoneSection
 from dplanner.theme.icons import tag_icon
 
 

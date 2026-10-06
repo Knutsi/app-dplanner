@@ -18,7 +18,7 @@ frames deep with `QScrollArea::eventFilter` on the stack 20,000 times. gdb's `bt
 says so in one line, where faulthandler shows four Python frames and a symbol
 (`_Pep_PrivateMangle`) that is only where the stack ran out. **A widget whose height
 depends on its width implements `heightForWidth` and lets the layout ask; it never resizes
-itself in `resizeEvent`.** `time_estimates/months.py` is the worked example, and its
+itself in `resizeEvent`.** `schedule/months.py` is the worked example, and its
 regression test sweeps a scroll area across every width that could flip the scrollbar.
 **Its `minimumSizeHint` is the least it can ever need — one row — never its `sizeHint`**:
 a resizable scroll area sizes its page to the minimum, and a minimum computed at the
@@ -80,7 +80,7 @@ dying in the boundary collector on `test_asset_gallery.py`, whose bare `AssetGal
 exactly those two beside it in `gc_catalog`'s listing. A test that builds a top-level
 widget of its own disposes it with `deleteLater` (the conftest dispatches it before
 collecting), so the tree dies under Qt's rules and never inside the collector.
-`NOTES-FOR-APPFRAME.md` §14 has the shiboken references.
+`docs/history/notes-for-appframe-to-2026-10-04.md` §14 has the shiboken references.
 
 **Why that crash moved with the test count, and what stops it now.** The collector clears
 garbage in its list order, and a full collection walks generation 0 before generation 1:
@@ -101,5 +101,5 @@ hand-written thread-plus-signal goes through it. **The amplifier for this whole 
 `MALLOC_PERTURB_=165 QT_QPA_PLATFORM=offscreen uv run pytest -q` (macOS:
 `MallocScribble=1`) poisons freed memory so a use-after-free faults at the first bad
 access instead of somewhere random; the committed `TaskRunner` before this pass died 3 of
-3 under it in a 3000-round stress. `NOTES-FOR-APPFRAME.md` §15 has the sources and the
-backtraces.
+3 under it in a 3000-round stress. `docs/history/notes-for-appframe-to-2026-10-04.md` §15 has the
+sources and the backtraces.

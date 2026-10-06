@@ -10,7 +10,7 @@ that Ctrl+Z cannot see and no other view hears about.
 and the CLI applies it and flushes. That is what keeps the two surfaces from drifting:
 neither can grow a behaviour the other lacks without someone editing this file.
 
-Two conventions carry through all of them:
+Three conventions carry through all of them:
 
 **Origin flips after the first redo.** ``push()`` runs ``redo()`` once, and that first run
 carries the originating view's token so the widget that already shows the change ignores its
@@ -19,10 +19,18 @@ own echo. Every later redo, and every undo, passes ``UNDO_ORIGIN``, which matche
 **Coalescing is bounded.** Typing is one undo step per burst, and setting the same field
 twice in a row is one step — but a burst ends at a pause and whenever the application seals
 the top of the stack.
+
+**Nothing is overwritten that this command did not write.** A value command remembers what
+its redo left behind, and its undo refuses — ``ValueError``, which the undo stack turns into
+dropping the entry — when another writer has changed that value since: the store adopting
+an outside edit, a background sync, the CLI. A replayed redo refuses the same way when the
+value is no longer the one its undo put back. And a :class:`CompositeCommand` applies whole
+or not at all, so a refusal never leaves half a gesture behind.
 """
 
+import copy
 import time
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any, Protocol
 
 from dplanner.domain.model import (
@@ -47,6 +55,12 @@ UNDO_ORIGIN: object = object()
 # One list an edge lives on: the step that waits, and the kind. A command that rewrites edges
 # replaces whole lists, so this is the unit it plans in.
 type EdgeList = tuple[StepId, str]
+
+
+def _unchanged(current: object, expected: object, what: str) -> None:
+    """Refuse to write over ``what`` when it is no longer the value this command left."""
+    if current != expected:
+        raise ValueError(f"{what} changed since; another writer's change is kept")
 
 
 class Command(Protocol):
@@ -75,20 +89,28 @@ class SetFieldCommand:
         self.field = field
         self.value = value
         self._before: object = None
+        self._after: object = None
         self._captured = False
         self._next_origin = view_origin
 
     def text(self) -> str:
         return FIELD_LABELS.get(self.field, "Set Field")
 
+    def _current(self, library: Library) -> object:
+        return getattr(library.node(self.node_id), self.field)
+
     def redo(self, library: Library) -> None:
         if not self._captured:
-            self._before = getattr(library.node(self.node_id), self.field)
+            self._before = self._current(library)
             self._captured = True
+        else:
+            _unchanged(self._current(library), self._before, self.text())
         library.set_field(self.node_id, self.field, self.value, self._next_origin)
+        self._after = self._current(library)
         self._next_origin = UNDO_ORIGIN
 
     def undo(self, library: Library) -> None:
+        _unchanged(self._current(library), self._after, self.text())
         library.set_field(self.node_id, self.field, self._before, UNDO_ORIGIN)
 
     def merge_with(self, other: Command) -> bool:
@@ -98,9 +120,11 @@ class SetFieldCommand:
             not isinstance(other, SetFieldCommand)
             or other.node_id != self.node_id
             or other.field != self.field
+            or other._before != self._after
         ):
             return False
         self.value = other.value
+        self._after = other._after
         return True
 
 
@@ -183,22 +207,30 @@ class SetEdgesCommand:
         self.targets = list(targets)
         self.rules = rules
         self._before: list[StepId] | None = None
+        self._after: list[StepId] = []
         self._next_origin = view_origin
 
     def text(self) -> str:
         return "Change Links"
 
+    def _current(self, library: Library) -> list[StepId]:
+        return list(library.step(self.step_id).edges.get(self.kind, []))
+
     def redo(self, library: Library) -> None:
         first = self._before is None
-        if first:
-            self._before = list(library.step(self.step_id).edges.get(self.kind, []))
+        if self._before is None:
+            self._before = self._current(library)
+        else:
+            _unchanged(self._current(library), self._before, self.text())
         library.set_edges(
             self.step_id, self.kind, self.targets, self._next_origin, rules=self.rules and first
         )
+        self._after = self._current(library)
         self._next_origin = UNDO_ORIGIN
 
     def undo(self, library: Library) -> None:
         assert self._before is not None
+        _unchanged(self._current(library), self._after, self.text())
         library.set_edges(self.step_id, self.kind, self._before, UNDO_ORIGIN, rules=False)
 
     def merge_with(self, other: Command) -> bool:
@@ -287,6 +319,7 @@ class SetModuleDataCommand:
         self.data = dict(data)
         self.label = label
         self._before: dict[str, Any] | None = None
+        self._after: dict[str, Any] = {}
         self._next_origin = view_origin
 
     def text(self) -> str:
@@ -294,14 +327,23 @@ class SetModuleDataCommand:
             return self.label
         return "Clear" if not self.data else "Edit"
 
+    def _current(self, library: Library) -> dict[str, Any]:
+        # A deep copy: the model keeps the dict it was handed, and a nested value edited in
+        # place there would otherwise change the remembered one along with it.
+        return copy.deepcopy(library.node(self.node_id).module_data.get(self.module_id, {}))
+
     def redo(self, library: Library) -> None:
         if self._before is None:
-            self._before = dict(library.node(self.node_id).module_data.get(self.module_id, {}))
+            self._before = self._current(library)
+        else:
+            _unchanged(self._current(library), self._before, self.text())
         library.set_module_data(self.node_id, self.module_id, self.data, self._next_origin)
+        self._after = self._current(library)
         self._next_origin = UNDO_ORIGIN
 
     def undo(self, library: Library) -> None:
         assert self._before is not None
+        _unchanged(self._current(library), self._after, self.text())
         library.set_module_data(self.node_id, self.module_id, self._before, UNDO_ORIGIN)
 
     def merge_with(self, other: Command) -> bool:
@@ -310,14 +352,20 @@ class SetModuleDataCommand:
             or other.node_id != self.node_id
             or other.module_id != self.module_id
             or other.label != self.label
+            or other._before != self._after
         ):
             return False
         self.data = other.data
+        self._after = other._after
         return True
 
 
 class CompositeCommand:
-    """Several commands as one undo step — "Delete 5 steps" must undo as one gesture."""
+    """Several commands as one undo step — "Delete 5 steps" must undo as one gesture.
+
+    Whole or not at all, both ways: when one command refuses, the ones already applied are
+    reversed before the refusal goes on, so the model is never left half way.
+    """
 
     def __init__(self, label: str, commands: list[Command]) -> None:
         self.label = label
@@ -327,15 +375,33 @@ class CompositeCommand:
         return self.label
 
     def redo(self, library: Library) -> None:
-        for command in self.commands:
-            command.redo(library)
+        _all_or_nothing(self.commands, lambda c: c.redo(library), lambda c: c.undo(library))
 
     def undo(self, library: Library) -> None:
-        for command in reversed(self.commands):
-            command.undo(library)
+        _all_or_nothing(
+            reversed(self.commands), lambda c: c.undo(library), lambda c: c.redo(library)
+        )
 
     def merge_with(self, other: Command) -> bool:
         return False
+
+
+def _all_or_nothing(
+    commands: Iterable[Command],
+    apply: Callable[[Command], None],
+    revert: Callable[[Command], None],
+) -> None:
+    """``apply`` each command in turn; if one raises, ``revert`` those done, then re-raise.
+    The undo stack's gestures keep a copy (``framework/undo.py``), which this layer is below."""
+    done: list[Command] = []
+    try:
+        for command in commands:
+            apply(command)
+            done.append(command)
+    except Exception:
+        for command in reversed(done):
+            revert(command)
+        raise
 
 
 def rewire_command(
@@ -361,7 +427,7 @@ def rewire_command(
     or allowed as a whole, plus links that existed before and are only moving — judged
     again, a moved link whose far end sits in *another* stack somebody broke would refuse
     and strand the composite. A kind this build does not know is carried, never rewritten.
-    ``ARCHITECTURE.md``'s *One in, one out is a rule the domain asks* has the argument.
+    ``docs/architecture/canvas.md``'s *One in, one out is a rule the domain asks* has the argument.
     """
     removals: list[Command] = []
     additions: list[Command] = []

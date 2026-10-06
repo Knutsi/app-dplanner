@@ -37,8 +37,10 @@ from dataclasses import dataclass, replace
 
 from dplanner.core.anchors import Anchor, blocks, covered_by
 from dplanner.domain.model import Library, Project, Step, StepId
-from dplanner.domain.scope import ScopeKind, StepPredicate, cone, gatherers
+from dplanner.domain.ordering import StepPredicate, cone
 from dplanner.domain.store import FilesFor
+from dplanner.planning.scope import ScopeKind, gatherers
+from dplanner.planning.status import Status, Unknown
 
 MILESTONES, FEATURES, SPEC, STEPS, OUTCOMES = 0, 1, 2, 3, 4
 COLUMN_TITLES = ("Milestones", "Features", "Spec", "Steps", "Tests & Docs")
@@ -107,7 +109,7 @@ class Readers:
     milestone_kind: ScopeKind
     milestone_label: Callable[[Step], str]
     step_key: Callable[[Step], str]  # How every surface names a step: "S7".
-    status: Callable[[Step], str]  # Where a step's work stands: "done", "blocked", …
+    status: Callable[[Step], Status | Unknown]  # Where a step's work stands.
     # (library, project, step, stops_at) → the tests at and behind a step.
     tests: Callable[[Library, Project, StepId, StepPredicate | None], Sequence[TestRow]]
     results: Callable[[Project], dict[str, str]]  # test id → how it last did.
@@ -146,7 +148,7 @@ class Item:
     # An item that is a step carries its key, its status and who works it — (glyph, tone) —
     # in the card's key block; "" for the rest.
     key: str = ""
-    status: str = ""
+    status: Status | Unknown = Status.PENDING
     glyph: tuple[str, str] = ("", "")
 
 
@@ -351,14 +353,14 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
     steps = {step.id: step for step in project.steps}
     for feature in ordered:
         step = steps.get(feature.step)
-        status = readers.status(step) if step is not None else ""
+        status = readers.status(step) if step is not None else Status.PENDING
         items.append(
             Item(
                 f"feature:{feature.id}",
                 FEATURES,
                 feature.title or UNTITLED,
                 "",
-                tone="good" if status == "done" else "feature",
+                tone="good" if status is Status.DONE else "feature",
                 features=frozenset({feature.id}),
                 token=feature.id,
                 target=("feature", feature.id),
@@ -449,7 +451,7 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
                         f"step:{step.id}",
                         STEPS,
                         step.title or UNTITLED,
-                        tone="good" if status == "done" else "",
+                        tone="good" if status is Status.DONE else "",
                         features=tokens,
                         target=("step", step.id),
                         key=readers.step_key(step),

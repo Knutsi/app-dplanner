@@ -78,6 +78,13 @@ class AutosaveService:
 
     # -- flushing ------------------------------------------------------------------------------
 
+    def saved(self) -> bool:
+        """Flush now, and answer whether everything is on disk after it — False while paused
+        or when the write was refused. The seam for an effect that may only follow a change
+        once that change is saved."""
+        self.flush_now()
+        return not self._dirty
+
     def flush_now(self) -> None:
         """Write everything pending, now. Called on tab switches, before quitting, and
         before any storage operation that touches the working tree."""

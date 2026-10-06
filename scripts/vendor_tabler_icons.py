@@ -10,7 +10,7 @@ what Tabler published.
 **Tabler Icons is MIT** (`tabler/tabler-icons`), which allows use, modification and sale
 with one obligation: the copyright notice and licence text travel with the distribution.
 That is why ``LICENSE`` comes down beside the SVGs and why Help ▸ About names the set —
-see ``modules/appshell/about.py``.
+see ``modules/appshell/about_dialog.py``.
 
 The tag is pinned, and pinned in ``theme/icons.py`` rather than here — the application is
 what has to say which version it uses, in Help ▸ About. A bump is a deliberate act: change

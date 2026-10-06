@@ -195,7 +195,7 @@ class SyncService(QObject):
 
         ``only`` narrows the sweep (the quit dialog's unchecked rows are left dirty). A save
         records the plan and nothing generated from it: report sites are exported on
-        request (ARCHITECTURE.md's *Reports are written on request, never on Save*).
+        request (`docs/architecture/cli.md`'s *A report is a publication, not a record*).
         Directly testable, no threads.
         """
         targets = self._groups if only is None else list(only)

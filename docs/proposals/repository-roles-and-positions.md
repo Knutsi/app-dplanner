@@ -406,7 +406,7 @@ more often than not, so the default is the answer), then the project's other rep
 then *Pick from GitHub…* and a typed URL; and *which folder*, a field pre-filled from the
 role's `default_path` with a browse button that lists the repository's tree — over the
 checkout when this machine has one, otherwise through the same remote listing the git spec
-dialog probes with today (`spec_git/connect.py`), on a `TaskRunner`, with the size guard
+dialog probes with today (`spec_git/connect_dialog.py`), on a `TaskRunner`, with the size guard
 beside the folder for a read-only role. The primary is refused in words while either is
 missing. Nothing about a checkout is asked here: a repository already checked out needs
 none, a read-only role needs none, and a worked-in repository this machine lacks shows

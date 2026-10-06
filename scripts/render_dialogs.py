@@ -49,8 +49,13 @@ from dplanner.framework.tasks import TaskService
 from dplanner.framework.text_dialog import ExpandedTextDialog
 from dplanner.framework.user_config import set_global
 from dplanner.modules import default_location_roles, managed_for
+from dplanner.modules.agent_launch.run_dialog import DIALOG_SIZE as PROMPT_SIZE
+from dplanner.modules.agent_launch.run_dialog import (
+    PromptFallbackDialog,
+    RunAnywayDialog,
+)
 from dplanner.modules.install import dialog as install_dialog
-from dplanner.modules.library_watch.view import ConflictDialog
+from dplanner.modules.library_watch.conflict_dialog import ConflictDialog
 from dplanner.modules.projects.checkouts import CheckoutService
 from dplanner.modules.projects.location_dialog import LocationDialog
 from dplanner.modules.projects.move_dialog import MovePlanDialog
@@ -66,20 +71,15 @@ from dplanner.modules.projects.project_dialog import (
     SETTINGS_SIZE,
     ProjectDialog,
 )
-from dplanner.modules.projects.repo_picker import GH_LIST_SIZE, GhRepoListDialog
+from dplanner.modules.projects.repo_list_dialog import GH_LIST_SIZE, GhRepoListDialog
 from dplanner.modules.projects.repos import LogEntry, PullRequest, RepoLog, RepositoryServices
-from dplanner.modules.projects.repositories_folder import RepositoriesFolderDialog
+from dplanner.modules.projects.repositories_folder_dialog import RepositoriesFolderDialog
 from dplanner.modules.projects.share_dialog import ShareProjectDialog
 from dplanner.modules.settings.dialog import DIALOG_SIZE as SETTINGS_DIALOG_SIZE
 from dplanner.modules.settings.module import SettingsModule
 from dplanner.modules.spec_confluence import module as confluence_module
-from dplanner.modules.spec_confluence.connect import ConnectDialog
-from dplanner.modules.step_agent_instruction.run_dialog import DIALOG_SIZE as PROMPT_SIZE
-from dplanner.modules.step_agent_instruction.run_dialog import (
-    PromptFallbackDialog,
-    RunAnywayDialog,
-)
-from dplanner.modules.sync.view import DIFF_DIALOG_SIZE, DiffDialog
+from dplanner.modules.spec_confluence.connect_dialog import ConnectDialog
+from dplanner.modules.sync.diff_dialog import DIFF_DIALOG_SIZE, DiffDialog
 from dplanner.theme import apply_theme
 from dplanner.theme.themes import DARK, LIGHT, Theme
 

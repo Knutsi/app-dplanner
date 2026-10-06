@@ -44,18 +44,18 @@ from dplanner.framework.context import (
     selection_uri,
 )
 from dplanner.framework.services import AppServices
-from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_ID
-from dplanner.modules.step_agent_instruction.aspect import write_state as agent_write
 from dplanner.modules.step_properties.dialog import StepDetailsDialog
-from dplanner.modules.step_review.aspect import MODULE_ID as REVIEW_ID
-from dplanner.modules.step_review.aspect import ReviewSettings
-from dplanner.modules.step_review.aspect import write as review_write
-from dplanner.modules.step_review.conversation import DIALOG_SIZE as CONVERSATION_SIZE
-from dplanner.modules.step_review.conversation import ConversationDialog
-from dplanner.modules.step_review.rounds import MODULE_ID as ROUNDS_ID
-from dplanner.modules.step_review.rounds import opened, said
-from dplanner.modules.step_start.aspect import MODULE_ID as START_ID
-from dplanner.modules.step_start.aspect import write as start_write
+from dplanner.modules.step_review.aspect import MODULE_ID as ROUNDS_ID
+from dplanner.modules.step_review.aspect import opened, said
+from dplanner.modules.step_review.conversation_dialog import DIALOG_SIZE as CONVERSATION_SIZE
+from dplanner.modules.step_review.conversation_dialog import ConversationDialog
+from dplanner.planning.agent import MODULE_ID as AGENT_ID
+from dplanner.planning.agent import write_state as agent_write
+from dplanner.planning.review import MODULE_ID as REVIEW_ID
+from dplanner.planning.review import ReviewSettings
+from dplanner.planning.review import write as review_write
+from dplanner.planning.start import MODULE_ID as START_ID
+from dplanner.planning.start import write as start_write
 from dplanner.theme import apply_theme
 from dplanner.theme.themes import DARK, LIGHT, Theme
 

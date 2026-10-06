@@ -1,4 +1,4 @@
-"""``dplanner estimate …`` and ``dplanner schedule …`` — sizing the work, and dating it.
+"""``dplanner estimate …`` — sizing the work. Dating it is ``schedule/cli.py``'s noun.
 
 Two nouns because they are two questions. ``estimate`` is about one step and what it costs;
 ``schedule`` is about a project and when its steps land. The second is a report over the
@@ -8,8 +8,6 @@ uses, so the terminal and the window cannot show one total two ways.
 
 from argparse import ArgumentParser, Namespace
 from collections.abc import Callable
-from datetime import date
-from typing import Any
 
 from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.authoring import StepAuthor, StepAuthored
@@ -17,26 +15,21 @@ from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import find_project, find_step, project_arg, step_arg
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, Project, Step
-from dplanner.domain.schedule import (
-    CriticalPath,
-    Scheduled,
-    format_date,
-    format_day_count,
-    format_days,
-    volume,
-    volume_words,
-)
 from dplanner.domain.shelf import turn_off
 from dplanner.domain.store import FilesFor
-from dplanner.modules.estimation.aspect import MODULE_ID, enabled, read, read_history, write
-from dplanner.modules.estimation.schedule import (
-    critical_finish,
-    finish_date,
-    project_critical_path,
-    project_schedule,
+from dplanner.planning.dates import format_date
+from dplanner.planning.estimate import (
+    MODULE_ID,
+    enabled,
+    read,
+    read_history,
     read_start,
-    start_of,
-    write_start,
+    write,
+)
+from dplanner.planning.schedule import (
+    format_day_count,
+    volume,
+    volume_words,
 )
 
 
@@ -102,9 +95,6 @@ def commands(*, counts_as_work: Callable[[Step], bool]) -> list[CliCommand]:
     def rollup(context: CliContext, args: Namespace) -> int:
         return _rollup(context, args, counts_as_work)
 
-    def show(context: CliContext, args: Namespace) -> int:
-        return _show(context, args, counts_as_work)
-
     return [
         CliCommand(
             path=("estimate", "set"),
@@ -134,40 +124,12 @@ def commands(*, counts_as_work: Callable[[Step], bool]) -> list[CliCommand]:
             run=rollup,
             examples=("dplanner estimate rollup discovery",),
         ),
-        CliCommand(
-            path=("schedule", "start"),
-            summary="Set the date a project's work begins, or clear it.",
-            configure=_configure_start,
-            run=_start,
-            examples=(
-                "dplanner schedule start discovery --date 2026-09-01",
-                "dplanner schedule start discovery --clear",
-            ),
-        ),
-        CliCommand(
-            path=("schedule", "show"),
-            summary="When each step lands, in the order the work can be done.",
-            configure=project_arg,
-            run=show,
-            examples=(
-                "dplanner schedule show discovery",
-                "dplanner schedule show discovery --json",
-            ),
-        ),
     ]
 
 
 def _configure_set(parser: ArgumentParser) -> None:
     step_arg(parser)
     parser.add_argument("--days", type=float, required=True, help="working days")
-
-
-def _configure_start(parser: ArgumentParser) -> None:
-    project_arg(parser)
-    parser.add_argument("--date", help="ISO-8601, e.g. 2026-09-01")
-    parser.add_argument(
-        "--clear", action="store_true", help="remove the start date, so it starts today"
-    )
 
 
 def _set(context: CliContext, args: Namespace) -> int:
@@ -231,111 +193,7 @@ def _rollup(context: CliContext, args: Namespace, counts_as_work: Callable[[Step
     zero understates the plan, and the person reading it has no way to tell.
     """
     project = find_project(context.library, args.project)
-    total, steps, missing = volume(project.steps, read, counts_as_work)
+    total, steps, missing = volume(project.steps, counts_as_work)
     data = {"project": project.id, "days": total, "steps": steps, "unestimated": missing}
     context.report(data, f"{project.title}: {volume_words(total, steps, missing)}")
     return 0
-
-
-def _start(context: CliContext, args: Namespace) -> int:
-    if args.clear == bool(args.date):
-        raise CliError("give either --date or --clear")
-    start = None
-    if args.date:
-        try:
-            start = date.fromisoformat(args.date)
-        except ValueError as error:
-            raise CliError(f"{args.date!r} is not an ISO-8601 date, e.g. 2026-09-01") from error
-    project = find_project(context.library, args.project)
-    context.apply(SetModuleDataCommand(project.id, MODULE_ID, write_start(start)))
-    today = context.clock.today()
-    said = (
-        f"starts today, {format_date(today, today)}"
-        if start is None
-        else f"starts {format_date(start, today)}"
-    )
-    written = "" if start is None else start.isoformat()
-    context.report({"project": project.id, "start": written}, f"{project.title}: {said}")
-    return 0
-
-
-def _show(context: CliContext, args: Namespace, counts_as_work: Callable[[Step], bool]) -> int:
-    """The schedule: the order walk carrying estimates, under both honest assumptions.
-
-    The serial total and the critical path bracket every real staffing, so both are
-    always printed, each labelled with the assumption it makes — a single number here
-    would be a guess wearing a date.
-    """
-    project = find_project(context.library, args.project)
-    rows = project_schedule(context.library, project)
-    start = start_of(project)
-    unestimated = sum(1 for row in rows if row.days is None and counts_as_work(row.place.step))
-    landing = finish_date(rows)
-    path = project_critical_path(context.library, project)
-    path_landing = critical_finish(project, path) if path is not None else None
-    data: dict[str, Any] = {
-        "project": project.id,
-        "start": start.isoformat(),
-        "finish": landing.isoformat() if landing else "",
-        "days": rows[-1].accumulated if rows else 0.0,
-        "assumption": "serial",  # What the finish/days/accumulated keys mean.
-        "unestimated": unestimated,
-        "critical_path": None
-        if path is None
-        else {
-            "days": path.days,
-            "finish": path_landing.isoformat() if path_landing else "",
-            "steps": [{"id": step.id, "title": step.title} for step in path.steps],
-            "unestimated": path.unestimated,
-        },
-        "steps": [
-            {
-                "index": row.place.index,
-                "id": row.place.step.id,
-                "title": row.place.step.title,
-                "days": row.days,
-                "accumulated": row.accumulated,
-                "date": row.finish.isoformat() if row.finish else "",
-            }
-            for row in rows
-        ],
-    }
-    context.report(data, _report(project.title, rows, landing, unestimated, path, path_landing))
-    return 0
-
-
-def _report(
-    title: str,
-    rows: list[Scheduled],
-    landing: date | None,
-    unestimated: int,
-    path: CriticalPath | None,
-    path_landing: date | None,
-) -> str:
-    """The same columns the order table shows, through the same formatter."""
-    if not rows:
-        return "No steps yet."
-    width = max(len(row.place.step.title or "Untitled step") for row in rows)
-    lines = [
-        f"{row.place.index:>3}  {(row.place.step.title or 'Untitled step'):<{width}}  "
-        f"{format_days(row.days):>6}  {format_days(row.accumulated):>6}  "
-        f"{format_date(row.finish) if row.finish else ''}"
-        for row in rows
-    ]
-    tail = f"{format_days(rows[-1].accumulated)} of work"
-    if landing is not None:
-        tail += f", landing {format_date(landing)}"
-    tail += " (serial: one worker, steps end to end)"
-    if unestimated:
-        tail += f", {unestimated} unestimated"
-    summary = [f"{title}: {tail}"]
-    if path is not None:
-        chain = " → ".join(step.title or "Untitled step" for step in path.steps)
-        second = f"critical path: {format_days(path.days)}"
-        if path_landing is not None:
-            second += f", landing {format_date(path_landing)}"
-        second += f" (dependency-aware: unlimited workers) — {chain}"
-        if path.unestimated:
-            second += f", {path.unestimated} unestimated on the path"
-        summary.append(second)
-    return "\n".join([*lines, "", *summary])

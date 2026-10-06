@@ -14,8 +14,8 @@ project exactly as the project row does; only what it opens differs.
 
 **The menu name arrives as an argument.** ``"Project"`` is application vocabulary and has no
 business in a framework file — the same reason ``IndexSegment`` names a factory rather than a
-menu (see ``ARCHITECTURE.md``'s *The index tree*). The framework builds the menu; the module
-says which one.
+menu (see ``docs/architecture/shell-ui.md``'s *The index tree*). The framework builds the menu; the
+module says which one.
 
 The richer ``projects/index.py`` — nested contributed entries, greyed unavailable rows,
 selection restored across a rebuild — is deliberately not folded in. It is a different

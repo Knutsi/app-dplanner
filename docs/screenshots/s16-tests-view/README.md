@@ -19,6 +19,6 @@ the reference preview or the category editor.
 | `test-preview-*` | the preview a reference in a body opens: the referenced test read over what you were reading, **Back** for the trail when it references another, *Close* putting you back where you were, and *Show in Tests* as the one deliberate move |
 | `category-editor-*` | the modal that renames, re-icons and reorganises: a count on every row saying how many tests a rename is about to move, *Uncategorised* last and never editable, and nothing written until Save |
 
-`ARCHITECTURE.md`'s *A test is filed under a category*, *The sort key is an ergonomic* and
-*A test is run from a panel* — and *A reference is a link, and a link is a preview* — have
+`docs/architecture/collectors.md`'s *A test is filed under a category*, *The sort key is an
+ergonomic* and *A test is run from a panel* — and *A reference is a link, and a link is a preview* — have
 the reasoning behind each.

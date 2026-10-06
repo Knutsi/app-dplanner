@@ -14,22 +14,22 @@ import pytest
 
 from dplanner.domain.commands import AddNodeCommand, SetFieldCommand
 from dplanner.domain.model import Step
+from dplanner.modules.canvas.activity import PROJECT_KIND, ProjectActivity
 from dplanner.modules.coverage.activity import COVERAGE_KIND
 from dplanner.modules.docs.activity import DOCS_KIND, DocsActivity
-from dplanner.modules.estimation.bulk import ESTIMATE_KIND, BulkEstimateActivity
+from dplanner.modules.estimation.bulk_activity import ESTIMATE_KIND, BulkEstimateActivity
 from dplanner.modules.notes.activity import NOTES_KIND
-from dplanner.modules.progression.module import (
+from dplanner.modules.project_assets.activity import ASSETS_KIND, AssetsActivity
+from dplanner.modules.schedule.activity import TIME_KIND, TimeEstimatesActivity
+from dplanner.modules.status_board.activity import (
     CONTROL_CENTRE_KIND,
     PROGRESSION_KIND,
     ProgressionActivity,
 )
-from dplanner.modules.project_assets.activity import ASSETS_KIND, AssetsActivity
-from dplanner.modules.project_editor.module import PROJECT_KIND, ProjectActivity
-from dplanner.modules.step_order.module import ORDER_KIND, OrderActivity
+from dplanner.modules.step_order.activity import ORDER_KIND, OrderActivity
 
 # The module rather than the class: a name starting with "Test" bound here would be collected.
 from dplanner.modules.testing import activity as testing
-from dplanner.modules.time_estimates.activity import TIME_KIND, TimeEstimatesActivity
 
 VIEWS = [
     pytest.param(PROJECT_KIND, ProjectActivity, "_sync", id="canvas"),

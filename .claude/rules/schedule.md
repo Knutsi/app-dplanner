@@ -1,19 +1,31 @@
 ---
 paths:
-  - "src/dplanner/modules/{time_estimates,progression,step_order,estimation,step_wait}/**"
-  - "src/dplanner/domain/{schedule,progression,ordering}.py"
+  - "{src/dplanner,tests}/modules/{schedule,status_board,step_order,estimation,step_wait}/**"
+  - "src/dplanner/domain/ordering.py"
+  - "src/dplanner/planning/{schedule,progression,status,estimate,dates}.py"
+  - "src/dplanner/cli/report/axis.py"
   - "src/dplanner/theme/palettes.py"
-  - "tests/modules/test_{time_estimates,time_progress,time_present,time_pace,step_statuses_tab,control_centre,step_order,milestone_colors,estimation_bulk}.py"
-  - "tests/domain/test_{schedule,progression,ordering}.py"
+  - "tests/domain/test_ordering.py"
+  - "tests/planning/test_{schedule,progression,status,dates}.py"
   - "tests/cli/test_{time_matrix,progression_verbs}.py"
   - "scripts/render_boards.py"
 ---
 
 # Schedule — order, progression, time estimates, progress and milestone colour
 
-- **Progression is derived, never stored** — `domain/progression.py` is the graph's
-  readiness with a `status_for(step)` handed in like `days_for`; the Step statuses tab,
-  the Control Centre, `dplanner progression show` and `--json` read one function, and the
+- **Derived facts are computed, never stored** — the topological order in
+  `domain/ordering.py` is the reference, and `planning/schedule.py` is the same walk carrying
+  estimates. Storing one means it can disagree with what it came from, and the CLI is what
+  catches you out: `dplanner step link` changes a graph with no window running to notice.
+  Availability comes from exposing the function everywhere — the view, `dplanner order show`,
+  `--json` — not from writing the answer down.
+- **Planning reads its own facts; a function is handed in only where it varies.**
+  `planning/schedule.py` reads `planning/estimate.py` by default — `days_for` stays a keyword
+  for stretched days and the simulator — and an aspect a module still owns is handed in.
+- **Progression is derived, never stored** — `planning/progression.py` is the graph's
+  readiness with a `status_for(step)` handed in (a wait's status depends on the day); the
+  Step statuses tab, the Control Centre, `dplanner progression show` and `--json` read one
+  function, and the
   frontier is a per-step check, not `ordering.ready()`'s wave one. **Ready for review and
   ready to merge are on the board and not done**: each is a partition of its own
   (`review`, `merge`), one move away for the lookahead, out of the percent — and a plain
@@ -25,7 +37,7 @@ paths:
   **Some of Ready to start is due, and an agent waiting on a person is on the board.**
   `progression.due` is the part of the frontier nobody decides to launch — an agent step,
   pending, no run, a prerequisite fulfilled *through* an auto-progress link — read with the
-  review turns by the root's `_due_now`, marked `due` by `progression show`, and launched by
+  review turns by `agent_launch/due.py`'s `due_now`, marked `due` by `progression show`, and launched by
   a window (`agents.md`). `asks_person` (the agent-run aspect's reading: `plan-for-review`,
   `needs-input`, or a plan-mode launch that has said nothing since) splits running work
   into `asking`, the **Waits for you** group under Blocked on both boards and in
@@ -38,8 +50,8 @@ paths:
   **Every partition a person acts on is ranked by `unlocks`** (the map covers every step
   of work not done), ties in project order. **The surface is named for the question and
   the derivation for the answer**: the tab, its menu entries and its index row say *Step
-  statuses* — the title adds how many rows need a person — while the walk, the module id,
-  the activity kind and the verb stay `progression`, because the groups are some of the
+  statuses* — the title adds how many rows need a person — and the package is `status_board`,
+  while the walk, the module id, the activity kind and the verb stay `progression`, because the groups are some of the
   partitions it computes and a renamed verb would move under every agent that has the
   skill. **The tab is a table of what needs a person**, never lanes: Blocked, Ready to
   merge, Ready for review, Ready to start, then Waiting (temporary, until a tab of what is
@@ -59,47 +71,33 @@ paths:
   behind a dated wait joins Ready the morning it may start. `dplanner progression show
   --all [PROJECT …]` is its terminal half — positionals, since `--project` is every verb's
   own option — with each row's `project` and `agent` in the text and the JSON alike.
-  `ARCHITECTURE.md`'s *Progression is the status-aware frontier* has the partition rules
-  and why each was a decision.
+  `docs/architecture/schedule.md`'s *Progression is the status-aware frontier* has the partition
+  rules and why each was a decision.
 - **The order says what order, and how much — never when.** The Order tab is the index,
-  the step, its wave and its estimate, under one line of volume (`domain/schedule.py`'s
+  the step, its wave and its estimate, under one line of volume (`planning/schedule.py`'s
   `volume_words`: *62 days over 24 steps, 2 unestimated*, the sentence `order show`,
   `estimate rollup` and the Estimates tab's strip all print). It ran a serial calendar
   once — accumulated days, days since the last milestone, a landing date per row, from a
-  start date set on that page — and nobody schedules that way: `time_estimates` simulates
+  start date set on that page — and nobody schedules that way: `schedule` simulates
   two pools of workers and owns the start date, so the columns and the bar are gone and
   **wave 1 is called *Wave 1***, the words *Ready to start* now naming a group of the
   Step statuses tab alone.
   The CSV export and the published report keep the day counts and the dates, because a
   spreadsheet is opened to sort and sum.
-- **Expenditure is the order read for what it consumed — tokens, never money.** A second tab
-  of `step_order/` (`ExpenditureActivity`; columns and words in `expenditure.py`, the walk in
-  `domain/expenditure.py`): the same rows as Order through `view.StepTable` — which is
-  where a row's look lives, so a third step table subclasses it rather than copying it —
-  then runs, models, **in / cached / out** (cache reads apart: they are context, not work),
-  the running total, *expected* and the running offset. Expected is the estimate × a rate
-  of tokens of work per estimated day **learned from the library's other projects first**
-  (from the same steps the offset would end at 0% by construction), and empty, never
-  invented, with no history. The offset's tone follows the number shown (`+0%` is `ok`).
-  *By model* rebuilds the table with an in/out pair per model; the export is long — a row
-  per step and model. The ledger is written by other processes, so the tab polls
-  `ledger.fingerprint` beside `follow_project`, into one `Debounced`. No dollars: a price is
-  a derivation somebody can add over the counts (`ARCHITECTURE.md`'s *Expenditure is the
-  order, in tokens*).
 - **Staffing what-ifs are derived; only the assumptions are stored.** `dplanner schedule
-  matrix` and the Time tab are one derivation — `domain/schedule.py`'s `phases` over
+  matrix` and the Time tab are one derivation — `planning/schedule.py`'s `phases` over
   `parallel_finish`, a deterministic two-pool greedy simulation (longest remaining chain
-  first, ties by project order) handed `days_for`, `is_agent` and `is_milestone` as
-  functions. The matrix prints the grid of teams; **the tab runs one staffing, the stored
+  first, ties by project order) reading the estimate (`planning/estimate.py`) and handed
+  `is_agent` and `is_milestone` as functions. The matrix prints the grid of teams; **the tab runs one staffing, the stored
   one** (`Readers.snapshot`, the recorder's own call) — trying another team is choosing it.
   **Milestones run in sequence**: each stretch is a
-  milestone's `scope.cone` truncated at the milestones before it, simulated on its own
+  milestone's `ordering.cone` truncated at the milestones before it, simulated on its own
   (`parallel_finish`'s `among`) from where the previous one lands — with what is left of
   that day — or from a date of its own, when it has one and that is later; an earlier
   date is *pushed* and reported, never silently overlapped. Calendar time is the same
-  walk over a wrapped
-  `days_for` (`time_estimates/schedule.py`'s `stretched`), so the domain never learns what
-  an efficiency is. Five assumptions reach disk, all under `time_estimates`: the focus
+  walk over another `days_for` (`schedule/assumptions.py`'s `stretched`), so the
+  planning tier never learns what an efficiency is — the one kind of caller `days_for`
+  survives for, with the simulator's world and a test's fakes. Five assumptions reach disk, all under the id `time_estimates`: the focus
   factor, the colour map and the **team** the calendar is dated for on the project node
   (one `Assumptions` record, `schedule.py`'s `read_assumptions`/`write_project` — a
   control changing one carries the others as stored), and a milestone's start date and
@@ -119,10 +117,10 @@ paths:
   the calendar fades the other stretches. **A calendar day two stretches are both worked
   is a stripe of each**, and a landing fills its day with every milestone landing on it.
   A cycle a hand-edited file smuggled in is named by `ordering.cyclic()` and the tab says
-  so instead of drawing a calendar over a broken walk. `ARCHITECTURE.md`'s *Time estimates: two
-  worker pools, one greedy simulation* has the reasoning.
+  so instead of drawing a calendar over a broken walk. `docs/architecture/schedule.md`'s *Time
+  estimates: two worker pools, one greedy simulation* has the reasoning.
 - **The plan re-dates itself from what has happened, and facts beat the sequence.**
-  `phases` handed `ScheduleFacts` — `time_estimates/schedule.py`'s `schedule_facts`: the
+  `phases` handed `ScheduleFacts` — `schedule/assumptions.py`'s `schedule_facts`: the
   stored statuses and their `since`, which steps are markers (estimate off), and work in
   flight credited at the focus it ran at — keeps the plan's own dates while every step is
   done exactly when they land it, and otherwise resumes the rest from tomorrow: done steps
@@ -131,13 +129,13 @@ paths:
   **Work already started in a stretch not reached yet runs now**, keeping its worker from
   tomorrow beside the stretch being worked and done where it belongs the day it lands, and
   **a marker takes no worker** — both measured with the simulator's parallel scenarios
-  (`ARCHITECTURE.md`'s *Milestones worked in parallel*, which also has the candidates
+  (`docs/architecture/schedule.md`'s *Milestones worked in parallel*, which also has the candidates
   rejected and why).
-  **Review and merge are work in flight, dated from when it started** — one fold in the
-  root's `_time_readers()`, which every time surface reads through: `status_for` answers
-  in progress for both, and `since_for` their `started`, because moving to review stamps
-  `since` today and the model credits in-flight work from it — the raw day re-costed the
-  step at its whole estimate the moment an agent finished. `Readers.changed_on` keeps the
+  **Review and merge are work in flight, dated from when it started** — one fold,
+  `planning/status.py`'s `in_flight` / `work_since`, which every time surface reads by
+  default: `in_flight` answers in progress for both, and `work_since` their `started`,
+  because moving to review stamps `since` today and the model credits in-flight work from it — the raw day re-costed the
+  step at its whole estimate the moment an agent finished. `status.read_since` keeps the
   raw day for what a recorded day counts as a change. `test_time_simulation.py` pins both.
   **Adjust for Efficiency** is the tab's opt-in exception: people's remaining work at the
   pace so far (`schedule.pace_so_far` — finished steps' stretched days over the working
@@ -150,18 +148,19 @@ paths:
   `schedule matrix`, `progress show|record` and the report — reading a day still going
   (`day_over` False: a step due today has until tonight); only the parity harness and the
   simulator read days that are over. **The model is the prototype's to the day**:
-  `tests/modules/test_time_parity.py` replays its scenarios through the real aspect writers
+  `tests/modules/schedule/test_time_parity.py` replays its scenarios through the real aspect writers
   (`simulation/frames.py`) and compares every forecast, so a model change that moves one
   of them is made in the prototype first, its fixture regenerated, then here; one that
   moves none — milestones worked in parallel, which its scenarios never play, and *Adjust
   for Efficiency*'s pace, which the file does not compare — is measured with
   `scripts/time_accuracy.py` over all fifteen. A stretch's `start` is where its
   remaining work begins and `began` when its work first began — a view shows `began`.
-  `ARCHITECTURE.md`'s *The plan re-dates itself from what has happened* has the reasoning.
+  `docs/architecture/schedule.md`'s *The plan re-dates itself from what has happened* has the
+  reasoning.
 - **A wait is a step that holds, and no work.** `modules/step_wait/` marks a step
   `{"until": …}` — what requires it may start on that day — or `{"days": n}` working days
-  from when it is reached; the root hands the time module `wait_of`, the domain's `Wait`,
-  beside `days_for`. `parallel_finish` releases a wait without a worker; `phases` ends an
+  from when it is reached (`planning/wait.py`'s `Wait`, which every walk reads by
+  default; the simulator hands in its own `wait_of`). `parallel_finish` releases a wait without a worker; `phases` ends an
   `until` wait at its day's first moment and, re-dated, credits a `days` wait with the days
   it has already waited; `_holds` asks a wait only when it was made. **No tally counts
   one** — `snapshot_of`, `time_report`'s effort and the unsized count leave it out. A step,
@@ -170,7 +169,7 @@ paths:
   the simulator's world (`test_time_waits.py`). **Elsewhere a wait is done when it is over
   and no work at all**: the Step statuses tab, its verb and report and the Run Agent gate read
   `schedule.wait_status` — done once what it waits on is done and its day has come or its
-  days are waited, `WAITING` until then — so what follows it is ready that day; the root's
+  days are waited, `Waiting` until then — so what follows it is ready that day; the root's
   one `_counts_as_work` keeps it off every row and out of every volume (`schedule.volume`:
   the Step statuses tab, the Estimates tab, `estimate rollup`, `schedule show`, `order show`, the Order
   tab) and lint; the Status verbs, the Agent and Test toggles and Run Agent refuse one,
@@ -183,13 +182,13 @@ paths:
   none. *Insert Wait Before* (`W` on the canvas) puts a wait of a day in front of a step —
   it takes what the step waited on — as one undo, born through the graph editor's
   `create_step`.
-  `ARCHITECTURE.md`'s *A wait is a step that holds* has the reasoning.
+  `docs/architecture/schedule.md`'s *A wait is a step that holds* has the reasoning.
 - **The simulator is the prototype's, to the frame, and Debug ▸ Time Simulation shows it in
-  the real tab.** `time_estimates/simulation/` is Qt-free: `world.py` plays a scenario,
-  `replay.py` writes each day through the owners' writers the root hands in
-  (`_time_writers`) and records it as the recorder would, and `test_time_simulation.py`
+  the real tab.** `schedule/simulation/` is Qt-free: `world.py` plays a scenario,
+  `replay.py` writes each day through the owners' writers (`frames.Writers`, every one
+  a `planning/` writer) and records it as the recorder would, and `test_time_simulation.py`
   holds the world to the prototype's exported frames — port a change to the world there
-  first, like one to the model. `debugger.py` embeds `TimeEstimatesActivity` built from
+  first, like one to the model. `simulator_activity.py` embeds `TimeEstimatesActivity` built from
   the root's own `time_deps` recipe over a scratch library, undo stack, context, clock and
   debounce service — never `dataclasses.replace` over the window's deps — and scrubs by
   `replay.restore`, never by rebuilding the tab; the embedded tab's writers are greyed
@@ -198,14 +197,14 @@ paths:
   *Two tracks*, *Multitasking*, *Late marking*, milestones worked in parallel, which the
   prototype never played (a `SampleShape` of two `tracks`, a world's `juggle` and
   `mark_late`). `scripts/time_accuracy.py` is the number to quote for a model change,
-  printed as recorded and with *Adjust for Efficiency* on. `ARCHITECTURE.md`'s *The Time
-  tab has a simulator* has the reasoning.
+  printed as recorded and with *Adjust for Efficiency* on. `docs/architecture/schedule.md`'s *The
+  Time tab has a simulator* has the reasoning.
 - **Progress is derived; the past is a list of snapshots, and a comparison is two of
   them.** How far a milestone has come — by estimated days, everything through its
   stretch; the count of steps is tallied and worded, never the share — is
-  `time_estimates/progress.py` over the statuses (`status_for`, handed in like `days_for`),
+  `schedule/progress.py` over the statuses (`status.in_flight` by default),
   and the plan's expected curve is the simulation's own per-step landings
-  (`domain/schedule.py`'s `ParallelFinish.landings`, carried on each `Phase`). The one
+  (`planning/schedule.py`'s `ParallelFinish.landings`, carried on each `Phase`). The one
   thing that cannot be derived is the past: a `Snapshot` — one row per stretch, steps,
   done, days, done days, start, landing, and the **landing knots** the curve is drawn
   through — is written under a second module id, `progress_history` (format 3), in two
@@ -235,9 +234,9 @@ paths:
   the prototype's `present.ts`): the figures, each milestone's landing then and now, and
   the work over the recorded days (`Burnup`), with **the axes holding the reach of every
   record** (`reach_of`) so moving between days moves only the lines. *Milestones*
-  (`shift_view.py`) is a row per milestone — the landing then hollow, now filled, a check
+  (`shift_chart.py`) is a row per milestone — the landing then hollow, now filled, a check
   once done, an arrow between, each mark dated (`row_dates`'s rule) and a hairline to the
-  axis. *Work* (`work_view.py`) is two plots on **one scale in days**
+  axis. *Work* (`work_chart.py`) is two plots on **one scale in days**
   (`Presented.scale`): the scope against the plan compared with, warm where it holds more
   and cool where less, a ▲ or ▼ each day it changed (`scope_marks`, by the day's sum);
   and the work done, **dotted, paler, across a day no step changed status** (`Burnup.active`),
@@ -245,7 +244,7 @@ paths:
   **milestones landing on one day share the mark**, a wedge each, and the name.
   Weekends are pale bands through both. **Both surfaces draw the same page**: the report's
   `Chart` of `Plot`s (`shift`, `scope`, `done`) and `Stretch`es is `present.py`'s output
-  said as plain data (`time_estimates/report.py`), drawn by `cli/report/drawings.py`.
+  said as plain data (`schedule/report.py`), drawn by `cli/report/drawings.py`.
   **History** (`history.py`) is the now side: a slider over the recorded days and today,
   followed as it moves (a 0 ms `Debounced`), reading an earlier day's record in the live
   plan's place with the axes held for the live plan too; **while it looks back every writer
@@ -258,7 +257,7 @@ paths:
   recorded day, from the step's `created` stamp and the estimate aspect's own history
   (`estimation`'s `read_history`; every `write` carries the value it replaced, one row
   per day, format 2; `dplanner estimate show` reads it back) — are the terminal's prose;
-  the page says it with the plots. `ARCHITECTURE.md`'s *Progress against the plan* has
+  the page says it with the plots. `docs/architecture/schedule.md`'s *Progress against the plan* has
   the reasoning.
 - **Today is the clock's, never the machine's.** Whatever dates a plan reads the day from
   `core/clock.py`'s `Clock` — `TimeEstimatesDeps.clock` and the reporting module's in the
@@ -267,13 +266,13 @@ paths:
   today. A report is built *for* a day (`build(today=…)`), and every `ReportSource` is
   handed it. `day_changed` re-runs the tab and the recorder, so a window open overnight
   moves on. **A test pins it**: `services.clock.pin(…)` in the window, the `clock` fixture in
-  a CLI test — never an assertion against `date.today()`. `ARCHITECTURE.md`'s *Today is
-  handed in* has the reasoning.
+  a CLI test — never an assertion against `date.today()`. `docs/architecture/schedule.md`'s *Today
+  is handed in* has the reasoning.
 - **A milestone's colour is its place in the project's map, and every surface reads the
-  one answer.** `schedule.py`'s `milestone_colors(library, project, is_milestone)` is the
+  one answer.** `schedule.py`'s `milestone_colors(library, project)` is the
   deal — `ordering.placed`'s sequence, a milestone's own chosen colour over its dealt
-  shade — walked once per project by the composition root's `_milestone_colors` and handed
-  down as a typed callback, so no module learns where a colour map is stored. Ten surfaces
+  shade — walked once per project and handed down by the composition root as a typed
+  callback, so no module learns where a colour map is stored. Ten surfaces
   read it: the canvas card, its badge and its tag medallion, the order table's row wash
   and **key badge**, the Step statuses tab's key badge, the Tests tab's grouping heading,
   the Docs tab's medallion, the coverage lane, the Milestone tab's swatch, the calendar's
@@ -284,4 +283,4 @@ paths:
   report site exported by any of a project's people should paint its milestones alike. *View ▸ Milestone Colours* is therefore a **second presenter** of
   the choice the Time tab's picker and `dplanner schedule palette` already write — a
   sibling of Theme, never inside it, and greyed with its reason when no project is open.
-  `ARCHITECTURE.md`'s *Colour is a place on one map* has the reasoning.
+  `docs/architecture/schedule.md`'s *Colour is a place on one map* has the reasoning.

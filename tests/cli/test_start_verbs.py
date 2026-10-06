@@ -12,7 +12,7 @@ import json
 import pytest
 
 from dplanner.domain.model import Step
-from dplanner.modules.step_start.aspect import MODULE_ID, read, summary, write
+from dplanner.planning.start import MODULE_ID, read, summary, write
 
 
 def data(text):

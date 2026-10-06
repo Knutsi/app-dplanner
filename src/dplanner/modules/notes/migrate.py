@@ -26,7 +26,7 @@ from dplanner.core.module_data import ModuleDataFormat, Takeover
 from dplanner.core.repository import FileArea, Repository
 from dplanner.domain.assets import ASSETS_DIR, asset_name
 from dplanner.domain.model import Library, Project, Step
-from dplanner.modules.notes.log import (
+from dplanner.modules.notes.aspect import (
     FORMAT_VERSION,
     ID_PREFIX,
     MODULE_ID,

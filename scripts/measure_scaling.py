@@ -76,34 +76,34 @@ from dplanner.domain.commands import (
     remove_steps_command,
 )
 from dplanner.domain.model import Library, Project, Step, TextEdit
-from dplanner.domain.ordering import depths, placed
-from dplanner.domain.progression import progression
-from dplanner.domain.scope import cone
+from dplanner.domain.ordering import cone, depths, placed
 from dplanner.domain.store import LibraryStore
 from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
 from dplanner.framework.session import AppSession
-from dplanner.modules.estimation.aspect import read as estimated_days
-from dplanner.modules.estimation.aspect import write as estimate
-from dplanner.modules.estimation.schedule import project_schedule, start_of
-from dplanner.modules.feature import aspect as feature_aspect
-from dplanner.modules.feature.aspect import FeatureSource
-from dplanner.modules.feature.aspect import write as feature_write
-from dplanner.modules.project_editor.clipboard import clip, paste
-from dplanner.modules.project_editor.layout_verbs import wave_view
-from dplanner.modules.project_editor.look import BACKGROUNDS, Look
-from dplanner.modules.project_editor.placement import auto_positions
-from dplanner.modules.project_editor.positions import MODULE_ID as EDITOR_ID
-from dplanner.modules.project_editor.positions import default_size, write_position
-from dplanner.modules.project_editor.sorts import arranged_in_waves
+from dplanner.modules.canvas.clipboard.clip import clip, paste
+from dplanner.modules.canvas.layouts.placement import auto_positions
+from dplanner.modules.canvas.layouts.positions import MODULE_ID as EDITOR_ID
+from dplanner.modules.canvas.layouts.positions import default_size, write_position
+from dplanner.modules.canvas.layouts.sorts import arranged_in_waves
+from dplanner.modules.canvas.layouts.verbs import wave_view
+from dplanner.modules.canvas.look import BACKGROUNDS, Look
+from dplanner.modules.schedule.assumptions import read_efficiency, read_start, time_report
+from dplanner.modules.schedule.landings import project_schedule
+from dplanner.modules.schedule.module import TimeEstimatesModule
 from dplanner.modules.spec import aspect as spec_aspect
 from dplanner.modules.spec.documents import SpecIndex, import_document, write_index
-from dplanner.modules.step_agent_instruction.aspect import enabled as is_agent
-from dplanner.modules.step_milestone.aspect import read as milestone_label
 from dplanner.modules.step_properties.dialog import StepDetailsDialog
-from dplanner.modules.step_status.aspect import read as step_status
-from dplanner.modules.step_status.aspect import write as status
-from dplanner.modules.time_estimates.module import TimeEstimatesModule
-from dplanner.modules.time_estimates.schedule import read_efficiency, read_start, time_report
+from dplanner.planning import feature as feature_aspect
+from dplanner.planning.agent import enabled as is_agent
+from dplanner.planning.estimate import read as estimated_days
+from dplanner.planning.estimate import start_of
+from dplanner.planning.estimate import write as estimate
+from dplanner.planning.feature import FeatureSource
+from dplanner.planning.feature import write as feature_write
+from dplanner.planning.milestone import read as milestone_label
+from dplanner.planning.progression import progression
+from dplanner.planning.status import Status, readiness_of, stored
+from dplanner.planning.status import write as status
 
 FEW_TABS = ("project", "order", "time")
 ALL_TABS = (
@@ -372,7 +372,7 @@ def _description(h: Harness) -> None:
 
 @scenario("status")
 def _status(h: Harness) -> None:
-    words = ("in-progress", "done", "blocked", "pending")
+    words = (Status.IN_PROGRESS, Status.DONE, Status.BLOCKED, Status.PENDING)
     for i in range(PUSHES):
         h.push(
             SetModuleDataCommand(
@@ -748,14 +748,13 @@ def _derive(h: Harness) -> dict[str, float]:
         "placed": lambda: placed(library, project),
         "cone": lambda: cone(library, project, last),
         "project_schedule": lambda: project_schedule(library, project),
-        "progression": lambda: progression(library, project, step_status),
+        "progression": lambda: progression(library, project, readiness_of(stored)),
         "link_refusal": lambda: library.link_refusal(first, "requires", last),
         "auto_positions": lambda: auto_positions(library, project),
         "waves": lambda: arranged_in_waves(library, project, default_size, estimated_days),
         "time_report": lambda: time_report(
             library,
             project,
-            estimated_days,
             is_agent,
             start=start_of(project),
             efficiency=read_efficiency(project),

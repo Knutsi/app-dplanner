@@ -10,9 +10,8 @@ from datetime import date
 import pytest
 
 from dplanner.domain.model import Step
-from dplanner.domain.schedule import Wait
 from dplanner.domain.store import LibraryStore
-from dplanner.modules.step_wait.aspect import MODULE_ID, read, summary, write
+from dplanner.planning.wait import MODULE_ID, Wait, read, summary, write
 
 TODAY = date(2026, 9, 4)  # The Friday before the plan starts.
 

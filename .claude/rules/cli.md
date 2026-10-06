@@ -6,7 +6,8 @@ paths:
   - "src/dplanner/modules/*/{cli,checks,report}.py"
   - "src/dplanner/modules/{install,checklist,reporting}/**"
   - "tests/cli/**"
-  - "tests/modules/test_{install_dialog,checklist_dialog,module_checks,reporting}.py"
+  - "tests/modules/{install,checklist,reporting}/**"
+  - "tests/modules/test_module_checks.py"
   - "scripts/{render_checklist,render_sample_report,render_topology}.py"
 ---
 
@@ -28,7 +29,7 @@ paths:
   `dplanner desktop install` writes the launcher an applications menu opens on it:
   `cli/desktop.py`, one class per platform (a `.desktop` entry named after `APP_ID`, an
   app bundle, a Start Menu shortcut through PowerShell) behind one contract, each testable
-  on every other platform. Neither word reaches the skill. `ARCHITECTURE.md`'s *The window
+  on every other platform. Neither word reaches the skill. `docs/architecture/cli.md`'s *The window
   is a word* has the reasoning.
 - **The window repairs its PATH; the CLI never does.** A window opened from a desktop
   launcher is started by the session launcher, not a shell, so it inherits launchd's
@@ -72,7 +73,7 @@ paths:
   pointing at the symlink uv maintains). Removing takes out the launcher and the skill and names `uv tool uninstall` for
   the command rather than uninstalling the program that is running. The command's state is
   `installed` or `missing` and never `stale`: whether the one on PATH came from this build
-  cannot be told without running it. `ARCHITECTURE.md`'s *Installing is one act* has the
+  cannot be told without running it. `docs/architecture/cli.md`'s *Installing is one act* has the
   reasoning.
 - **A checklist is a registry of probes, and every module owns its own.** Whether this
   machine can run DPlanner is a fact about every feature at once, so `cli/checklist.py` owns
@@ -100,7 +101,7 @@ paths:
   `checklist show` must not inherit somebody's decision to live with a gap. And **it is
   the one dialog that prints a heading** (`DialogFrame.set_heading`), because it is the
   one that opens itself; a dialog a gesture opened must not call it.
-  `ARCHITECTURE.md`'s *A checklist is a registry of probes* has the reasoning, including
+  `docs/architecture/cli.md`'s *A checklist is a registry of probes* has the reasoning, including
   why `framework/secrets_store.py` had to become `core/secrets.py`.
 - **The topology is read before the graph is edited.** A project's topology (`dplanner
   topology set|show`; the Specs tab's pinned first row; `modules/spec.md`) says how its
@@ -120,7 +121,7 @@ paths:
   anybody ever executes. The project's own text wins wherever the two differ, `--brief`
   prints it alone, and the recorded digest stays the project's text — hashing the default
   would un-read every project on the day `shaping.md` gained a comma.
-  `ARCHITECTURE.md`'s *The topology is read before the graph is edited* has the reasoning.
+  `docs/architecture/cli.md`'s *The topology is read before the graph is edited* has the reasoning.
 - **A house document is read before what it governs is written, through the same record.**
   The second door `cli/gate.py` holds: a verb that writes in a document's shape declares
   `reads_guide` naming the `<noun> <verb>` that prints it — `test add` and `test set` name
@@ -132,8 +133,8 @@ paths:
   behind. The difference from the topology is what the digest is *of*: a project's own text
   is read per project, a build's own document once per machine. Declare it on a verb that
   writes prose somebody else must follow, never on one that reads, files or records a
-  result. `ARCHITECTURE.md`'s *The test format is read before a test is written* has the
-  reasoning, including why screenshots stayed a markdown convention.
+  result. `docs/architecture/collectors.md`'s *The test format is read before a test is written* has
+  the reasoning, including why screenshots stayed a markdown convention.
 - **The skill is generated, never written.** `dplanner skill install` renders `SKILL.md` and
   `reference.md` from the command registry, so they cannot describe a command that does not
   exist. Edit `cli/skill_preamble.md` for the hand-written half; never the output.
@@ -145,7 +146,7 @@ paths:
   that read the topology first, a `‡` on the ones that read a house format first, and a
   legend line per mark — all three projected from the registry — because a summary per verb
   was a third of a file loaded every session and said what `reference.md` and `--help` both
-  already say. `ARCHITECTURE.md`'s *The skill's command list is an index, not a manual* has
+  already say. `docs/architecture/cli.md`'s *The command list is an index, not a manual* has
   the reasoning and the measurement.
 - **The skill is written to every home an agent reads.** `SKILL.md` is an open format, so
   one generated skill serves Claude Code, Codex and OpenCode; `cli/skill.py`'s `SKILL_HOMES`
@@ -153,7 +154,7 @@ paths:
   and uninstall run over all of them — *installed* means every agent on the machine reads
   this build. Add a home to the tuple, never a per-agent flag. DPlanner itself is installed
   by a person following the README, not by a skill: a hand-written bootstrap skill failed on
-  Windows with no way for the suite to see it. `ARCHITECTURE.md`'s *The skill is written
+  Windows with no way for the suite to see it. `docs/architecture/cli.md`'s *The skill is written
   where every agent looks* has the reasoning.
 - **An installed build never reinstalls its own command.** `install all` from a build that
   is not a source checkout leaves the `dplanner` uv put on PATH alone and names `uv tool
@@ -163,7 +164,7 @@ paths:
   `cli/lint.py` and `cli/authoring.py` are the examples: the verb owns the shapes and the
   report; a module contributes by exporting Qt-free pieces (an `AspectSpec`, a
   `lint_checks()`, a `step_author()`) from its own package, and `default_cli_commands()`
-  assembles the list. `cli/` never imports a module. `ARCHITECTURE.md`'s *Lint belongs to
+  assembles the list. `cli/` never imports a module. `docs/architecture/cli.md`'s *Lint belongs to
   no feature* and *Authoring a step is one verb, many modules* have the reasoning — the
   latter includes why the CLI transaction, not per-author rollback, is what makes a
   multi-module `step add` safe.
@@ -190,5 +191,5 @@ paths:
   `<script src>` per `reports/<slug>/summary.js`), never on a project's state, so two
   writers never conflict over it; the directory is a constant because QSettings cannot
   reach the CLI. PDF is `modules/reporting/paper.py`, window-only, over the same SVG.
-  `ARCHITECTURE.md`'s *A report is a publication, not a record* has the reasoning and
+  `docs/architecture/cli.md`'s *A report is a publication, not a record* has the reasoning and
   the measurements.

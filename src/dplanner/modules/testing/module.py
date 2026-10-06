@@ -23,7 +23,6 @@ from PySide6.QtWidgets import QFileDialog, QTreeWidgetItem, QWidget
 
 from dplanner.domain.commands import Command, CompositeCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, NodeId, Project, Step, StepId
-from dplanner.domain.scope import ScopeKind, kind_of
 from dplanner.domain.store import FilesFor
 from dplanner.framework.action_registry import (
     DISABLED,
@@ -72,9 +71,10 @@ from dplanner.modules.testing.aspect import (
     read,
     write,
 )
+from dplanner.modules.testing.cards import RESULT_ORDER, word
 from dplanner.modules.testing.categories_dialog import CategoriesDialog
 from dplanner.modules.testing.section import CoversSection, TestsSection
-from dplanner.modules.testing.view import RESULT_ORDER, word
+from dplanner.planning.scope import ScopeKind, kind_of
 from dplanner.theme.icons import (
     beaker_icon,
     check_icon,

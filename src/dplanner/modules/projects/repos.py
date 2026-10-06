@@ -240,6 +240,6 @@ class RepositoryServices:
     # position of a location is picked from when this machine has no checkout to browse.
     list_folders: Callable[[str, str], Probe]
     # Synchronous on purpose: it rewrites the working tree, and the reload that follows
-    # discards the build — ARCHITECTURE.md's *Storage operations that rewrite the working
-    # tree are synchronous*.
+    # discards the build — `docs/architecture/persistence.md`'s *Storage operations that rewrite the
+    # working tree are synchronous*.
     move_project: Callable[[str, Path, bool], Moved]

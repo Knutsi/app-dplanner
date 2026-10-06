@@ -1,0 +1,441 @@
+"""Six months with the plan lit on them — each milestone's stretch in its own colour.
+
+From the month before the work starts, two rows of three: every stretch of work filled with
+its milestone's hue, fainter over the weekends the schedule skips, and the day a milestone
+lands drawn as a filled mark carrying the milestone's name, white on its colour in either
+theme, where the cell has room for it, and a day a wait holds hatched over. A day two
+stretches are both worked is a stripe of each; milestones landing on one day share its fill
+and its name. One stretch can be *emphasised* (the host says which, from the milestone picked
+on another page), and the others fade so the work leading up to that milestone stands alone.
+The arrows beside it page through time.
+
+**The calendar fills the width it is given.** The day cells grow with the width, so a wide
+window shows a wide calendar rather than a small one in a corner, and a narrow one drops
+to fewer months across; the height follows from the rows (``heightForWidth``).
+
+Every colour but the milestone shades comes from the palette at paint time; the shades are
+the milestones' own (``schedule.py``'s ``milestone_colors``, named by ``present.names_of``),
+so the calendar and the Milestones page read as one. Hovering a day answers precisely —
+which stretch, which working day of how many, a weekend, a landing — so the calendar itself
+stays wordless but for the names on the days milestones land.
+"""
+
+from dataclasses import dataclass
+from datetime import date, timedelta
+from math import ceil
+
+from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, Signal
+from PySide6.QtGui import (
+    QBrush,
+    QColor,
+    QFont,
+    QFontMetricsF,
+    QHelpEvent,
+    QMouseEvent,
+    QPainter,
+    QPainterPath,
+    QPaintEvent,
+    QPen,
+    QResizeEvent,
+)
+from PySide6.QtWidgets import QSizePolicy, QToolTip, QWidget
+
+from dplanner.planning.dates import WEEKDAYS, format_date
+from dplanner.planning.schedule import SATURDAY, working_days_between
+from dplanner.theme.tokens import SECONDARY_ALPHA
+
+MONTHS_SHOWN = 6
+MONTHS_ACROSS_AT_MOST = 3
+
+# Day cells grow with the width between these — tall enough, at the top, to name what lands.
+CELL_MIN = 18
+CELL_MAX = 44
+CELL_GAP = 2
+MONTH_GAP = 28
+# A landing names its milestone once its cell is at least this big.
+NAMED_AT = 30
+TITLE_HEIGHT = 20
+DAY_RADIUS = 3
+
+# How loudly a day carries its stretch's hue: a worked day, a weekend inside the stretch
+# (kept faint — the schedule skips it, but the band should read as one period), the
+# plan's first day, and the day a milestone lands (filled: the mark the list points at).
+SPAN_ALPHA = 64
+SPAN_WEEKEND_ALPHA = 24
+START_ALPHA = 130
+LANDING_ALPHA = 220
+# A stretch that is not the emphasised one keeps this much of its ink.
+FADE = 0.4
+
+# Day numbers: quiet by default, quieter on weekends, full ink inside a stretch — and
+# reversed on a landing, which is filled.
+DAY_ALPHA = 190
+WEEKEND_ALPHA = 90
+LANDING_INK = "#ffffff"
+WAIT_ALPHA = 90  # The hatching over a day a wait holds.
+
+_ONE_DAY = timedelta(days=1)
+
+
+@dataclass(frozen=True)
+class Band:
+    """One stretch of the plan as the calendar paints it.
+
+    ``key`` is what the host emphasises by — the milestone's step id, or "" for the work
+    after the last milestone. ``lands`` says ``finish`` is a milestone's landing and gets
+    the filled mark; the remainder's last day is just its last day.
+    """
+
+    key: str
+    label: str
+    start: date
+    finish: date
+    color: QColor
+    lands: bool
+
+
+def _lands_on(band: Band, when: date) -> bool:
+    return band.lands and when == band.finish
+
+
+def _first_of(when: date) -> date:
+    return when.replace(day=1)
+
+
+def _add_months(first: date, count: int) -> date:
+    total = first.year * 12 + (first.month - 1) + count
+    return date(total // 12, total % 12 + 1, 1)
+
+
+def _first_shown(start: date) -> date:
+    """The first month shown: the one before the work starts."""
+    return _add_months(_first_of(start), -1)
+
+
+class MonthsView(QWidget):
+    """The months around the plan, each stretch of work filled in its colour.
+
+    The calendar is also the start-date control: clicking a day reports it through
+    ``day_picked``, and the host turns that into the one undoable write. The widget
+    itself never writes — the same contract as every input here.
+    """
+
+    day_picked = Signal(object)  # a datetime.date
+
+    def __init__(self, today: date, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._start: date | None = None
+        self._bands: tuple[Band, ...] = ()
+        self._waits: tuple[tuple[date, date, str], ...] = ()
+        self._emphasised: str | None = None
+        self._today = today
+        self._begin = today.replace(day=1)
+        self._wanted = 0  # Months the plan asks for; the grid rounds up to fill its rows.
+        self._count = 0
+        self._columns = 1
+        self._cell = CELL_MIN
+        self._offset = 0  # months the user has paged away from the plan's own window
+        self._pickable = True
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        # A height-for-width widget: how tall it is follows from how wide it is, and the
+        # *layout* asks (`heightForWidth`) rather than the widget resizing itself in its
+        # own resize event. The latter is a loop inside a scroll area — the new height
+        # toggles the scrollbar, the scrollbar changes the width, the width changes the
+        # height — and it once took the process down 184,800 frames deep. The
+        # `suite-crash` skill has the episode.
+        policy = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        policy.setHeightForWidth(True)
+        self.setSizePolicy(policy)
+        self.setMinimumWidth(self._month_width(CELL_MIN))
+
+    # -- the host's side of the contract -------------------------------------------------------
+
+    def show_bands(
+        self,
+        start: date,
+        bands: tuple[Band, ...],
+        today: date,
+        waits: tuple[tuple[date, date, str], ...] = (),
+    ) -> None:
+        """The stretches, and each wait's days — its first, its last and its name — which
+        are hatched over."""
+        self._start = start
+        self._bands = bands
+        self._waits = waits
+        self._today = today
+        self._begin = _add_months(_first_shown(start), self._offset)
+        self._wanted = MONTHS_SHOWN
+        self._relayout()
+        self.updateGeometry()  # The month count changed, so the height for this width did.
+
+    def emphasise(self, key: str | None) -> None:
+        """Fade every stretch but this one; None shows them all alike."""
+        if key != self._emphasised:
+            self._emphasised = key
+            self.update()
+
+    def set_pickable(self, pickable: bool) -> None:
+        """Whether a click on a day picks the plan's start — not while the host shows a plan
+        nothing may change, and then the calendar stops offering it."""
+        self._pickable = pickable
+        cursor = Qt.CursorShape.PointingHandCursor if pickable else Qt.CursorShape.ArrowCursor
+        self.setCursor(cursor)
+
+    @property
+    def pickable(self) -> bool:
+        return self._pickable
+
+    def page(self, months: int) -> None:
+        """Move the window through time; the plan's own window is offset zero."""
+        self._offset += months
+        self._begin = _add_months(self._begin, months)
+        self.update()
+
+    @property
+    def span(self) -> tuple[date | None, date | None]:
+        finish = max((band.finish for band in self._bands), default=None)
+        return (self._start, finish)
+
+    @property
+    def emphasised(self) -> str | None:
+        return self._emphasised
+
+    @property
+    def month_count(self) -> int:
+        return self._count
+
+    @property
+    def columns(self) -> int:
+        return self._columns
+
+    @property
+    def cell_size(self) -> int:
+        return self._cell
+
+    @property
+    def first_month(self) -> date:
+        return self._begin
+
+    def bands_at(self, when: date) -> tuple[Band, ...]:
+        """Every stretch the day is in — more than one where the work of the next began
+        before the last landed, as it does on the day one lands."""
+        return tuple(band for band in self._bands if band.start <= when <= band.finish)
+
+    def day_tooltip(self, when: date) -> str:
+        """One precise sentence per day — the calendar's only words."""
+        said = f"{WEEKDAYS[when.weekday()]} {format_date(when, today=self._today)}"
+        bands = self.bands_at(when)
+        landing = [band for band in bands if _lands_on(band, when)]
+        if not bands:
+            said += " — click to start the work here" if self._pickable else ""
+        elif when.weekday() >= SATURDAY:
+            words = [f"{band.label} lands" for band in landing] or ["weekend, not counted"]
+            said += " — " + "; ".join(words)
+        else:
+            words = []
+            for band in bands:
+                if band in landing:
+                    words.append(f"{band.label} lands")
+                    continue
+                worked = working_days_between(band.start, when)
+                total = working_days_between(band.start, band.finish)
+                starts = " starts," if when == band.start else ","
+                words.append(f"{band.label}{starts} working day {worked} of {total}")
+            said += " — " + "; ".join(words)
+        said += "".join(
+            f" · waits: {name}" for first, last, name in self._waits if first <= when <= last
+        )
+        if when == self._today:
+            said += " · today"
+        return said
+
+    # -- geometry ------------------------------------------------------------------------------
+
+    @staticmethod
+    def _month_width(cell: int) -> int:
+        return 7 * (cell + CELL_GAP) - CELL_GAP
+
+    @staticmethod
+    def _month_height(cell: int) -> int:
+        return TITLE_HEIGHT + 6 * (cell + CELL_GAP) - CELL_GAP
+
+    def _fit(self, width: int) -> tuple[int, int, int]:
+        """``(columns, cell, rows)`` for a width: as many months across as fit at the
+        smallest cell, then the cells grow to use what is left, and the rows fill out."""
+        narrowest = self._month_width(CELL_MIN)
+        columns = max(1, min(MONTHS_ACROSS_AT_MOST, (width + MONTH_GAP) // (narrowest + MONTH_GAP)))
+        room = width - (columns - 1) * MONTH_GAP - columns * 6 * CELL_GAP
+        cell = max(CELL_MIN, min(CELL_MAX, room // (7 * columns)))
+        rows = ceil(self._wanted / columns) if self._wanted else 0
+        return columns, cell, rows
+
+    def _height_for(self, cell: int, rows: int) -> int:
+        return rows * self._month_height(cell) + max(0, rows - 1) * MONTH_GAP
+
+    def hasHeightForWidth(self) -> bool:  # noqa: N802 - Qt override
+        return True
+
+    def heightForWidth(self, width: int) -> int:  # noqa: N802 - Qt override
+        _columns, cell, rows = self._fit(width)
+        return self._height_for(cell, rows)
+
+    def sizeHint(self) -> QSize:  # noqa: N802 - Qt override
+        width = self.minimumWidth()
+        return QSize(width, self.heightForWidth(width))
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802 - Qt override
+        """The least it can need: one row of months at the smallest cell, at the minimum
+        width. Not ``sizeHint``: a resizable scroll area takes the minimum as the floor
+        of the page it sizes, and the height at the *minimum* width — every month in one
+        column — made the Time tab scroll over empty space. The real height is the
+        layout's to ask for, through ``heightForWidth``."""
+        return QSize(self.minimumWidth(), self._height_for(CELL_MIN, 1))
+
+    def _relayout(self) -> None:
+        """Take the columns and cell the current width affords; the height is the layout's
+        to ask for, never set from here."""
+        self._columns, self._cell, rows = self._fit(self.width())
+        self._count = rows * self._columns
+        self.update()
+
+    def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802 - Qt override
+        super().resizeEvent(event)
+        if event.size().width() != event.oldSize().width():
+            self._relayout()
+
+    def _month_origin(self, index: int) -> tuple[float, float]:
+        row, column = divmod(index, self._columns)
+        return (
+            column * (self._month_width(self._cell) + MONTH_GAP),
+            row * (self._month_height(self._cell) + MONTH_GAP),
+        )
+
+    def _day_rect(self, index: int, when: date) -> QRectF:
+        left, top = self._month_origin(index)
+        first = _add_months(self._begin, index)
+        seat = when.day - 1 + first.weekday()
+        row, column = divmod(seat, 7)
+        return QRectF(
+            left + column * (self._cell + CELL_GAP),
+            top + TITLE_HEIGHT + row * (self._cell + CELL_GAP),
+            self._cell,
+            self._cell,
+        )
+
+    def _day_at(self, position: QPointF) -> date | None:
+        for index in range(self._count):
+            first = _add_months(self._begin, index)
+            until = _add_months(first, 1)
+            when = first
+            while when < until:
+                if self._day_rect(index, when).contains(position):
+                    return when
+                when += _ONE_DAY
+        return None
+
+    # -- painting ------------------------------------------------------------------------------
+
+    def _ink(self, band: Band, alpha: int) -> QColor:
+        tint = QColor(band.color)
+        faded = self._emphasised is not None and band.key != self._emphasised
+        tint.setAlpha(round(alpha * FADE) if faded else alpha)
+        return tint
+
+    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt override
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        ink = self.palette().text().color()
+        secondary = QColor(ink)
+        secondary.setAlpha(SECONDARY_ALPHA)
+        small = QFont(self.font())
+        small.setPointSizeF(small.pointSizeF() - 1.5)
+        for index in range(self._count):
+            first = _add_months(self._begin, index)
+            left, top = self._month_origin(index)
+            painter.setFont(self.font())
+            painter.setPen(secondary)
+            title = format_date(first, today=self._today).split(" ", 1)[1]
+            painter.drawText(
+                QRectF(left, top, self._month_width(self._cell), TITLE_HEIGHT - 4),
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                title,
+            )
+            painter.setFont(small)
+            until = _add_months(first, 1)
+            when = first
+            while when < until:
+                self._paint_day(painter, self._day_rect(index, when), when, ink, secondary)
+                when += _ONE_DAY
+        painter.end()
+
+    def _paint_day(
+        self, painter: QPainter, rect: QRectF, when: date, ink: QColor, secondary: QColor
+    ) -> None:
+        weekend = when.weekday() >= SATURDAY
+        bands = self.bands_at(when)
+        landing = [band for band in bands if _lands_on(band, when)]
+        cell = QPainterPath()
+        cell.addRoundedRect(rect, DAY_RADIUS, DAY_RADIUS)
+        # A day stretches share is a stripe of each, side by side in their sequence — but a
+        # landing fills its day, as the next stretch beginning that afternoon does not.
+        filled = landing or bands
+        width = rect.width() / max(1, len(filled))
+        for index, band in enumerate(filled):
+            if band in landing:
+                alpha = LANDING_ALPHA
+            elif when == self._start:
+                alpha = START_ALPHA
+            else:
+                alpha = SPAN_WEEKEND_ALPHA if weekend else SPAN_ALPHA
+            stripe = QPainterPath()
+            stripe.addRect(QRectF(rect.left() + index * width, rect.top(), width, rect.height()))
+            painter.fillPath(cell.intersected(stripe), self._ink(band, alpha))
+        if any(first <= when <= last for first, last, _name in self._waits):
+            # A day a wait holds: hatched over its stretch's colour, so it still reads as
+            # part of the stretch and plainly as no work.
+            hatch = QColor(ink)
+            hatch.setAlpha(WAIT_ALPHA)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(hatch, Qt.BrushStyle.BDiagPattern))
+            painter.drawRoundedRect(rect, DAY_RADIUS, DAY_RADIUS)
+        if when == self._today:
+            painter.setPen(QPen(secondary, 1.0))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRoundedRect(rect.adjusted(0.5, 0.5, -0.5, -0.5), DAY_RADIUS, DAY_RADIUS)
+        number = QColor(ink)
+        if any(self._emphasised in (None, band.key) for band in landing):
+            number = QColor(LANDING_INK)  # White on the hue, in either theme, as the ✓ is.
+        elif not bands:
+            number.setAlpha(WEEKEND_ALPHA if weekend else DAY_ALPHA)
+        painter.setPen(number)
+        if not landing or rect.height() < NAMED_AT:
+            painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, str(when.day))
+            return
+        upper, lower = (
+            rect.adjusted(0, 2, 0, -rect.height() / 2),
+            rect.adjusted(2, rect.height() / 2 - 2, -2, -2),
+        )
+        painter.drawText(upper, Qt.AlignmentFlag.AlignCenter, str(when.day))
+        name = QFontMetricsF(painter.font()).elidedText(
+            " · ".join(band.label for band in landing), Qt.TextElideMode.ElideRight, lower.width()
+        )
+        painter.drawText(lower, Qt.AlignmentFlag.AlignCenter, name)
+
+    # -- input ---------------------------------------------------------------------------------
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802 - Qt override
+        when = self._day_at(event.position())
+        if when is not None and self._pickable:
+            self.day_picked.emit(when)
+        super().mousePressEvent(event)
+
+    def event(self, found: QEvent) -> bool:
+        if found.type() == QEvent.Type.ToolTip:
+            assert isinstance(found, QHelpEvent)
+            when = self._day_at(QPointF(found.pos()))
+            if when is not None:
+                QToolTip.showText(found.globalPos(), self.day_tooltip(when), self)
+            else:
+                QToolTip.hideText()
+            return True
+        return super().event(found)

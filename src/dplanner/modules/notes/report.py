@@ -11,8 +11,7 @@ from datetime import date
 from dplanner.cli.report.parts import Contribution, Facet, Placed, Prose, ReportSource, images_in
 from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.store import FilesFor
-from dplanner.modules.notes.log import LABEL_IDS, MODULE_ID, Note, read_log, standing
-from dplanner.modules.notes.reach import when_where
+from dplanner.modules.notes.aspect import LABEL_IDS, MODULE_ID, Note, read_log, standing, when_where
 
 
 def report_source(*, key_of: Callable[[Step], str]) -> ReportSource:

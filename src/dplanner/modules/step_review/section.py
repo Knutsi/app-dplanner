@@ -30,15 +30,8 @@ from dplanner.framework.module_data_section import ModuleDataSection
 from dplanner.framework.signalling import StatusLine
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import EmptyState, block, caption, ink_of, quiet
-from dplanner.modules.step_review.aspect import (
-    DEFAULT_AGENT,
-    LENSES,
-    MODULE_ID,
-    ReviewSettings,
-    settings,
-    write,
-)
-from dplanner.modules.step_review.conversation import (
+from dplanner.modules.step_review.aspect import MODULE_ID as ROUNDS_ID
+from dplanner.modules.step_review.conversation_dialog import (
     KEY_ROLE,
     NO_ROUNDS,
     message_rows,
@@ -46,7 +39,14 @@ from dplanner.modules.step_review.conversation import (
     reink,
     where_it_stands,
 )
-from dplanner.modules.step_review.rounds import MODULE_ID as ROUNDS_ID
+from dplanner.planning.review import (
+    DEFAULT_AGENT,
+    LENSES,
+    MODULE_ID,
+    ReviewSettings,
+    settings,
+    write,
+)
 from dplanner.theme.tokens import FIELD_GAP, PANEL_MARGIN, SECTION_GAP
 
 MOST_ROUNDS = 10

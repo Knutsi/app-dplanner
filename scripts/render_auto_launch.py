@@ -32,17 +32,18 @@ from dplanner.core.storage.pointer import remove_from_index
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
 from dplanner.domain.model import Step
 from dplanner.framework.user_config import set_global
+from dplanner.modules.agent_launch import launcher
+from dplanner.modules.agent_launch.auto_launch import LaunchLocks
+from dplanner.modules.agent_launch.settings_page import AUTO_LAUNCH_KEY
 from dplanner.modules.auto_progress.aspect import MODULE_ID as AUTO_PROGRESS_ID
 from dplanner.modules.auto_progress.aspect import write as write_flags
-from dplanner.modules.progression.module import PROGRESSION_KIND
 from dplanner.modules.settings.dialog import DIALOG_SIZE as SETTINGS_SIZE
 from dplanner.modules.settings.module import SettingsModule
-from dplanner.modules.step_agent_instruction import launcher
-from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_ID
-from dplanner.modules.step_agent_instruction.auto_launch import LaunchLocks
-from dplanner.modules.step_agent_instruction.settings_page import AUTO_LAUNCH_KEY
-from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
-from dplanner.modules.step_status.aspect import write as write_status
+from dplanner.modules.status_board.activity import PROGRESSION_KIND
+from dplanner.planning.agent import MODULE_ID as AGENT_ID
+from dplanner.planning.status import MODULE_ID as STATUS_ID
+from dplanner.planning.status import Status
+from dplanner.planning.status import write as write_status
 from dplanner.theme import apply_theme
 from dplanner.theme.themes import DARK, LIGHT, Theme
 
@@ -103,7 +104,9 @@ def render(app: QApplication, theme: Theme, out: Path, root: Path) -> None:
         step = Step(title=title)
         AddNodeCommand(project.id, step).redo(library)
         library.set_text(step.id, AGENT_ID, f"{title}, carefully.")
-        SetModuleDataCommand(step.id, STATUS_ID, write_status(status, today=today)).redo(library)
+        SetModuleDataCommand(step.id, STATUS_ID, write_status(Status(status), today=today)).redo(
+            library
+        )
         return step
 
     sources = [agent_step(title, "in-progress") for title in SOURCES]
@@ -127,7 +130,7 @@ def render(app: QApplication, theme: Theme, out: Path, root: Path) -> None:
 
     # That window closed; the sources reach review, and this one launches their collector.
     for source in sources:
-        entry = write_status("ready-for-review", today=today)
+        entry = write_status(Status.READY_FOR_REVIEW, today=today)
         SetModuleDataCommand(source.id, STATUS_ID, entry).redo(library)
     services.debounce.flush_all()
     save_top(window, window.notices, out, "notice", theme, app)

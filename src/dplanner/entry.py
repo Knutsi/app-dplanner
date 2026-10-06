@@ -11,7 +11,7 @@ The window is a word, and not the default, because an agent's reflex on an unfam
 is to run it bare — and a window that opens on the developer's desktop and blocks the
 agent's shell is the wrong answer to that question. A word no task contains is a fence that
 holds for every agent, where a terminal test or an environment variable holds for some.
-``ARCHITECTURE.md``'s *The window is a word* has the reasoning.
+``docs/architecture/cli.md``'s *The window is a word* has the reasoning.
 
 The dispatch happens **before** anything Qt is imported, so the CLI path never pays for a
 toolkit it does not use — and works on a machine that has none. Qt's own ``-style`` and
@@ -28,7 +28,7 @@ agent launched from it inherits the shell's session markers and becomes a *child
 of the first — no transcript of its own, ended with its parent. One such window took four
 agents down with it. So ``dplanner window`` refuses when the environment says an agent's
 shell is around it, and says why; the launcher scrubs the same markers for a window that
-got them some other way. ``ARCHITECTURE.md``'s *The window is a word* has the reasoning.
+got them some other way. ``docs/architecture/cli.md``'s *The window is a word* has the reasoning.
 """
 
 import sys

@@ -17,7 +17,7 @@ The indicator sits at the right end of a control strip's *layout*, outside the
 hidden so the strip does not reflow on every settle. It is a **turning arc and no words**:
 the words would be the only prose on a strip of controls, they are four times the arc's
 width, and every language would need its own. *Updating…* survives as the tooltip.
-``modules/debug/design_example.py`` shows all three in place.
+``modules/debug/design_example_dialog.py`` shows all three in place.
 """
 
 import html

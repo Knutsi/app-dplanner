@@ -29,10 +29,14 @@ from dplanner.domain.model import Library, Project, Step, StepId, now_stamp
 MODULE_ID = "step_agent_run"
 
 # The lifecycle, in the order a run moves through it. Absence means no agent run.
-STATES: Final = ("launched", "working", "plan-for-review", "pending-approval", "needs-input")
 LAUNCHED: Final = "launched"
+WORKING: Final = "working"
+PLAN_FOR_REVIEW: Final = "plan-for-review"
+PENDING_APPROVAL: Final = "pending-approval"
+NEEDS_INPUT: Final = "needs-input"
+STATES: Final = (LAUNCHED, WORKING, PLAN_FOR_REVIEW, PENDING_APPROVAL, NEEDS_INPUT)
 # What an agent says when it waits on a person: a plan to approve, a question to answer.
-ASKING: Final = ("plan-for-review", "needs-input")
+ASKING: Final = (PLAN_FOR_REVIEW, NEEDS_INPUT)
 PLANS_FIRST_KEY: Final = "plans_first"
 
 DATA_FORMAT = ModuleDataFormat(MODULE_ID)

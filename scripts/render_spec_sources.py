@@ -29,8 +29,8 @@ from dplanner.core.storage.locations import init_repo
 from dplanner.domain.seed import create_library, seed_project
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
-from dplanner.modules.spec_confluence.connect import ConnectDialog
-from dplanner.modules.spec_git.connect import GitSourceDialog
+from dplanner.modules.spec_confluence.connect_dialog import ConnectDialog
+from dplanner.modules.spec_git.connect_dialog import GitSourceDialog
 from dplanner.modules.spec_git.source import Folder, Probe
 from dplanner.theme import apply_theme
 from dplanner.theme.themes import DARK, LIGHT, Theme

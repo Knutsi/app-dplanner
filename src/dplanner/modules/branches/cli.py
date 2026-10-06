@@ -19,45 +19,37 @@ from dplanner.domain.model import Library, Project, Step, StepId
 from dplanner.domain.ordering import upstream
 from dplanner.domain.shelf import turn_off
 from dplanner.domain.store import FilesFor
-from dplanner.modules.branches.aspect import (
+from dplanner.modules.branches.edits import put_command, put_refusal, remove_command, stretch_picked
+from dplanner.modules.branches.plan import branch_births, branch_reading
+from dplanner.planning.branches import (
     CUT_ID,
     LAND_ID,
     branch_of,
     is_cut,
     is_land,
     name_problem,
-    reading,
     write_cut,
     write_land,
 )
-from dplanner.modules.branches.edits import put_command, put_refusal, remove_command, stretch_picked
-
-# Makes a stretch's two ends, dressed as the window's Put on a Branch makes them — every
-# other module's word on them (no estimate on a cut, the agent on a landing) is the root's.
-Births = Callable[[Project, str], tuple[Step, Step]]
+from dplanner.planning.status import is_done
 
 
 def commands(
     *,
-    born: Births,
-    is_done: Callable[[Step], bool],
     stacked_apart: Callable[[Project, set[StepId]], str],
     key_of: Callable[[Step], str],
 ) -> list[CliCommand]:
-    def read(project: Project) -> Reading:
-        return reading(project, is_done)
-
     def run_put(context: CliContext, args: Namespace) -> int:
-        return _put(context, args, born, read, stacked_apart, key_of)
+        return _put(context, args, branch_reading, stacked_apart, key_of)
 
     def run_remove(context: CliContext, args: Namespace) -> int:
-        return _remove(context, args, read, key_of)
+        return _remove(context, args, branch_reading, key_of)
 
     def run_show(context: CliContext, args: Namespace) -> int:
-        return _show(context, args, read, key_of)
+        return _show(context, args, branch_reading, key_of)
 
     def run_land(context: CliContext, args: Namespace) -> int:
-        return _land_set(context, args, read, key_of)
+        return _land_set(context, args, branch_reading, key_of)
 
     return [
         CliCommand(
@@ -209,7 +201,6 @@ def _land_clear(context: CliContext, args: Namespace) -> int:
 def _put(
     context: CliContext,
     args: Namespace,
-    born: Births,
     read: Callable[[Project], Reading],
     stacked_apart: Callable[[Project, set[StepId]], str],
     key_of: Callable[[Step], str],
@@ -223,7 +214,7 @@ def _put(
     taken = [s.branch for s in read(project).stretches if not s.landed]
     if problem := name_problem(args.branch, taken):
         raise CliError(problem)
-    cut, land = born(project, args.branch)
+    cut, land = branch_births(project, args.branch)
     context.apply(put_command(library, ids, cut, land))
     context.report(
         {"branch": args.branch, "cut": cut.id, "land": land.id, "steps": ids},
@@ -300,7 +291,6 @@ def _stretch_row(
 
 def lint_checks(
     *,
-    is_done: Callable[[Step], bool],
     is_agent: Callable[[Step], bool],
     is_milestone: Callable[[Step], bool],
     pr_base_of: Callable[[Step], str],
@@ -311,7 +301,7 @@ def lint_checks(
     def pairs(library: Library, project: Project, _files: FilesFor) -> list[LintFinding]:
         """A cut no landing closes, a landing that closes no cut, and a landing nobody can
         run — the three ways a bracket is half-made."""
-        found = reading(project, is_done)
+        found = branch_reading(project)
         out = [
             finding(
                 "branch.unpaired",
@@ -346,7 +336,7 @@ def lint_checks(
 
     def names(_library: Library, project: Project, _files: FilesFor) -> list[LintFinding]:
         """A branch name git refuses, or one two open stretches share."""
-        found = reading(project, is_done)
+        found = branch_reading(project)
         out = []
         cuts = [s.cut for s in found.stretches if not s.landed] + list(found.stray_cuts)
         for cut in cuts:
@@ -363,7 +353,7 @@ def lint_checks(
 
     def shapes(library: Library, project: Project, _files: FilesFor) -> list[LintFinding]:
         """The links that break one way in, one way out, and a stretch two others cross."""
-        found = reading(project, is_done)
+        found = branch_reading(project)
         out = []
         for stretch in found.stretches:
             for member, source in late_entries(library, project, stretch):
@@ -412,7 +402,7 @@ def lint_checks(
 
     def merges(_library: Library, project: Project, _files: FilesFor) -> list[LintFinding]:
         """A pull request aimed at the wrong branch, and a branch landed before its work."""
-        found = reading(project, is_done)
+        found = branch_reading(project)
         out = []
         for stretch in found.stretches:
             open_members = [m for m in stretch.members if not is_done(m)]

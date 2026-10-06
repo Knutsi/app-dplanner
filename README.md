@@ -335,8 +335,11 @@ platform and is how the spec stays correct between Windows runs.
 
 Layering rules are enforced by `tests/test_architecture.py`; the module recipe and the core
 rules live in `CLAUDE.md`, and the rules for each area in `.claude/rules/`
-(`scripts/rules.py for <path>` says which govern a file). `ARCHITECTURE.md` explains the
-shape and why. `DESIGN.md` is the UI standard, `FORMAT.md` the on-disk one.
+(`scripts/rules.py for <path>` says which govern a file). `docs/architecture/` explains the
+shape and why, one file per area beside `core.md`, with `ARCHITECTURE.md` as its index and
+`decisions.md` as the dated history. `NOTES-FOR-APPFRAME.md` says, file by file, how
+`framework/` and `core/` differ from the template. `DESIGN.md` is the UI standard, `FORMAT.md`
+the on-disk one.
 
 ## Layout
 
@@ -384,14 +387,12 @@ src/dplanner/
 │   ├── store.py             the on-disk format above, one provider per project, the stale-write guard
 │   ├── library_file.py      the per-user library file: which projects exist
 │   ├── aspects.py           what an aspect is: id, label, summary, data format
-│   ├── ordering.py          what order a project can be done in, and what can start now
-│   ├── scope.py             what a collector gathers: the cone, truncated at the next one
+│   ├── ordering.py          what order a project can be done in, what can start now, and the
+│   │                        cone behind a step, truncated where a predicate says
 │   ├── branches.py          which steps are on a feature branch: after a cut, until its landing
-│   ├── schedule.py          the same walk carrying estimates: running totals, dates, and when each
-│   │                        step lands in a staffed simulation
-│   ├── progression.py       the status-aware frontier: what can be launched right now
 │   ├── short_titles.py      what a project is called on a tab: its initials, unique in the library
 │   ├── commands.py          undoable changes — the vocabulary the GUI and CLI share
+│   ├── workflow.py          what a workflow hands back (Change, its follow-ups), who asks (Actor), what it reads (PlanView)
 │   ├── shelf.py             where a turned-off aspect's data waits: turn_off / turn_on, and the migration into it
 │   ├── fields.py            bindable prose, keyed by the module that owns it
 │   ├── assets.py            attaching files to a module's file area, and listing them
@@ -400,6 +401,19 @@ src/dplanner/
 │   │                        git kinds share, with the nesting, the digests and the caps
 │   ├── migrations.py        the format's version history — append only
 │   └── seed.py              what a brand-new library, and a brand-new project, contain
+│
+├── planning/              ── the planning model over the graph: imports core and domain only. Qt-free.
+│   ├── status.py            a step's status: the Status enum, Unknown and Waiting, its stored format,
+│   │                        and how readiness reads one (`held`)
+│   ├── estimate.py          a step's estimate and a project's start date: format, read and write
+│   ├── kinds.py             what a step is: the one ranking its key letter and kind word come from
+│   ├── milestone.py, feature.py, check.py, wait.py, start.py, branches.py, review.py, agent.py
+│   │                        the kind aspects: each one's stored format and its predicate
+│   ├── progression.py       the status-aware frontier: what can be launched right now
+│   ├── schedule.py          the same walk carrying estimates: running totals, dates, and when each
+│   │                        step lands in a staffed simulation
+│   ├── scope.py             collectors — check, feature, milestone — and what each gathers
+│   └── dates.py             a date in words, the same way everywhere it is printed
 │
 ├── cli/                   ── the headless surface. Qt-free.
 │   ├── command.py           CliCommand, CliContext, CliRegistry
@@ -471,30 +485,36 @@ src/dplanner/
 │   │                        (Agent, Compilation instructions) — the location dialog
 │   │                        (location_dialog.py), Move Plan, the repositories folder and the clone
 │   │                        policy (repositories_folder.py), the checkout service a verb gets a
-│   │                        repository on this machine from (checkouts.py), and the archive:
-│   │                        Archive/Restore Project, the index's Archive folder
-│   │                        (archive_index.py) and the Archive tab (archive_tab.py)
-│   ├── project_editor/      a project in a tab: the canvas, its modes (connect, redirect, lasso, divide, contract, resize) and renderers,
-│   │                        sorts, named layouts, and the user's look (look.py: marks, background, snap to grid,
-│   │                        the side panel; ground.py paints the background)
-│   │                        (canvas_toolbar.py is the strip in named bands; canvas_menus.py what a
+│   │                        repository on this machine from (checkouts.py), and Share Project…
+│   ├── project_archive/     leaving the library: Archive/Restore Project and Remove from Library
+│   │                        (verbs.py), the index's Archive folder (archive_index.py) and the
+│   │                        Archive tab (activity.py)
+│   ├── steps/               the `step …` verbs and the graph's lint (cli.py; no module.py, so
+│   │                        headless all through) — `step duplicate` runs the canvas's clone
+│   ├── canvas/              a project in a tab (activity.py): the canvas (scene.py), its modes (connect, redirect,
+│   │                        lasso, divide, contract, resize), items and renderers, and the user's look (look.py:
+│   │                        marks, background, snap to grid, the side panel; ground.py paints the background);
+│   │                        stored under the module id `project_editor`
+│   │                        (toolbar.py is the strip in named bands; menus.py what a
 │   │                        right-click offers by what is under it; find.py the rows Find offers;
+│   │                        step_verbs.py the step verbs, view_verbs.py the ones that steer the view;
 │   │                        the Problems list stands beside the canvas through framework/side_panel.py)
-│   │                        (clipboard.py is what a copied step is; clipboard_verbs.py the Edit menu's
-│   │                        Cut/Copy/Paste/Duplicate; `dplanner step duplicate` is the same clone)
 │   │                        (its panel also hosts the modules' project-level cards)
 │   │                        (geometry.py measures the graph for `dplanner layout show`, `--map`
 │   │                        draws it, `layout shift` is Divide as a verb, `layout contract` Contract,
 │   │                        `layout tidy` the sixth sort)
-│   │                        (Wave view: sorts.arranged_in_waves derives every card's column, never
-│   │                        saved; ruler.py is the band of column headings over it; Keep This
-│   │                        Arrangement and `layout sort waves` write it)
-│   │                        (stacks.py is a stack: a chain drawn as one tall card, the fold every
-│   │                        arrangement reads it through, and the rule for what may link to one;
-│   │                        stack_edits.py every edit of one — new, make, add, move, take out,
-│   │                        dissolve, and the removal Delete runs — shared with `dplanner stack …`;
-│   │                        stack_verbs.py the menu verbs that push them; items.py's StackItem the
-│   │                        frame and "+", and modes.py's BlockDragMode what drags one)
+│   │   ├── layouts/         where cards sit: positions.py stored, placement.py the ambient layout,
+│   │   │                    sorts.py the sorts (Wave view: arranged_in_waves derives every card's
+│   │   │                    column, never saved; ruler.py the band of column headings over it),
+│   │   │                    named.py saved layouts, verbs.py and button.py the menu verbs and picker
+│   │   ├── stacks/          stack.py is a stack: a chain drawn as one tall card, the fold every
+│   │   │                    arrangement reads it through, and the rule for what may link to one;
+│   │   │                    edits.py every edit of one — new, make, add, move, take out,
+│   │   │                    dissolve, and the removal Delete runs — shared with `dplanner stack …`;
+│   │   │                    verbs.py the menu verbs that push them; items.py's StackItem the
+│   │   │                    frame and "+", and modes.py's BlockDragMode what drags one
+│   │   └── clipboard/       clip.py is what a copied step is; verbs.py the Edit menu's
+│   │                        Cut/Copy/Paste/Duplicate; `dplanner step duplicate` is the same clone (cli.py's duplicator)
 │   ├── step_properties/     THE step editor — `steps.details`, a modal and nothing anchored
 │   │                        (its first tab, details.py, stacks whatever registered a Details
 │   │                        block, name.py leading it; every view's double-click on a step
@@ -503,27 +523,37 @@ src/dplanner/
 │   │   ── the fourteen aspect modules (`dplanner aspect list`); the `step_` prefix is not the
 │   │      marker — `estimation`, `github` and `spec` are aspects too, and `step_order` /
 │   │      `step_properties` are views of steps, not aspects:
-│   ├── estimation/          estimates: the editor, the bulk Estimates tab, the schedule
+│   ├── estimation/          estimates: the editor, the bulk Estimates tab, the `estimate` verbs
 │   ├── step_ticket/         ── the other step aspects: data, editor and verbs each
 │   ├── step_description/
-│   ├── step_agent_instruction/   … this one also holds the project's standing instruction,
-│   │                             the step's worktree choice, and assembles and launches Run
-│   │                             Agent (`launcher.py`: the terminal and multiplexer table,
-│   │                             the run name a worktree and branch carry, the wrapper script
-│   │                             that prepares the worktree and reports back; `profiles.py`:
-│   │                             the named agent-and-terminal pairs Run Agent offers, seeded once;
-│   │                             `detect_dialog.py`: the installed pairings, ticked and added)
+│   ├── step_agent_instruction/   … this one also holds the project's standing instruction
+│   │                             and the step's worktree choice
+│   ├── agent_launch/        Run Agent: the verbs and *Open Agent in Code* (module.py),
+│   │                        `launcher.py` the terminal and multiplexer table and the wrapper
+│   │                        script that prepares the worktree and reports back, `profiles.py`
+│   │                        the named agent-and-terminal pairs, seeded once, `settings_page.py`
+│   │                        and `detect_dialog.py` their page, `due.py` what the plan made due
+│   │                        and `auto_launch.py` the window launching it
+│   ├── agent_briefing/      what an agent is told — no module.py, headless all through:
+│   │                        the preflight and the report-back protocol (protocol.py), the
+│   │                        step's and project's facts (blocks.py), the instructions
+│   │                        (instructions.py), assembled once by compose.brief; and where
+│   │                        a run works (worktree.py: its run name, checkout and worktree)
 │   ├── agent_claude/        ── one module per agent CLI, each a Qt-free `harness.py`: the
 │   ├── agent_codex/            command, how it resumes, the marks it leaves in its shells, and
 │   ├── agent_opencode/         a reader of its own records (`domain/agents.py` is the contract)
 │   ├── step_agent_run/      where a launched agent stands — stamped at launch, moved by
 │   │                        `dplanner agent-state`, cleared when the shell ends (`runs.py`
 │   │                        reads the wrapper's report; `terminal.py` finds the window or
-│   │                        pane again; the status-bar button and the Agents browser are
-│   │                        `view.py`) — and what its runs consumed: harvested into the
-│   │                        project's ledger (`harvest.py`, `domain/ledger.py`), said by
-│   │                        `usage.py`; `dplanner usage show|list|harvest|record`)
-│   ├── step_status/         where a step stands — a Status submenu, no tab
+│   │                        pane again; the Agents browser is `browser_dialog.py`)
+│   ├── agent_usage/         what agent runs consumed: the per-project ledger's words and
+│   │                        readers (`aspect.py`, over `domain/ledger.py`), the harvest that
+│   │                        fills it and the window's sweep, `dplanner usage show|list|harvest|record`,
+│   │                        and the Expenditure tab — the order with what each step consumed,
+│   │                        in tokens (`expenditure_activity.py`, `domain/expenditure.py`)
+│   ├── step_status/         where a step stands — a Status submenu, no tab, and `status …`;
+│   │                        the vocabulary and format are `planning/status.py`'s; setting one is
+│   │                        `workflows.py`, which the window and the CLI both call
 │   ├── step_milestone/      the steps that mark a milestone — the Milestone tab and the Type ▸ Milestone toggle
 │   ├── step_wait/           a step that holds what requires it, until a day or for working days: the
 │   │                        Type ▸ Wait toggle, the Wait template, its Details block, `dplanner wait`
@@ -541,12 +571,14 @@ src/dplanner/
 │   ├── branches/            a stretch on a feature branch: the cut that starts it and the
 │   │                        landing that merges it back (two aspects), Step ▸ Put on a Branch…
 │   │                        and Remove Branch…, `dplanner branch|cut|land`, `branch.*` lint;
-│   │                        what is on a branch is `domain/branches.py`'s derivation
+│   │                        what is on a branch is `domain/branches.py`'s derivation, and
+│   │                        what it means for a run — its branches, a merge that accepts — is
+│   │                        `plan.py`'s
 │   ├── step_review/         a step whose agent reviews the step it waits on: the Type ▸ Review
 │   │                        toggle, the Review template and tab, `dplanner review` (the
 │   │                        conversation both sides drive, `review wait` included) and its
-│   │                        lint — the settings in `aspect.py`, the rounds in `rounds.py`,
-│   │                        the conversation read in full in `conversation.py`
+│   │                        lint — the settings in `planning/review.py`, the rounds in `aspect.py`,
+│   │                        the conversation read in full in `conversation_dialog.py`
 │   ├── testing/             what a step must keep passing: the tests it carries, the runs over
 │   │                        them, how they are filed (a category and a sort key, with the
 │   │                        category editor), the project's Tests tab, the library-wide roll
@@ -556,32 +588,32 @@ src/dplanner/
 │   ├── github/              the branch and PR a step lands in: refs, pickers, PR-state refresh, where
 │   │                        they stand now (the tab's standing line, `dplanner github show`), the missing-gh notice
 │   │
-│   ├── step_order/          the sorted table of steps, and `dplanner order show` — and the
-│   │                        Expenditure tab: the same order with what each step's agents
-│   │                        consumed, in tokens (`expenditure.py`, `domain/expenditure.py`)
-│   ├── progression/         the *Step statuses* tab, the *Control Centre* over every project,
+│   ├── step_order/          the sorted table of steps, and `dplanner order show` (its rows
+│   │                        are `framework/step_table.py`'s, which Expenditure shares)
+│   ├── status_board/        the *Step statuses* tab, the *Control Centre* over every project,
 │   │                        and `dplanner progression show [--all]`
-│   ├── time_estimates/      when the plan lands with its team, and the work behind it: the Time tab
-│   │                        (activity.py: four figures, then a page at a time — shift_view.py the
-│   │                        milestones against the plan compared with, work_view.py the scope and the
+│   ├── schedule/            when the plan lands with its team, and the work behind it: the Time tab
+│   │                        (activity.py: four figures, then a page at a time — shift_chart.py the
+│   │                        milestones against the plan compared with, work_chart.py the scope and the
 │   │                        work done, months.py the calendar — with budget.py's team and focus,
 │   │                        snapshots.py's pick of the plan compared with and history.py's look back
 │   │                        at an earlier day's record), what a page shows as data
 │   │                        (present.py, which report.py reads too), a milestone's start and colour on
-│   │                        its Details tab (section.py) — `dplanner schedule matrix`, `schedule palette`,
-│   │                        `schedule team`, `schedule milestone`; progress against the plan (progress.py
+│   │                        its Details tab (section.py) — the whole `dplanner schedule` noun
+│   │                        (landings.py dates each step: `schedule show`, `schedule start`, `schedule matrix`, `schedule palette`,
+│   │                        `schedule team`, `schedule milestone`); assumptions.py what reaches disk; progress against the plan (progress.py
 │   │                        derives it, recorder.py writes the day's history) —
 │   │                        `dplanner progress show|record|save|list|remove`; simulation/ plays the
 │   │                        HTML prototype's scenarios day by day (the world, the replay through the
 │   │                        real aspect writers, the accuracy `scripts/time_accuracy.py` prints) and
-│   │                        debugger.py shows one in the real tab under Debug ▸ Time Simulation
+│   │                        simulator_activity.py shows one in the real tab under Debug ▸ Time Simulation
 │   ├── reporting/           the window's half of the report: File ▸ Export's HTML, PDF (paper.py) and Excel,
 │   │                        the report site into a picked folder, Go ▸ Preview Report; the
 │   │                        `reporting` location role (roles.py)
 │   ├── notes/               what a project records along the way — decisions, handoffs, spec changes,
-│   │                        deferrals — one labelled log (log.py), what reaches a step and the briefing's
-│   │                        capped index (reach.py), how the two retired modules reach it (migrate.py),
-│   │                        `dplanner note`, and the Implementation notes tab (activity.py, view.py)
+│   │                        deferrals — one labelled log, what reaches a step and the briefing's capped
+│   │                        index (aspect.py), how the two retired modules reach it (migrate.py),
+│   │                        `dplanner note`, and the Implementation notes tab (activity.py)
 │   ├── spec/                spec documents beside a project, their figures, and the project's
 │   │                        topology — `dplanner spec`, `dplanner topology` (pdf.py: text layers
 │   │                        and page rendering; editor.py: the in-app markdown editor); and the
@@ -598,7 +630,8 @@ src/dplanner/
 │   │                        the locator, the blobless shallow sparse fetch and the size guard
 │   │                        (source.py), and the dialog that lists the remote's folders
 │   ├── coverage/            the plan against the spec: milestones → features → passages →
-│   │                        steps → tests and docs (trace.py, one derived picture), the
+│   │                        steps → tests and docs (trace.py, one derived picture, read from
+│   │                        every owner by readers.py), the
 │   │                        Coverage tab's lanes as a drill-down (scene.py), and `dplanner
 │   │                        coverage show|spec|review`
 │   ├── project_assets/      every asset a project carries and what uses each — the Assets
@@ -615,7 +648,7 @@ src/dplanner/
 │   │                        window half — click a row and the graph lands on its step, or
 │   │                        hand the lot to an agent
 │   ├── home/                where a window starts: the getting-started guide (guide.py, data naming
-│   │                        action ids) over the garden — garden.py its Qt-free seasons, garden_view.py
+│   │                        action ids) over the garden — garden.py its Qt-free seasons, garden_widget.py
 │   │                        the painting — a tab, the index's top row, and what the program opens
 │   │                        when there is nothing to reopen
 │   ├── reopen_tabs/         the tabs this library had last time, and the switch for it
@@ -626,7 +659,8 @@ src/dplanner/
 │   ├── appshell/  sync/  settings/  taskcenter/
 │   ├── debug/               diagnostics — the LLM Calls and Telemetry tabs — and Debug ▸ Design Examples,
 │   │                        the design system built from the primitives, to be looked at and copied from:
-│   │                        design_example.py is the modal, the table and the toolbars; design_rows.py
+│   │                        design_example_dialog.py is the modal, design_example_activity.py the table and
+│   │                        the toolbars (over design_sample.py's rows); design_rows_activity.py
 │   │                        is what a picked row wears, beside the block that is not one
 │   ├── llm/  openai/  anthropic/  — the LLM picker, and the two vendor modules: each an LLM
 │   │                        provider, a settings page and the *Add API key…* wizard; openai's

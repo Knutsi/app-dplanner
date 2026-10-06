@@ -8,7 +8,7 @@ uv run python scripts/render_step_details.py --out docs/screenshots/s6-step-deta
 
 The panel has one host — the modal `steps.details` opens — so every image here is of that.
 It was anchored in the window's right area as well until the Tests roster made the cost
-plain; `ARCHITECTURE.md`'s *The step editor is a modal* has the reasoning.
+plain; `docs/architecture/step-panel.md`'s *The step editor is a modal* has the reasoning.
 
 | image | what it shows |
 |---|---|

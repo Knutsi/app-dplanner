@@ -1,0 +1,222 @@
+"""The shell's tab verbs: what View's Tabs submenu offers, and what each entry does.
+
+Tested as pure functions of a constructed ``Context`` and through ``actions.run``, like every
+other verb — which is the property that makes the tab bar's right-click menu correct for
+free, since it is the same registry read through the same context.
+"""
+
+import pytest
+
+CLOSE_TAB = "appshell.close_tab"
+CLOSE_OTHERS = "appshell.close_other_tabs"
+CLOSE_RIGHT = "appshell.close_tabs_right"
+CLOSE_ALL = "appshell.close_all_tabs"
+
+
+@pytest.fixture
+def projects(make_project):
+    return [make_project(title) for title in ("Discovery", "Build", "Ship")]
+
+
+def open_all(services, projects):
+    return [services.tabs.open("project", project.id) for project in projects]
+
+
+def state(services, action_id):
+    return services.actions.spec(action_id).state(services.context.current())
+
+
+def run(services, action_id):
+    services.actions.run(action_id, services.context.current())
+
+
+def titles(services):
+    return [activity.title for activity in services.tabs.activities()]
+
+
+# -- what the menu offers ------------------------------------------------------------------
+
+
+def test_the_tab_verbs_live_in_the_view_menus_tabs_submenu(services):
+    """The placement the tab bar's right-click depends on: show_tab_menu asks build_menu for
+    View's Tabs submenu, so a spec that drifts elsewhere silently leaves that popup."""
+    for action_id in (
+        "appshell.move_tab_right",
+        "appshell.move_tab_left",
+        CLOSE_TAB,
+        CLOSE_OTHERS,
+        CLOSE_RIGHT,
+        CLOSE_ALL,
+    ):
+        spec = services.actions.spec(action_id)
+        assert (spec.menu, spec.group, spec.submenu) == ("View", "tabs", "Tabs")
+
+
+def test_every_tab_verb_is_off_in_an_empty_window(services):
+    """The Tabs submenu is honest about a window with nothing in it rather than offering
+    four entries that do nothing."""
+    for action_id in (CLOSE_TAB, CLOSE_OTHERS, CLOSE_RIGHT, CLOSE_ALL):
+        assert not state(services, action_id).enabled
+
+
+def test_one_tab_can_be_closed_and_nothing_else(services, projects):
+    open_all(services, projects[:1])
+
+    assert state(services, CLOSE_TAB).enabled
+    assert state(services, CLOSE_ALL).enabled
+    assert not state(services, CLOSE_OTHERS).enabled
+    assert not state(services, CLOSE_RIGHT).enabled
+
+
+# -- what the entries do -------------------------------------------------------------------
+
+
+def test_close_other_tabs_keeps_the_one_you_are_on(services, projects):
+    tabs = open_all(services, projects)
+    services.tabs.focus(tabs[1])
+
+    run(services, CLOSE_OTHERS)
+    assert titles(services) == ["Build"]
+
+
+def test_close_tabs_to_the_right_leaves_the_ones_before(services, projects):
+    tabs = open_all(services, projects)
+    services.tabs.focus(tabs[0])
+
+    assert state(services, CLOSE_RIGHT).enabled
+    run(services, CLOSE_RIGHT)
+    assert titles(services) == ["Discovery"]
+
+
+def test_close_tabs_to_the_right_means_this_group(services, projects):
+    """ "Right" is a fact about one tab bar. A tab sent to the next group is to the right on
+    screen and not in this bar, so it survives."""
+    tabs = open_all(services, projects)
+    services.tabs.focus(tabs[2])
+    services.tabs.move_current_right()
+    services.tabs.focus(tabs[0])
+
+    run(services, CLOSE_RIGHT)
+    assert sorted(titles(services)) == ["Discovery", "Ship"]
+
+
+def test_close_all_tabs_empties_the_window(services, projects):
+    open_all(services, projects)
+
+    run(services, CLOSE_ALL)
+    assert titles(services) == []
+    assert services.tabs.current_activity() is None
+
+
+def test_the_area_toggles_live_in_views_areas_group(services):
+    """The placement and shortcuts the side-panel collapse depends on: View's own group
+    ahead of the per-panel checkmarks, and the keys the palette renders."""
+    from dplanner.framework.panels import PanelArea
+
+    for action_id, shortcut in (
+        ("appshell.toggle_left_panels", "Ctrl+B"),
+        ("appshell.toggle_right_panels", "Ctrl+Alt+B"),
+    ):
+        spec = services.actions.spec(action_id)
+        assert (spec.menu, spec.group, spec.shortcut) == ("View", "areas", shortcut)
+    assert not services.window.is_area_collapsed(PanelArea.LEFT)
+
+
+def test_an_area_toggle_is_hidden_while_nothing_stands_in_that_area(services):
+    """HIDDEN is for a capability absent from this build: a side with no panel in it has
+    nothing to fold. Where a panel *stands* is asked, not where its spec put it, so moving
+    the one panel across brings the other side's toggle with it."""
+    from dplanner.framework.builder import INDEX_PANEL_ID
+    from dplanner.framework.panels import PanelArea
+
+    left, right = "appshell.toggle_left_panels", "appshell.toggle_right_panels"
+    assert state(services, left).visible  # The index stands there.
+
+    services.window.dock.move_panel(INDEX_PANEL_ID, PanelArea.RIGHT)
+    assert not state(services, left).visible and state(services, right).visible
+    services.window.dock.move_panel(INDEX_PANEL_ID, PanelArea.LEFT)
+    assert state(services, left).visible
+
+
+def test_toggling_an_area_flips_its_checkmark(services):
+    toggle = "appshell.toggle_left_panels"
+    assert state(services, toggle).checked
+
+    run(services, toggle)
+    assert not state(services, toggle).checked
+    run(services, toggle)
+    assert state(services, toggle).checked
+
+
+def test_the_move_shortcut_yields_to_word_selection_in_a_text_editor(session, projects):
+    """Ctrl+Shift+Right moves the tab — except in an editable field, where it must keep
+    selecting the next word. Qt's text controls claim the key through ShortcutOverride, and
+    this pins that down: a future shortcut that editors do *not* claim would eat a standard
+    editing key application-wide, which is the trap CLAUDE.md's canvas-keymap rule is about.
+    """
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QPlainTextEdit
+
+    services = session.services
+    session.window.show()
+    # A window-context shortcut fires only in the *active* window, and the offscreen
+    # platform delivers activation through the queued window-system events — under a
+    # loaded worker, show() alone loses this race about one run in five. qWaitForWindowActive
+    # flushes that queue and waits, which is the one idiom that makes the precondition true
+    # rather than usually-true.
+    assert QTest.qWaitForWindowActive(session.window)
+    open_all(services, projects[:2])
+    ctrl_shift = Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier
+
+    QTest.keyClick(session.window, Qt.Key.Key_Right, ctrl_shift)
+    assert services.tabs.group_count() == 2  # The shortcut fired: the window split.
+
+    editor = QPlainTextEdit(session.window)
+    editor.setPlainText("two words")
+    editor.show()
+    editor.setFocus()
+    QTest.keyClick(editor, Qt.Key.Key_Right, ctrl_shift)
+    assert services.tabs.group_count() == 2  # Unchanged: the editor claimed the key…
+    assert editor.textCursor().selectedText()  # …and spent it on selecting a word.
+
+
+# -- what this is, and what it stands on -------------------------------------------------------
+
+
+def test_the_acknowledgements_are_asked_of_the_installation(app):
+    """A hand-kept licence table drifts, and the one thing an acknowledgement must not do is
+    claim the wrong licence — so every version and licence beside a name is the installed
+    distribution's own answer."""
+    from importlib.metadata import version as dist_version
+
+    from dplanner.modules.appshell.about_dialog import BUILT_ON, MISSING, acknowledgements
+
+    rows = acknowledgements()
+    assert [row[0] for row in rows] == [part.name for part in BUILT_ON]
+    named = {row[0]: row for row in rows}
+    assert named["keyring"][2] == dist_version("keyring")
+    assert named["keyring"][3] == "MIT"
+    # Qt is the licence that matters most, and it is the expression PySide6 declares.
+    assert "LGPL" in named["Qt for Python (PySide6)"][3]
+    # Python is not a distribution, so its row is written — and still says a version.
+    assert named["Python"][2] not in ("", MISSING)
+    assert all(version and licence for _n, _w, version, licence in rows)
+
+
+def test_about_says_what_dplanner_is_built_on(session, monkeypatch):
+    """Help ▸ About is a DialogFrame over that list, not a QMessageBox — which prints a
+    platform icon and arranges its sentences the platform's way."""
+    from dplanner.identity import APP_NAME
+    from dplanner.modules.appshell.about_dialog import AboutDialog, acknowledgements
+
+    services = session.services
+    spec = services.actions.spec("appshell.about")
+    assert APP_NAME in spec.label and "Writer" not in spec.label
+
+    opened: list[AboutDialog] = []
+    monkeypatch.setattr(AboutDialog, "exec", lambda self: opened.append(self))
+    services.actions.run("appshell.about", services.context.current())
+    (dialog,) = opened
+    assert dialog.table.rowCount() == len(acknowledgements())
+    assert dialog.windowTitle() == f"About {APP_NAME}"

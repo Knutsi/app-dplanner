@@ -127,7 +127,7 @@ type ModelSignal = CoreSignal[*tuple[Any, ...]]
 def project_tab_title(library: Library, project_id: ProjectId, caption: str) -> str:
     """A tab showing one side of a project: its short title — unique among the library's,
     so a renamed sibling can change it (`domain/short_titles.py`) — then what the tab shows.
-    The canvas is the project itself and keeps the whole title. `ARCHITECTURE.md`'s *A
+    The canvas is the project itself and keeps the whole title. `docs/architecture/shell-ui.md`'s *A
     project tab says its project's short title* has the reasoning."""
     return f"{short_titles(library.projects)[project_id]} — {caption}"
 

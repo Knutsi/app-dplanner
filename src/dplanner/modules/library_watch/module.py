@@ -51,7 +51,7 @@ from dplanner.framework.session import RefreshResult, SessionControl
 from dplanner.framework.widgets import confirm
 from dplanner.framework.window import NoticeHost, StatusHost
 from dplanner.framework.window_watch import WatchableRepository, WorkspaceWatcher
-from dplanner.modules.library_watch.view import (
+from dplanner.modules.library_watch.conflict_dialog import (
     AGENT,
     LATER,
     MINE,

@@ -5,8 +5,8 @@ as well, following the selection, and that second seat is gone: a step's aspects
 of tabs, and a page of tabs in a 360 px column is an editor nobody finishes a sentence in —
 while beside a roster it competed with the panel the reader had actually opened. So a step is
 edited where a double-click puts it, over the view it was picked in, and the area is left to
-the surfaces that are worth watching *while* you work. ``ARCHITECTURE.md``'s *The step editor
-is a modal* has the reasoning.
+the surfaces that are worth watching *while* you work. ``docs/architecture/step-panel.md``'s *The
+step editor is a modal* has the reasoning.
 
 Two seams keep it from knowing anything else in the application. **It never learns who picked
 the step** — the verb reads the context, so a canvas, a table and anything added later reach it

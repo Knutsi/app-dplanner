@@ -4,7 +4,7 @@
     uv run python scripts/time_accuracy.py                every scenario
     uv run python scripts/time_accuracy.py by-the-book    one or more, by id
 
-Each scenario is played by the simulator (``time_estimates/simulation/``) over a handful of
+Each scenario is played by the simulator (``schedule/simulation/``) over a handful of
 seeds, every day written into a library through the real aspect writers and dated by the
 real model, and each day's forecast held to when the work really landed: the mean distance
 from the truth, how far the forecast travelled in total, and on how many days it moved — all
@@ -15,15 +15,16 @@ plan, and as the tab shows it with *Adjust for Efficiency* on — the prototype'
 
 import sys
 
-from dplanner.modules import _time_readers, _time_writers
-from dplanner.modules.time_estimates.simulation.accuracy import (
+from dplanner.modules.schedule.cli import Readers
+from dplanner.modules.schedule.simulation.accuracy import (
     Accuracy,
     TimelineAccuracy,
     combined,
     timeline_accuracy,
 )
-from dplanner.modules.time_estimates.simulation.replay import Replay
-from dplanner.modules.time_estimates.simulation.scenarios import SCENARIOS, scenario_by_id
+from dplanner.modules.schedule.simulation.frames import Writers
+from dplanner.modules.schedule.simulation.replay import Replay
+from dplanner.modules.schedule.simulation.scenarios import SCENARIOS, scenario_by_id
 
 SEEDS = (1, 2, 3, 7, 11, 42)
 
@@ -40,7 +41,7 @@ def cells(measured: list[TimelineAccuracy]) -> str:
 
 def main(picked: list[str]) -> int:
     scenarios = [scenario_by_id(one) for one in picked] if picked else list(SCENARIOS)
-    readers, writers = _time_readers(), _time_writers()
+    readers, writers = Readers(), Writers()
     print("the landing forecast: mean |error|, total movement, days moved (working days)")
     print(f"seeds {', '.join(map(str, SEEDS))}\n")
     print(f"{'':16}| as recorded                        | adjusted for efficiency")

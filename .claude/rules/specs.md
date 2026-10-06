@@ -1,9 +1,8 @@
 ---
 paths:
-  - "src/dplanner/modules/{spec,spec_folder,spec_git,spec_confluence}/**"
+  - "{src/dplanner,tests}/modules/{spec,spec_folder,spec_git,spec_confluence}/**"
   - "src/dplanner/domain/document_{folder,source}.py"
   - "src/dplanner/core/secrets.py"
-  - "tests/modules/{test_spec,test_confluence,spec_git_helpers}*.py"
   - "tests/cli/{test_spec_,spec_helpers}*.py"
   - "tests/domain/test_document_*.py"
   - "tests/core/test_secrets.py"
@@ -24,14 +23,14 @@ paths:
   and nothing round-trips now. A PDF is the one document that is not text, and renders.
   Expanding it (⤢) is `ExpandedTextDialog.over_document`: the *same* `QTextDocument`, one
   buffer and two views, because the buffer rather than the model is the authority here —
-  never store `editor.document()` in a field. `ARCHITECTURE.md`'s *Editing a spec in-app
+  never store `editor.document()` in a field. `docs/architecture/specs.md`'s *Editing a spec in-app
   is a replace* has the reasoning.
 - **Renaming a spec document moves the name every command addresses it by.** A name is the
   document's identity — `spec show`, `spec diff`, a feature's citation, a page's `parent`,
   an asset row's provenance — so `spec rename` and the tab's *Rename* move all of them in
   one `CompositeCommand`, and the filename's stem follows with its suffix. The citations
-  are another module's data, so the composition root composes them
-  (`_rename_spec_references`) and both surfaces push the same object. `rename_refusal` is
+  are a planning fact (`planning/feature.py`), so `spec/cli.py`'s `renamed_citations` moves
+  them and both surfaces push the same object. `rename_refusal` is
   the one sentence both use: a name that slugs to nothing, one already taken, and a
   document a source fetched, whose name belongs to the page it came from. **Delete takes
   the index row and never the blob** — undo has to restore a row that still points at
@@ -87,7 +86,7 @@ paths:
   the git kind's *which folder?* cannot be answered without asking. A sourced document is
   shown read-only, `spec import`/`spec remove` refuse it, and fetching is **window-only**
   — a fetch pulls bytes from outside the plan into it, and that is a person's act.
-  `ARCHITECTURE.md`'s *A spec source is a kind the spec module runs* has the reasoning.
+  `docs/architecture/specs.md`'s *A spec source is a kind the spec module runs* has the reasoning.
 - **A folder of documents is one walk, in `domain/document_folder.py`.** The folder kind
   and the git kind both read it and may not import each other. A **key is the path**
   relative to what was scanned; documents **nest under their directory's index document**

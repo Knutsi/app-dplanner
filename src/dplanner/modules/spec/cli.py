@@ -70,14 +70,37 @@ from dplanner.modules.spec.documents import (
 from dplanner.modules.spec.documents import anchor_sources as anchor_sources
 from dplanner.modules.spec.pdf import render_page, split_pages
 from dplanner.modules.spec.sourced import locator_line, owned_by_source, tree
+from dplanner.planning.feature import MODULE_ID as FEATURE_ID
+from dplanner.planning.feature import read as feature_read
+from dplanner.planning.feature import write as feature_write
 
 # The other modules' half of a rename: what else in this project points at a spec document
 # by name, as commands that move those references with it. Composed by the composition
 # root — a module never reaches into another module's data — and pushed in the same undo
 # entry as the index write, because one gesture is one undo.
-type RenameReferences = Callable[[Project, str, str], list[Command]]
 
 RENAME_LABEL = "Rename Spec Document"
+
+
+def renamed_citations(project: Project, name: str, chosen: str) -> list[Command]:
+    """The other half of a rename: every feature citing document ``name``, moved to ``chosen``.
+
+    A feature's citation keys on the document's name — the one thing that must not go
+    stale when the name moves, because a lost citation is a coverage answer that quietly
+    changes. Only the features that actually cited the old name are written, and the
+    commands ride in the rename's own undo entry, inside the one ``CompositeCommand``.
+    """
+    commands: list[Command] = []
+    for step in project.steps:
+        cites = feature_read(step)
+        if cites is None:
+            continue  # Not a feature, so it cites nothing.
+        moved = tuple(
+            replace(cite, document=chosen) if cite.document == name else cite for cite in cites
+        )
+        if moved != cites:
+            commands.append(SetModuleDataCommand(step.id, FEATURE_ID, feature_write(moved)))
+    return commands
 
 
 def step_author() -> StepAuthor:
@@ -159,16 +182,9 @@ def digest_of(project: Project, document_name: str) -> str:
 def commands(
     *,
     note_read: Callable[[str, str], None],
-    rename_references: "RenameReferences | None" = None,
 ) -> list[CliCommand]:
     """``note_read(project id, text)`` is the gate's ear: ``topology show`` calls it
     with what it printed, so the read is recorded where the gate will look.
-
-    ``rename_references`` is the other half of a rename: a document's name is what a
-    feature's citation points at, so renaming one has to carry the citations with it. The
-    spec module may not reach into the feature module's data, so the composition root
-    hands the commands over and this verb pushes them in the same undo entry. A build
-    without it renames what it owns and nothing else.
     """
 
     def _rename(context: CliContext, args: Namespace) -> int:
@@ -192,11 +208,7 @@ def commands(
             documents=rename_document(index.documents, document.name, chosen),
             assets=rename_assets(index.assets, document.name, chosen),
         )
-        carried = (
-            rename_references(project, document.name, chosen)
-            if rename_references is not None
-            else []
-        )
+        carried = renamed_citations(project, document.name, chosen)
         context.apply(
             CompositeCommand(
                 RENAME_LABEL,

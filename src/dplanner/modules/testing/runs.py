@@ -222,6 +222,13 @@ def latest_results(runs: Sequence[Run]) -> dict[str, Outcome]:
     return found
 
 
+def latest_statuses(project: Project) -> dict[str, str]:
+    """Every test's last recorded status word, by test id — :func:`latest_results` as plain
+    values, for a module that may not import this one."""
+    outcomes = latest_results(read(project))
+    return {test_id: outcome.result.status for test_id, outcome in outcomes.items()}
+
+
 def tally(statuses: Sequence[str]) -> dict[str, int]:
     """How many of each status, every word present so a reader never has to guess a zero."""
     counts = dict.fromkeys(STATUSES, 0)

@@ -15,7 +15,7 @@ the plan as a bystander would.
 index — of every project in the focused project's plan repository into a folder the person
 picks, starting at the project's reporting location when this machine has one. Save never
 writes reports: generated pages committed by every Save collide between people sharing a
-plan repository (ARCHITECTURE.md's *Reports are written on request, never on Save*).
+plan repository (`docs/architecture/cli.md`'s *A report is a publication, not a record*).
 """
 
 from __future__ import annotations
@@ -48,6 +48,7 @@ from dplanner.framework.task_runner import TaskRunner
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.window import StatusHost
 from dplanner.modules.reporting import paper
+from dplanner.planning.status import Status, Unknown
 
 MODULE_ID = "reporting"
 BUSY_NOTICE = "Still writing the last report — try again in a moment"
@@ -72,7 +73,7 @@ class ReportingDeps:
     sources: Sequence[ReportSource]
     key_of: Callable[[Step], str]
     kind_of: Callable[[Step], str]
-    status_for: Callable[[Step], str]
+    status_for: Callable[[Step], Status | Unknown]
     # The day a report is of: the window's, which a test may pin.
     clock: Clock
     # The project's reporting location, when it names one and this machine has that

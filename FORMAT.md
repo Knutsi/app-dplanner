@@ -31,7 +31,7 @@ Four places, and the choice is not stylistic:
 | Per user, per machine (Qt-free) | a working clone DPlanner keeps for a verb that needed the repository here and nobody had checked out — Run Agent's code, a report's destination — under the default clone policy | `core/storage/kept.py` under `config_dir()/checkouts/<name>-<digest of remote>`, one per repository; recorded in the library file's `checkouts` map like any checkout | it is a checkout: commits an agent made there and never pushed are in it and nowhere else, so it is not wiped by the application |
 
 | Per user, per machine (GUI only) | preferences: panel layout, model choices, the agent launch profiles | `framework/user_config.py`'s `get_global` (QSettings) | no |
-| Per user, per machine (GUI only) | which window launches what becomes due: one lock per library, held by the window whose *When a step becomes due* is on | a `QLockFile` at `config_dir()/auto-launch/<library_scope(library path)>.lock` (`step_agent_instruction/auto_launch.py`) — stale only once its process is gone | no — it is a process that is running here, now |
+| Per user, per machine (GUI only) | which window launches what becomes due: one lock per library, held by the window whose *When a step becomes due* is on | a `QLockFile` at `config_dir()/auto-launch/<library_scope(library path)>.lock` (`agent_launch/auto_launch.py`) — stale only once its process is gone; beside it, `<library_scope>/<run id>.json` per launch still in flight, written before its shell is spawned and removed once its claim is on disk (`agent_launch/intents.py`) | no — it is a process that is running here, now |
 | Per user, per machine, per library | where the user left off: open index folders, open tabs | `framework/user_config.py`'s `get_scoped`, under `library_scope(path)` | no |
 | The OS keychain | credentials, API keys — the LLM keys, a Confluence token per site (`spec_confluence.token:<host>`) | `core/secrets.py` | no, and never on disk |
 
@@ -51,9 +51,9 @@ its **locations**, each a role, a repository as git prints its remote (or, for o
 remote, its resolved path) and a position inside it — is `"locations"` in `project.dproj`,
 shared with everyone who opens the plan. *Where is each of those on this machine?* is the
 library file's `checkouts` map, per user, per machine, below, for a location that is worked
-in; a read-only one is fetched into a managed clone and never asks. `ARCHITECTURE.md`'s *A
-project names its locations* has the reasoning; `domain/repositories.py` is the one
-derivation over the three.
+in; a read-only one is fetched into a managed clone and never asks.
+`docs/architecture/persistence.md`'s *A project names its locations* has the reasoning;
+`domain/repositories.py` is the one derivation over the three.
 
 ## The library file
 
@@ -89,7 +89,7 @@ and where this machine has the repositories those projects name.
   clone. It is written by the Project dialog, by `dplanner location checkout`, by the Open
   Project wizard's Repositories page, and by the first `dplanner` call that runs inside a
   checkout whose `origin` is one of a project's code locations — **straight into the file**
-  (`LibraryStore.set_checkout`, read-modify-write and re-stamp), never through a dirty
+  (`LibraryStore.set_checkout`, read-modify-write of that one key), never through a dirty
   mark, because a read verb's transaction must never be refused over a per-machine fact. A
   format-2 row carried its project's code checkout instead; reading one files it under the
   checkout's own origin. A format-1 file reads as format 3 with no checkouts.
@@ -200,7 +200,7 @@ Four conventions, and each one is a lesson about diffs:
   `step.json`, `"last_number": 12` in `project.dproj` — one sequence per project, dealt
   where a step joins it and never reused (a deleted step's branch may live on). The
   letter a person sees in front of it (`S7`, `F7`, `M7`) is derived from the step's kind
-  and never written; `ARCHITECTURE.md`'s *A step has a number* has the reasoning.
+  and never written; `docs/architecture/graph-model.md`'s *A step has a number* has the reasoning.
 - **Absence encodes the default.** A step with no links writes no `edges` key, and an empty
   document is deleted rather than written blank — so a diff shows exactly the nodes whose
   plan actually changed.
@@ -352,7 +352,7 @@ writes the same layout into any folder. A shared plan repository is best off ign
 function of the set of `*/summary.js` present, so its bytes change only when a project
 joins or leaves — the rule that keeps two writers from conflicting over a generated page.
 The directory name is a constant, not a setting. Nothing in it is versioned or migrated:
-every write rewrites it whole from the plan. `ARCHITECTURE.md`'s *A report is a
+every write rewrites it whole from the plan. `docs/architecture/cli.md`'s *A report is a
 publication, not a record* and *Reports are written on request, never on Save* have the
 reasoning.
 
@@ -401,7 +401,7 @@ What every agent run on a project consumed, one file per run, beside `steps/`:
 - Absence encodes the default; a file this build cannot read is skipped; there is no
   migration — the format is in every record. Totals are summed on read.
 
-`ARCHITECTURE.md`'s *Usage is a ledger, harvested by anyone* has the reasoning.
+`docs/architecture/agents.md`'s *Usage is a ledger, harvested by anyone* has the reasoning.
 
 ### Changing it
 
@@ -473,7 +473,7 @@ project — `{"runs": [{"id": "R100", "label": "…", "opened": …, "tests": [i
 {"T100": {"status": "failed"}}}]}`. A run stores the ids it was opened over, so a closed run
 cannot change meaning when the graph does, and a **missing result reads as pending** — the
 absence rule again, so a run over two hundred tests writes two hundred ids and no statuses.
-`project_editor` is another instance: a position
+`project_editor` — the `canvas` package's id — is another instance: a position
 beside each step — `{"x": 40.0, "y": 160.0}`, plus `"w"` and `"h"` only for a card somebody
 resized — and the named layouts beside the project (`{"layouts": {"<name>": {"steps":
 {"<step id>": [x, y]}}}}`, coordinates as whole-unit floats: a canvas gesture snaps to the
@@ -482,12 +482,12 @@ card — adds `"stack": "<id>"`, an opaque id minted per stack and never a step 
 *first* member keeps the seat, which is the stack's, and every other member stores none
 (`{"stack": "<id>"}`, plus a size if its card was resized), because its seat is derived
 from the column. The order is never stored: it is read from the members' `requires` chain
-(`ARCHITECTURE.md`'s *A stack is presentation over a chain*). It is format 3. Format 1
+(`docs/architecture/canvas.md`'s *A stack is presentation over a chain*). It is format 3. Format 1
 also kept titled rectangles beside the project (`"regions": [...]`) and each layout's rects
 for them (`"regions": {"<id>": [x, y, w, h]}`), and regions were retired, so the first
 migration drops both on read — a project saved with them opens as it was, minus the
-rectangles (`ARCHITECTURE.md`'s *Regions were retired*). Format 3 is the `stack` key, and
-its migration changes nothing: the number moved because a format-2 writer rebuilds the
+rectangles (`docs/architecture/canvas.md`'s *Regions were retired*). Format 3 is the `stack` key,
+and its migration changes nothing: the number moved because a format-2 writer rebuilds the
 entry from the seat and the size and so drops the key from any card it moves — the rule
 below. As with the library's format 4, no reader checks the stamp, so an older build still
 does exactly that: it draws a stack's members where the ambient layout puts them, and a
@@ -712,7 +712,7 @@ for a card somebody resized, its size, absent for the default footprint — as
 an aspect is a fact about the work that an agent may want to write, and a layout is
 presentation. It is per step rather than one map on the project so that moving a node is a
 one-file diff — the same reasoning as ordering living in the parent's list. The time
-report's assumptions are the second instance: `modules/time_estimates.json` beside the
+report's assumptions are the second instance: `modules/schedule.json` beside the
 project (format 2), `{"efficiency": 0.5, "palette": "mako", "team": [2, 3],
 "efficiency_was": {"until": "2026-09-22", "efficiency": 0.6}}` — the focus factor, the
 colour map and the team the calendar is dated for, each absent on its default, and the
@@ -753,8 +753,9 @@ review, ready to merge) — stamped by the aspect's `write`, so the window, `dpl
 set` and an agent's launch all record them, and restored by undo with the rest of the
 entry. The word is one of `pending`, `in-progress`, `ready-for-review`, `ready-to-merge`,
 `done`, `blocked`; the two in the middle came later **with no format bump**, because a
-build that does not know a word reads it as pending and leaves the entry as it is — which
-is what an older build does with them. Pending is still absence, but a step set back
+build that does not know a word reads it as *unknown* and leaves the entry as it is. Unknown
+holds the step — never due, never launched, listed under Blocked — since reading it as
+pending would start work another build may already have running. Pending is still absence, but a step set back
 to pending keeps its days: an entry with no `status` key, which reads as pending. A copy
 keeps the status and forgets the days, which were the original's. An older entry has no
 days, and every reader takes that as "not said", never as today.
@@ -774,7 +775,7 @@ ever carries it. The **note log** is the fourth: `modules/notes.json` beside the
 `"project"` — a note reaches the steps after the one it was made on by default, so
 *downstream* is never written), ids minted per project and never reused so a later note can
 name the one
-it replaces, the label one of the closed list in `modules/notes/log.py`. It absorbed two
+it replaces, the label one of the closed list in `modules/notes/aspect.py`. It absorbed two
 earlier shapes at open — `modules/decisions.json` by takeover, and each step's
 `step_handoff.md`, `step_handoff.json` and `step_handoff/assets/` by the format's
 `absorb` pass (*Retiring a module* below) — so neither is written any more. The
@@ -788,8 +789,8 @@ model boundary, because an `int` writes as `5` where a reloaded float writes as 
 — making a file's bytes depend on whether the project had been reopened since it was
 written. Module data is opaque to the model and `stamped()` writes whatever dict it is
 handed, so on this axis the duty belongs to whoever owns the number. See
-`modules/estimation/aspect.py`, which is the reference for it, and
-`modules/project_editor/positions.py`, which owes it for a coordinate.
+`planning/estimate.py`, which is the reference for it, and
+`modules/canvas/layouts/positions.py`, which owes it for a coordinate.
 
 ## Two writers, one folder
 
@@ -814,11 +815,11 @@ format through the carried chain, converted, merged into the successor's entry, 
 The retired module's *code* is gone; only its data contract survives, in the package that
 inherited it. Modules never import each other, and this is why they do not have to.
 
-`modules/estimation/aspect.py` is the worked example: `step_estimation` became `estimation`
+`planning/estimate.py` is the worked example: `step_estimation` became `estimation`
 when it grew a project's start date, and the rename cost no project-format migration and no
-import. `modules/step_milestone/aspect.py` is the second: `step_release` became
+import. `planning/milestone.py` is the second: `step_release` became
 `step_milestone` when *release* turned out to be the wrong word for a thing that collects
-features. `modules/feature/aspect.py` is the third: `step_feature` became `feature` when a
+features. `planning/feature.py` is the third: `step_feature` became `feature` when a
 feature grew a catalogue beside the project and stopped being a marker on a step. Its
 converter was for a while the one that could not finish the job — a per-entry converter
 never sees the project, so it could not mint the record and the entry read as
@@ -843,7 +844,7 @@ again. Three rules they make concrete:
   and the loaded library, returning the owners it changed, and idempotent because it runs
   on every open. `modules/notes/migrate.py` is the worked example: the retired handoff
   aspect's prose, scope and files become a `handoff` note on the step.
-  `modules/feature/migrate.py` is the second, and it adds three things the next one will
+  `planning/feature_migrate.py` is the second, and it adds three things the next one will
   want. **A created node's data goes on the object before `add_child`, and its id is never
   returned**: the builder flushes what an absorption returns with the `module_data` and
   `module_text` aspects only, and a node that did not exist a moment ago has no directory

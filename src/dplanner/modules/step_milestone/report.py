@@ -8,7 +8,7 @@ from datetime import date
 from dplanner.cli.report.parts import Contribution, Facet, ReportSource
 from dplanner.domain.model import Library, Project
 from dplanner.domain.store import FilesFor
-from dplanner.modules.step_milestone.aspect import read
+from dplanner.planning.milestone import read
 
 
 def report_source() -> ReportSource:

@@ -1,6 +1,6 @@
 """The notes module in the running application: the *Implementation notes* tab.
 
-One tab per project — the log as rows beside the picked note's editor (``view.py``) —
+One tab per project — the log as rows beside the picked note's editor (``activity.py``) —
 opened from the row this module puts under each project in the index's Docs folder
 (``index_row``, handed to the docs module by the composition root; neither imports the
 other). No menu verb of its own: far more often the log is written by an agent through
@@ -21,7 +21,7 @@ from dplanner.framework.project_list_segment import ChildRow
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.undo import UndoService
 from dplanner.modules.notes.activity import NOTES_CAPTION, NOTES_KIND, NotesActivity
-from dplanner.modules.notes.log import MODULE_ID
+from dplanner.modules.notes.aspect import MODULE_ID
 from dplanner.modules.notes.migrate import DATA_FORMAT
 from dplanner.theme.icons import edit_icon
 

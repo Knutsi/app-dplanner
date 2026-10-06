@@ -46,7 +46,6 @@ from PySide6.QtCore import QPoint, Qt
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QMenu, QVBoxLayout, QWidget
 
 from dplanner.domain.model import NodeId, Project, Step, StepId
-from dplanner.domain.scope import ScopeKind, gatherers, kind_of
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.activity import (
@@ -79,6 +78,7 @@ from dplanner.modules.testing.aspect import (
     covered,
     project_tests,
 )
+from dplanner.modules.testing.cards import RESULT_ORDER, word
 from dplanner.modules.testing.filing import (
     UNCATEGORISED,
     catalog,
@@ -88,7 +88,7 @@ from dplanner.modules.testing.filing import (
 )
 from dplanner.modules.testing.panel import TestPanel, Walk
 from dplanner.modules.testing.table import Heading, Row, TestsTable
-from dplanner.modules.testing.view import RESULT_ORDER, word
+from dplanner.planning.scope import ScopeKind, gatherers, kind_of
 from dplanner.theme.cards import title_font
 from dplanner.theme.icons import archive_icon, beaker_icon, sort_icon
 from dplanner.theme.tokens import CAPTION_GAP, FIELD_GAP, PANEL_MARGIN, SECTION_GAP
@@ -778,7 +778,7 @@ class TestsActivity(EntityActivity):
         The one deliberate exception to *double-clicking a step anywhere runs
         `steps.details`* (``CLAUDE.md``), and the reason is that in this table a row **is**
         a test — the step is not even a column here. The Test panel's *Show Step* is the
-        door to it. ``ARCHITECTURE.md``'s *A test is run from a panel* has the rest.
+        door to it. ``docs/architecture/collectors.md``'s *A test is run from a panel* has the rest.
         """
         table = self.page.table
         if table.test_at(row) is None:
@@ -816,7 +816,8 @@ class TestsActivity(EntityActivity):
 
         A result is recorded from the strip and the Test panel beside the roster, and a
         test is filed on its step's Tests tab, so the row offers what acts on its step.
-        ``ARCHITECTURE.md``'s *A right-click on a test is its step's* has the history.
+        ``docs/architecture/collectors.md``'s *A right-click on a test is its step's* has the
+        history.
         """
         return build_menu(self._deps.actions, self._deps.context, "Step", parent)
 
