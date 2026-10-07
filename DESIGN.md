@@ -839,17 +839,14 @@ and one stylesheet rule for the progress bar:
   person came for.
 - **The only things that move are the agent ring, the Updating indicator and the glyph of
   a button whose work is running.** No fades, no slides: on a still surface every change
-  is a change of fact, so the eye is drawn only by facts. The one extension is the ring's
-  own motion carried along a link: an auto-progress arrow out of a step wearing the ring
-  moves its chevrons on the ring's clock, because the fact is the same one — somebody is at
-  work, and that work will move along this link on its own. The one ornament that moves is
+  is a change of fact, so the eye is drawn only by facts. The one ornament that moves is
   **Home's garden** (`f9-home/garden-*`): the page nobody works in, where the motion *is* the
   message — agents make the plan bloom — in the plan's own tones, still while off screen or
   after two seasons, and turned off in *Settings ▸ Home*. It is not a precedent: a
   surface where people work stays still, and what the canvas might do with
   `framework/motion/` is `docs/architecture/shell-ui.md`'s *Motion is a library*, not yet a rule.
-  **The pulse** (`f20-flow/flow-*`) is a card a person moves next — ready to merge, and
-  ready for review with no live agent to take it on — breathing a glow in its key block's
+  **The pulse** (`f20-flow/flow-*`) is a card a person moves next — ready to merge, or
+  ready for review — breathing a glow in its key block's
   own tone, amber or green, once every 3.2 s. It may move because it is the one fact on the
   canvas that is *waiting on the reader*: a mark would be one more thing to find, where a
   slow swell is found without looking for it, and a glance at the canvas finds every step
@@ -927,8 +924,8 @@ from the code or a screenshot, and Debug ▸ Design Examples is what *yes* looks
     rebuild's end?
 14. Is every busy, ok and error a `StatusLine` in place, and every rewritten `QLabel` gone?
 15. Is any progress bar 4 px, accent and determinate?
-16. Does nothing fade, slide or animate except the ring (and the chevrons it carries along
-    an auto-progress link), the indicator, a working button's glyph and Home's garden — and
+16. Does nothing fade, slide or animate except the ring, the pulse, the indicator, a working
+    button's glyph and Home's garden — and
     does that button carry a glyph, so nothing moves when it turns?
 
 **The surfaces, as audited when the system was written (September 2026)** — what makes

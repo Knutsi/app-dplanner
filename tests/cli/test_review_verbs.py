@@ -123,16 +123,6 @@ def test_a_review_runs_its_rounds_and_approves(cli):
     assert talk["rounds"][0]["reply"] == "Trimmed on read."
 
 
-def test_a_link_into_a_review_frees_it_from_review_on(cli):
-    """The review is ready once its subject is ready for review, with no flag set."""
-    progression = data(cli("progression", "show", "widget", "--json"))
-    assert [row["title"] for row in progression["ready"]] == ["Build the parser"]
-    cli("status", "set", "S1", "ready-for-review")
-    progression = data(cli("progression", "show", "widget", "--json"))
-    assert [row["title"] for row in progression["ready"]] == ["Review the parser"]
-    assert "(auto-progress)" in cli("step", "show", "R2")
-
-
 def test_the_round_cap_hands_the_review_to_a_person(cli):
     """T111: past the cap, start refuses and names both ways out; escalate takes one."""
     cli("review", "set", "R2", "--max-rounds", "2")
@@ -158,21 +148,6 @@ def test_a_round_is_answered_before_the_next_is_opened(cli):
     assert "approve once it answers" in cli("review", "approve", "R2", expect=1)
     cli("review", "take", "S1", "--from", "R2")
     assert "already taken" in cli("review", "take", "S1")  # Taking twice is no harm.
-
-
-def test_the_subject_reaching_review_makes_the_review_due(cli):
-    said = cli("status", "set", "S1", "ready-for-review")
-    assert "Now due: R2 Review the parser — a DPlanner window" in said
-
-
-def test_findings_posted_to_a_subject_whose_agent_has_gone_make_it_due(cli):
-    cli("status", "set", "S1", "ready-for-review")
-    cli("review", "start", "R2")
-    said = cli("review", "post", "R2", "--text", "The parser drops the last line.")
-    assert "Now due: S1 Build the parser — a DPlanner window" in said
-    # With its agent still there, nothing is due: it takes the findings itself.
-    cli("agent-state", "set", "S1", "pending-approval")
-    assert "due" not in cli("progression", "show", "widget")
 
 
 def test_an_agent_waiting_on_a_person_is_listed_as_waiting_for_you(cli):
@@ -282,33 +257,7 @@ def test_await_turn_gives_up_after_its_timeout():
     assert not arrived and slept == [2.0, 0.5]
 
 
-# -- sending work back upstream ---------------------------------------------------------------
-
-
-def test_a_collector_talks_to_each_source_by_name(cli):
-    cli("step", "add", "widget", "A1", "--agent")
-    cli("step", "add", "widget", "A2", "--agent")
-    cli(
-        "step",
-        "add",
-        "widget",
-        "Collect",
-        "--after",
-        "S3",
-        "--after",
-        "S4",
-        "--agent",
-        "--auto-progress",
-    )
-    assert "name one with --to" in cli("review", "start", "S5", expect=1)
-    cli("review", "start", "S5", "--to", "S3")
-    cli("review", "post", "S5", "--to", "S3", "--text", "Rebase on main, please.")
-    assert status(cli, "S3") == "in-progress"
-    assert "Rebase on main, please." in cli("review", "take", "S3")
-    cli("review", "reply", "S3", "--text", "Rebased.")
-    assert status(cli, "S3") == "ready-for-review"
-    refused = cli("review", "approve", "S5", "--to", "S3", expect=1)
-    assert "not a review" in refused and "status set" in refused
+# -- who a step talks to -----------------------------------------------------------------------
 
 
 def test_a_step_that_takes_nobodys_work_has_nobody_to_talk_to(cli):

@@ -2,17 +2,16 @@
 
 An unattended launch spawns a detached shell and then claims its step; the claim reaches the
 plan file only at the next flush. A process that died between the spawn and that flush left
-no trace, and the next window found the step due and launched it a second time. So the
-launcher writes its intent first — which step, which run, who launched — and forgets it only
-once its step no longer reads due in a plan that is on disk. An intent still here when the
-launcher next runs is a launch that was interrupted, and it is **reconciled, never retried
-blind**: a shell that started (the wrapper script wrote its shell file into the run
-directory) is a run, and its step is claimed; one that never started is refused for a person
-to start again.
+no trace, and the next launcher found the step unclaimed and launched it a second time. So
+the launch writes its intent first — which step, which run, who launched — and forgets it
+only once its claim is on disk (``AgentLaunchModule.launch_unattended``). An intent still here
+later is a launch that was interrupted: a shell that started (the wrapper script wrote its
+shell file into the run directory) is a run, and one that never started is a person's to
+start again — **never retried blind**, since a shell slow to start would otherwise be a second
+one.
 
-Like the launch lock it sits beside, this is this machine's fact — a temp directory, a shell
-that may or may not exist here — so it lives under the config directory, never in the plan.
-One file per intent, and only the holder of the library's launch lock writes them.
+This is this machine's fact — a temp directory, a shell that may or may not exist here — so
+it lives under the config directory, never in the plan. One file per intent.
 """
 
 import json

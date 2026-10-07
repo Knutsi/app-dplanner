@@ -80,10 +80,6 @@ from dplanner.domain.store import PROJECT_META
 from dplanner.modules.steps.cli import RemoveSteps, step_row
 
 
-def _plain(_waiter: Step, _source: Step) -> bool:
-    return False
-
-
 def _no_key(_step: Step) -> str:
     return ""
 
@@ -95,7 +91,6 @@ def _no_branches(_project: Project) -> Mapping[StepId, str]:
 def commands(
     key_of: Callable[[Step], str] = _no_key,
     *,
-    auto_progresses: Callable[[Step, Step], bool] = _plain,
     branches_in: Callable[[Project], Mapping[StepId, str]] = _no_branches,
     roles: Mapping[str, LocationRole] | None = None,
     managed: ManagedFor | None = None,
@@ -104,9 +99,7 @@ def commands(
 ) -> list[CliCommand]:
     """``key_of`` is the step's readable key (``S7``, ``F3``) — the letter is a fact
     about aspects this file never reads, so the root hands the rule in and every row,
-    listing and chart here prints the same key the canvas paints; ``auto_progresses``
-    marks, in the chart, a link its waiter may start across from review
-    on — another module's flag, read through the root; ``branches_in`` names the feature
+    listing and chart here prints the same key the canvas paints; ``branches_in`` names the feature
     branch each step's work is on, where a stretch puts it on one. ``roles`` is the
     location role registry the root gathers (the domain's ``code`` alone without it),
     ``managed`` says where a read-only location's clone stands, and ``kept_root`` is the
@@ -274,7 +267,6 @@ def commands(
             run=partial(
                 _project_graph,
                 key_of=key_of,
-                auto_progresses=auto_progresses,
                 branches_in=branches_in,
             ),
             examples=(
@@ -870,15 +862,12 @@ def mermaid(
     project: Project,
     short: bool = False,
     key_of: Callable[[Step], str] = _no_key,
-    auto_progresses: Callable[[Step, Step], bool] = _plain,
     branches_in: Callable[[Project], Mapping[StepId, str]] = _no_branches,
 ) -> str:
     """The step graph as a Mermaid flowchart — the same map the canvas draws, as text.
 
     Deliberately structure-only: waves become subgraphs so parallelism is visible at a
-    glance, ``requires`` edges order them, and nothing else is styled in — but a link its
-    waiter may start across from review on is drawn thick (``==>``), as the canvas doubles
-    it, because how work flows along the graph is part of its structure. The walk is
+    glance, ``requires`` edges order them, and nothing else is styled in. The walk is
     ``placed()``, whose order is stable, so regenerating the chart after an unrelated edit
     diffs clean. Dangling edges are skipped, as everywhere ``requires()`` is read.
 
@@ -911,8 +900,7 @@ def mermaid(
         lines.append("    end")
     for row in rows:
         for other in library.requires(row.step.id):
-            arrow = "==>" if auto_progresses(row.step, other) else "-->"
-            lines.append(f"    {node_ids[other.id]} {arrow} {node_ids[row.step.id]}")
+            lines.append(f"    {node_ids[other.id]} --> {node_ids[row.step.id]}")
     return "\n".join(lines)
 
 
@@ -920,7 +908,6 @@ def _project_graph(
     context: CliContext,
     args: Namespace,
     key_of: Callable[[Step], str] = _no_key,
-    auto_progresses: Callable[[Step, Step], bool] = _plain,
     branches_in: Callable[[Project], Mapping[StepId, str]] = _no_branches,
 ) -> int:
     project = find_project(context.library, args.project)
@@ -929,7 +916,6 @@ def _project_graph(
         project,
         short=args.short,
         key_of=key_of,
-        auto_progresses=auto_progresses,
         branches_in=branches_in,
     )
     context.report({"project": project.id, "mermaid": chart}, chart)

@@ -2,7 +2,7 @@
 
 One plan that exercises every block a briefing can carry — a description beside a separate
 instruction, a feature's passages and a step flowing into it, a PR, a review with a round
-posted, a collector and its source, a branch stretch and its landing, notes addressed and
+posted, a branch stretch and its landing, notes addressed and
 indexed, a code location — and ``dplanner agent prompt`` for each agent step in it, compared
 with the text under ``golden/briefings/``. A briefing is prose many functions compose; this is
 the test that says a refactor of where they live changed none of it.
@@ -23,7 +23,6 @@ TMP = "<tmp>"
 CASES = (
     "parser",
     "review",
-    "collector",
     "spec-reader",
     "member",
     "landing",
@@ -96,13 +95,12 @@ def plan(cli, tmp_path, workspace):
         "step",
         "add",
         "widget",
-        "Collector",
+        "Wire up",
         "--after",
         "Spec reader",
         "--agent",
-        "--auto-progress",
         "--describe-file",
-        text("collector.md", "Land the reader's work."),
+        text("wire-up.md", "Wire the reader in."),
     )
     cli(
         "step",
@@ -110,7 +108,7 @@ def plan(cli, tmp_path, workspace):
         "widget",
         "Sign in",
         "--after",
-        "Collector",
+        "Wire up",
         "--feature",
         "--agent",
         "--describe-file",
@@ -160,7 +158,6 @@ def plan(cli, tmp_path, workspace):
     return {
         "parser": "Parser",
         "review": "Review",
-        "collector": "Collector",
         "spec-reader": "Spec reader",
         "member": "Member",
         "landing": stretch["land"],

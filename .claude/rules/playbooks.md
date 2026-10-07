@@ -17,7 +17,7 @@ paths:
 
 - **A playbook is a list of stages on one step, and the step stays one card.** The kinds are
   `plan`, `execute`, the gates `review`, `person` and `coordinator`, and `progress`. Never a
-  stage graph, never a card per stage, never a review step or an auto-progress link beside it:
+  stage graph, never a card per stage, never a review step beside it:
   the card wears one phrase derived from the step's runs and questions (*Review 1/2*, *Waits
   for you*), never stored. `docs/architecture/playbooks.md`'s *A playbook is a list of stages
   around one step* has the reasoning.

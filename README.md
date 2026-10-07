@@ -532,8 +532,8 @@ src/dplanner/
 │   │                        `launcher.py` the terminal and multiplexer table and the wrapper
 │   │                        script that prepares the worktree and reports back, `profiles.py`
 │   │                        the named agent-and-terminal pairs, seeded once, `settings_page.py`
-│   │                        and `detect_dialog.py` their page, `due.py` what the plan made due
-│   │                        and `auto_launch.py` the window launching it
+│   │                        and `detect_dialog.py` their page, `intents.py` an unattended
+│   │                        launch's intent, written before its shell
 │   ├── agent_briefing/      what an agent is told — no module.py, headless all through:
 │   │                        the preflight and the report-back protocol (protocol.py), the
 │   │                        step's and project's facts (blocks.py), the instructions
@@ -566,10 +566,6 @@ src/dplanner/
 │   ├── step_check/          a step that gathers every test it waits on — the Type ▸ Check toggle
 │   ├── step_start/          the step a plan begins from, which no feature or milestone gathers —
 │   │                        the Type ▸ Start toggle, `dplanner start`, `step add --start`, `graph.start`
-│   ├── auto_progress/       the links a step collects parallel work across: it may start once
-│   │                        their sources are ready for review, lands them and sets them done —
-│   │                        Graph ▸ Auto-progress on picked arrows, `dplanner auto-progress`,
-│   │                        `step add --auto-progress`, `auto-progress.waiter` lint
 │   ├── branches/            a stretch on a feature branch: the cut that starts it and the
 │   │                        landing that merges it back (two aspects), Step ▸ Put on a Branch…
 │   │                        and Remove Branch…, `dplanner branch|cut|land`, `branch.*` lint;

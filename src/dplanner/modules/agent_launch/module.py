@@ -23,11 +23,11 @@ its reason like any other precondition. Each step whose shell opened is also cla
 switched that off on the settings page — since the agent's own first report may be
 minutes away.
 
-**And the window launches what the plan made due, with nobody clicking** — when the person
-turned that on (``auto_launch.py``). :meth:`launch_due` is Run Agent for one step with every
-question a person answers taken out: no graph gate to confirm (a due step waits on nothing),
-no clone, no prompt fallback — a refusal is a sentence for the status bar — and the claim
-always made, whatever *On launch* says.
+**And a launch nobody watches asks nobody.** :meth:`launch_unattended` is Run Agent for one
+step with every question a person answers taken out: no graph gate to confirm, no clone, no
+prompt fallback — a refusal is a sentence — its intent written before the shell is spawned
+(``intents.py``), and the claim always made, whatever *On launch* says. Nothing calls it
+yet: ``dplanner agent run`` is the launch it is kept for.
 
 The launch settings and profiles are kept under the agent aspect's id
 (``planning.agent.MODULE_ID``), where they were stored before this package existed.
@@ -60,15 +60,13 @@ from dplanner.framework.action_registry import (
     DataMenuSpec,
 )
 from dplanner.framework.context import Context, ContextService
-from dplanner.framework.debounce import DebounceService
 from dplanner.framework.settings_registry import (
     SettingsSection,
     SettingsSectionRegistry,
 )
 from dplanner.framework.step_selection import chosen_steps, focused_step
 from dplanner.framework.widgets import notice
-from dplanner.framework.window import NoticeHost, StatusHost
-from dplanner.framework.window_watch import WatchableRepository
+from dplanner.framework.window import StatusHost
 from dplanner.modules.agent_briefing import worktree as where
 from dplanner.modules.agent_briefing.compose import brief
 from dplanner.modules.agent_briefing.instructions import instruction
@@ -81,9 +79,7 @@ from dplanner.modules.agent_briefing.prompt import (
 )
 from dplanner.modules.agent_briefing.protocol import preamble
 from dplanner.modules.agent_launch import launcher
-from dplanner.modules.agent_launch.auto_launch import AutoLauncher, LaunchLock
-from dplanner.modules.agent_launch.due import Due, claim
-from dplanner.modules.agent_launch.intents import LaunchIntent
+from dplanner.modules.agent_launch.intents import LaunchIntent, LaunchIntents
 from dplanner.modules.agent_launch.profiles import (
     Profile,
     default_profile,
@@ -99,7 +95,6 @@ from dplanner.modules.agent_launch.settings_page import (
     max_agents,
     start_in_progress,
 )
-from dplanner.modules.auto_progress.aspect import auto_progresses
 from dplanner.planning.agent import MODULE_ID, enabled, no_agent, read_project, workplace
 from dplanner.planning.branches import DEFAULT_BRANCHES, BranchPlan
 from dplanner.planning.kinds import key_of, works_nobody
@@ -236,7 +231,6 @@ class AgentLaunchDeps:
     library: Library
     actions: ActionRegistry
     context: ContextService
-    debounce: DebounceService
     settings_sections: SettingsSectionRegistry
     status: StatusHost
     parent: QWidget
@@ -276,21 +270,14 @@ class AgentLaunchDeps:
     # of the Run Agent child menu lands on this module's own page. The settings module
     # owns the dialog; the root closes over it.
     open_settings: Callable[[str], None] = field(default=lambda _section_id: None)
-    # -- launching what becomes due (``auto_launch.py``) --------------------------------------
-    # What the plan made due, across the library, each with the claim its launch makes —
-    # the composition root's one derivation, read with the runs this window is watching.
-    due: Callable[[], Sequence[Due]] = field(default=lambda: ())
-    # How many agent runs this window is watching live — the cap is on those.
-    live_runs: Callable[[], int] = field(default=lambda: 0)
-    # Whether the plan changed underneath: nothing is launched on a plan not taken in yet.
-    repo: WatchableRepository | None = None
-    notices: NoticeHost | None = None
     clock: Clock = field(default_factory=Clock)
+    # -- the unattended launch (``launch_unattended``) ------------------------------------------
     # Autosave's flush now — a launch's claim is on disk at once, not a second and a half
     # on — and whether everything is on disk: a launch's intent is forgotten only then.
     flush: Callable[[], bool] = field(default=lambda: True)
-    # This library's launch lock on this machine; None is a build that never launches.
-    launch_lock: LaunchLock | None = None
+    # Where this machine records a launch's intent before its shell is spawned; None
+    # records none.
+    intents: LaunchIntents | None = None
 
 
 class AgentLaunchModule:
@@ -298,7 +285,6 @@ class AgentLaunchModule:
 
     def __init__(self, deps: AgentLaunchDeps) -> None:
         self._deps = deps
-        self._auto: AutoLauncher | None = None
 
     def register(self) -> None:
         deps = self._deps
@@ -386,12 +372,7 @@ class AgentLaunchModule:
             SettingsSection(
                 id=SETTINGS_SECTION,
                 category=("Agent profiles",),
-                factory=lambda parent: build_page(
-                    parent,
-                    harnesses=deps.harnesses,
-                    launching=lambda: self._auto.holder_words() if self._auto else "",
-                    changed=lambda: self._auto.reconsider() if self._auto else None,
-                ),
+                factory=lambda parent: build_page(parent, harnesses=deps.harnesses),
             )
         )
         deps.actions.register(
@@ -410,14 +391,6 @@ class AgentLaunchModule:
         # Once per user and machine: every harness in every terminal worth naming, so the
         # child menu offers the combinations before anybody builds one by hand.
         seed_profiles(deps.harnesses)
-        self._auto = AutoLauncher(deps, self.launch_due)
-        self._auto.start()
-
-    def settle_launches(self) -> None:
-        """Look again at what is due — a run ended, or the plan was taken in from outside
-        without a model change this window heard."""
-        if self._auto is not None:
-            self._auto.settle()
 
     # -- running -------------------------------------------------------------------------------
 
@@ -607,7 +580,7 @@ class AgentLaunchModule:
     def _unfinished(self, step: Step) -> list[Step]:
         """The step's prerequisites it still waits on — what the graph gate asks about."""
         deps = self._deps
-        return outstanding(deps.library, step, readiness_of(self._status_of), auto_progresses)
+        return outstanding(deps.library, step, readiness_of(self._status_of))
 
     def _status_of(self, step: Step) -> Reading:
         """What a step's status claims today — a wait reads done once it is over."""
@@ -642,22 +615,22 @@ class AgentLaunchModule:
         )
         return spawned, assembled.text, prepared
 
-    def launch_due(self, due: Due) -> str:
-        """Launch the agent on a step the plan made due, with nobody at the window: "" when a
-        shell opened and the claim was made, else why not — a sentence, never a dialog.
+    def launch_unattended(self, step_id: StepId) -> str:
+        """Launch the agent on a step with nobody at the window: "" when a shell opened and
+        the claim was made, else why not — a sentence, never a dialog.
 
         The questions are Run Agent's, in its order: the profile's terminal, the step's own
         facts, where the shell opens. A repository nobody checked out here is a refusal
         rather than a clone, which is a person's Run Agent to start. The claim is always
-        made, whatever *On launch* says, or the step would be due again when its run ends.
+        made, whatever *On launch* says, or nothing would say the step was taken.
 
-        **The intent is recorded before the spawn** (``intents.py``) and dropped again when no
-        shell opened; the auto-launcher forgets it once the claim is on disk.
+        **The intent is recorded before the spawn** (``intents.py``), dropped again when no
+        shell opened, and forgotten once the claim is on disk.
         """
         deps = self._deps
-        if not deps.library.has(due.step_id):
+        if not deps.library.has(step_id):
             return "the step is gone"
-        step = deps.library.step(due.step_id)
+        step = deps.library.step(step_id)
         profile, refusal = self._profile_for(step)
         if profile is None:
             return refusal
@@ -669,7 +642,7 @@ class AgentLaunchModule:
         if unplaced := _unplaced(facts, step):
             return f"{remote_label(unplaced)} is not checked out here — Run Agent clones it"
         intent = LaunchIntent(step.id, new_run_id(), launcher.new_run_dir(), Daemon(), now_stamp())
-        intents = deps.launch_lock.intents if deps.launch_lock is not None else None
+        intents = deps.intents
         if intents is not None:
             try:
                 intents.record(intent)
@@ -680,7 +653,9 @@ class AgentLaunchModule:
             if intents is not None:
                 intents.drop(intent.run)
             return f"no terminal opened — check {profile.name} in Settings ▸ Agent profiles"
-        claim(deps.library, due, deps.clock.today())
+        record_started(deps.library, step.id, deps.clock.today())
+        if deps.flush() and intents is not None:
+            intents.drop(intent.run)
         return ""
 
     def _profile_for(self, step: Step) -> tuple[Profile | None, str]:

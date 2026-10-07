@@ -70,8 +70,6 @@ def no_review(kind: str) -> str:
     return f"{kind} reviews nothing: it holds, and no agent works it"
 
 
-# Why a link into a review auto-progresses whatever its flag says, as the Edge menu greys it.
-TAKES_FROM_REVIEW: Final = "is a review: it takes its subject from review on"
 # Why a review's run gets no worktree whatever its agent aspect says: it reads the subject's.
 NO_WORKTREE_FOR_A_REVIEW: Final = "a review reads the work it reviews and commits none of its own"
 
@@ -124,8 +122,8 @@ def write(chosen: ReviewSettings) -> dict[str, Any]:
 
 
 def reviews(waiter: Step, source: Step) -> bool:
-    """Whether the link from ``source`` into ``waiter`` is a review's: every link into a
-    review auto-progresses, because reviewing work under review is the review's job."""
+    """Whether the link from ``source`` into ``waiter`` is a review's — who a review talks
+    to in its rounds."""
     return is_review(waiter) and source.id in waiter.edges.get("requires", ())
 
 

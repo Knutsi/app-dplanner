@@ -30,11 +30,10 @@ exists, so a renamed section is caught where it is cited.
 - Pressure points, named before they hurt
 - Where this is going
 
-## [Graph model — edges, auto-progress links, step numbers and isolation](docs/architecture/graph-model.md)
+## [Graph model — edges, step numbers and isolation](docs/architecture/graph-model.md)
 
 - The graph, and what it stores
 - A step has a number, and the letter in front of it is derived
-- An auto-progress link is an aspect on the step that waits
 - A branch stretch is bracketed by a cut and a landing
 
 ## [Canvas — the graph editor's modes, gestures, cards and marks](docs/architecture/canvas.md)
@@ -54,7 +53,6 @@ exists, so a renamed section is caught where it is cited.
 - The canvas is a plane, and why that is one decision rather than three
 - Marks are a way of looking
 - A card pulses where a person moves next
-- An arrow into a review wears its talk bubble
 - A problem is a squiggle, and the reading is shared
 - The spotlight is one derivation, and a held key lends the look
 - The palette a painter is handed is a snapshot
@@ -116,7 +114,7 @@ exists, so a renamed section is caught where it is cited.
 - The description is the instructions
 - An agent finishes at Ready for review
 - A review is a conversation kept on the step that asks
-- Auto-progress is launched by the window
+- A launch writes its intent before its shell
 - Running an agent launches a peer, not a task
 - Runs, questions and claims are three records in the plan
 

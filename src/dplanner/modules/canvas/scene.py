@@ -79,9 +79,9 @@ from dplanner.modules.canvas.renderers import (
 from dplanner.modules.canvas.selection import CanvasSelection, EdgeRef, neighbourhood
 from dplanner.modules.canvas.stacks.stack import Stack
 
-# How often the canvas's motion clock ticks — a live ring's dashes, a flowing arrow's
-# chevrons, a pulse's breath: quick enough to read as motion, slow enough that an agent
-# working for an hour costs the canvas nothing worth measuring.
+# How often the canvas's motion clock ticks — a live ring's dashes, a pulse's breath: quick
+# enough to read as motion, slow enough that an agent working for an hour costs the canvas
+# nothing worth measuring.
 MOTION_TICK_MS = 80
 
 # An arrow the sync names no accent for.
@@ -199,9 +199,9 @@ class GraphScene(QGraphicsScene):
         # the per-item selectionChanged is not announced — one gesture, one announcement.
         self._reselecting = False
 
-        # The canvas's one motion clock: one timer for every card that rings or pulses and
-        # every arrow whose chevrons flow, running only while one does — an idle canvas
-        # ticks nothing. Sync settles it; nothing else does.
+        # The canvas's one motion clock: one timer for every card that rings or pulses,
+        # running only while one does — an idle canvas ticks nothing. Sync settles it; nothing
+        # else does.
         self._phase = 0.0
         self._motion_clock = QTimer(self)
         self._motion_clock.setInterval(MOTION_TICK_MS)
@@ -262,18 +262,13 @@ class GraphScene(QGraphicsScene):
         self._light_selection()  # The graph changed under the selection; re-derive.
 
     def advance_motion(self) -> None:
-        """One tick: every live ring's dashes, every pulse's breath and every flowing arrow's
-        chevrons move on together."""
+        """One tick: every live ring's dashes and every pulse's breath move on together."""
         self._phase = (self._phase + RING_STEP) % 1000.0
         for item in self._nodes.values():
             item.set_phase(self._phase)
-        for edge in self._edges.values():
-            edge.set_phase(self._phase)
 
     def _settle_motion_clock(self) -> None:
-        live = any(item.moves() for item in self._nodes.values()) or any(
-            edge.flows() for edge in self._edges.values()
-        )
+        live = any(item.moves() for item in self._nodes.values())
         if live and not self._motion_clock.isActive():
             self._motion_clock.start()
         elif not live and self._motion_clock.isActive():

@@ -257,8 +257,8 @@ State stays derived — where a pass stands, the round, the card's phrase — bu
 stored: which pass a record belongs to and why a question was asked are fields, read, never
 reconstructed from ordering. The engine derives whatever is due from the pass's records and
 launches it **once**: a stage attempt is due when its predecessor's verdict says so and no run
-for it exists, and the run file, written before the process spawns (the intent rule `launch_due`
-already keeps), is the claim.
+for it exists, and the run file, written before the process spawns (the intent rule
+`launch_unattended` already keeps), is the claim.
 
 ### What of the review rounds ledger survives
 
@@ -293,8 +293,9 @@ record that already owns it:
 **What leaves** (S6, *Remove review steps*): a review as a step (`Kind.REVIEW`, the `R` letter,
 its subject read off `requires`); lenses as a step setting — they become the review stage's
 prompt; `review wait`, since no process waits; the agent-written `post`, `approve` and
-`escalate`; a collector's upstream conversations; and `due_turns`. Auto-progress and the
-window's auto-launch leave in S5, keeping `launch_due`'s intent and claim for `agent run`.
+`escalate`; and `due_turns`. Auto-progress and the window's auto-launch left in S5, a
+collector's upstream conversations with them, keeping the unattended launch's intent and
+claim as `launch_unattended` for `agent run`.
 
 ## Each stage is one headless turn per harness
 
