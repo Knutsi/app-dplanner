@@ -1041,7 +1041,8 @@ session would have summed it three times. A turn's usage is the slice of the ses
 records — subagents included — between the cursors at its start and its end, so every count
 is somebody's once, and re-harvesting one turn cannot change another stage's cost. And
 **a pass is named, not inferred**: every run and gate question carries `pass`, and the
-pass's resolved settings are pinned on its first record, so a pass parked for a day resumes
+pass's resolved `settings` — preset, revision, rounds, roles, overrides — are stored once,
+on its first run or, when it begins at a gate, its first gate question, so a pass parked for a day resumes
 with the cap and reviewer it began with, whatever the step's overrides say now. **The run carries the playbook's results, not
 just its cost**: a review run's `verdict` (pass or changes, and typed findings) and a fix
 run's `declined` findings with their reasons, so a gate's history is read from runs as a

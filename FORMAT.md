@@ -469,8 +469,9 @@ A review run carries its `verdict`, and the fix run after it what it `declined`:
   `docs/architecture/playbooks.md` says what they mean.
 - **`pass`** names the playbook pass the run belongs to; every run and gate question of
   the pass carries it, so a pass is never inferred from the order of records. The pass's
-  resolved settings — the preset's revision and every override in force — are pinned once,
-  as `pinned` on the first record of the pass, and `playbooks.md` says what they hold.
+  resolved settings are pinned once, as `settings` — `{preset, revision, rounds, roles,
+  overrides}` — on the pass's first record only: its first run, or its first gate question
+  when the pass begins at a `person` or `coordinator` gate. `playbooks.md` says what each holds.
 - **`prompt`** is why the turn began: `launch` for every run's first turn, whether its session
   is fresh or resumed for a loop-back, then `answer`, `continue`, `reset` or `retry`.
 - **`verdict`** is on a review run: its typed final message (`--json-schema`,
