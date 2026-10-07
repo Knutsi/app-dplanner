@@ -59,8 +59,8 @@ flagged — is left until a real run shows the need.
 on its feature branch: DPlanner merges the step's PR into the branch, which sets the step done
 (`record_merged(accepted_by_merge=)`, already the rule for a member's PR merged into an open
 stretch). Accepted, the step no longer holds up what waits on it, so the next ready step **may
-start** — started by the coordinator driving the selection, by a person, or by DPlanner
-itself; which of those is the second of the *Questions for Knut* below. **It is
+start** — started by the coordinator driving the selection or by a person, never by DPlanner
+itself (*Decided at S4*, 2). **It is
 refused on the mainline**: a step whose `BranchPlan` aims its PR at the default branch never
 merges without a person, so there the stage becomes a `person` gate and the card says why.
 That is Knut's condition — *only on a branch other than main* — and it is checked at run time,
@@ -167,7 +167,7 @@ written by hand. Knut named seven, and two are added.
 there are no playbook files in the plan repository. A file there would be the first
 hand-authored configuration in a JSON codebase, and a file an agent can edit on its branch is
 input to the next run, which needs its own rule (a worker reads playbooks from the mainline
-only). Nine presets cover the brief. Custom playbooks are the first product question.
+only). Nine presets cover the brief. Custom playbooks come later (*Decided at S4*, 1).
 
 ## A step names its playbook; a project names its default
 
@@ -313,11 +313,13 @@ from the final text, in the run directory. `claude --bg` is an interactive sessi
 background, which sat at an approval prompt indefinitely: it is for a person to watch, never
 for a stage.
 
-## Questions for Knut
+## Decided at S4 (coordinator) — for Knut to confirm at the final review
 
-Each carries a recommendation, so a one-word answer is enough. S4 puts them to him.
+Each was a product question for Knut, with a recommendation. Knut reviews the whole branch when
+it lands, so the coordinator decided each at S4 as recommended, and Knut confirms or reverses them in
+that review.
 
-| # | Question | Recommendation | Why |
+| # | Question | Decided | Why |
 |---|---|---|---|
 | 1 | **Custom playbooks in the plan repository now, or later?** | **Later.** | The nine presets cover the brief. A file an agent can edit on its branch needs a rule of its own (read playbooks from the mainline only), and the first hand-authored config in a JSON codebase needs a FORMAT.md line on why. |
 | 2 | **When `progress` accepts a step, does DPlanner start the next ready step itself?** | **No: the coordinator or a person does.** | DPlanner starting what became ready is the window's auto-launch under another name, which S5 removes for its races and its terminals nobody clicked for. The coordinator already holds the selection and its claims. |

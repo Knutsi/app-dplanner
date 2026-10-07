@@ -131,7 +131,7 @@ exists, so a renamed section is caught where it is cited.
 - A failure is never a verdict
 - The run record is the ledger
 - Each stage is one headless turn per harness
-- Questions for Knut
+- Decided at S4 (coordinator) — for Knut to confirm at the final review
 
 ## [Specs — the spec editor and its document sources](docs/architecture/specs.md)
 
