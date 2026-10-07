@@ -17,7 +17,7 @@ from dplanner.modules.agent_briefing.prompt import AssembledPrompt, PromptPart, 
 from dplanner.modules.agent_briefing.protocol import epilogue, preamble
 from dplanner.modules.agent_briefing.worktree import worktree
 from dplanner.planning.agent import asset_paths, read_project
-from dplanner.planning.branches import BranchPlan
+from dplanner.planning.branches import BranchPlan, is_land
 
 
 def _unmoved(path: str) -> str:
@@ -44,6 +44,14 @@ def brief(
         return PromptPart(part.heading, part.body, tuple(place(path) for path in part.files))
 
     own = instruction(library, step, files)
+    # The project's standing instruction is written for the work on a stretch — "work in your
+    # worktree, open a PR into the branch" — and a landing's own instructions, generated from
+    # the stretch it closes, already say how the branch comes back.
+    standing, standing_files = (
+        ("", ())
+        if is_land(step)
+        else (read_project(project), tuple(place(path) for path in asset_paths(files, project.id)))
+    )
     return assemble(
         step_title=step.title or "Untitled step",
         project_title=project.title or "Untitled project",
@@ -53,7 +61,7 @@ def brief(
         project_sections=project_sections(library, step, files),
         epilogue=epilogue(library, step, branches),
         preamble=preamble(step, worktree(step), facts, branches, roles),
-        project_instruction=read_project(project),
-        project_files=tuple(place(path) for path in asset_paths(files, project.id)),
+        project_instruction=standing,
+        project_files=standing_files,
         instruction_files=tuple(place(path) for path in own.files),
     )

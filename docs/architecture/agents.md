@@ -372,7 +372,11 @@ The briefing opens with the **project's standing instruction** — the same modu
 the project node, edited in *Project ▸ Settings…*'s Agent tab and in the step Agent tab's
 Project part (two bindings over one field, one undo stack) — ahead of the step's `## Instructions`
 (its description, unless a separate instruction exists — see *The description is the
-instructions*) and, after it, the notes index.
+instructions*) and, after it, the notes index. **A landing's briefing leaves it out**: the
+standing instruction is written for the work on a stretch — in the 10-04 run it said "work in
+your worktree, open a PR into the branch", which a landing, working on the branch itself and
+opening the branch's own PR, must not do — and a landing's instructions are generated from
+the stretch it closes, so they already say all that applies.
 
 The briefing is deliberately **self-contained**: between the standing instruction and the
 step's own sit the step's facts — its description as a section of its own only when a

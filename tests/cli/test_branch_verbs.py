@@ -159,6 +159,17 @@ def test_a_landing_is_briefed_to_bring_the_branch_back(cli):
     assert "never a rebase or a squash" in text
 
 
+def test_a_landing_is_not_handed_the_standing_instruction(cli, cli_stdin):
+    """ "Open a PR into the branch" is for the work on the stretch, not for its landing."""
+    said = data(cli("branch", "put", "Edit", "--branch", "feature/stacks", "--json"))
+    cli_stdin("agent", "set", "--for-project", "Widget", "--file", "-", stdin="House rules.")
+    cli("agent", "on", "Edit")
+    landing = data(cli("agent", "prompt", said["land"], "--json"))["prompt"]
+    member = data(cli("agent", "prompt", "Edit", "--json"))["prompt"]
+    assert "House rules." not in landing and "## Project instructions" not in landing
+    assert "House rules." in member
+
+
 def test_a_nested_landing_opens_its_pr_into_the_branch_it_was_cut_from(cli):
     outer = data(
         cli(
