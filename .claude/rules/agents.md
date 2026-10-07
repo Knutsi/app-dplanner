@@ -331,7 +331,11 @@ paths:
   stream — and then ends, parks or retries: `done`/`stopped` end it; `asked`, `denied`,
   `limit`, a runaway and a failure no retry mends park it and the process exits; other
   failures retry after 30 s, 2 min and 10 min, and a fourth in a row parks. A parked run
-  resumes only by `--prompt answer|continue|reset|retry`. It opens no library, holds a lock
-  in the run directory, and the harvest never rewrites a headless record. Never add a
-  path that waits on a process for a person. `docs/architecture/agents.md`'s *A headless run
+  resumes only by `--prompt answer|continue|reset|retry`. It opens no library. **Its locks
+  are the OS's** (`supervisor.lock` for its life, `record.lock` across every read-modify-write
+  of the record — `fence()` takes it too), never a file judged stale and deleted. **A kill
+  ends the whole process group**, and every way out of a turn ends it, so nothing runs
+  unwatched (`failed`/`supervisor-error`). **A turn that ends the run is written with the
+  run's end.** The harvest, `store` and `aspect.end` never write a headless record. Never add
+  a path that waits on a process for a person. `docs/architecture/agents.md`'s *A headless run
   is driven by its supervisor* has the reasoning.

@@ -74,7 +74,10 @@ def harvest(
 
 def store(project_dir: Path, record: LedgerRecord) -> bool:
     """Write the record, keeping an end another process wrote meanwhile — a harvest begun
-    before the wrapper said the agent exited must not write the exit away."""
+    before the wrapper said the agent exited must not write the exit away. A headless
+    record is never written here: its supervisor is its one writer."""
+    if record.headless:
+        return False
     current = ledger.find(project_dir, record.run)
     if current is not None and current.ended and not record.ended:
         record = record.ended_at(current.ended, current.exit)
@@ -94,6 +97,8 @@ def harvest_run(
         record = next((r for r in records if r.run == run), None)
         if record is None:
             continue
+        if record.headless:
+            return record  # Its supervisor's alone: no end from a wrapper, no write.
         if ended:
             record = record.ended_at(now_stamp(), code)
         claimed = ledger.claimed(_all(found), other_than=run)

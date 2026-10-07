@@ -7,14 +7,16 @@ and the classifier are the real Claude harness's."""
 
 import json
 import os
+import subprocess
 import sys
 import threading
+import time
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
-from dplanner.core.process import stamp_of
+from dplanner.core.process import process_alive, stamp_of
 from dplanner.domain import ledger
 from dplanner.domain.headless import TurnSpec
 from dplanner.domain.ledger import LedgerRecord, Turn
@@ -133,7 +135,8 @@ def test_a_done_turn_ends_the_run_with_its_stream_teed_and_its_usage_counted(rig
     assert (
         spec.prompt == f"Read your briefing in {rig.run_dir / 'prompt.md'} in full, then follow it."
     )
-    assert not (rig.run_dir / supervisor.LOCK_FILE).exists()
+    with supervisor.supervising(rig.run_dir):  # Let go of: the next supervisor may start.
+        pass
 
 
 def test_a_question_parks_the_run_and_the_answer_resumes_its_session(rig):
@@ -232,7 +235,7 @@ def test_being_told_to_stop_ends_the_turn_and_the_run_stopped(rig):
     rig.play({"lines": [INIT], "hold": 30})
     record = rig.record
     session = Session(
-        rig.plan, rig.run_dir, record, rig.harnesses[0], rig.harnesses[0].headless, GUARDS
+        rig.plan, rig.config, record, rig.harnesses[0], rig.harnesses[0].headless, GUARDS
     )
     (rig.run_dir).mkdir(parents=True)
     stop = threading.Event()
@@ -260,20 +263,12 @@ def test_a_turn_the_machine_lost_ends_lost_and_is_retried(rig):
     assert rig.ends() == [("failed", "lost"), ("done", "")]
 
 
-def test_a_turn_still_running_and_a_second_supervisor_are_refused(rig):
+def test_a_turn_still_running_is_refused(rig):
     me = stamp_of(os.getpid())
     assert me is not None
     live = Turn(n=1, prompt="launch", started="…", pid=me.pid, boot=me.boot, pid_started=me.started)
     ledger.write(rig.plan, rig.record.with_turns((live,)))
     with pytest.raises(RefusedError, match="still running"):
-        rig.supervise()
-
-    lock = rig.run_dir / supervisor.LOCK_FILE
-    lock.write_text(json.dumps({"pid": me.pid, "boot": me.boot, "started": me.started}))
-    with pytest.raises(RefusedError, match="already supervised"):
-        rig.supervise()
-    lock.write_text(json.dumps({"pid": 2**22 + 7, "boot": "gone", "started": "1"}))
-    with pytest.raises(RefusedError, match="still running"):  # The stale lock was taken over.
         rig.supervise()
 
 
@@ -302,3 +297,186 @@ def test_a_plan_keeps_dplanners_own_copy_and_a_review_its_verdict(tmp_path, allo
     review.supervise()
     verdict = review.record.verdict
     assert verdict is not None and verdict["outcome"] in ("pass", "changes")
+
+
+# -- one supervisor, and nothing left running --------------------------------------------------
+
+
+def gone(pid: int, within: float = 5.0) -> bool:
+    """Whether the process whose pid the fake wrote is gone — and reaped by whoever owns it
+    now, which for an orphan is init, a moment after it died."""
+    deadline = time.monotonic() + within
+    while process_alive(pid):
+        if time.monotonic() > deadline:
+            return False
+        time.sleep(0.05)
+    return True
+
+
+def test_two_supervisors_started_at_once_one_is_refused(rig):
+    start = threading.Barrier(2)
+    outcomes: list[str] = []
+    release = threading.Event()
+
+    def contend() -> None:
+        start.wait()
+        try:
+            with supervisor.supervising(rig.run_dir):
+                outcomes.append("held")
+                release.wait(5)
+        except RefusedError:
+            outcomes.append("refused")
+            release.set()
+
+    threads = [threading.Thread(target=contend) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(10)
+    assert sorted(outcomes) == ["held", "refused"]
+
+
+def test_a_live_supervisor_is_refused_whatever_its_lock_file_says(rig):
+    with supervisor.supervising(rig.run_dir):
+        (rig.run_dir / supervisor.LOCK_FILE).write_text("")  # Caught before it wrote a pid.
+        with pytest.raises(RefusedError, match="already supervised"):
+            rig.supervise()
+
+
+def test_a_dead_supervisors_lock_is_free_at_once(rig):
+    holder = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "import sys, time; from pathlib import Path;"
+            " from dplanner.modules.agent_supervisor.supervisor import supervising;"
+            " cm = supervising(Path(sys.argv[1])); cm.__enter__(); print('held', flush=True);"
+            " time.sleep(60)",
+            str(rig.run_dir),
+        ],
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert holder.stdout is not None and holder.stdout.readline().strip() == "held"
+        with (
+            pytest.raises(RefusedError, match="already supervised"),
+            supervisor.supervising(rig.run_dir),
+        ):
+            pass
+    finally:
+        holder.kill()
+        holder.wait()
+    with supervisor.supervising(rig.run_dir):
+        pass
+
+
+def test_the_turns_whole_group_ends_even_a_child_that_ignores_sigterm(rig, tmp_path):
+    child = tmp_path / "child.pid"
+    rig.play({"lines": [INIT], "child": str(child), "hold": 30})
+    supervise(
+        rig.plan,
+        RUN,
+        rig.harnesses,
+        guards=replace(GUARDS, backoff=(), grace=0.5),
+        config=rig.config,
+    )
+    assert rig.ends() == [("failed", "hang")]
+    assert gone(int(child.read_text()))
+
+
+def test_a_stream_closed_early_does_not_stop_the_guards(rig):
+    rig.play({"lines": [INIT], "close_stdout": True, "hold": 30})
+    supervise(rig.plan, RUN, rig.harnesses, guards=replace(GUARDS, backoff=()), config=rig.config)
+    assert rig.ends() == [("failed", "hang")]
+
+
+def test_what_the_cli_says_while_it_is_killed_is_still_read(rig):
+    rig.play({"lines": [INIT], "on_term": [result("Interrupted.")], "hold": 30})
+    supervise(rig.plan, RUN, rig.harnesses, guards=replace(GUARDS, backoff=()), config=rig.config)
+    assert rig.ends() == [("failed", "hang")]
+    assert rig.record.tokens.cached == 40  # The totals the SIGTERM handler printed.
+    assert result("Interrupted.") in (rig.run_dir / "turn-1.jsonl").read_text(encoding="utf-8")
+
+
+def test_a_ledger_that_cannot_be_written_ends_the_turn_and_says_so(rig, monkeypatch):
+    rig.play({"lines": [INIT], "hold": 30})
+    real = ledger.write
+    failed: list[bool] = []
+
+    def disk_full_once(project_dir: Path, record: LedgerRecord) -> bool:
+        if record.turns and record.turns[-1].pid and not record.turns[-1].end and not failed:
+            failed.append(True)
+            raise OSError("No space left on device")
+        return real(project_dir, record)
+
+    monkeypatch.setattr(ledger, "write", disk_full_once)
+    with pytest.raises(OSError, match="No space"):
+        rig.supervise()
+    assert rig.ends() == [("failed", "supervisor-error")]
+    assert gone(rig.record.turns[0].pid)
+
+
+def test_a_stream_that_cannot_be_teed_ends_the_turn_and_says_so(rig, tmp_path, monkeypatch):
+    pid = tmp_path / "agent.pid"
+    rig.play({"lines": [INIT], "pidfile": str(pid), "hold": 30})
+
+    def disk_full(*_: object) -> None:
+        raise OSError("No space left on device")
+
+    monkeypatch.setattr(Session, "_heard", disk_full)
+    with pytest.raises(OSError, match="No space"):
+        rig.supervise()
+    assert rig.ends() == [("failed", "supervisor-error")]
+    assert gone(int(pid.read_text()))
+
+
+# -- the record: one writer at a time, and an end written with its turn ------------------------
+
+
+def test_a_fence_landing_between_the_supervisors_read_and_write_is_kept(rig, monkeypatch):
+    real = ledger.write
+    fencing: list[threading.Thread] = []
+
+    def fence_meanwhile(project_dir: Path, record: LedgerRecord) -> bool:
+        if not fencing:
+            # A takeover fences while the supervisor holds its read of the record.
+            fencing.append(
+                threading.Thread(
+                    target=supervisor.fence,
+                    args=(rig.plan, RUN, "a takeover", "taken over", rig.config),
+                )
+            )
+            fencing[0].start()
+            time.sleep(0.3)
+        return real(project_dir, record)
+
+    monkeypatch.setattr(ledger, "write", fence_meanwhile)
+    rig.play({"lines": [INIT, result()]})
+    rig.supervise()
+    fencing[0].join(5)
+    assert rig.record.fence is not None and rig.record.fence["by"] == "a takeover"
+
+
+def test_a_turn_that_ends_the_run_is_written_with_the_runs_end(rig, monkeypatch):
+    real = ledger.write
+    written: list[LedgerRecord] = []
+
+    def kept(project_dir: Path, record: LedgerRecord) -> bool:
+        written.append(record)
+        return real(project_dir, record)
+
+    monkeypatch.setattr(ledger, "write", kept)
+    rig.play({"lines": [INIT, result()]})
+    rig.supervise()
+    assert rig.record.over
+    assert not [r for r in written if r.last_turn and r.last_turn.end == "done" and not r.over]
+
+
+@pytest.mark.parametrize(("end", "said"), [("done", "is done"), ("stopped", "was stopped")])
+def test_a_run_whose_last_turn_ended_it_is_ended_never_resumed(rig, end, said):
+    last = Turn(n=1, prompt="launch", started="…", ended="…", end=end, exit=0)
+    ledger.write(rig.plan, rig.record.with_turns((last,)))
+    rig.play({"lines": [result()]})
+    assert rig.supervise(prompt="retry") == f"run {RUN} {said}"
+    assert rig.record.over and rig.specs == []

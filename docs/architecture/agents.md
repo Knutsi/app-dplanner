@@ -905,9 +905,17 @@ suite is silent and working. So the **stall** clock runs only while no tool call
 each reader keeps the open calls in `TurnLog.tools`, and opencode, which reports a tool only
 once it has finished, gets twice the threshold instead — the **runaway** count is events in a
 row with nothing produced (`TurnLog.idle`), and the stage's **wall clock** catches a tool that
-never returns. Each kills the turn's whole process group, since a CLI's own children (a test
-run, a subagent) must die with it, and records its own `why`; the classifier would only have
-said *killed*.
+never returns. Each ends the turn's whole process group, since a CLI's own children (a test
+run, a subagent) must die with it — and *the group*, not the CLI: a test worker that ignores
+SIGTERM outlives an agent that obeys it, so the group is asked until it is empty and killed
+when the grace runs out (Windows has no group to ask, and `taskkill /T /F` reaches the tree
+only while its root lives, so it is killed at once). Each records its own `why`; the
+classifier would only have said *killed*. Ending the group is also what every way out of a
+turn does — a disk that fills mid-tee, a ledger that will not write — so no turn is ever left
+running with nobody watching it; such a turn ends `failed` as `supervisor-error`. And the
+stream closing is not the turn ending: a CLI can close its output and hang on the way out,
+so the guards run until the process has exited, and what it said while it was being killed
+— a SIGTERM handler's last totals — is read before the turn is written.
 
 **Retry what time mends, park what it does not.** A crash, a hang, an overrun or a lost turn
 retries after 30 s, 2 min and 10 min — failures.md's backoff — resuming the session if its
@@ -927,11 +935,19 @@ supervisor the record's one writer, so a harvest leaves a headless record alone 
 live supervisor it would be a second writer, and the vendor's whole-session total would
 count a shared session twice. What it costs is subagents the stream does not report.
 
-**One supervisor per run, and the turn says which process it was.** A lock file in the run
-directory holds the supervisor's own `ProcessStamp` (`core/process.py`: pid, boot id, start
-time — a pid alone is reused), so a second supervisor is refused and a stale lock is taken
-over. Each turn records its process's stamp the moment it starts, so a supervisor started
-after a reboot tells a turn still running from one the machine lost.
+**One supervisor per run, one writer at a time, and the turn says which process it was.** A
+lock *file* that a supervisor creates and a stale one deletes cannot be made safe: two can
+each find the other's file half-written and both go on. So both locks are the operating
+system's (`flock`, `msvcrt.locking`) on files nobody deletes, and the system drops them when
+their holder dies — there is no staleness to judge. `supervisor.lock` is held for the
+supervisor's life. `record.lock` is held across one read-modify-write of the record, by the
+supervisor and by `fence()` alike, each re-reading inside it: an atomic replace stops a torn
+file but not a lost update, and the update lost would be the fence. **A run's end is written
+in the same write as the turn that ended it**, so no crash leaves a finished turn on a run
+that reads as parked — which `--prompt retry` would have run again; a supervisor that finds
+one anyway ends the run. Each turn records its process's `ProcessStamp` (`core/process.py`:
+pid, boot id, start time — a pid alone is reused) the moment it starts, so a supervisor
+started after a reboot tells a turn still running from one the machine lost.
 
 ### A question is a file, and the inbox is the directory
 
