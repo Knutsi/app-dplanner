@@ -1,8 +1,9 @@
 ---
 paths:
-  - "src/dplanner/modules/{agent_briefing,agent_launch,agent_supervisor,agent_usage,step_agent_instruction,step_agent_run,agent_claude,agent_codex,agent_opencode}/**"
+  - "src/dplanner/modules/{agent_briefing,agent_launch,agent_questions,agent_supervisor,agent_usage,step_agent_instruction,step_agent_run,agent_claude,agent_codex,agent_opencode}/**"
   - "src/dplanner/domain/agents.py"
-  - "tests/modules/{agent_launch,agent_supervisor,agent_usage,step_agent_instruction,step_agent_run}/**"
+  - "src/dplanner/domain/questions.py"
+  - "tests/modules/{agent_launch,agent_questions,agent_supervisor,agent_usage,step_agent_instruction,step_agent_run}/**"
   - "tests/modules/test_agent_readers.py"
   - "scripts/render_briefing_size.py"
 ---
@@ -322,6 +323,20 @@ paths:
   **An answer counts only once its run's machine has consumed it.**
   `docs/architecture/agents.md`'s *Runs, questions and claims are three records in the plan*
   has the reasoning.
+- **One question door, and every park stands on a question.** `dplanner question ask` (the
+  Qt-free `modules/agent_questions/`, over `domain/questions.py`) records a question on the
+  run `$DPLANNER_RUN` names — the supervisor sets it and `$DPLANNER_PROJECT` on every turn —
+  withdraws that run's earlier one, and tells the agent to end its turn; outside a headless
+  run it records nothing and sets `needs-input`. The supervisor hands the recorded question to
+  `classify`, and writes the question for every other park (prose, denied, limit, blocked) —
+  `Turn.question` always names one. `question answer` records and, only for a run this
+  machine launched that is parked on that question, starts the supervisor with `--prompt
+  answer`, which **consumes** the answer under the question's OS lock before the turn starts
+  (`inbox.answer`, the one function the card calls too). A resume that is no answer and a
+  run's end withdraw what the run had standing. The coordinator may not answer a `person`
+  gate (`may_answer`); `question escalate` passes an open question to a person. No warm
+  hosting of Claude's own question tools yet. `docs/architecture/agents.md`'s *A question
+  is a file, and the inbox is the directory* has the reasoning.
 - **A headless run is driven by its supervisor, and nothing waits on it.** `dplanner agent
   supervise <run>` (`modules/agent_supervisor/`, started detached by
   `supervisor.start_detached`) is the record's **one writer**: it starts each turn through

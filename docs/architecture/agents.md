@@ -819,8 +819,8 @@ that is sent, which is what lets the Agent tab colour it without ever showing so
 
 ## Runs, questions and claims are three records in the plan
 
-*The run record and its supervisor are built (S10, below); the question inbox and the
-coordinator are built to these records, and FORMAT.md's* The `ledger` directory *(format
+*The run record and its supervisor are built (S10, below), and the question record and its
+door (S13); the inbox cards and the coordinator are built to these records, and FORMAT.md's* The `ledger` directory *(format
 2),* The `questions` directory *and* The `claims` directory *are the formats.* Every one of them
 rests on the finding of `docs/research/2026-10-07-headless-agents/`: **DPlanner never
 waits on a process for a person.** A headless run is one turn of a process that exits;
@@ -958,8 +958,45 @@ nothing conflicts. Its body is Claude's `AskUserQuestion` shape, because that sh
 already what a Control Centre card needs (a question, a header, options with descriptions)
 and because the warm path — a Claude process DPlanner hosts over stream-json — hands over
 exactly that and takes back exactly `answers`; any other shape would be a translation in
-both directions. `dplanner ask`, the door every harness can use because every harness can
-run a shell command, writes the same record with one question in it.
+both directions. `dplanner question ask`, the door every harness can use because every
+harness can run a shell command, writes the same record with one question in it.
+
+**The door is a noun's verb, `question ask`, not a word of its own.** The research named it
+`dplanner ask`; every other verb is `<noun> <verb>`, the registry and the generated skill
+index are built on that, and one bare word would have been the first exception to both. An
+agent runs `question ask` as readily as `ask`, and `question list|answer|escalate` sit
+beside it where an agent looking for the answer verb will find it.
+
+**Every park stands on a question, whoever wrote it.** The agent's own question is the one
+it recorded through the door, which the supervisor finds on the run when the turn ends and
+hands to the classifier, so the turn says *asked* even though its last words were "ending my
+turn". Any other park — a question found in prose, a denied permission, an exhausted
+account, a run that cannot go on alone — gets its question written by the supervisor as it
+parks, named on the turn. Otherwise the inbox would show some parked runs and not others,
+and whoever reads it would have to know which endings make a card.
+
+**Answering records; consuming resumes.** `question answer` writes the answer and, when the
+run was launched on this machine and still stands parked on that very question, starts the
+supervisor with `--prompt answer`. The supervisor marks the question consumed, under its
+lock, before the turn starts, and the turn names the answer it consumed. An answer given on
+another machine waits in the file until something on the run's machine notices it — the
+window's inbox or the playbook engine — because only that machine has the session to resume.
+A run that ends, or goes on without its answer (*continue*, *Retry now*, words handed straight
+to the supervisor), withdraws what it was parked on, so a card never outlives the run it was
+for.
+
+**A terminal run asks the person in front of it.** In a terminal the developer is right there
+and the agent's process is still waiting for its next message, so `question ask` outside a
+headless run records nothing: it sets the step's `needs-input`, as the briefing used to say
+outright, and tells the agent to put the question in the terminal. Recording it as well would
+need a rule for when such a question closes — the agent simply carries on in its terminal —
+and nothing tells DPlanner that. Every briefing can therefore name one door.
+
+**The warm path is not built.** A Claude process hosted over stream-json offers its own
+`AskUserQuestion` and `ExitPlanMode`, and the record takes them unchanged. It needs a live
+process held open briefly and an unverified mix of `--permission-mode auto` with the stdio
+permission tool, and the cold door already lifts every question into DPlanner, so it waits for
+a step of its own.
 
 **A usage hold is a question too.** It could have been only a fact on the run (`end:
 limit`, `resets`), with the cards reading parked runs beside questions. Then the inbox

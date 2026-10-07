@@ -56,6 +56,8 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import IO
 
+from dplanner.cli.discovery import PROJECT_ENV, RUN_ENV
+from dplanner.core.fsio import os_lock
 from dplanner.core.process import (
     CREATE_NEW_PROCESS_GROUP,
     ProcessStamp,
@@ -63,7 +65,7 @@ from dplanner.core.process import (
     spawn_detached,
     stamp_of,
 )
-from dplanner.domain import ledger
+from dplanner.domain import ledger, questions
 from dplanner.domain.agents import (
     AgentHarness,
     AgentUsage,
@@ -82,6 +84,7 @@ from dplanner.domain.headless import (
 )
 from dplanner.domain.ledger import LedgerRecord, Turn
 from dplanner.domain.model import now_stamp
+from dplanner.domain.questions import Question
 from dplanner.modules.agent_briefing.protocol import opening_prompt
 
 # Why a turn after the first began, and what it is told when nobody wrote the words.
@@ -176,7 +179,7 @@ def update(
 ) -> LedgerRecord:
     """Read the run's record, change it and write it back, all under the run's record lock."""
     directory = ledger.run_dir(run, config)
-    with _os_lock(directory / RECORD_LOCK, wait=True):
+    with os_lock(directory / RECORD_LOCK, wait=True):
         changed = change(_record(project_dir, run))
         ledger.write(project_dir, changed)
         return changed
@@ -192,6 +195,8 @@ class Session:
     harness: AgentHarness
     headless: Headless
     guards: Guards
+    # The answer the next turn resumes with: FORMAT.md's ``consumed`` on that turn.
+    consumed: Mapping[str, str] = field(default_factory=dict)
 
     @property
     def directory(self) -> Path:
@@ -228,8 +233,13 @@ class Session:
                 f"run {record.run} is parked ({_said(last)}); resume it with --prompt "
                 + "|".join(PROMPTS)
             )
+        if prompt == "answer" and last.question and not text:
+            return prompt, self._consume(last)
         if prompt == "answer" and not text:
             raise RefusedError("an answer needs its words: --text")
+        # Words handed to the supervisor, or a resume that is no answer: the run goes on
+        # without what it parked on.
+        self._settle(f"the run resumed with {prompt}")
         return prompt, text or PROMPTS[prompt]
 
     def next(self, ending: Ending, stop: threading.Event) -> tuple[str, str]:
@@ -238,10 +248,10 @@ class Session:
             return "", _over(self.record.run, ending.end)
         parked = f"run {self.record.run} is parked: {_said(self.record.turns[-1])}"
         if ending.end is not TurnEnd.FAILED or ending.needs_person or ending.why == "runaway":
-            return "", parked
+            return "", self._park(ending, parked)
         failures = _failures(self.record)
         if failures > len(self.guards.backoff):
-            return "", f"{parked}, {failures} failures in a row"
+            return "", self._park(ending, f"{parked}, {failures} failures in a row")
         if ending.why != "abandoned-wait" and stop.wait(self.guards.backoff[failures - 1]):
             self._end(TurnEnd.STOPPED)
             return "", _over(self.record.run, TurnEnd.STOPPED)
@@ -259,11 +269,14 @@ class Session:
         n = len(self.record.turns) + 1
         spec = self._spec(kind, words)
         env = scrubbed_environment(os.environ, (self.harness,))
+        # What `dplanner question ask` reads to find the run it parks.
+        env[RUN_ENV], env[PROJECT_ENV] = self.record.run, self.record.project
         argv = self.headless.command(spec)
         argv[0] = shutil.which(argv[0], path=env.get("PATH")) or argv[0]
         stream = self.directory / f"turn-{n}.jsonl"
         errors = self.directory / f"turn-{n}.stderr"
-        turn = Turn(n=n, prompt=kind, started=now_stamp())
+        turn = Turn(n=n, prompt=kind, started=now_stamp(), consumed=self.consumed)
+        self.consumed = {}
         log = TurnLog()
         with stream.open("w", encoding="utf-8") as tee, errors.open("wb") as err:
             try:
@@ -292,7 +305,12 @@ class Session:
         elif killed:
             ending = Ending(TurnEnd.FAILED, killed, _KILLED_BECAUSE[killed])
         else:
-            ending = self.headless.classify(code, log, stderr)
+            recorded = self._asked_since(turn.started)
+            ending = self.headless.classify(
+                code, log, stderr, recorded.text if recorded is not None else None
+            )
+            if recorded is not None and ending.end is TurnEnd.ASKED:
+                turn = replace(turn, question=recorded.id)
         return self._finish(turn, log, code, ending)
 
     def _spec(self, kind: str, words: str) -> TurnSpec:
@@ -428,12 +446,60 @@ class Session:
             return record
 
         self._update(finished)
+        if ending.end in OVER:
+            self._settle(f"the run is {ending.end}")
         return ending
 
     def _end(self, end: TurnEnd) -> None:
         last = self.record.last_turn
         code = last.exit if last is not None and end is TurnEnd.DONE else None
         self._update(lambda record: record.ended_at(now_stamp(), code))
+        self._settle(f"the run is {end}")
+
+    # -- its questions ------------------------------------------------------------------------
+
+    def _asked_since(self, started: str) -> Question | None:
+        """The question the agent recorded through `dplanner question ask` during the turn."""
+        found = [
+            q
+            for q in questions.of_run(self.project_dir, self.record.run)
+            if q.state in (questions.OPEN, questions.ESCALATED) and q.asked >= started
+        ]
+        return found[-1] if found else None
+
+    def _park(self, ending: Ending, parked: str) -> str:
+        """Park on a question: every park is a card in the inbox. The one the agent asked is
+        already on the turn; any other ending gets its question written here."""
+        last = self.record.turns[-1]
+        if not last.question:
+            question = _question_for(self.record, last, ending)
+            questions.write(self.project_dir, question)
+            self._write(replace(last, question=question.id))
+            parked += f", on {question.short}"
+        return parked
+
+    def _consume(self, last: Turn) -> str:
+        """Consume the answer to the question the run parked on — the act that makes it
+        count, made only here, by the launching machine — and the words it resumes with."""
+        n = last.n + 1
+        try:
+            question = questions.update(
+                self.project_dir,
+                last.question,
+                lambda q: questions.consumed(q, now_stamp(), self.record.run, n),
+                self.config,
+            )
+        except (LookupError, ValueError) as error:
+            raise RefusedError(
+                f"run {self.record.run} cannot resume on its answer: {error}"
+            ) from error
+        self.consumed = {"question": question.id, "answer": str(question.answer["id"])}
+        self._settle("the run resumed on another answer", keep=question.id)
+        return questions.answer_text(question)
+
+    def _settle(self, why: str, keep: str = "") -> None:
+        """Withdraw what the run no longer waits on: it ended, or went on without it."""
+        questions.withdraw_unsettled(self.project_dir, self.record.run, why, keep, self.config)
 
     def _write(self, turn: Turn) -> None:
         self._update(lambda record: _with_turn(record, turn))
@@ -467,7 +533,7 @@ def supervising(directory: Path) -> Iterator[None]:
     path = directory / LOCK_FILE
     with ExitStack() as stack:
         try:
-            held = stack.enter_context(_os_lock(path, wait=False))
+            held = stack.enter_context(os_lock(path, wait=False))
         except BlockingIOError:
             raise RefusedError(f"the run is already supervised ({_holder(path)})") from None
         held.truncate(0)
@@ -481,6 +547,47 @@ _KILLED_BECAUSE = {
     "runaway": "the stream kept going and the agent produced nothing",
     "timeout": "the stage ran past its wall clock",
 }
+
+
+def _question_for(record: LedgerRecord, turn: Turn, ending: Ending) -> Question:
+    """The question a park that nobody asked through the door stands on: a question found in
+    the agent's words, a denied permission, an exhausted account, or a run that cannot go on
+    alone."""
+    said = ending.question or ending.reason or _said(turn)
+    kind, header, text, body = {
+        TurnEnd.ASKED: (questions.DECISION, "Question", said, ""),
+        TurnEnd.DENIED: (
+            questions.PERMISSION,
+            "Permission",
+            "The agent was denied a permission it needed. How should it go on?",
+            said,
+        ),
+        TurnEnd.LIMIT: (
+            questions.LIMIT,
+            "Usage limit",
+            "The account ran out of usage. Resume when it resets?",
+            said,
+        ),
+    }.get(
+        ending.end,
+        (questions.BLOCKED, "Blocked", f"The run cannot go on alone: {said}", ""),
+    )
+    return questions.asked(
+        record.project,
+        record.step,
+        now_stamp(),
+        [questions.one(text, header)],
+        kind=kind,
+        run=record.run,
+        by={
+            "callsign": record.callsign,
+            "harness": record.harness,
+            "machine": record.machine,
+            "host": record.host,
+        },
+        body=body,
+        resets=turn.resets,
+    )
 
 
 def _record(project_dir: Path, run: str) -> LedgerRecord:
@@ -582,28 +689,6 @@ def _group_alive(process: "subprocess.Popen[str]", group: int) -> bool:
         except PermissionError:
             return True
         return True
-
-
-@contextmanager
-def _os_lock(path: Path, *, wait: bool) -> Iterator[IO[str]]:
-    """An exclusive lock the operating system holds on ``path`` and drops when its holder
-    exits, however it exits. ``BlockingIOError`` when another holds it and ``wait`` is
-    False. The file is never deleted: a lock on a file somebody can unlink is no lock."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a+", encoding="utf-8") as held:
-        if sys.platform == "win32":
-            import msvcrt
-
-            held.seek(0)
-            try:
-                msvcrt.locking(held.fileno(), msvcrt.LK_LOCK if wait else msvcrt.LK_NBLCK, 1)
-            except OSError as error:
-                raise BlockingIOError(str(error)) from error
-        else:
-            import fcntl
-
-            fcntl.flock(held.fileno(), fcntl.LOCK_EX if wait else fcntl.LOCK_EX | fcntl.LOCK_NB)
-        yield held
 
 
 def _holder(path: Path) -> str:

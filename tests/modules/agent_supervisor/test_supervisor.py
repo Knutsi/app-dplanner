@@ -17,10 +17,12 @@ from pathlib import Path
 import pytest
 
 from dplanner.core.process import process_alive, stamp_of
-from dplanner.domain import ledger
+from dplanner.domain import ledger, questions
 from dplanner.domain.headless import TurnSpec
 from dplanner.domain.ledger import LedgerRecord, Turn
+from dplanner.domain.questions import Question
 from dplanner.modules.agent_claude import harness as claude
+from dplanner.modules.agent_questions import inbox
 from dplanner.modules.agent_supervisor import supervisor
 from dplanner.modules.agent_supervisor.supervisor import (
     Guards,
@@ -139,21 +141,109 @@ def test_a_done_turn_ends_the_run_with_its_stream_teed_and_its_usage_counted(rig
         pass
 
 
-def test_a_question_parks_the_run_and_the_answer_resumes_its_session(rig):
+def test_a_question_in_prose_parks_on_a_question_record_and_words_given_withdraw_it(rig):
     rig.play({"lines": recorded("claude-asked-prose-1")}, {"lines": [result()]})
     said = rig.supervise()
     assert "parked" in said and rig.record.parked and rig.ends() == [("asked", "prose")]
-    assert rig.record.turns[0].reason  # The question, until it is a record of its own.
+    (question,) = questions.records(rig.plan)
+    assert f"on {question.short}" in said
+    assert (question.kind, question.state, question.run) == ("decision", "open", RUN)
+    assert rig.record.turns[0].question == question.id
+    assert question.text == rig.record.turns[0].reason
     asked_in = rig.record.session
 
     with pytest.raises(RefusedError, match="--prompt"):
         rig.supervise()
-    with pytest.raises(RefusedError, match="--text"):
+    with pytest.raises(RefusedError, match=r"cannot resume on its answer.*open"):
         rig.supervise(prompt="answer")
     assert rig.supervise(prompt="answer", text="Keep both") == f"run {RUN} is done"
     resumed = rig.specs[-1]
     assert resumed.resume and resumed.session == asked_in and resumed.prompt == "Keep both"
     assert [turn.prompt for turn in rig.record.turns] == ["launch", "answer"]
+    # Words handed straight to the supervisor: the card no longer stands.
+    assert stored(rig.plan, question.id).state == "withdrawn"
+
+
+def test_a_question_asked_through_the_door_is_answered_consumed_and_resumes_the_session(rig):
+    rig.play(
+        {
+            "ask": {"plan": str(rig.plan), "question": "Keep both records?"},
+            "lines": recorded("claude-ask-door"),
+        },
+        {"lines": [result()]},
+    )
+    rig.supervise()
+    assert rig.ends() == [("asked", "record")]
+    (question,) = questions.records(rig.plan)
+    first = rig.record.turns[0]
+    assert (first.question, first.reason) == (question.id, "Keep both records?")
+
+    resumed: list[tuple[object, ...]] = []
+    done = inbox.answer(
+        rig.plan,
+        question.id,
+        "Keep both",
+        {"kind": "person", "name": "Knut"},
+        machine="",
+        config=rig.config,
+        resume=lambda *args, **kwargs: resumed.append((*args, kwargs)),
+    )
+    assert resumed == [(rig.plan, RUN, {"prompt": "answer"})] and "resuming" in done.said
+
+    assert rig.supervise(prompt="answer") == f"run {RUN} is done"
+    answered = stored(rig.plan, question.id)
+    assert answered.state == "consumed" and answered.consumed["turn"] == 2
+    second = rig.record.turns[1]
+    assert second.consumed == {"question": question.id, "answer": answered.answer["id"]}
+    assert rig.specs[-1].resume and rig.specs[-1].prompt == questions.answer_text(answered)
+    assert "Keep both" in rig.specs[-1].prompt
+
+
+def test_every_park_stands_on_a_question_of_its_kind(rig, tmp_path):
+    rig.play({"lines": recorded("claude-limit"), "exit": 1})
+    rig.supervise()
+    (limit,) = questions.records(rig.plan)
+    assert limit.kind == "limit" and limit.resets == rig.record.turns[0].resets
+
+    denied = Rig(tmp_path / "denied")
+    denied.play({"lines": recorded("claude-denied-1")})
+    denied.supervise()
+    (permission,) = questions.records(denied.plan)
+    assert permission.kind == "permission" and permission.body == denied.record.turns[0].reason
+
+    runaway = Rig(tmp_path / "runaway")
+    runaway.play({"lines": [INIT], "spam": True})
+    runaway.supervise()
+    (blocked,) = questions.records(runaway.plan)
+    assert blocked.kind == "blocked" and "runaway" not in blocked.text  # Words, not a code.
+
+
+def test_a_resume_that_is_no_answer_withdraws_the_question_it_parked_on(rig):
+    rig.play({"lines": recorded("claude-asked-prose-1")}, {"lines": [result()]})
+    rig.supervise()
+    (question,) = questions.records(rig.plan)
+    rig.supervise(prompt="continue")
+    withdrawn = stored(rig.plan, question.id)
+    assert withdrawn.state == "withdrawn" and "continue" in withdrawn.withdrawn["why"]
+
+
+def test_an_answer_refuses_to_resume_a_run_another_machine_launched(rig):
+    rig.play({"lines": recorded("claude-asked-prose-1")})
+    rig.supervise()
+    ledger.write(rig.plan, replace(rig.record, machine="elsewhere", host="knut-laptop"))
+    (question,) = questions.records(rig.plan)
+    resumed: list[object] = []
+    done = inbox.answer(
+        rig.plan,
+        question.id,
+        "Keep both",
+        {"kind": "person", "name": "Knut"},
+        machine="here",
+        config=rig.config,
+        resume=lambda *args, **kwargs: resumed.append(args),
+    )
+    assert not resumed and "knut-laptop" in done.said
+    assert stored(rig.plan, question.id).state == "answered"
 
 
 def test_a_limit_and_a_dead_login_park_without_a_retry(rig, tmp_path):
@@ -480,3 +570,9 @@ def test_a_run_whose_last_turn_ended_it_is_ended_never_resumed(rig, end, said):
     rig.play({"lines": [result()]})
     assert rig.supervise(prompt="retry") == f"run {RUN} {said}"
     assert rig.record.over and rig.specs == []
+
+
+def stored(project_dir: Path, question_id: str) -> Question:
+    found = questions.find(project_dir, question_id)
+    assert found is not None
+    return found

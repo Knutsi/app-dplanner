@@ -2762,6 +2762,7 @@ def default_cli_commands(
     from dplanner.domain.workflow import AgentRun, Person
     from dplanner.modules.agent_at_work import cli as at_work_cli
     from dplanner.modules.agent_briefing.worktree import mainline
+    from dplanner.modules.agent_questions import cli as questions_cli
     from dplanner.modules.agent_supervisor import cli as supervisor_cli
     from dplanner.modules.agent_usage import cli as usage_cli
     from dplanner.modules.branches import cli as branches_cli
@@ -2905,6 +2906,8 @@ def default_cli_commands(
         # A run's usage and its supervisor read the harness that ran it: the window's tuple.
         *usage_cli.commands(harnesses=agent_harnesses()),
         *supervisor_cli.commands(harnesses=agent_harnesses()),
+        # Who answers is read like `status set`'s reporter: an agent's shell is the coordinator.
+        *questions_cli.commands(in_agent_shell=lambda: bool(agent_shell_marker())),
         # The agent's own account of what it is doing while it does it: the window's
         # banner and the watcher's stood-down modal both read what these write.
         *at_work_cli.commands(board=board, key_of=key_of),

@@ -197,8 +197,10 @@ def epilogue(library: Library, step: Step, branches: BranchPlan) -> str:
         f"- `dplanner agent-state set {ref} working` while implementing\n"
         f"- `dplanner agent-state set {ref} pending-approval` while waiting on an"
         " approval\n"
-        f"- `dplanner agent-state set {ref} needs-input` when you have a question the"
-        " developer must answer before you can go on\n"
+        f"- `dplanner question ask '<question>' --choice '<answer>' … --step {ref}` when you"
+        " have a question the developer must answer before you can go on, then end your"
+        " turn: unattended, the answer resumes you; in a terminal it says you need input,"
+        " and you wait for the reply there\n"
         + _notes_told(project, ref)
         + "When the work is finished, record it in DPlanner:\n"
         + f"- `dplanner status set {ref} ready-for-review` and `dplanner agent-state clear"
