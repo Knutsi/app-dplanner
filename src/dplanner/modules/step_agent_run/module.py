@@ -30,9 +30,11 @@ half of a launch — **the shell is a peer this window keeps an eye on**:
   entry raising its terminal. Availability is per run (``terminal.focus_reason`` — a tmux
   pane is reachable on a desktop whose bare windows are not), and a run that cannot be
   switched to is greyed with the reason, in the list, the browser and the Step verb alike.
-- Two Step-menu verbs: *Show Agent Terminal* (the focus provider in ``terminal.py``, greyed
-  with the reason when the desktop cannot) and *Clear Agent Run*, the window's twin of
-  ``dplanner agent-state clear`` — an edit of the user's, so it goes through the undo stack.
+- Three Step-menu verbs: *Show Agent Terminal* (the focus provider in ``terminal.py``, greyed
+  with the reason when the desktop cannot), *Retry Now* — the step's headless run, parked on
+  a usage limit or a block, resumed at once (``dplanner agent retry``'s twin, through the
+  Deps) — and *Clear Agent Run*, the window's twin of ``dplanner agent-state clear`` — an edit
+  of the user's, so it goes through the undo stack.
 
 Runs live in the user's store (``user_config``), never the plan: a temp directory and a
 pid are facts about this machine.
@@ -107,6 +109,10 @@ class StepAgentRunDeps:
     # Where a step's project keeps its ledger, None for a step or project this store does
     # not hold — where a run's record is written at launch and marked at its end.
     project_dir: Callable[[StepId], Path | None] = lambda _step: None
+    # Retry now on the step's parked headless run: why it does not apply ("" when it does),
+    # and doing it, as a person — what became of it, or ValueError saying why not.
+    retry_refusal: Callable[[StepId], str] = lambda _step: "no headless runs here"
+    retry_now: Callable[[StepId], str] = lambda _step: ""
 
 
 class StepAgentRunModule:
@@ -157,6 +163,19 @@ class StepAgentRunModule:
                 tip="Bring the terminal the agent runs in to the front",
                 state=self._can_show_terminal,
                 run=lambda context: self._show_terminal_for(context),
+            )
+        )
+        deps.actions.register(
+            ActionSpec(
+                id="agent.retry_now",
+                label="Retr&y Now",
+                menu="Step",
+                group="agent",
+                order=35,
+                tip="Resume the step's headless run now, without waiting for its usage limit"
+                " to reset",
+                state=self._can_retry,
+                run=self._retry,
             )
         )
         deps.actions.register(
@@ -407,6 +426,23 @@ class StepAgentRunModule:
         if not read(self._deps.library.step(step_id)):
             return ActionState(enabled=False, label="Clear Agent Run — no agent run on this step")
         return ENABLED
+
+    def _can_retry(self, context: Context) -> ActionState:
+        step_id = self._focused(context)
+        if step_id is None:
+            return DISABLED
+        refused = self._deps.retry_refusal(step_id)
+        return ActionState(enabled=False, label=f"Retry Now — {refused}") if refused else ENABLED
+
+    def _retry(self, context: Context) -> None:
+        step_id = self._focused(context)
+        if step_id is None:
+            return
+        try:
+            said = self._deps.retry_now(step_id)
+        except (LookupError, ValueError) as error:
+            said = f"Could not retry the run — {error}"
+        self._deps.status.show_status(said, 6000)
 
     def _clear(self, context: Context) -> None:
         step_id = self._focused(context)

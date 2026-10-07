@@ -508,6 +508,7 @@ def _agents(
     agent is at work. Built before the clusters that hand work to Run Agent: the Problems
     panel its findings, the docs module its compilations, the library watcher an entry two
     writers changed at once, sync its reconciling."""
+    from getpass import getuser
     from pathlib import Path
 
     from dplanner.core.config_dir import config_dir
@@ -515,6 +516,7 @@ def _agents(
     from dplanner.modules.agent_at_work.module import AgentAtWorkDeps, AgentAtWorkModule
     from dplanner.modules.agent_briefing.worktree import mainline
     from dplanner.modules.agent_launch.module import AgentLaunchDeps, AgentLaunchModule
+    from dplanner.modules.agent_questions import inbox
     from dplanner.modules.agent_usage.aspect import ledger_dir, step_usage_words
     from dplanner.modules.agent_usage.module import AgentUsageDeps, AgentUsageModule
     from dplanner.modules.branches.plan import branch_plan
@@ -546,6 +548,17 @@ def _agents(
         nothing ends before the build is up."""
         usage.sweep()
 
+    def run_ledger(step_id: str) -> Path | None:
+        return ledger_dir(store, library.project_of(step_id).id) if library.has(step_id) else None
+
+    def retry_now(step_id: str) -> str:
+        """Step ▸ Retry Now: the step's parked run answered ``Retry now`` by the person here."""
+        project_dir = run_ledger(step_id)
+        run = inbox.parked_run(project_dir, step_id) if project_dir is not None else ""
+        if project_dir is None or not run:
+            raise ValueError("no headless run is parked on this step")
+        return inbox.retry_now(project_dir, run, {"kind": "person", "name": getuser()}).said
+
     # Every launch is handed here, and this is the one place that keeps an eye on the shell
     # afterwards.
     runs = StepAgentRunModule(
@@ -564,9 +577,9 @@ def _agents(
             harnesses=agent_harnesses(),
             ended=ended,
             # Where each run's ledger record lives.
-            project_dir=lambda step_id: (
-                ledger_dir(store, library.project_of(step_id).id) if library.has(step_id) else None
-            ),
+            project_dir=run_ledger,
+            retry_refusal=lambda step_id: inbox.retry_refusal(run_ledger(step_id), step_id),
+            retry_now=retry_now,
         )
     )
     # The ledger's sweep and the Expenditure tab, whose rows look as the Order tab's do.

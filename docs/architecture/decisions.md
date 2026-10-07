@@ -641,3 +641,12 @@ only their own turns. Building the supervisor showed the stream it already tees 
 one turn's window: the counts are read from it as the turn ends, the harvest leaves a
 headless record to its supervisor, and no cursor API was built. The cost is subagents the
 stream does not report. Now: `agents.md`'s *A headless run is driven by its supervisor*.
+
+## 2026-10-07 — A limit waits in its supervisor instead of exiting
+
+The supervisor parked a run on a usage limit and exited, like every other park, and the run
+stood until somebody resumed it with `--prompt reset`. A limit is the one park no person is
+needed for — the vendor says when it ends — so its supervisor now waits for the reset and the
+clock answers the question, and *Retry now* is a person answering it sooner. Now:
+`agents.md`'s *A headless run is driven by its supervisor* and `docs/architecture/agents.md`'s
+*A usage limit waits in its supervisor, and Retry now is an answer*.

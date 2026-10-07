@@ -949,6 +949,38 @@ one anyway ends the run. Each turn records its process's `ProcessStamp` (`core/p
 pid, boot id, start time — a pid alone is reused) the moment it starts, so a supervisor
 started after a reboot tells a turn still running from one the machine lost.
 
+### A usage limit waits in its supervisor, and Retry now is an answer
+
+A run that runs out of usage is parked on a `limit` question, and something has to resume
+it after the reset. **Its own supervisor waits for the reset**, holding the run's lock and
+looking at the question every few seconds, then answers it for the clock and resumes the
+session with "your limit has reset". A timer in the window would leave a headless run
+stranded whenever no window is open — the coordinator's whole case — and a sweep started by
+`agent run` would resume nothing on a machine that launches nothing more. A clock is not a
+person, so this is not waiting on one: *Retry now* needs no process at all — it answers the
+same question as a person, and the waiting supervisor finds the answer as it finds every
+other. A supervisor lost to a reboot is picked up the same way: started bare on a run parked
+on a limit, it waits, and a reset already past resumes it at once.
+
+**The reset is the turn's, else the account's.** A real Claude limit carries it in the
+stream (`rate_limit_event` rejected, with `resetsAt` — 2026-10-07's run hit it mid-step), but
+a 429 the CLI stops on before any event carries none (E8), so every turn's telemetry is kept
+per account (`config_dir()/usage-limits.json`) and a limit with no reset of its own takes the
+fullest window's. A reset already past is unknown, so stale telemetry never resumes a run
+straight back into the wall; with no reset at all the run parks for a person, rather than
+probing the account on a timer.
+
+**An account is a harness on this machine.** One login each is how the CLIs are used here,
+and the ledger record names no account for a headless run, so the harness id is the key. Two
+holds read the file. A **new headless launch waits** while a window is at or above the
+threshold (95 % by default: the real limits struck at 98 and 99 %, and a launch past 95 %
+would start hours of work into the wall), with the reason shown. And **nothing else starts on
+an account that ran out**: a turn carrying no answer is written `limit`/`held` without a
+process and parks on the same question as any limit. A turn carrying an answer always starts,
+since the answer was consumed for it; a hold's only other way out is a turn that produced
+tokens, which says the account is back. Terminal runs are not held — the person at the
+terminal sees the limit and may mean another login.
+
 ### A question is a file, and the inbox is the directory
 
 A question needs answering from anywhere — the window on another machine, a person who
@@ -1026,8 +1058,7 @@ a step of its own.
 limit`, `resets`), with the cards reading parked runs beside questions. Then the inbox
 would have had two sources with two ways to be answered and two ways to go stale. As a
 `limit` question it is one more card, answered by *Retry now* or by the clock when the reset
-passes — and the run still carries `resets`, because the launcher holds the account's other
-launches on it.
+passes — and the run still carries `resets`, which is when the clock answers it.
 
 **A playbook's gate is a question too.** A `person` gate and a `coordinator` gate have no
 run — nobody launches anything — so the question carries the gate's `stage` and `attempt`,

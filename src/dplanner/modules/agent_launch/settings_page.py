@@ -80,6 +80,7 @@ from dplanner.modules.agent_launch.profiles import (
     update_profile,
     write_profiles,
 )
+from dplanner.modules.agent_supervisor import limits
 from dplanner.planning.agent import MODULE_ID
 from dplanner.theme.icons import find_icon, plus_icon, star_icon, trash_icon
 from dplanner.theme.tokens import FIELD_GAP, SECTION_GAP
@@ -164,12 +165,22 @@ LIMIT_HINT = (
     " and a session of its own; select more than this and the verb says so instead of"
     " filling the desk."
 )
+HOLD_HINT = (
+    "A headless launch waits while its agent's account has used this much of a usage window,"
+    " until that window resets, so new work does not start straight into the limit. A run"
+    " already going carries on; one that runs out parks and resumes by itself after the"
+    " reset. 100 % holds only an account that has run out."
+)
 LAUNCH_HINT = (
     "Run Agent sets the step's status to in progress as the terminal opens, so the plan"
     " shows the work has started without waiting for the agent to say so. It is not undone"
     " when the agent stops: the agent says it is ready for review, and done is yours, from"
     " Step ▸ Status."
 )
+
+
+def _percent(share: float) -> str:
+    return str(round(share * 100))
 
 
 class PresetField:
@@ -409,6 +420,30 @@ def build_page(
     limit.setKeyboardTracking(False)
     limit.valueChanged.connect(lambda value: set_global(MODULE_ID, MAX_AGENTS_KEY, value))
 
+    hold_combo, hold_edit = QComboBox(page), QLineEdit(page)
+    hold_combo.setObjectName("AgentHoldAtCombo")
+    hold_edit.setObjectName("AgentHoldAtEdit")
+    hold_edit.setMaxLength(3)
+    hold_edit.setPlaceholderText("%")
+    hold_edit.setMaximumWidth(hold_edit.fontMetrics().horizontalAdvance("0000") * 2)
+
+    def commit_hold(text: str) -> None:
+        if text.isdigit() and 1 <= int(text) <= 100:
+            limits.set_hold_at(int(text) / 100)
+        hold_field.show(_percent(limits.hold_at()))  # A slip shows the stored value again.
+
+    hold_field = PresetField(
+        hold_combo,
+        hold_edit,
+        [
+            (f"{share:.0%}" + (" (default)" if share == limits.HOLD_AT else ""), _percent(share))
+            for share in limits.HOLD_PRESETS
+        ],
+        CUSTOM_LABEL,
+        on_commit=commit_hold,
+    )
+    hold_field.show(_percent(limits.hold_at()))
+
     started_box = QCheckBox("Mark the step in progress when a run starts", page)
     started_box.setObjectName("AgentStartInProgressBox")
     started_box.setChecked(start_in_progress())
@@ -442,6 +477,13 @@ def build_page(
     limit_layout.addWidget(limit)
     limit_layout.addStretch(1)
     block(layout, captioned("Max agents launched at once", page, LIMIT_HINT), limit_row)
+    hold_row = QWidget(page)
+    hold_layout = QHBoxLayout(hold_row)
+    hold_layout.setContentsMargins(0, 0, 0, 0)
+    hold_layout.addWidget(hold_combo)
+    hold_layout.addWidget(hold_edit)
+    hold_layout.addStretch(1)
+    block(layout, captioned("Hold new headless launches at", page, HOLD_HINT), hold_row)
     block(layout, captioned("On launch", page, LAUNCH_HINT), started_box)
     layout.addStretch(1)
     return page

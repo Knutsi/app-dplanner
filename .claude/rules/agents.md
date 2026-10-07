@@ -353,10 +353,18 @@ paths:
   tool runs, `Headless.stall`), a runaway (`Guards.runaway` events producing nothing) or an
   overrun (the stage's wall clock), writes the turn's end and its usage — counted from that
   stream — and then ends, parks or retries: `done`/`stopped` end it; `asked`, `denied`,
-  `limit`, a runaway and a failure no retry mends park it and the process exits; other
+  `limit`, a runaway and a failure no retry mends park it and the process exits (but for a
+  limit whose reset is known); other
   failures retry after 30 s, 2 min and 10 min, and a fourth in a row parks. A parked run
   resumes by `--prompt answer|continue|reset|retry`, or bare on an answered question. It
-  opens no library. **Its locks
+  opens no library. **A limit with a known reset waits in its supervisor**, which answers the
+  `limit` question for the clock (`answer.by.kind: clock`) at the reset and resumes with
+  `reset`; **Retry now** is a person's answer to the same question (`inbox.retry_now`, `dplanner
+  agent retry`, *Step ▸ Retry Now*), resumed with `retry`. A reset the turn did not report is
+  the account's last-known one (`limits.py`, `config_dir()/usage-limits.json`); with neither,
+  the run parks for a person. **Nothing else starts on an account that ran out** — a turn
+  carrying no answer parks `limit`/`held` unstarted — and **a new headless launch waits** while
+  a window is at or above `limits.hold_at()` (95 %): `limits.hold` is the one answer, in words. **Its locks
   are the OS's** (`supervisor.lock` for its life, `record.lock` across every read-modify-write
   of the record — `fence()` takes it too), never a file judged stale and deleted. **A kill
   ends the whole process group**, and every way out of a turn ends it, so nothing runs

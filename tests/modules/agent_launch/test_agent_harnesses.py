@@ -638,3 +638,30 @@ def test_plan_mode_is_read_off_the_command_a_profile_runs():
     assert launcher.plans_first("claude --permission-mode plan {prompt}", harnesses)
     assert not launcher.plans_first("claude --permission-mode acceptEdits {prompt}", harnesses)
     assert not launcher.plans_first(codex.HARNESS.command, harnesses)
+
+
+def test_the_launch_hold_is_a_preset_over_an_editable_percentage(app, tmp_path, monkeypatch):
+    """95 % works untouched; the presets are laid out; a typed share is kept and a slip is
+    shown back as what is stored."""
+    from tests.platforms import set_home
+
+    from dplanner.modules.agent_launch.settings_page import build_page
+    from dplanner.modules.agent_supervisor import limits
+
+    set_home(monkeypatch, tmp_path / "home")
+    page = build_page(None, platform="linux", harnesses=HARNESSES)
+    combo = page.findChild(QComboBox, "AgentHoldAtCombo")
+    edit = page.findChild(QLineEdit, "AgentHoldAtEdit")
+    assert isinstance(combo, QComboBox) and isinstance(edit, QLineEdit)
+    assert (edit.text(), combo.currentText()) == ("95", "95% (default)")
+    assert [combo.itemText(i) for i in range(combo.count())][-1] == "Custom"
+
+    combo.activated.emit(combo.findData("80"))
+    assert (edit.text(), limits.hold_at()) == ("80", 0.8)
+    edit.setText("97")
+    edit.editingFinished.emit()
+    assert (combo.currentText(), limits.hold_at()) == ("Custom", 0.97)
+    edit.setText("lots")
+    edit.editingFinished.emit()
+    assert (edit.text(), limits.hold_at()) == ("97", 0.97)
+    page.deleteLater()

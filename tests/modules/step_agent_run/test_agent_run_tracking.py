@@ -12,11 +12,15 @@ from pathlib import Path
 
 import pytest
 
+from dplanner.domain import ledger, questions
 from dplanner.domain.commands import AddNodeCommand, SetModuleDataCommand
+from dplanner.domain.ledger import LedgerRecord, Turn
 from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
 from dplanner.modules.step_agent_run import aspect, terminal
 from dplanner.modules.step_agent_run.runs import AgentRun, describe, new_run, read_shell, settle
+
+RUN = "20261007T180000Z-5e55a0c1"
 
 # -- settling a run, with no application at all -------------------------------------------------
 
@@ -597,3 +601,44 @@ def test_a_launch_into_plan_mode_waits_on_a_person_until_the_agent_says_anything
         entry = aspect.write(state, aspect.launched(step))
         SetModuleDataCommand(step.id, aspect.MODULE_ID, entry).redo(library)
         assert aspect.asks_person(step) is asks
+
+
+def test_retry_now_resumes_a_run_held_on_its_usage_limit(services, step):
+    """Step ▸ Retry Now answers the limit the step's headless run is parked on, as a person —
+    and is greyed, with the reason, on a step with no such run."""
+    select(services, step)
+    spec = services.actions.spec("agent.retry_now")
+    state = spec.state(services.context.current())
+    assert not state.enabled and state.label == "Retry Now — no headless run is parked on this step"
+
+    project_dir = module(services)._deps.project_dir(step.id)
+    project = services.document.project_of(step.id)
+    question = questions.asked(
+        project.id,
+        step.id,
+        "2026-10-07T18:10:00+00:00",
+        [questions.one("Out of usage.", "Usage limit", [(questions.RETRY_NOW, "")])],
+        kind=questions.LIMIT,
+        run=RUN,
+    )
+    questions.write(project_dir, question)
+    held = Turn(n=1, prompt="launch", started="…", end="limit", question=question.id)
+    record = LedgerRecord(
+        run=RUN,
+        project=project.id,
+        step=step.id,
+        harness="claude",
+        launched="2026-10-07T18:00:00+00:00",
+        machine="elsewhere",  # Launched on another machine: nothing is started from here.
+        mode=ledger.HEADLESS,
+        stage="execute",
+    ).with_turns((held,))
+    ledger.write(project_dir, record)
+    assert spec.state(services.context.current()).enabled
+
+    spec.run(services.context.current())
+    answered = questions.find(project_dir, question.id)
+    assert answered is not None and answered.answer["by"]["kind"] == "person"
+    assert answered.answer["answers"] == {"Out of usage.": questions.RETRY_NOW}
+    state = spec.state(services.context.current())
+    assert not state.enabled and "parked on no open question" in state.label

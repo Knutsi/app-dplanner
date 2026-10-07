@@ -21,6 +21,8 @@ from dplanner.domain.questions import Question
 from dplanner.modules.agent_supervisor.supervisor import start_detached
 
 Resume = Callable[..., None]
+# What Retry now resumes: a run held for its account, or one that cannot go on alone.
+RETRYABLE = (questions.LIMIT, questions.BLOCKED)
 
 
 @dataclass(frozen=True)
@@ -62,6 +64,69 @@ def answer(
     except OSError as error:  # The run's supervisor finds the answer when it next starts.
         return Answered(question, f"{question.short} answered; could not start its run: {error}")
     return Answered(question, f"{question.short} answered; run {question.run} resumes with it")
+
+
+def retry_now(
+    project_dir: Path,
+    run: str,
+    by: Mapping[str, str],
+    *,
+    caller_run: str = "",
+    machine: str | None = None,
+    config: Path | None = None,
+    resume: Resume = start_detached,
+) -> Answered:
+    """*Retry now*: resume a run parked on a usage limit or a block at once, by answering
+    the question it stands on ``Retry now``. A supervisor waiting for the reset finds the
+    answer within moments; with none, the nudge starts one. Raises ``ValueError`` with the
+    reason for a run not parked so (:func:`retry_question`)."""
+    question = retry_question(project_dir, run)
+    return answer(
+        project_dir,
+        question.id,
+        questions.RETRY_NOW,
+        by,
+        caller_run=caller_run,
+        machine=machine,
+        config=config,
+        resume=resume,
+    )
+
+
+def retry_question(project_dir: Path, run: str) -> Question:
+    """The question Retry now would answer on the run, or ``ValueError`` saying why there is
+    none — a run parked on a decision is resumed by its answer, never by a retry that skips
+    it."""
+    record = ledger.find(project_dir, run)
+    if record is None or not record.headless:
+        raise ValueError(f"no headless run {run} here")
+    last = record.last_turn
+    if not record.parked or last is None:
+        raise ValueError(f"run {run} is {'over' if record.over else 'not parked'}")
+    question = questions.find(project_dir, last.question) if last.question else None
+    if question is None or question.state not in (questions.OPEN, questions.ESCALATED):
+        raise ValueError(f"run {run} is parked on no open question")
+    if question.kind not in RETRYABLE:
+        raise ValueError(f"run {run} waits on {question.short}, a {question.kind}: answer it")
+    return question
+
+
+def parked_run(project_dir: Path, step_id: str) -> str:
+    """The step's latest headless run when it is parked, else ""."""
+    runs = [r for r in ledger.records(project_dir) if r.step == step_id and r.headless]
+    return runs[-1].run if runs and runs[-1].parked else ""
+
+
+def retry_refusal(project_dir: Path | None, step_id: str) -> str:
+    """Why Retry now does not apply to the step's headless run, or "" when it does."""
+    run = parked_run(project_dir, step_id) if project_dir is not None else ""
+    if project_dir is None or not run:
+        return "no headless run is parked on this step"
+    try:
+        retry_question(project_dir, run)
+    except ValueError as refused:
+        return str(refused)
+    return ""
 
 
 def resumable(project_dir: Path, question: Question, machine: str) -> str:
