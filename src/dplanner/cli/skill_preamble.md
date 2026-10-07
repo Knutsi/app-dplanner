@@ -306,9 +306,7 @@ cutting a release from the current branch, settling a conflict the window handed
 step that only reads and reports. "It would be convenient" is not a reason: a step in the
 checkout shares the developer's working tree with every other agent and with the person.
 When you *execute* a step, its briefing tells you which worktree to expect; if you are
-not in it, stop and say so rather than working in the main checkout. A review step is the
-exception: it reads the work it reviews where that work is, commits nothing, and runs in the
-checkout with no worktree of its own — leave that checkout as you found it.
+not in it, stop and say so rather than working in the main checkout.
 
 **An agent finishes at Ready for review, never at done.** When your work on a step is
 finished, `dplanner status set S7 ready-for-review`: a person or a reviewing agent looks
@@ -318,8 +316,6 @@ set <agent step> done` on a step nobody has reviewed is refused; when there is g
 nothing to review, say why — `dplanner status set S7 done --because '<reason>'` — and the
 reason is kept as a decision note on the step. Ready for review is the *step's* work
 finished; the agent-run state `plan-for-review` is your *plan* waiting for a look, mid-run.
-A step a review waits on does not stop there: its briefing says to wait for the review's
-rounds and answer them (below).
 
 **What happens after Ready for review is not yours to start.** Stop there, and never launch
 another agent from your own shell: the coordinator or a person starts what comes next.
@@ -338,37 +334,6 @@ Never kill a process by name or pattern: `pkill -f`, `killall`, `kill $(pgrep �
 agent's dev server, test runner and agent process carries the same names and paths as
 yours, and one agent's `pkill -f vite` has stopped three others mid-task. Kill only by a
 pid your own shell started, on a port you chose.
-
-## Reviewing and being reviewed
-
-A **review step** (key `R`) is an agent step that reviews the step it waits on, its
-*subject*: `dplanner step add <project> 'Review the parser' --after S7 --agent --review`,
-then `dplanner review set R8 --agent codex --lens architecture --lens <a skill> --max-rounds
-2` for anything but the defaults (the default profile, architecture and security, three
-rounds). It may start as soon as its subject reads ready for review. The two sides talk
-through `dplanner review`, one verb per turn:
-
-- **Reviewing (R8):** `review start R8` opens a round. Read the subject's branch or PR, then
-  `review post R8 --file findings.md` — the subject is in progress again — and `review wait
-  R8` for the answer. When the work is right, `review approve R8`: the subject is done and
-  the review ready to merge, carrying its branch and PR. Past the cap `start` is refused:
-  approve, or `review escalate R8 --file why.md` hands it to a person. A review comments; the
-  subject's own agent changes its branch.
-- **Being reviewed (S7):** after `status set S7 ready-for-review` and `agent-state set S7
-  pending-approval`, run `review wait S7`. When findings arrive, `review take S7`, do the
-  work, push, and `review reply S7 --file reply.md` — S7 is ready for review again — then
-  wait again, until the review approves (S7 is done) or escalates. After an hour with
-  nothing new, stop: relaunching S7 briefs you with any round that arrived.
-
-Both briefings carry this protocol — the review's `## Instructions` are generated from its
-lenses, its cap and its subject, with its description as what to look for — and a
-conversation still going is a *Review rounds with …* section on either side, so a relaunched
-agent picks it up where it stands.
-
-`review wait` reads the plan afresh until it is your turn, then exits 0 with what arrived;
-after nine minutes it exits 3, and you run it again. Give the tool call running it a longer
-timeout than that, or shorten the wait with `--timeout`. `review show <step>` prints a
-conversation.
 
 ## Recording your work on GitHub
 

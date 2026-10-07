@@ -1,11 +1,10 @@
 """What an agent is briefed with, held to the byte.
 
 One plan that exercises every block a briefing can carry — a description beside a separate
-instruction, a feature's passages and a step flowing into it, a PR, a review with a round
-posted, a branch stretch and its landing, notes addressed and
-indexed, a code location — and ``dplanner agent prompt`` for each agent step in it, compared
-with the text under ``golden/briefings/``. A briefing is prose many functions compose; this is
-the test that says a refactor of where they live changed none of it.
+instruction, a feature's passages and a step flowing into it, a PR, a branch stretch and its
+landing, notes addressed and indexed, a code location — and ``dplanner agent prompt`` for
+each agent step in it, compared with the text under ``golden/briefings/``. A briefing is prose
+many functions compose; this is the test that says a refactor of where they live changed none of it.
 
 ``DPLANNER_REGEN_GOLDEN=1`` rewrites the files from the code as it stands — for a change that
 *means* to reword a briefing, never to make a failure go away.
@@ -22,7 +21,6 @@ TMP = "<tmp>"
 
 CASES = (
     "parser",
-    "review",
     "spec-reader",
     "member",
     "landing",
@@ -76,10 +74,7 @@ def plan(cli, tmp_path, workspace):
         text("parser-agent.md", "Run the parser tests first."),
     )
     cli("github", "set", "Parser", "--branch", "feat/parser", "--pr", "12")
-    cli("step", "add", "widget", "Review", "--after", "Parser", "--agent", "--review")
     cli("status", "set", "Parser", "ready-for-review")
-    cli("review", "start", "Review")
-    cli("review", "post", "Review", "--text", "The parser drops the last line.")
     cli(
         "step",
         "add",
@@ -157,7 +152,6 @@ def plan(cli, tmp_path, workspace):
     )
     return {
         "parser": "Parser",
-        "review": "Review",
         "spec-reader": "Spec reader",
         "member": "Member",
         "landing": stretch["land"],

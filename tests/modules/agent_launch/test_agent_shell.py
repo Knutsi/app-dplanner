@@ -118,16 +118,3 @@ def test_a_worktree_step_is_greyed_until_its_worktree_is_here_then_opens_in_it(
     assert state(services).enabled
     services.actions.run("agent.open_shell", services.context.current())
     assert [cwd for cwd, _script in spawned] == [tree]
-
-
-def test_a_review_opens_its_shell_in_the_checkout_it_runs_in(services, step, library_repo, spawned):
-    """A review's run gets no worktree whatever its aspect says, so a shell of one's own
-    opens where that run does."""
-    from dplanner.domain.commands import SetModuleDataCommand
-    from dplanner.planning.review import MODULE_ID, ReviewSettings, write
-
-    SetModuleDataCommand(step.id, MODULE_ID, write(ReviewSettings())).redo(services.document)
-    select(services, step)
-    assert state(services).label == "&Open Terminal in Checkout"
-    services.actions.run("agent.open_shell", services.context.current())
-    assert [cwd for cwd, _script in spawned] == [library_repo]

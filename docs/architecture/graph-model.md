@@ -78,8 +78,8 @@ mean nothing until somebody says *in which project*. When the invocation has a c
 project — `--project`, `$DPLANNER_PROJECT`, or found from the working directory, one rule
 whichever — `find_step` answers a key, a folder name or a title from that project alone and
 refuses one it does not have, naming the project. It used to fall back to the whole library
-when the current project had no match, which is how `DPLANNER_PROJECT=A dplanner review set
-R26` turned project B's S26 into a review in the 10-04 run, written into a plan nobody was
+when the current project had no match, which is how a verb run in project A on `R26` turned
+project B's S26 into a review step in the 10-04 run, written into a plan nobody was
 looking at. A key that is not here was never meant for there.
 
 An id is the one thing that reaches past the current project, because it is unique across
@@ -117,7 +117,7 @@ its own, done once what it waits on is, which is a wait of no days composed in
 `schedule.status_on` (never through the schedule's `wait_of`, or reports would name every cut a
 wait) — and a landing is an agent step carrying `branch_land` (`{"cut": id}`). `planning.kinds`'s
 `works_nobody` became the one predicate a wait and a cut share, and every module that
-refuses such a step a status, an agent, a review or a test words its refusal from the name
+refuses such a step a status, an agent or a test words its refusal from the name
 it hands back, where each had a wait's sentence of its own.
 
 **The pairing is stored; membership is derived.** A landing names its cut, and the name
@@ -156,8 +156,8 @@ words.
 
 **The review moves to the landing.** A member's PR merged into the branch of an open stretch
 accepts the step, from ready-for-review too (`record_merged(accepted_by_merge=)`): the
-branch's quality review is the ordinary Review step placed after the landing, which reads
-the landing's PR — nothing new was built for it. An agent still never merges its own work.
+branch's quality review reads the landing's PR — a person, or the landing's *Review only*
+playbook (`playbooks.md`'s *The presets*). An agent still never merges its own work.
 A landing always opens a PR; landing directly would leave the review nothing to read, and a
 merge commit rather than a squash keeps a branch cut from this one on shared history. The
 GitHub aspect records the base a PR merges into (format 2), so `branch.pr-base` can name

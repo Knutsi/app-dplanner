@@ -172,7 +172,6 @@ class AgentSection(QWidget):
         debounce: DebounceService | None = None,
         worktree: Callable[[StepId], bool] = lambda _sid: True,
         set_worktree: Callable[[StepId, bool], None] = lambda _sid, _on: None,
-        no_worktree: Callable[[StepId], str] = lambda _sid: "",
         usage: Callable[[StepId], str] = lambda _sid: "",
         dictation: DictationService | None = None,
     ) -> None:
@@ -183,7 +182,6 @@ class AgentSection(QWidget):
         self._pick_assets = pick_assets
         self._worktree = worktree
         self._set_worktree = set_worktree
-        self._no_worktree = no_worktree
         self._usage = usage
 
         self._prompt_parts = prompt_parts
@@ -625,11 +623,7 @@ class AgentSection(QWidget):
         state = self._run_state()
         self.run_button.setEnabled(state.enabled)
         self.usage_note.setText(self._usage(self._step_id) if self._step_id is not None else "")
-        # A step whose kind rules a worktree out shows the box as the run will be, greyed
-        # with why — ticking it would change nothing a run does.
-        withheld = self._no_worktree(self._step_id) if self._step_id is not None else ""
-        self.worktree_box.setEnabled(self._step_id is not None and not withheld)
-        self.worktree_box.setToolTip(f"No worktree: {withheld}" if withheld else WORKTREE_TIP)
+        self.worktree_box.setEnabled(self._step_id is not None)
         self.worktree_box.blockSignals(True)
         self.worktree_box.setChecked(self._step_id is not None and self._worktree(self._step_id))
         self.worktree_box.blockSignals(False)

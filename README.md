@@ -407,7 +407,7 @@ src/dplanner/
 │   │                        and how readiness reads one (`held`)
 │   ├── estimate.py          a step's estimate and a project's start date: format, read and write
 │   ├── kinds.py             what a step is: the one ranking its key letter and kind word come from
-│   ├── milestone.py, feature.py, check.py, wait.py, start.py, branches.py, review.py, agent.py
+│   ├── milestone.py, feature.py, check.py, wait.py, start.py, branches.py, agent.py
 │   │                        the kind aspects: each one's stored format and its predicate
 │   ├── progression.py       the status-aware frontier: what can be launched right now
 │   ├── schedule.py          the same walk carrying estimates: running totals, dates, and when each
@@ -573,11 +573,6 @@ src/dplanner/
 │   │                        what is on a branch is `domain/branches.py`'s derivation, and
 │   │                        what it means for a run — its branches, a merge that accepts — is
 │   │                        `plan.py`'s
-│   ├── step_review/         a step whose agent reviews the step it waits on: the Type ▸ Review
-│   │                        toggle, the Review template and tab, `dplanner review` (the
-│   │                        conversation both sides drive, `review wait` included) and its
-│   │                        lint — the settings in `planning/review.py`, the rounds in `aspect.py`,
-│   │                        the conversation read in full in `conversation_dialog.py`
 │   ├── testing/             what a step must keep passing: the tests it carries, the runs over
 │   │                        them, how they are filed (a category and a sort key, with the
 │   │                        category editor), the project's Tests tab, the library-wide roll

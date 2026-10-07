@@ -95,11 +95,17 @@ from dplanner.modules.agent_launch.settings_page import (
     max_agents,
     start_in_progress,
 )
-from dplanner.planning.agent import MODULE_ID, enabled, no_agent, read_project, workplace
+from dplanner.planning.agent import (
+    MODULE_ID,
+    enabled,
+    no_agent,
+    read_project,
+    uses_worktree,
+    workplace,
+)
 from dplanner.planning.branches import DEFAULT_BRANCHES, BranchPlan
 from dplanner.planning.kinds import key_of, works_nobody
 from dplanner.planning.progression import outstanding
-from dplanner.planning.review import is_review, settings
 from dplanner.planning.schedule import status_on
 from dplanner.planning.status import Reading, Unknown, phrase, readiness_of, record_started
 from dplanner.theme.icons import spark_icon
@@ -158,12 +164,6 @@ def _workdir_refusal(facts: RepositoryFacts, step: Step | None = None) -> str:
     if facts.state == UNSET:
         return "no code repository is recorded — Project ▸ Settings…"
     return ""
-
-
-def _preferred_agent(step: Step) -> str:
-    """The agent a step asks to be run by — a review's own choice, a harness id — or "" for
-    the default profile; which profile runs it is this module's."""
-    return settings(step).agent if is_review(step) else ""
 
 
 def _profiles_refused(shared: str) -> list[tuple[str, str]]:
@@ -598,7 +598,7 @@ class AgentLaunchModule:
         run_dir = run_dir or launcher.new_run_dir()
         staged = launcher.stage_assets(run_dir, self.assembled(step).files, deps.read_asset)
         assembled = self.assembled(step, staged)
-        worktree = where.run_name_of(step) if where.worktree(step) else ""
+        worktree = where.run_name_of(step) if uses_worktree(step) else ""
         facts = deps.facts_for(step.id)
         spawned, prepared = self._launch(
             assembled.text,
@@ -615,9 +615,10 @@ class AgentLaunchModule:
         )
         return spawned, assembled.text, prepared
 
-    def launch_unattended(self, step_id: StepId) -> str:
+    def launch_unattended(self, step_id: StepId, *, harness: str = "") -> str:
         """Launch the agent on a step with nobody at the window: "" when a shell opened and
-        the claim was made, else why not — a sentence, never a dialog.
+        the claim was made, else why not — a sentence, never a dialog. ``harness`` is the
+        agent a playbook's role names (a harness id), or "" for the default profile.
 
         The questions are Run Agent's, in its order: the profile's terminal, the step's own
         facts, where the shell opens. A repository nobody checked out here is a refusal
@@ -631,7 +632,7 @@ class AgentLaunchModule:
         if not deps.library.has(step_id):
             return "the step is gone"
         step = deps.library.step(step_id)
-        profile, refusal = self._profile_for(step)
+        profile, refusal = self._profile_for(harness)
         if profile is None:
             return refusal
         if refusal := launcher.template_refusal(launch_command(profile)):
@@ -658,13 +659,12 @@ class AgentLaunchModule:
             intents.drop(intent.run)
         return ""
 
-    def _profile_for(self, step: Step) -> tuple[Profile | None, str]:
-        """The profile an unattended launch runs ``step`` through, and why none can: the
-        agent the step asks for — a review's own — through the first profile running it,
-        else the default. A named agent no profile runs is refused rather than swapped for
-        the default, which may be the very agent whose work the review is about."""
+    def _profile_for(self, wanted: str) -> tuple[Profile | None, str]:
+        """The profile an unattended launch runs through, and why none can: the first
+        profile running the ``wanted`` harness, else the default. A named agent no profile
+        runs is refused rather than swapped for the default, which may be the very agent
+        whose work a review is about."""
         deps = self._deps
-        wanted = _preferred_agent(step)
         profiles = read_profiles()
         if not wanted:
             return profiles[0], ""
@@ -732,7 +732,7 @@ class AgentLaunchModule:
         workdir = where.workdir(facts, step)
         if workdir is None:
             return None, "the project's code is not on this machine — Project ▸ Settings…"
-        if not where.worktree(step):
+        if not uses_worktree(step):
             return workdir.expanduser(), ""
         tree = where.worktree_path(workdir.expanduser(), where.run_name_of(step))
         return (tree, "") if tree.is_dir() else (None, NO_WORKTREE)
@@ -741,7 +741,7 @@ class AgentLaunchModule:
         step = focused_step(context, self._deps.library)
         if step is None:
             return DISABLED
-        label = SHELL_IN_WORKTREE if where.worktree(step) else SHELL_IN_CHECKOUT
+        label = SHELL_IN_WORKTREE if uses_worktree(step) else SHELL_IN_CHECKOUT
         _directory, refusal = self._shell_place(step)
         plain = label.replace("&", "")
         if refusal:

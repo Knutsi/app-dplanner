@@ -26,7 +26,6 @@ from dplanner.domain.shelf import turn_off, turn_on
 from dplanner.domain.store import FilesFor
 from dplanner.modules.agent_briefing.compose import brief
 from dplanner.modules.agent_briefing.instructions import instruction
-from dplanner.modules.agent_briefing.worktree import no_worktree
 from dplanner.planning.agent import (
     MODULE_ID,
     enabled,
@@ -272,9 +271,6 @@ def _worktree(context: CliContext, args: Namespace) -> int:
         raise CliError(
             f"{step.title!r} is not an agent step — mark it with `dplanner agent on {step.title!r}`"
         )
-    withheld = no_worktree(step)
-    if wanted and withheld:
-        raise CliError(f"{step.title!r} runs in no worktree: {withheld}")
     where = "a fresh worktree" if wanted else "the checkout itself"
     if uses_worktree(step) == wanted:
         context.report({"step": step.id, "worktree": wanted}, f"{step.title}: already {where}")

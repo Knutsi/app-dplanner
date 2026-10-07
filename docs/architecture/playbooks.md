@@ -117,9 +117,9 @@ same vendor in a fresh session when only one CLI is usable here, saying so on th
 
 **A role names a harness and, optionally, a model** — `implementer` and `reviewer` are the two
 the presets use. A role is portable: it says *claude*, never a path or a terminal. At launch a
-role maps to **the first launch profile whose agent command runs that harness**, which is how a
-review's preferred agent is already found (`agent_launch/module.py`'s `_profile_for`), and a
-role no profile runs is refused rather than swapped for the default, which may be the very
+role maps to **the first launch profile whose agent command runs that harness**, which is what
+`launch_unattended(step_id, harness=)` already does (`agent_launch/module.py`'s
+`_profile_for`), and a role no profile runs is refused rather than swapped for the default, which may be the very
 agent whose work is reviewed. A headless stage uses only the profile's agent half — no stage
 opens a terminal. **Whether a role's agent can run here** — installed, a version, signed in — is
 `agent_launch/availability.py`'s `why_not` over the roles' harnesses, read from a short cache
@@ -222,7 +222,7 @@ changes, and counting it would escalate work nobody judged.
 A playbook keeps no record of its own. **Every agent stage attempt is one run** in the
 project's `ledger/` — S3's format 2, one file per run, one writer — and every gate a person or
 the coordinator answers is one question under `questions/`. The playbook's state is read from
-those, the way a review's state was read from its stamps.
+those, the way a review step's state was read from its stamps.
 
 **What the run carries for a playbook:**
 - `pass` — the pass's id, minted at *Run Playbook* like a run's, carried by every run and gate
@@ -266,11 +266,12 @@ for it exists, and the run file, written before the process spawns (the intent r
 
 ### What of the review rounds ledger survives
 
-Today's `review_rounds` entry (`modules/step_review/aspect.py`) is a list of rows of texts and
-stamps on the step that asks. Its lessons survive; its rows do not. Each fact moves to the
+The `review_rounds` entry (`modules/step_review/aspect.py`, removed at S6 — `git show
+dfc0de0:src/dplanner/modules/step_review/aspect.py`) was a list of rows of texts and stamps on
+the step that asks. Its lessons survive; its rows do not. Each fact moves to the
 record that already owns it:
 
-| Today's round fact | Becomes |
+| The round fact | Becomes |
 |---|---|
 | `opened` | the review run's `launched` |
 | `findings` (free text) | the review run's **verdict**: `{outcome, summary, findings[]}`, each finding with `severity`, `file`, `line`, `text` and `evidence` — the typed final message (`--json-schema`, `--output-schema`), recorded by the supervisor, never posted by the agent |
@@ -292,9 +293,10 @@ record that already owns it:
 - **A conversation still going is a section of the briefing**, built from the runs and the
   questions of the pass, so a fresh fix is briefed with every finding and every answer.
 - **One builder names each message** for the panel and the conversation dialog alike — the
-  `message_rows` / `where_it_stands` pair is the one to keep and re-point.
+  `message_rows` / `where_it_stands` pair S6 removed (`step_review/conversation_dialog.py` at
+  `dfc0de0`) is the shape to rebuild over runs and questions.
 
-**What leaves** (S6, *Remove review steps*): a review as a step (`Kind.REVIEW`, the `R` letter,
+**What left** (S6, *Remove review steps*): a review as a step (`Kind.REVIEW`, the `R` letter,
 its subject read off `requires`); lenses as a step setting — they become the review stage's
 prompt; `review wait`, since no process waits; the agent-written `post`, `approve` and
 `escalate`; and `due_turns`. Auto-progress and the window's auto-launch left in S5, a

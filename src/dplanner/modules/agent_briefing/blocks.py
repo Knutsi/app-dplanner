@@ -1,7 +1,7 @@
 """The step's own facts and the project's, as the blocks a briefing carries.
 
-What a step is, why it exists, where its work lands, the work it reviews or lands,
-the review rounds it is in, the notes that reach it, and the project's topology — each read
+What a step is, why it exists, where its work lands, the work it lands, the notes that
+reach it, and the project's topology — each read
 from the module that owns the fact, through its ``aspect.py``. An empty fact contributes no
 block, and :func:`~dplanner.modules.agent_briefing.prompt.assemble` renders the blocks
 without knowing what any of them is.
@@ -11,7 +11,7 @@ from dplanner.domain.assets import assets
 from dplanner.domain.model import Library, Step
 from dplanner.domain.repositories import RepositoryFacts
 from dplanner.domain.store import FilesFor
-from dplanner.modules.agent_briefing.prompt import PromptPart, quoted
+from dplanner.modules.agent_briefing.prompt import PromptPart
 from dplanner.modules.agent_briefing.worktree import run_name_of, workdir, worktree_path
 from dplanner.modules.github.aspect import pr_label
 from dplanner.modules.github.aspect import read as github_read
@@ -19,22 +19,12 @@ from dplanner.modules.notes.aspect import briefing_blocks, note_files, reaching
 from dplanner.modules.spec.aspect import attachment_paths, read_topology
 from dplanner.modules.step_description.aspect import MODULE_ID as DESCRIPTION_ID
 from dplanner.modules.step_description.aspect import read as description_read
-from dplanner.modules.step_review.aspect import (
-    ENDED,
-    PARTY,
-    POSTED,
-    messages,
-    standing,
-    turn,
-    with_party,
-)
 from dplanner.planning.agent import read as instruction_read
 from dplanner.planning.agent import uses_worktree
 from dplanner.planning.branches import is_land, reading
 from dplanner.planning.feature import FeatureSource, is_feature
 from dplanner.planning.feature import read as feature_read
 from dplanner.planning.kinds import flows_into, key_of
-from dplanner.planning.review import is_review, reviews, subjects
 from dplanner.planning.status import is_done, phrase, stored
 
 
@@ -144,19 +134,15 @@ def step_sections(
             lines.append(pr)
         if lines:
             sections.append(PromptPart(heading="Where the work lands", body="\n".join(lines)))
-    reviewed = _reviewed_work(library, step, facts)
-    if reviewed:
-        sections.append(PromptPart(heading="Work you review", body=reviewed))
     landed = _landed_work(library, step, facts)
     if landed:
         sections.append(PromptPart(heading="Work you land", body=landed))
-    sections += _conversation_parts(library, step)
     return sections
 
 
 def _landed_work(library: Library, step: Step, facts: RepositoryFacts | None) -> str:
-    """What a landing is handed about the branch it lands: each step on it where it stands,
-    the line *Work you review* prints. Empty for a step that lands nothing."""
+    """What a landing is handed about the branch it lands: each step on it where it stands.
+    Empty for a step that lands nothing."""
     if not is_land(step):
         return ""
     stretch = reading(library.project_of(step.id), is_done).of_land(step.id)
@@ -166,9 +152,8 @@ def _landed_work(library: Library, step: Step, facts: RepositoryFacts | None) ->
 
 
 def _source_line(source: Step, facts: RepositoryFacts | None) -> str:
-    """One step whose work another step takes, where it stands: its status, its branch and
-    PR, and its worktree on this machine — the line *Work you review* and *Work you land*
-    both list, so a review and a landing are told where work is the one way.
+    """One step a landing takes the work of, where it stands: its status, its branch and
+    PR, and its worktree on this machine — a line of *Work you land*.
 
     The worktree is named from the same rule the launcher prepared it by (``run_name_of``),
     under the checkout of the code location the step works in; whether it is *here* is the
@@ -194,62 +179,6 @@ def _source_line(source: Step, facts: RepositoryFacts | None) -> str:
         here = path is not None and path.is_dir()
         facts_of.append(f"worktree `{path}`" if here else "no worktree of it on this machine")
     return f"- **{key_of(source)}** {source.title} — " + " · ".join(facts_of)
-
-
-def _reviewed_work(library: Library, step: Step, facts: RepositoryFacts | None) -> str:
-    """What a review is handed about the work it reviews: its subject where it stands, and
-    how to read that work without touching it. Empty for a step that is no review, and for
-    a review with no subject — its instructions say to stop."""
-    reviewed = subjects(library, step) if is_review(step) else []
-    if not reviewed:
-        return ""
-    return "\n".join(
-        [
-            *(_source_line(subject, facts) for subject in reviewed),
-            "",
-            "Read the work where it is, and change nothing in it: in its worktree when the line"
-            " names one here; otherwise from its PR (`gh pr diff <number>`) or its branch"
-            " (`git fetch origin <branch>`, then read `FETCH_HEAD`) — never by checking its"
-            " branch out in this checkout.",
-        ]
-    )
-
-
-def _conversation_parts(library: Library, step: Step) -> list[PromptPart]:
-    """A section per review conversation the step is in and that is still going — as the
-    step that asks or the one that answers — with what each side has said, so an agent
-    relaunched mid-review picks it up where it stands. Who talks to whom is the
-    ``reviews`` rule the ``review`` verbs read; an ended conversation tells the
-    next worker nothing to do, and the Review tab keeps it."""
-
-    def ref(other: Step) -> str:
-        return quoted(key_of(other) or other.title)
-
-    askers = [each for each in library.dependents(step.id) if reviews(each, step)]
-    talks = [
-        *((step, party) for party in library.requires(step.id) if reviews(step, party)),
-        *((asker, step) for asker in askers),
-    ]
-    parts = []
-    for asker, party in talks:
-        held = with_party(asker, party.id)
-        if not held or turn(held[-1]) == ENDED:
-            continue
-        lines = [f"Where it stands: {standing(held[-1], ref(asker), ref(party))}."]
-        for said in messages(held):
-            who = f"{ref(asker)}'s findings" if said.kind == POSTED else f"{ref(party)}'s reply"
-            lines += ["", f"### Round {said.round.number} — {who}", "", said.text.rstrip()]
-        if party.id == step.id and turn(held[-1]) == PARTY:
-            named = f" --from {ref(asker)}" if len(askers) > 1 else ""
-            lines += [
-                "",
-                f"It waits on your answer: `dplanner review take {ref(step)}{named}`, settle each"
-                " finding — or say why not — commit and push, then `dplanner review reply"
-                f" {ref(step)}{named} --file <reply.md>`.",
-            ]
-        other = party if asker.id == step.id else asker
-        parts.append(PromptPart(heading=f"Review rounds with {ref(other)}", body="\n".join(lines)))
-    return parts
 
 
 def project_sections(library: Library, step: Step, _files: FilesFor) -> list[PromptPart]:
