@@ -9,6 +9,7 @@ from datetime import date
 from pathlib import Path
 
 import pytest
+from tests.launching import checkout_of, committed
 
 from dplanner.domain.commands import (
     AddNodeCommand,
@@ -226,7 +227,7 @@ def test_ticked_ready_steps_in_two_projects_launch_in_one_gesture(
     from dplanner.modules.step_agent_run.aspect import launched
 
     alpha = make_project("Alpha", legacy=True)
-    second_repo = init_repo(tmp_path / "second")
+    second_repo = committed(init_repo(tmp_path / "second"))
     satellite = services.repo.attach(seed_project(second_repo, "Satellite"))
     services.document.add_child(services.document.id, satellite)
     chosen = [add(services, alpha, "Map the API"), add(services, satellite, "Wire the antenna")]
@@ -245,5 +246,5 @@ def test_ticked_ready_steps_in_two_projects_launch_in_one_gesture(
     assert button is not None and button.isEnabled(), button and button.toolTip()
     assert button.defaultAction().text() == "Run 2 Agents…"
     button.defaultAction().trigger()
-    assert shells == [library_repo, second_repo]
+    assert [checkout_of(shell) for shell in shells] == [library_repo, second_repo]
     assert all(launched(services.document.step(step.id)) for step in chosen)

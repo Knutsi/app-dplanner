@@ -50,7 +50,7 @@ import sys
 import threading
 import time
 import uuid
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import ExitStack, contextmanager, suppress
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -452,13 +452,51 @@ def usage_of(log: TurnLog) -> tuple[AgentUsage, ...]:
 
 def start_detached(project_dir: Path, run: str, prompt: str = "", text: str = "") -> None:
     """Start a supervisor for the run that outlives whoever started it — ``agent run``'s
-    launch, an answer, a reset, *Retry now*."""
-    argv = ["dplanner", "agent", "supervise", run, "--project-dir", str(project_dir)]
+    launch, an answer, a reset, *Retry now*.
+
+    It is this interpreter running this build (``python -m dplanner``), never whatever
+    ``dplanner`` is on PATH: a run launched from a branch's build is supervised by that
+    build, not by the installed one, which may not know the record's words."""
+    argv = [sys.executable, "-m", "dplanner", "agent", "supervise", run]
+    argv += ["--project-dir", str(project_dir)]
     if prompt:
         argv += ["--prompt", prompt]
     if text:
         argv += ["--text", text]
     spawn_detached(argv)
+
+
+def revive(project_dirs: Iterable[Path], config: Path | None = None) -> list[str]:
+    """Start a supervisor for every run of this machine that lost its turn — the last turn
+    has no end and no supervisor holds the run — so the new one ends that turn
+    ``failed``/``lost`` and retries it. What a machine's start does: a reboot or a killed
+    supervisor leaves exactly such runs. The runs it started, by id.
+
+    A run whose turn is still alive under nobody is left to the supervisor, which refuses
+    it; a parked run (its last turn ended) waits for a person and is never touched here."""
+    here = ledger.machine_id(config)
+    started: list[str] = []
+    for project_dir in project_dirs:
+        for record in ledger.records(project_dir):
+            last = record.last_turn
+            if not record.headless or record.over or last is None or last.end:
+                continue
+            if record.machine != here or supervised(ledger.run_dir(record.run, config)):
+                continue
+            start_detached(project_dir, record.run)
+            started.append(record.run)
+    return started
+
+
+def supervised(directory: Path) -> bool:
+    """Whether a live supervisor holds the run in ``directory``."""
+    if not (directory / LOCK_FILE).exists():
+        return False
+    try:
+        with _os_lock(directory / LOCK_FILE, wait=False):
+            return False
+    except BlockingIOError:
+        return True
 
 
 @contextmanager

@@ -76,34 +76,70 @@ The same `status set` also takes the agent's banner down: a status that says nob
 working the step ends the at-work claim on it — *An agent at work says so, and the window
 says it back* has why.
 
-## A launch writes its intent before its shell
+## One launch under both surfaces
 
-A launch nobody watches — `AgentLaunchModule.launch_unattended`, kept for `dplanner agent
-run` (S11) when the window's auto-launch left with auto-progress (`decisions.md`, 2026-10-07)
-— is Run Agent for one step with the person's questions taken out, and an external effect
-whose claim reaches the plan only at a flush. Two rules came out of the auto-launch that
-first needed them, and they are what is kept.
+`dplanner agent run <step>` is the launch a director or a daemon makes, and the window's
+Run Agent is the same launch with a person's questions put in front of it. The 10-04 run
+showed what two launches cost: the director rebuilt Run Agent by hand for every step, and
+"forgot to set in-progress" and "a landing on a new branch instead of the feature branch"
+were both a hand-built launch drifting from the real one. So there is one, and both
+surfaces call it, in one order:
 
-**The intent is written first.** Spawning, claiming in memory and flushing afterwards
-leaves no trace when the process dies in between, and the next launcher finds the step
-unclaimed and launches it again. So the launch writes an intent (`intents.py`: step, run
-id, actor, run directory) before it spawns, drops it when no shell opened, claims the step
-in progress, and forgets the intent only once autosave says the claim is on disk. An intent
-found left over later is a launch that was interrupted: a shell that started (its wrapper
-wrote the `shell` file into the run directory) is a run, and one that never started is a
-person's to start again — **never retried blind**, since a shell slow to start would
-otherwise be a second one. The intent is this machine's fact, never the plan's: a run
-directory and a pid mean nothing on another machine. Only an unattended launch records one;
-a person's Run Agent is watched by the person who clicked it. The run record S3 designed
-(*Runs, questions and claims are three records in the plan*) is written before the process
-spawns too, and is the claim `agent run` keeps.
+1. **Where it works** (`agent_launch/launch.py`'s `worktree_of` and `place`). The step's
+   worktree is prepared by git *in Python* — `agent_briefing/worktree.py`'s `prepare` — no
+   longer by the terminal's wrapper script: a headless run has no script, and a second
+   implementation for it would be the drift this section exists to end. It is apart from
+   the rest because it is the slow part — a fetch — which the window runs on a task while
+   the CLI simply waits; `worktree_of` reads the plan on the caller's thread and `place`
+   takes plain values, so a worker never touches the model.
+2. **Its files and its record** (`launch`). The briefing goes into `prompt.md` with its
+   assets beside it — `config_dir()/runs/<run>/` for a headless run, a temp directory for
+   a terminal — and the run's ledger record is written **before anything spawns**: format
+   2 for a headless run (`stage`, `attempt`, the session minted for a harness that names
+   one), format 1 for a terminal. The record *is* the launch's intent. A launcher that
+   died after the spawn left a run on record rather than a process nobody knows of, and
+   `agent run` refuses a step whose headless run is not over — so a run is never launched
+   twice, and a parked one is resumed through `agent supervise`, never relaunched.
+3. **The start.** A headless run's supervisor (`supervisor.start_detached`), or the
+   profile's terminal. A start that fails takes its record back: a record of a run that
+   never existed would be harvested and swept forever.
+4. **The claim** (`workflows.py`'s `run_agent`, a `Change`). Applied only once the run has
+   started — so a step is never claimed for a run that did not start, which is the window's
+   standing rule (the prompt fallback claims nothing) kept for both surfaces. The CLI
+   applies it like any command; the window applies it off the undo stack, since the agent
+   it records cannot be undone (*A launch says the work has started*).
 
-**It asks nobody.** No prerequisite confirmation, no clone (a repository not checked out
-here is a refusal naming Run Agent, which clones), no prompt fallback: a refusal is a
-sentence. The claim is made whatever *On launch* says, or nothing would say the step was
-taken. The profile is the first one running the harness the launch names — a playbook
-role's agent — and a harness no profile runs is refused rather than swapped for the
-default, which may be the very agent whose work is reviewed.
+**The plan's half is the workflow, and the rest is not.** A `workflows.py` returns a
+`Change` and never persists anything (`core.md`'s *A workflow is one function under both
+surfaces*); a launch writes files, runs git and spawns processes, so those live in the
+Qt-free `launch.py` and the workflow is the claim alone. What drifts between two launches
+is everything outside the claim, and that is what `launch.py` makes one.
+
+**It replaced the intent file.** `launch_unattended` wrote an intent (`intents.py`) before
+its shell and forgot it once its claim was on disk; nothing ever called it. The run record
+written before the spawn carries the same fact in the place every reader already looks, so
+the intent and the unattended twin are gone (`decisions.md`, 2026-10-07).
+
+**What the window asks, the CLI refuses.** The window keeps a person's questions: the graph
+gate (a confirmation), the clone of a repository not checked out here, the limit on a
+selection, and the prompt fallback when no terminal opens. `agent run` has nobody to ask,
+so each is a sentence and an exit 1: prerequisites not done are refused until `--anyway`,
+a repository not checked out here names Run Agent, which clones. It is headless by default
+— the verb is for whoever is not watching — and `--terminal` opens the profile's terminal
+as the window does. `--profile` picks the profile, whose agent command names the harness a
+headless run uses; a custom command runs no headless turn, and says so.
+
+**A supervisor is the build that launched its run.** `start_detached` runs
+`sys.executable -m dplanner`, never whatever `dplanner` is on PATH: a run launched from a
+branch's build must be supervised by that build, which knows the record's words.
+
+**A machine's start picks up its lost turns.** A reboot or a killed supervisor leaves a run
+whose last turn never ended. `supervisor.revive` starts a supervisor for each such run of
+this machine that no supervisor holds; the new one ends the turn `failed`/`lost` and
+retries it. The window does it once as it starts (the ledger sweep's module, which reads the
+same records), and `agent run` over the step's project before it looks for a run not over.
+A parked run — its last turn ended — waits for a person and is never touched, and a run
+whose record has no turn at all is left too: nothing says whether it ever started.
 
 **Plan mode is waiting on a person, and says so.** The Claude preset starts in plan mode, so
 a launched Claude writes a plan and waits for somebody to approve it — and a session in plan
@@ -207,9 +243,9 @@ in the act.
 
 The graph gates launching by *reading* status (`status_for`, the Step statuses tab's
 seam); a launch also *writes* one. When a shell opens, the step is claimed `in-progress`
-through `mark_started` — the writer half of the same seam, wired by the composition root
-to `planning/status.py`'s own `record_started`, so the agent module never learns the vocabulary
-and the status module keeps the only place its words are spelled.
+through the launch's workflow — `agent_launch/workflows.py`'s `run_agent`, a `Change` built
+from `planning/status.py`'s own `status_command`, so the status module keeps the only place
+its words are spelled.
 
 Three decisions sit in that one line.
 
@@ -217,7 +253,7 @@ Three decisions sit in that one line.
 beside it (*The peer reports back through its run directory* has that reasoning). The
 claim rides on something Ctrl+Z cannot take back — a detached shell now exists — and an
 undo entry would let the next Ctrl+Z file the step as pending while an agent is still
-working in it. `record_started` answers False and writes nothing when the step already
+working in it. The claim is no command at all when the step already
 claims to be in progress, so a second launch dirties no file; it *does* override `done`,
 because launching an agent on a finished step means the work resumed and there is no
 other honest reading.
@@ -239,8 +275,9 @@ claiming where the shells stop, so three steps of which the third found no termi
 two marked and one not; and an agent handed two writers' versions of a plan file is never
 marked as doing the step's work — it is merging, and marking that step in progress would
 be the same lie in the other direction. The verb decides; the mechanism obeys. The one
-other maker is its unattended twin, `launch_unattended`, which claims whatever *On launch*
-says (*A launch writes its intent before its shell*).
+other maker is `dplanner agent run`, which always claims: *On launch* is a switch for a
+person at a window, and a launch nobody watches must say the step was taken (*One launch
+under both surfaces*).
 
 Nothing un-claims it. Finishing is the agent's own `dplanner status set … done`, or the
 person's from Step ▸ Status — the run ending clears the agent *chip* (that state is about
@@ -392,16 +429,18 @@ beside Run Agent, `dplanner agent worktree <step> off` and `step add --no-worktr
 CLI's word, and the skill tells an agent to leave it on unless the step genuinely must
 share the working tree.
 
-**The worktree is prepared by the wrapper script, and a worktree it cannot prepare stops
-the run.** A project kept in a subfolder of its repository leaves a `.dplanner` pointer
+**The worktree is prepared before the run, and a worktree that cannot be prepared stops
+it.** A project kept in a subfolder of its repository leaves a `.dplanner` pointer
 *file* at the root (FORMAT.md's pointer), so a worktree under `.dplanner/` fails with *Not a
-directory*; and a script that hides such a failure carries on in the main checkout — so two
-agents launched "into fresh worktrees" edit one checkout on one branch, which is the bug
-this section exists for. So the worktrees live in `.dplanner-worktrees/`, and the script
-prunes stale registrations, reuses the branch when it exists, verifies the tree is a
-linked worktree (a `.git` *file*), and otherwise prints git's reason, waits for Enter and
-writes `1` to the exit file — the window reports *failed (exit 1)*, the same way it reports
-any agent that died. Never the main checkout by accident.
+directory*; and a script that hid such a failure carried on in the main checkout — so two
+agents launched "into fresh worktrees" edited one checkout on one branch, which is the bug
+this section exists for. So the worktrees live in `.dplanner-worktrees/`, and
+`agent_briefing/worktree.py`'s `prepare` prunes stale registrations, reuses the branch when
+it exists, verifies the tree is a linked worktree (a `.git` *file*), and otherwise refuses
+with git's reason — a sentence in the window's status bar, an exit 1 from `agent run` — and
+nothing starts. Never the main checkout by accident. It was the wrapper script's job until
+a headless run, which has no script, needed the same worktree (*One launch under both
+surfaces*).
 
 **The run is named after the step, once.** `agent_briefing.worktree.run_name(key, ticket, title)` —
 `f7-PROJ-12-build-the-modal`, made ref-safe — is the worktree's directory, the branch's
@@ -413,7 +452,7 @@ briefing call it, because the **briefing names the worktree**: its preamble tell
 agent to confirm `git rev-parse --show-toplevel` ends in that directory and the branch is
 `agent/<name>`, and to stop if either differs. The check costs the agent two commands and
 closes the gap the silent script left — a run that somehow lands in the main checkout is
-refused by the agent, not just by the script. A step whose worktree is off is told so
+refused by the agent, not just by `prepare`. A step whose worktree is off is told so
 instead, and warned that it shares the developer's tree.
 
 **Inside the worktree the plan of record is still the library's.** The plan is usually
@@ -614,7 +653,11 @@ than refused, since a settings field is no place for a modal.
 The two single settings the profiles replaced are read as the default profile when no
 list has been stored, so a machine configured before profiles existed keeps its choices
 without anybody retyping them — the same idea as a harness carrying the command texts it
-shipped earlier. Profiles are per user, per machine (`user_config`), never the plan.
+shipped earlier. Profiles are per user, per machine, never the plan — and kept in
+`config_dir()/agent-profiles.json`, not QSettings, because `dplanner agent run --profile`
+reads them from a terminal that loads no Qt. The window adopts what QSettings held before
+the move once (`profiles.adopt`), the list and the seed flag with it, so nothing is seeded
+twice.
 
 **The verb has one seat, and it is the child menu.** A flat *Run Agent…* beside a *Run Agent
 With ▸* is two entries for one act, and the flat one hides the choice the other offers. So

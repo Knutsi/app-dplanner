@@ -389,3 +389,19 @@ def test_usage_show_list_record_and_harvest(cli, tmp_path, monkeypatch):
     assert "both --input and --output" in err
     err = cli("usage", "record", "S1", "--agent", "claude", "--session", "nope", expect=1)
     assert "no Claude Code record found" in err
+
+
+def test_the_window_picks_up_this_machines_lost_turns_when_it_starts(app, request, monkeypatch):
+    """A reboot or a killed supervisor leaves a headless run whose turn never ended: the
+    window's start hands every project's ledger to ``revive``, once."""
+    from dplanner.modules.agent_supervisor import supervisor
+
+    asked: list[list[object]] = []
+
+    def revive(dirs):
+        asked.append(list(dirs))
+        return []
+
+    monkeypatch.setattr(supervisor, "revive", revive)
+    request.getfixturevalue("services")
+    assert asked == [[]]  # The library starts empty; each project's ledger when it has some.
