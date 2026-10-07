@@ -106,6 +106,7 @@ def test_prose_ending_on_a_question_is_asked():
 
 
 def test_a_prose_question_is_only_one_still_open_at_the_very_end():
+    assert prose_question("Should it accept strings?\n- Yes\n- No\nTell me, and I'll edit it.")
     assert prose_question("Should it accept strings?\n- Yes\n- No\n\nTell me, and I'll edit it.")
     # Answered where it was asked: an FAQ heading, a question and its answer.
     assert not prose_question("## Why did it fail?\nA yanked release.\n\nAll tests pass.")
@@ -186,8 +187,9 @@ def test_a_turn_that_ends_to_wait_on_its_own_background_work_was_abandoned():
     got = ending(final=said)
     assert (got.end, got.why) == (TurnEnd.FAILED, "abandoned-wait")
     assert not got.needs_person
+    # A typed answer is the agent's own word: no prose heuristic overrides it.
     done = {"outcome": "done", "summary": "Started the build; I'll be notified when it ends."}
-    assert ending(typed=done).why == "abandoned-wait"
+    assert ending(typed=done, final="I'll pick up when it finishes.") == Ending(TurnEnd.DONE)
     # A finished fix that mentions a wait, a quoted example, and a wait said earlier on.
     for finished in (
         "Fixed the worker waiting for the background job; tests pass.",

@@ -212,11 +212,13 @@ class Headless:
                 return Ending(TurnEnd.ASKED, "typed", question=question)
             if typed.get("outcome") == "denied":
                 return Ending(TurnEnd.DENIED, "typed", reason=summary)
-        for said in (log.final, _text(typed.get("summary")) if typed else ""):
-            if waits_on_itself(said):
-                return Ending(TurnEnd.FAILED, "abandoned-wait", last_line(said))
-        if typed is not None:
+            # A schema-valid answer is the agent's own word on how it ended: no prose
+            # heuristic second-guesses it.
             return Ending(TurnEnd.DONE)
+        # Untyped prose only, and when unsure it parks rather than says done: a false park
+        # costs a card or one "continue" turn, a false done loses the work without a word.
+        if waits_on_itself(log.final):
+            return Ending(TurnEnd.FAILED, "abandoned-wait", last_line(log.final))
         question = prose_question(log.final)
         if question:
             return Ending(TurnEnd.ASKED, "prose", question=question)
@@ -318,7 +320,8 @@ def prose_question(text: str) -> str:
     me know, I'll…") and the question is the last one just above. A question answered by the
     lines after it — an FAQ heading, "Why did it fail? The dependency was missing." — is not
     one, and neither is an offer with no question to answer ("Let me know if you'd like
-    changes")."""
+    changes"). A known limit, accepted as the fallback's: a question quoted at the very end
+    ("> Should add() accept strings?") still reads as asked — parking is the safe mistake."""
     blocks = paragraphs(text)
     if not blocks:
         return ""
@@ -327,7 +330,7 @@ def prose_question(text: str) -> str:
         return _bare(final[-1])
     if not _REQUEST.search(" ".join(final)):
         return ""
-    for block in reversed(blocks[-3:-1]):
+    for block in reversed(blocks[-3:]):
         for line in reversed(block):
             if _bare(line).endswith("?"):
                 return _bare(line)
@@ -350,7 +353,9 @@ def waits_on_itself(text: str) -> bool:
     Headless, the process exits with the turn and the work dies with it, and nobody wakes the
     agent: the turn was abandoned, not finished, and "continue" resumes it. A finished fix
     that mentions a wait ("fixed the worker waiting for the job") is not this, nor a quoted
-    example, nor waiting on a *person* — that is a question."""
+    example, nor waiting on a *person* — that is a question. A known limit, accepted as the
+    fallback's: "Waiting on the build was the bug; fixed now." still reads as a wait — one
+    cheap "continue" is the safe mistake."""
     blocks = paragraphs(text)
     return bool(blocks) and bool(_WAITS_ON_ITSELF.search(_QUOTED.sub("", "\n".join(blocks[-1]))))
 

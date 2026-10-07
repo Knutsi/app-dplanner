@@ -345,7 +345,8 @@ def read_event(log: TurnLog, event: Mapping[str, object]) -> None:
         if isinstance(item, dict) and item.get("type") == "agent_message":
             log.final = str(item.get("text") or "")
             log.typed = typed_message(log.final)
-            log.denials = refusals(log.final)
+            # Prose only: a schema-valid answer says for itself whether it was denied.
+            log.denials = refusals(log.final) if log.typed is None else []
     elif kind == "turn.completed":
         usage = event.get("usage")
         if isinstance(usage, dict):

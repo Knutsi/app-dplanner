@@ -672,7 +672,13 @@ because nothing about it is a terminal's: the supervisor spawns the argv itself,
 to quote for and no person to wait on, and reads the stream as it comes. Classification is one
 function over what the readers normalise, so each CLI's quirks live in its own reader and the
 order of the rules is written once; `playbooks.md`'s *Each stage is one headless turn per
-harness* has the table and the reasons.
+harness* has the table and the reasons. **A schema-valid final message always wins**: no prose
+heuristic — a refusal, a question, a wait — is applied to a turn that produced one. The prose
+heuristics are the fallback for untyped text (opencode, a plan), and when unsure they park
+rather than say done, because a false park costs a card or one cheap "continue" turn and a
+false done loses work without a word. Two misreadings are accepted as that fallback's known
+limits rather than chased: a question quoted at the very end reads as asked, and "waiting on
+the build was the bug" reads as an abandoned wait.
 
 ### A launch profile is a name over the two choices
 

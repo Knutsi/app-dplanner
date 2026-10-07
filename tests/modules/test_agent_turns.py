@@ -107,6 +107,8 @@ RECORDED = {
     "codex-readonly": ("denied", ""),
     "codex-ask-door": ("asked", "record"),
     "codex-review-typed": ("done", ""),
+    # A typed pass whose summary mentions the sandbox: the verdict, not the words, decides.
+    "codex-review-typed-pass": ("done", ""),
     "opencode-done": ("done", ""),
     "opencode-ask-door": ("asked", "record"),
     "opencode-denied": ("denied", ""),

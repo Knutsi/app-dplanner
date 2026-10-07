@@ -348,7 +348,7 @@ typed outcome; a wait on the agent's own background work (`failed` as `abandoned
 because headless the work died with the process and nobody wakes the agent, so "continue"
 resumes it); a question in prose; done. A harness differs only in its reader and two hooks —
 where its limit telemetry lives (Codex: the rollout, never `--json`) and the denials it prints
-to stderr. **The two prose heuristics read only what is still open at the very end**: the final
+to stderr. **A schema-valid final message always wins; the prose heuristics run only on untyped text, read only what is still open at the very end, and when unsure park rather than say done** (`agents.md` has the accepted limits): the final
 paragraph ends on the question, or asks for an answer ("Once you let me know, I'll…") with the
 question just above — so an answered FAQ heading is no question — and the final paragraph
 commits, in the agent's own unquoted words, to waiting on its work — so a finished fix "for the
