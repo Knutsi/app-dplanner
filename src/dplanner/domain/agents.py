@@ -303,6 +303,25 @@ def shell_marker(harnesses: tuple[AgentHarness, ...], env: Mapping[str, str]) ->
     return next((name for name in shell_markers(harnesses) if env.get(name)), "")
 
 
+def is_session_marker(name: str, harnesses: tuple[AgentHarness, ...]) -> bool:
+    """Whether an environment variable of this name says "inside an agent's session" —
+    for any of the harnesses this build knows."""
+    return any(harness.marks(name) for harness in harnesses)
+
+
+def scrubbed_environment(
+    env: Mapping[str, str], harnesses: tuple[AgentHarness, ...]
+) -> dict[str, str]:
+    """``env`` without any harness's session markers, so the agent starts a session of
+    its own.
+
+    Inside another agent's session markers a nested ``claude``
+    is a child session — no transcript, ended with its parent — and every agent launched
+    from a window that inherited them died with the agent that had started the window.
+    """
+    return {name: value for name, value in env.items() if not is_session_marker(name, harnesses)}
+
+
 def harness_by_id(harnesses: tuple[AgentHarness, ...], harness_id: str) -> AgentHarness | None:
     return next((h for h in harnesses if h.id == harness_id), None)
 

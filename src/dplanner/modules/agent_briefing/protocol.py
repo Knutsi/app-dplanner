@@ -6,6 +6,7 @@ after.
 """
 
 from collections.abc import Sequence
+from pathlib import Path
 
 from dplanner.core.storage.pointer import WORKTREES_DIR
 from dplanner.domain.locations import CODE, LocationRole, roles_by_id
@@ -242,3 +243,13 @@ def _handoff_told(project: str, ref: str) -> str:
         " in full, `--reach project` if every step should see it regardless;"
         f" `dplanner note attach {project} <id> <file>` for files.\n"
     )
+
+
+def opening_prompt(prompt_file: Path) -> str:
+    """The one line the agent starts with — a pointer at the briefing, never the briefing.
+
+    The whole briefing in argv was what one agent's ``pkill -f`` matched on every other
+    (``agent_launch/launcher.py``'s docstring); nothing the project is about appears in
+    this line. Run Agent's terminal and the run supervisor's first turn both open with it.
+    """
+    return f"Read your briefing in {prompt_file} in full, then follow it."

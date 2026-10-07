@@ -348,9 +348,15 @@ def read_event(log: TurnLog, event: Mapping[str, object]) -> None:
     kind = event.get("type")
     if kind == "thread.started":
         log.session = str(event.get("thread_id") or log.session)
+    elif kind == "item.started":
+        item = event.get("item")
+        if isinstance(item, dict):
+            log.tools.add(str(item.get("id")))
     elif kind == "item.completed":
         log.progressed()
         item = event.get("item")
+        if isinstance(item, dict):
+            log.tools.discard(str(item.get("id")))
         if isinstance(item, dict) and item.get("type") == "agent_message":
             log.final = str(item.get("text") or "")
             log.typed = typed_message(log.final)

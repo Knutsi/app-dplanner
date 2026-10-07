@@ -89,6 +89,8 @@ HEADLESS_FILES: dict[str, tuple[str, ...]] = {
     "agent_launch": ("availability.py", "intents.py", "launcher.py"),
     # Reads a run's usage back into the ledger: the wrapper script's `dplanner` call.
     "agent_usage": ("harvest.py",),
+    # The run supervisor: a package with no window half, reached by `agent supervise`.
+    "agent_supervisor": ("supervisor.py",),
     # A branch stretch's run plan, and the edits it makes.
     "branches": ("edits.py", "plan.py"),
     "canvas": (

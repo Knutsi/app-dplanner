@@ -25,6 +25,12 @@ found by the directory the run worked in and its launch time, and two runs in on
 must not both take the first session there: every harvest is handed the sessions the
 library's other records already own, and writes the one it found into its own record, so
 from then on it is read by id.
+
+**A headless run is not harvested.** Its supervisor is its record's one writer, and counts
+each turn from the turn's own stream as the turn ends — a turn lost with its supervisor is
+counted from the stream it left, when the next supervisor ends it ``lost``. A harvest
+rewriting the record beside a live supervisor would be a second writer, and the vendor's
+whole-session total would count a session two runs share twice.
 """
 
 from collections.abc import Iterable, Sequence
@@ -48,7 +54,7 @@ def harvest(
     """The record with what the vendor's records say now; the record as it was when they
     say nothing — not there yet, gone, or a CLI this build cannot read."""
     harness = harness_by_id(tuple(harnesses), record.harness)
-    if harness is None or harness.report is None:
+    if harness is None or harness.report is None or record.headless:
         return record
     facts = RunFacts(
         session=record.session,
@@ -68,7 +74,10 @@ def harvest(
 
 def store(project_dir: Path, record: LedgerRecord) -> bool:
     """Write the record, keeping an end another process wrote meanwhile — a harvest begun
-    before the wrapper said the agent exited must not write the exit away."""
+    before the wrapper said the agent exited must not write the exit away. A headless
+    record is never written here: its supervisor is its one writer."""
+    if record.headless:
+        return False
     current = ledger.find(project_dir, record.run)
     if current is not None and current.ended and not record.ended:
         record = record.ended_at(current.ended, current.exit)
@@ -88,6 +97,8 @@ def harvest_run(
         record = next((r for r in records if r.run == run), None)
         if record is None:
             continue
+        if record.headless:
+            return record  # Its supervisor's alone: no end from a wrapper, no write.
         if ended:
             record = record.ended_at(now_stamp(), code)
         claimed = ledger.claimed(_all(found), other_than=run)
@@ -101,6 +112,8 @@ def due(record: LedgerRecord, machine: str, now: datetime) -> bool:
     """Whether a sweep on ``machine`` should read the run again: it is this machine's, its
     records may still exist, and it has not been read since it ended."""
     if record.machine != machine or record.measurement in (ledger.MANUAL, ledger.LEGACY):
+        return False
+    if record.headless:
         return False
     launched = _parse(record.launched)
     if launched is None or now - launched > timedelta(days=SWEEP_DAYS):

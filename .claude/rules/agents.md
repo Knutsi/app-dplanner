@@ -1,8 +1,8 @@
 ---
 paths:
-  - "src/dplanner/modules/{agent_briefing,agent_launch,agent_usage,step_agent_instruction,step_agent_run,agent_claude,agent_codex,agent_opencode}/**"
+  - "src/dplanner/modules/{agent_briefing,agent_launch,agent_supervisor,agent_usage,step_agent_instruction,step_agent_run,agent_claude,agent_codex,agent_opencode}/**"
   - "src/dplanner/domain/agents.py"
-  - "tests/modules/{agent_launch,agent_usage,step_agent_instruction,step_agent_run}/**"
+  - "tests/modules/{agent_launch,agent_supervisor,agent_usage,step_agent_instruction,step_agent_run}/**"
   - "tests/modules/test_agent_readers.py"
   - "scripts/render_briefing_size.py"
 ---
@@ -42,7 +42,7 @@ paths:
   make the claim — in the step loop, never in the shared `_launch` — so a conflict handed to an
   agent, a merge of two writers' plan files and not the step's work, claims nothing.
   **The briefing never rides in argv, and the peer is a top-level session.** The
-  agent's opening line is `launcher.opening_prompt` — a pointer at `prompt.md`, carrying
+  agent's opening line is `agent_briefing.protocol.opening_prompt` — a pointer at `prompt.md`, carrying
   nothing the project is about — because the whole briefing as one argument was every
   agent's command line, and one agent's `pkill -f "Web.Host"` matched four others.
   `launcher.spawn` hands the terminal `scrubbed_environment()`: every harness's shell
@@ -322,3 +322,20 @@ paths:
   **An answer counts only once its run's machine has consumed it.**
   `docs/architecture/agents.md`'s *Runs, questions and claims are three records in the plan*
   has the reasoning.
+- **A headless run is driven by its supervisor, and nothing waits on it.** `dplanner agent
+  supervise <run>` (`modules/agent_supervisor/`, started detached by
+  `supervisor.start_detached`) is the record's **one writer**: it starts each turn through
+  `Headless.command`, tees the stream to `turn-<n>.jsonl`, kills a stall (no output while no
+  tool runs, `Headless.stall`), a runaway (`Guards.runaway` events producing nothing) or an
+  overrun (the stage's wall clock), writes the turn's end and its usage — counted from that
+  stream — and then ends, parks or retries: `done`/`stopped` end it; `asked`, `denied`,
+  `limit`, a runaway and a failure no retry mends park it and the process exits; other
+  failures retry after 30 s, 2 min and 10 min, and a fourth in a row parks. A parked run
+  resumes only by `--prompt answer|continue|reset|retry`. It opens no library. **Its locks
+  are the OS's** (`supervisor.lock` for its life, `record.lock` across every read-modify-write
+  of the record — `fence()` takes it too), never a file judged stale and deleted. **A kill
+  ends the whole process group**, and every way out of a turn ends it, so nothing runs
+  unwatched (`failed`/`supervisor-error`). **A turn that ends the run is written with the
+  run's end.** The harvest, `store` and `aspect.end` never write a headless record. Never add
+  a path that waits on a process for a person. `docs/architecture/agents.md`'s *A headless run
+  is driven by its supervisor* has the reasoning.

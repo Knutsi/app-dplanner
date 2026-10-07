@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QSpinBox
 from tests.facts import code_row
 from tests.platforms import POSIX_MODE_BITS, SH, SYMLINKS
 
+from dplanner.domain.agents import scrubbed_environment
 from dplanner.modules import agent_harnesses, default_location_roles
 from dplanner.modules.agent_briefing.prompt import PromptPart, assemble
 from dplanner.modules.agent_briefing.protocol import epilogue, preamble
@@ -759,7 +760,7 @@ def test_the_spawned_environment_carries_no_session_markers(monkeypatch, tmp_pat
         "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "8000",
         "ANTHROPIC_API_KEY": "k",
     }
-    assert launcher.scrubbed_environment(env, HARNESSES) == {
+    assert scrubbed_environment(env, HARNESSES) == {
         "PATH": "/usr/bin",
         "CLAUDE_CONFIG_DIR": "/home/me/.claude",
         "CLAUDE_CODE_USE_BEDROCK": "1",

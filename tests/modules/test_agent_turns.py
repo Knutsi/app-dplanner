@@ -176,6 +176,32 @@ def test_the_opencode_stream_sums_its_steps():
     )
 
 
+def test_a_running_tool_is_open_until_its_result_and_the_model_is_named():
+    claude = headless("claude")
+    log = TurnLog()
+    claude.feed(log, json.dumps({"type": "system", "subtype": "init", "model": "claude-x[1m]"}))
+    use = {"type": "tool_use", "id": "t1", "name": "Bash"}
+    claude.feed(log, json.dumps({"type": "assistant", "message": {"content": [use]}}))
+    assert log.tools == {"t1"} and log.model == "claude-x"
+    done = {"type": "tool_result", "tool_use_id": "t1"}
+    claude.feed(log, json.dumps({"type": "user", "message": {"content": [done]}}))
+    assert log.tools == set()
+
+
+def test_codex_holds_an_item_open_from_its_start_to_its_completion():
+    record = json.loads((FIXTURES / "codex-done.json").read_text(encoding="utf-8"))
+    reader, log = headless("codex"), TurnLog()
+    for line in record["stdout_head"]:
+        reader.feed(log, line)
+        if '"item.started"' in line:
+            assert len(log.tools) == 1
+    assert log.tools == set()
+
+
+def test_opencode_waits_longer_in_silence_since_it_never_shows_a_tool_running():
+    assert headless("opencode").stall > headless("claude").stall == headless("codex").stall
+
+
 def test_a_cli_looping_without_tokens_never_stops_idling():
     _, log, _ = replay(FIXTURES / "probes" / "opencode-garbage.json")
     assert log.events > 0 and log.idle == log.events

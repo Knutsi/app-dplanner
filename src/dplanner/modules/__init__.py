@@ -2762,6 +2762,7 @@ def default_cli_commands(
     from dplanner.domain.workflow import AgentRun, Person
     from dplanner.modules.agent_at_work import cli as at_work_cli
     from dplanner.modules.agent_briefing.worktree import mainline
+    from dplanner.modules.agent_supervisor import cli as supervisor_cli
     from dplanner.modules.agent_usage import cli as usage_cli
     from dplanner.modules.branches import cli as branches_cli
     from dplanner.modules.branches.plan import (
@@ -2898,14 +2899,12 @@ def default_cli_commands(
         *docs_cli.commands(kinds=scopes),
         *agent_cli.commands(
             roles=default_location_roles(),
-            branch_plan=lambda library, step, facts: branch_plan(
-                library, step, mainline(facts, step)
-            ),
+            branch_plan=lambda lib, step, facts: branch_plan(lib, step, mainline(facts, step)),
         ),
-        # What a run consumed is read through the harness that ran it, so the verbs are
-        # handed the same tuple the window's tracker reads.
         *agent_state_cli.commands(),
+        # A run's usage and its supervisor read the harness that ran it: the window's tuple.
         *usage_cli.commands(harnesses=agent_harnesses()),
+        *supervisor_cli.commands(harnesses=agent_harnesses()),
         # The agent's own account of what it is doing while it does it: the window's
         # banner and the watcher's stood-down modal both read what these write.
         *at_work_cli.commands(board=board, key_of=key_of),

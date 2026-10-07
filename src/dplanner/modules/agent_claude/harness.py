@@ -279,6 +279,7 @@ def read_event(log: TurnLog, event: Mapping[str, object]) -> None:
     kind = event.get("type")
     if kind == "system" and event.get("subtype") == "init":
         log.session = str(event.get("session_id") or log.session)
+        log.model = _model_name(str(event.get("model") or "")) or log.model
     elif kind == "rate_limit_event":
         info = event.get("rate_limit_info")
         windows = info.get("unifiedWindows") if isinstance(info, dict) else None
@@ -291,13 +292,25 @@ def read_event(log: TurnLog, event: Mapping[str, object]) -> None:
             )
     elif kind == "assistant":
         log.progressed()
+        log.tools |= {str(block.get("id")) for block in _blocks(event, "tool_use")}
         # A failed request is written as an assistant message carrying the reason's code —
         # "rate_limit" whatever the words, which on a subscription say "You've hit your limit".
         code = event.get("error")
         if isinstance(code, str) and code:
             log.code = code
+    elif kind == "user":
+        log.tools -= {str(block.get("tool_use_id")) for block in _blocks(event, "tool_result")}
     elif kind == "result":
         _read_result(log, event)
+
+
+def _blocks(event: Mapping[str, object], kind: str) -> list[Mapping[str, object]]:
+    """The message's content blocks of one kind: a tool call, or a tool's result."""
+    message = event.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    if not isinstance(content, list):
+        return []
+    return [block for block in content if isinstance(block, dict) and block.get("type") == kind]
 
 
 def _read_result(log: TurnLog, result: Mapping[str, object]) -> None:

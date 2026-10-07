@@ -7,7 +7,12 @@ from pathlib import Path
 import pytest
 from PySide6.QtWidgets import QComboBox, QLineEdit
 
-from dplanner.domain.agents import AgentHarness, harness_by_id, harness_for_command
+from dplanner.domain.agents import (
+    AgentHarness,
+    harness_by_id,
+    harness_for_command,
+    scrubbed_environment,
+)
 from dplanner.modules import agent_harnesses
 from dplanner.modules.agent_codex import harness as codex
 from dplanner.modules.agent_launch import launcher
@@ -46,7 +51,7 @@ def test_every_harness_marks_its_shells_and_the_claude_rule_covers_new_names():
     assert HARNESSES[1].marks("CODEX_THREAD_ID") and not HARNESSES[1].marks("CODEX_HOME")
     assert HARNESSES[2].marks("OPENCODE") and not HARNESSES[2].marks("OPENCODE_DB")
     env = {"CODEX_THREAD_ID": "t", "OPENCODE": "1", "PATH": "/bin", "CODEX_HOME": "/h"}
-    assert launcher.scrubbed_environment(env, HARNESSES) == {"PATH": "/bin", "CODEX_HOME": "/h"}
+    assert scrubbed_environment(env, HARNESSES) == {"PATH": "/bin", "CODEX_HOME": "/h"}
 
 
 # -- the multiplexer rows and the staged launch ------------------------------------------------

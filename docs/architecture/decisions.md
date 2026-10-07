@@ -632,3 +632,12 @@ the ids are in `RETIRED_IDS`; a step that carried `step_review` reads as the age
 was. The full reasoning as it stood is the review section of `agents.md` at `dfc0de0` (`git
 show dfc0de0:docs/architecture/agents.md`). Now: `playbooks.md`; FORMAT.md's *Retiring a
 module*.
+
+## 2026-10-07 — A turn's usage is counted from its own stream, not from cursors
+
+FORMAT.md's format 2 was designed with each turn's usage read between two cursors into the
+vendor's session records, a reader per harness, so that runs sharing a session would count
+only their own turns. Building the supervisor showed the stream it already tees is exactly
+one turn's window: the counts are read from it as the turn ends, the harvest leaves a
+headless record to its supervisor, and no cursor API was built. The cost is subagents the
+stream does not report. Now: `agents.md`'s *A headless run is driven by its supervisor*.
