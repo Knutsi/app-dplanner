@@ -1791,6 +1791,7 @@ def _aspects(
     )
     from dplanner.modules.step_description.section import SeparateInstructionLink
     from dplanner.modules.step_milestone.module import StepMilestoneDeps, StepMilestoneModule
+    from dplanner.modules.step_playbook.module import StepPlaybookDeps, StepPlaybookModule
     from dplanner.modules.step_start.module import StepStartDeps, StepStartModule
     from dplanner.modules.step_status.module import StepStatusDeps, StepStatusModule
     from dplanner.modules.step_ticket.module import StepTicketDeps, StepTicketModule
@@ -1998,6 +1999,15 @@ def _aspects(
                 details=services.step_details,
                 today=services.clock.today,
                 insert_before=insert_wait_before,
+            )
+        ),
+        StepPlaybookModule(
+            StepPlaybookDeps(
+                library=library,
+                undo=services.undo,
+                details=services.step_details,
+                project_settings=services.project_settings,
+                harness_ids=tuple(harness.id for harness in agent_harnesses()),
             )
         ),
         # The branch cut, and the landing's id beside it: after the wait, the other kind of
@@ -2249,9 +2259,10 @@ def _ordinal(place: int) -> str:
 def _step_type_icons(step: "Step") -> tuple[str, ...]:
     """What kind of thing a step is, in the medallion vocabulary the canvas painted
     first: "tag" a milestone, "layers" a feature, "beaker" one carrying tests, "shield" a
-    check, "merge" a landing. The order table's title column reads the same answer, so a
-    step is the same kind everywhere. Who works it is :func:`_primary_glyph`'s, and a card
-    says a thing once."""
+    check, "merge" a landing, "playbook" one that chose its playbook. The order table's title
+    column reads the same answer, so a step is the same kind everywhere. Who works it is
+    :func:`_primary_glyph`'s, and a card says a thing once."""
+    from dplanner.modules.step_playbook.aspect import read as playbook_read
     from dplanner.modules.testing.aspect import enabled as test_enabled
     from dplanner.planning.branches import is_land
     from dplanner.planning.check import read as check_read
@@ -2264,6 +2275,9 @@ def _step_type_icons(step: "Step") -> tuple[str, ...]:
         *(("beaker",) if test_enabled(step) else ()),
         *(("shield",) if check_read(step) else ()),
         *(("merge",) if is_land(step) else ()),
+        # Its own choice only: an inherited default would mark every landing beside its
+        # merge medallion, and with a project default every card.
+        *(("playbook",) if playbook_read(step) else ()),
     )
 
 
@@ -2782,6 +2796,7 @@ def default_cli_commands(
     from dplanner.modules.step_description import cli as description_cli
     from dplanner.modules.step_milestone import cli as milestone_cli
     from dplanner.modules.step_order import cli as order_cli
+    from dplanner.modules.step_playbook import cli as playbook_cli
     from dplanner.modules.step_start import cli as start_cli
     from dplanner.modules.step_status import cli as status_cli
     from dplanner.modules.step_ticket import cli as ticket_cli
@@ -2905,6 +2920,7 @@ def default_cli_commands(
         ),
         *milestone_cli.commands(),
         *wait_cli.commands(),
+        *playbook_cli.commands(harnesses=agent_harnesses()),
         # A branch's two ends are born dressed as the window's Put on a Branch makes them.
         *branches_cli.commands(
             stacked_apart=stack_split,
@@ -3108,6 +3124,7 @@ def aspect_specs() -> list["AspectSpec"]:
     from dplanner.modules.spec import aspect as spec
     from dplanner.modules.step_agent_run import aspect as agent_run
     from dplanner.modules.step_description import aspect as description
+    from dplanner.modules.step_playbook import aspect as playbook
     from dplanner.modules.step_ticket import aspect as ticket
     from dplanner.modules.testing import aspect as testing
     from dplanner.planning import (
@@ -3135,6 +3152,7 @@ def aspect_specs() -> list["AspectSpec"]:
         feature.SPEC,
         github.SPEC,
         milestone.SPEC,
+        playbook.SPEC,
         spec.SPEC,
         start.SPEC,
         status.SPEC,

@@ -9,11 +9,12 @@ paths:
   - "src/dplanner/modules/{agent_claude,agent_codex,agent_opencode}/harness.py"
   - "docs/research/2026-10-03-playbooks/**"
   - "docs/research/2026-10-07-headless-agents/**"
+  - "src/dplanner/modules/step_playbook/**"
+  - "tests/modules/step_playbook/**"
+  - "tests/cli/test_playbook.py"
 ---
 
 # Playbooks — stages, gates, loop-back, presets and headless invocations
-
-*The package that builds the playbook model adds itself to `paths:` above when it lands.*
 
 - **A playbook is a list of stages on one step, and the step stays one card.** The kinds are
   `plan`, `execute`, the gates `review`, `person` and `coordinator`, and `progress`. Never a
@@ -53,9 +54,13 @@ paths:
 - **A role names a harness, never a profile or a path**, and maps at launch to the first
   profile running it; an unrunnable role is refused, never swapped for the default. Whether
   its agent can run *here* is `Availability.why_not` (`agents.md`'s *Installed is not usable*).
-- **Presets are built-in data**, no playbook files in the plan repository yet. A step's
+- **Presets are built-in data** (`modules/step_playbook/presets.py`), no playbook files in the
+  plan repository yet; a preset's `revision` rises whenever its stage list changes. A step's
   choice is its aspect (absence encodes the default), then the project's landing default on a
-  landing, then the project default, then none (Run Agent).
+  landing, then the project default, then none (Run Agent) — `aspect.py`'s `resolve`, one
+  function every surface reads. **A stage's kind is a `StageRole`, never a second
+  `StageKind`**; `agent_stage` maps it onto `domain/headless.py`'s. Until the engine writes
+  passes, the card's mark is the `playbook` medallion on a step's **own** choice only.
 - **Every stage is one headless turn**, with the invocation per harness in
   `docs/architecture/playbooks.md`'s *Each stage is one headless turn per harness*: the JSON stream,
   Claude's `--strict-mcp-config`, the plan repository and the run directory writable,

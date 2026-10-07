@@ -5,7 +5,8 @@ behind them is `docs/research/2026-10-03-playbooks/` (the shape, failures, the f
 `docs/research/2026-10-07-headless-agents/` (what the three CLIs do headless). Where the two
 differ from this file, this file wins.
 
-*This is the design the playbook steps build; nothing below is code yet.*
+*This is the design the playbook steps build. The model, the presets, the step aspect and the
+project's defaults are `modules/step_playbook/` (S15); the engine is not code yet.*
 
 ## A playbook is a list of stages around one step
 
@@ -169,19 +170,25 @@ written by hand. Knut named seven, and two are added.
 - **Spike** is for research and design steps: nothing to execute, and the output — a plan, a
   report, a design — is for a person to read. The person's approval sets the step done.
 
-**Playbooks are built-in only, for now.** The presets are Qt-free data in the playbook package;
-there are no playbook files in the plan repository. A file there would be the first
+**Playbooks are built-in only, for now.** The presets are Qt-free data in
+`modules/step_playbook/presets.py`; there are no playbook files in the plan repository. A file there would be the first
 hand-authored configuration in a JSON codebase, and a file an agent can edit on its branch is
 input to the next run, which needs its own rule (a worker reads playbooks from the mainline
 only). Nine presets cover the brief. Custom playbooks come later (*Decided at S4*, 1).
+
+**A stage's kind is a `StageRole`**, never a second `StageKind`: `domain/headless.py`'s
+`StageKind` is the three turns a harness can run, and a playbook's six roles include three no
+agent runs. `StageRole.agent_stage` maps the three onto it, so one word never names two types
+and an import of the wrong one cannot type-check.
 
 ## A step names its playbook; a project names its default
 
 **The step aspect** holds the choice: `{"format": 1, "playbook": "<preset id>"}`, with
 optional overrides — `rounds` (every gate's cap) and `reviewer` (a harness id for the reviewer
 role) — and **absence encodes the default**, as the review aspect's settings do, so a later
-change of default reaches every step that never chose. The playbook package names the
-`MODULE_ID`.
+change of default reaches every step that never chose. Its id is `step_playbook`, and the
+project's entry lives under the same id. `aspect.py`'s `resolve` is the order below and
+`inherited` is what *Default* means for one step — the row the panel's dropdown names.
 
 **Which playbook a step runs:**
 1. its own aspect;
@@ -207,6 +214,13 @@ The card wears **one phrase** derived from the step's latest runs and questions:
 and it is the canvas's to render under its own rules on marks; the research's
 `round_label(due(...))` is the shape of the derivation. Stages are read in the step panel's
 Playbook section and the run conversation, never as cards.
+
+**Until a pass has records, the mark is a medallion.** Nothing derives a phrase before the
+engine writes runs with a `pass`, and a card carries no words (`canvas.md`), so S15 gives a
+step whose **own** aspect names a playbook the `playbook` glyph among its medallions. An
+inherited default is not marked: every landing would wear it beside its `merge` medallion,
+and a project default would mark every card. The phrase, when the engine brings it, rides the
+agent run's chip.
 
 ## A failure is never a verdict
 

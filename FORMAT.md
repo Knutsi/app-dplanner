@@ -422,7 +422,7 @@ a step's stage history is its runs, read in order — there is no other.
   "format": 2, "run": "20261007T101500Z-9c1e44ab", "project": "<id>", "step": "<id>",
   "harness": "claude", "launched": "2026-10-07T10:15:00+00:00", "machine": "<machine id>",
   "session": "…", "mode": "headless",
-  "playbook": "plan-execute-review", "pass": "20261007T101455Z-0d9e8f7a",
+  "playbook": "plan-execute-review-other", "pass": "20261007T101455Z-0d9e8f7a",
   "stage": "execute", "attempt": 1,
   "callsign": "kettle-three", "claim": "20261007T100212Z-5a0b7c3d",
   "turns": [
@@ -908,6 +908,17 @@ state, title, URL and — since format 2 — `pr_base`, the branch it merges int
 identity migration: a format-1 entry has no base, and a merged PR is never asked again, so it
 stays unknown; the bump is so an older build, whose `write` rebuilds the entry field by field,
 knows it would drop the key.
+
+**`step_playbook` names the playbook a step runs**, on a step and on its project under one
+id. On a step: `{"playbook": "plan-execute-review-other", "rounds": 3.0, "reviewer":
+"codex"}`, format 1 — a built-in preset's id (`modules/step_playbook/presets.py`), then the
+two overrides, each written only when it differs from its default (two rounds; another
+vendor's agent), the cap as a float from 1 to 5. On the project: `{"default": "execute",
+"landing": "spike"}`, format 1 — what a step that never chose runs, and what a branch landing
+that never chose runs — each written only when it differs from its default (no playbook, so
+Run Agent; *Review only*). Absence is the default throughout, so a changed default reaches
+every step that never chose; an id this build does not know reads as absent.
+`docs/architecture/playbooks.md`'s *A step names its playbook* has the resolution order.
 
 **`step_review` and `review_rounds` are retired** (2026-10-07, with no successor; *Retiring
 a module*). `step_review` made a step a review of the step it `requires`: `{"on": true,
