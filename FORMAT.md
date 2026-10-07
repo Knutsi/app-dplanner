@@ -27,7 +27,7 @@ Four places, and the choice is not stylistic:
 | Per user, per machine (Qt-free) | what the CLI must also read: the project library | `core/config_dir.py` + `domain/library_file.py` | no — it is a list of *this machine's* paths |
 | Per user, per machine (Qt-free) | what happened and how long it took: the telemetry journal, and a native crash's stack | `core/telemetry.py` under `config_dir()/telemetry/` — see *The telemetry journal* | no — it is this machine's diagnostics |
 | Per user, per machine (Qt-free) | who is working on a plan right now: an agent's *at work* claim | `domain/at_work.py` under `config_dir()/at-work/` — see *An agent's at-work claim* | no — it is a process that is running here, now |
-| Per user, per machine (Qt-free) | a headless run's working files: its briefing, each turn's stream and stderr, DPlanner's copy of a plan the agent wrote — *designed, not yet written by any build* | `config_dir()/runs/<run id>/`, named by the run's ledger record and never stored on it; swept some days after the run is over | no — only the launching machine can resume the run, and it needs them across a reboot, which is why they are not in `/tmp` |
+| Per user, per machine (Qt-free) | a headless run's working files: its briefing, each turn's stream (`turn-<n>.jsonl`) and stderr, DPlanner's copy of a plan the agent wrote (`plan.md`), the supervisor's lock | `config_dir()/runs/<run id>/` (`ledger.run_dir`), named by the run's ledger record and never stored on it; not swept yet | no — only the launching machine can resume the run, and it needs them across a reboot, which is why they are not in `/tmp` |
 | Per user, per machine (Qt-free) | a read-only location's managed clone, and a git spec source's: blobless, shallow, sparse to one folder | `core/storage/sparse.py` under `config_dir()/spec-git/<digest of remote, ref and folder>` | no — disposable: wipe it and the next read pays one tree fetch |
 | Per user, per machine (Qt-free) | a working clone DPlanner keeps for a verb that needed the repository here and nobody had checked out — Run Agent's code, a report's destination — under the default clone policy | `core/storage/kept.py` under `config_dir()/checkouts/<name>-<digest of remote>`, one per repository; recorded in the library file's `checkouts` map like any checkout | it is a checkout: commits an agent made there and never pushed are in it and nowhere else, so it is not wiped by the application |
 
@@ -412,8 +412,9 @@ What every agent run on a project consumed, one file per run, beside `steps/`:
 
 #### Format 2: the record is the run
 
-*Designed, not yet written by any build.* A headless run is turns of one session that park
-between them (`docs/research/2026-10-07-headless-agents/`), and the record above grows to
+Written by the run supervisor (`modules/agent_supervisor/`) for a headless run, `"mode":
+"headless"`; a run in a terminal is still written as format 1, which every older build reads.
+A headless run is turns of one session that park between them (`docs/research/2026-10-07-headless-agents/`), and the record above grows to
 hold them rather than a second record growing beside it. **It is the playbook ledger too**:
 a step's stage history is its runs, read in order — there is no other.
 
@@ -426,13 +427,13 @@ a step's stage history is its runs, read in order — there is no other.
   "stage": "execute", "attempt": 1,
   "callsign": "kettle-three", "claim": "20261007T100212Z-5a0b7c3d",
   "turns": [
-    {"n": 1, "prompt": "launch", "started": "…", "ended": "…", "end": "asked", "exit": 0,
-     "pid": 41822, "boot": "<boot id>", "pid_started": "<start time>", "question": "20261007T103341Z-e1f2a3b4",
-     "usage": {"from": "<cursor>", "to": "<cursor>", "agents": [ … ]}},
+    {"n": 1, "prompt": "launch", "started": "…", "ended": "…", "end": "asked", "why": "prose",
+     "reason": "<the question>", "exit": 0, "pid": 41822, "boot": "<boot id>", "pid_started": "<start time>",
+     "question": "20261007T103341Z-e1f2a3b4", "usage": {"agents": [ … ]}},
     {"n": 2, "prompt": "answer", "started": "…", "ended": "…", "end": "limit", "exit": 1,
      "pid": 42010, "boot": "<boot id>", "pid_started": "<start time>", "resets": "2026-10-07T15:00:00+00:00",
      "consumed": {"question": "20261007T103341Z-e1f2a3b4", "answer": "20261007T104102Z-4c4c9a01"},
-     "usage": {"from": "<cursor>", "to": "<cursor>", "agents": [ … ]}},
+     "usage": {"agents": [ … ]}},
     {"n": 3, "prompt": "reset", "started": "…", "pid": 51377, "boot": "<boot id>", "pid_started": "<start time>"}
   ],
   "measurement": "native"
@@ -490,21 +491,26 @@ A review run carries its `verdict`, and the fix run after it what it `declined`:
   | `asked` | it asked through `dplanner ask`, or ended on a question in prose; `question` names the record | parks until the question is answered |
   | `denied` | a permission was denied or auto-rejected | parks on a `permission` question |
   | `limit` | the account ran out; `resets` is when it comes back | parks on a `limit` question |
-  | `failed` | a crash, a hang, a runaway, a dead login; `why` says which | retries with backoff, then parks on a `blocked` question |
+  | `failed` | a crash, a hang, a runaway, a dead login; `why` says which — `headless.Ending.why`'s words, or the supervisor's own `hang`, `runaway`, `timeout` and `lost` | retries with backoff, then parks on a `blocked` question; a runaway and a failure no retry mends park at once |
   | `stopped` | a person or the coordinator ended it, or its step went away | is over, and is never retried |
 
   A turn with no `end` is running, or was lost with its machine — which only that machine
   can tell: every turn records the process's `pid`, the machine's `boot` id and the
   process's start time, `pid_started` (`/proc/<pid>/stat`'s `starttime` on Linux, the
   process creation time on Windows), and a process is live only if all three still match —
-  so a reused pid never reads as live. When a machine starts it ends each of its own unended
-  turns whose process is not live as `failed`, `why: lost`.
-- **`usage` is the turn's own consumption, never a running total.** `from` and `to` are the
-  harness's cursors into the session's records — main agent and every subagent — at the
-  turn's start and end, and `agents` is what lies between them. A run's usage is its turns'
-  sum, so several runs sharing one session each count only their own turns, and a harvest
-  re-reads one turn's window without moving another's. In format 2 `agents` is on turns,
-  never on the record.
+  so a reused pid never reads as live (`core/process.py`'s `ProcessStamp`; `boot` is "" on
+  Windows, where the creation time alone tells two processes apart). A supervisor started on
+  a run whose last turn has no end and no live process ends it `failed`, `why: lost`, and
+  retries; ending the lost turns of every run when a machine starts is not built yet.
+  `reason` says the rest in words: what failed, or the question the turn ended on until
+  that question is a record of its own.
+- **`usage` is the turn's own consumption, never a running total**, counted from the turn's
+  own stream — which is exactly that turn's window of the session, so it needs no cursor into
+  the vendor's records — when the turn ends, or when the next supervisor ends a lost one from
+  the stream it left. `agents` names the model where the stream does. A run's usage is its
+  turns' sum, so several runs sharing one session each count only their own turns. In format
+  2 `agents` is on turns, never on the record, and a harvest leaves the record alone: the
+  supervisor is its one writer. Subagents count as far as the stream reports them.
 - **`consumed`** is on the turn an answer resumed: which question, and which answer — its
   identity, not its text. See the questions directory for when an answer may be consumed.
 - **Whether a run is running, parked or over is read, never stored.** `ended` and `exit` now
@@ -516,9 +522,12 @@ A review run carries its `verdict`, and the fix run after it what it `declined`:
   **The one exception is a `fence`** — `{at, by, why}`, written by a takeover from anywhere —
   after which the run is over: the launching machine fetches before every turn and ends a
   fenced run `stopped` instead of resuming it, and in a merge the fence wins.
+- **A plan stage's final text** — the plan — is copied to the run directory's `plan.md`, so
+  DPlanner's copy does not depend on the one Claude leaves in `~/.claude/plans/`.
 - **Why the format is 2:** a format-1 harvest rewrites the record whole from the keys it
   knows and would drop `turns`, and format 2 moves usage onto them. A format-1 build skips a format-2 record, as it skips any
-  newer one, so the cost of the bump is that such a build does not count these runs' usage.
+  newer one, so the cost of the bump is that such a build does not count these runs' usage —
+  and only these: a terminal run, with no turns, is still written as format 1.
 
 ### The `questions` directory
 

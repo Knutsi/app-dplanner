@@ -61,28 +61,28 @@ exit the window stays open on a *Press Enter* line, with the resume command abov
 a crash can be read — and picked up again — before it is gone.
 
 **The briefing never rides in argv.** The agent's opening prompt is one line pointing at
-``prompt.md`` (:func:`opening_prompt`); the briefing itself is read from the file. Handed
-over as an argument, the whole briefing was every agent's command line — and one agent's
-``pkill -f "Web.Host"``, aimed at its own dev server, matched the words of every other
-agent's briefing and killed four of them mid-task. A command line that carries only a
-path cannot be matched by anything the project is about; it also stays under the
-platform's argument limit and readable in ``ps``. The run directory is outside the
-checkout, and Claude Code asks before reading outside its working directories, so the
-preset hands it over as one (``--add-dir {run_dir}``) and the read asks nothing. The
-flag takes a list, so it sits before another option and never before ``{prompt}``,
-which it would swallow. :func:`new_run_dir` resolves the path: the permission check
-compares a file's resolved path, and macOS's ``/var`` is a symlink where Windows's
-Temp is often a short name.
+``prompt.md`` (``agent_briefing.protocol.opening_prompt``); the briefing itself is read
+from the file. Handed over as an argument, the whole briefing was every agent's command
+line — and one agent's ``pkill -f "Web.Host"``, aimed at its own dev server, matched the
+words of every other agent's briefing and killed four of them mid-task. A command line
+that carries only a path cannot be matched by anything the project is about; it also stays
+under the platform's argument limit and readable in ``ps``. The run directory is outside
+the checkout, and Claude Code asks before reading outside its working directories, so the
+preset hands it over as one (``--add-dir {run_dir}``) and the read asks nothing. The flag
+takes a list, so it sits before another option and never before ``{prompt}``, which it
+would swallow. :func:`new_run_dir` resolves the path: the permission check compares a
+file's resolved path, and macOS's ``/var`` is a symlink where Windows's Temp is often a
+short name.
 
-**The agent is a top-level session.** :func:`spawn` hands the terminal an environment
-with every harness's shell markers taken out (:func:`scrubbed_environment`): with them in
-place a nested ``claude`` makes itself a *child* of the session that set them — no
-transcript of its own, ended when the parent's turn ends — which is how a DPlanner started
-from an agent's shell took every agent it launched down with it. ``entry.py`` refuses to
-open a window from such a shell; the scrub is the second line, for a window that got its
-environment some other way. Which names mark a shell is each harness's own fact
-(``agent_claude/harness.py`` has the list read off the binary); a harness that names its
-session up front (``{session}``, minted per launch) is one whose run can be picked up
+**The agent is a top-level session.** :func:`spawn` hands the terminal an environment with
+every harness's shell markers taken out (``domain/agents.py``'s ``scrubbed_environment``):
+with them in place a nested ``claude`` makes itself a *child* of the session that set them
+— no transcript of its own, ended when the parent's turn ends — which is how a DPlanner
+started from an agent's shell took every agent it launched down with it. ``entry.py``
+refuses to open a window from such a shell; the scrub is the second line, for a window
+that got its environment some other way. Which names mark a shell is each harness's own
+fact (``agent_claude/harness.py`` has the list read off the binary); a harness that names
+its session up front (``{session}``, minted per launch) is one whose run can be picked up
 again by that id, and one that mints its own id is found afterwards by its ``report``.
 
 **A worktree is prepared by the script, and a worktree that cannot be prepared stops the
@@ -127,8 +127,9 @@ from pathlib import Path
 from dplanner.cli.discovery import PROJECT_ENV, RUN_ENV
 from dplanner.core.process import spawn_detached
 from dplanner.core.storage.pointer import WORKTREES_DIR
-from dplanner.domain.agents import AgentHarness, harness_for_command
+from dplanner.domain.agents import AgentHarness, harness_for_command, scrubbed_environment
 from dplanner.domain.ledger import new_run_id
+from dplanner.modules.agent_briefing.protocol import opening_prompt
 from dplanner.modules.agent_briefing.worktree import worktree_path
 from dplanner.planning.branches import DEFAULT_BRANCHES, DEFAULT_START, BranchPlan
 
@@ -194,15 +195,6 @@ def plans_first(agent_command: str, harnesses: tuple[AgentHarness, ...]) -> bool
 def new_session() -> str:
     """A run's session id: a UUID, which is what ``claude --session-id`` accepts."""
     return str(uuid.uuid4())
-
-
-def opening_prompt(prompt_file: Path) -> str:
-    """The one line the agent starts with — a pointer at the briefing, never the briefing.
-
-    See the module docstring: the whole briefing in argv was what one agent's ``pkill
-    -f`` matched on every other. Nothing the project is about appears in this line.
-    """
-    return f"Read your briefing in {prompt_file} in full, then follow it."
 
 
 @dataclass(frozen=True)
@@ -911,25 +903,6 @@ def _fill(template: str, values: Mapping[str, str]) -> list[str] | None:
         ]
     except (KeyError, ValueError, IndexError):
         return None
-
-
-def is_session_marker(name: str, harnesses: tuple[AgentHarness, ...]) -> bool:
-    """Whether an environment variable of this name says "inside an agent's session" —
-    for any of the harnesses this build knows."""
-    return any(harness.marks(name) for harness in harnesses)
-
-
-def scrubbed_environment(
-    env: Mapping[str, str], harnesses: tuple[AgentHarness, ...]
-) -> dict[str, str]:
-    """``env`` without any harness's session markers, so the agent starts a session of
-    its own.
-
-    See the module docstring: inside another agent's session markers a nested ``claude``
-    is a child session — no transcript, ended with its parent — and every agent launched
-    from a window that inherited them died with the agent that had started the window.
-    """
-    return {name: value for name, value in env.items() if not is_session_marker(name, harnesses)}
 
 
 STAGE_SEPARATOR = "&&"

@@ -112,6 +112,27 @@ def test_the_sweep_reads_this_machines_due_runs_and_nothing_else(tmp_path, monke
     assert harvest.sweep([plan], HARNESSES, TEST_MACHINE, NOW) == 0
 
 
+def test_a_headless_run_is_its_supervisors_alone_and_keeps_its_turns(tmp_path, monkeypatch):
+    """Its turns count themselves from their own streams; a harvest beside a live
+    supervisor would be a second writer, and would count a shared session twice."""
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
+    plan, tree = tmp_path / "plan", tmp_path / "tree"
+    _transcript(tmp_path / "claude", "s-1", tree, input_tokens=900, output_tokens=900)
+    turn = ledger.Turn(
+        n=1,
+        prompt="launch",
+        started=NOW.isoformat(),
+        end="done",
+        agents=(AgentUsage("main", {"m": Tokens(7, 0, 3)}),),
+    )
+    headless = replace(_launched(plan, "h", "claude", tree, session="s-1"), mode="headless")
+    ledger.write(plan, headless.with_turns((turn,)).ended_at(NOW.isoformat(), 0))
+
+    assert not harvest.anything_due([plan], TEST_MACHINE)
+    record = harvest.harvest_run([plan], "h", HARNESSES)
+    assert record is not None and record.turns == (turn,) and record.tokens == Tokens(7, 0, 3)
+
+
 def test_two_runs_in_one_checkout_take_two_sessions(tmp_path, monkeypatch):
     """Codex names no session up front: each run claims the earliest one nobody else owns,
     so a second launch in the same directory cannot swallow the first one's."""

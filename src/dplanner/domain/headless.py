@@ -115,6 +115,10 @@ class TurnLog:
     # Events since the agent last produced anything: what the supervisor's runaway detector
     # reads (a CLI retrying in a loop emits events and no tokens, forever).
     idle: int = 0
+    # The tool calls started and not yet finished, by the CLI's id for each: while one runs,
+    # silence is a test suite at work, not a hang, and the supervisor's stall clock waits.
+    tools: set[str] = field(default_factory=set)
+    model: str = ""  # The model the turn ran on, where the stream names it.
 
     def progressed(self) -> None:
         self.idle = 0
@@ -151,6 +155,9 @@ class Ending:
         return self.end is TurnEnd.FAILED and self.why in {"login", "billing", "model", "unknown"}
 
 
+# Ten minutes covers a CLI's own retries of a failing API (Claude's ran 4½ minutes, silent).
+STALL_SECONDS = 600.0
+
 # What a process killed by SIGTERM or SIGKILL exits with when a shell reports it.
 KILLED = (128 + 15, 128 + 9)
 
@@ -166,6 +173,9 @@ class Headless:
     limits: Callable[[TurnLog], tuple[LimitWindow, ...]] = _streamed_limits
     # Denials the CLI prints to stderr rather than its stream (opencode).
     stderr_denials: Callable[[str], list[str]] = _no_denials
+    # How long the stream may be silent, no tool running, before the turn is a hang: none of
+    # the three CLIs times out a hung API on its own (the 10-03 probes sat 330 s and more).
+    stall: float = STALL_SECONDS
 
     def feed(self, log: TurnLog, line: str) -> None:
         """One line of the stream; anything that is not a JSON object is not an event."""

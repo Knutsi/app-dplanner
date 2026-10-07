@@ -1111,7 +1111,14 @@ rendering PDF pages from the CLI.
 a second window — so that closing the application never takes it down; `start_new_session` on
 POSIX, creation flags on Windows. One place, where there had been several.
 
-**Upstream?** yes — any desktop application that opens a second window of itself.
+`ProcessStamp`, `stamp_of()`, `is_live()` and `process_alive()`: whether a recorded process is
+*still that process* — its pid, the machine's boot id and the process's start time, all three
+matching — because a pid alone is reused and a record kept across a reboot would read a
+stranger as its own process running. `process_alive` (pid only) moved here from
+`step_agent_run/runs.py` so there is one per-platform probe.
+
+**Upstream?** yes — any desktop application that opens a second window of itself; the stamp
+for any application that records a process it must find again after a restart.
 
 ## `core/repository.py`
 

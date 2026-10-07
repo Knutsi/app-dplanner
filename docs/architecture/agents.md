@@ -390,7 +390,7 @@ rule.
 every agent's argv was its whole briefing — and every briefing in that project mentioned
 `Web.Host` in an inherited handoff. An agent restarting its own .NET host by pattern
 matched every other agent on the machine. The opening prompt is now one line
-(`launcher.opening_prompt`): *read your briefing in `<file>` in full, then follow it*. The
+(`agent_briefing.protocol.opening_prompt`): *read your briefing in `<file>` in full, then follow it*. The
 line carries a path and nothing the project is about, so no pattern drawn from the work can
 match it; it also stays under the platform's argument limit, which a briefing with a long
 handoff would not, and `ps` stays readable. The agent pays one file read.
@@ -920,9 +920,9 @@ that is sent, which is what lets the Agent tab colour it without ever showing so
 
 ## Runs, questions and claims are three records in the plan
 
-*Designed, not yet built: the headless engine, the question inbox and the coordinator are
-built to these records, and FORMAT.md's* The `ledger` directory *(format 2),* The
-`questions` directory *and* The `claims` directory *are the formats.* Every one of them
+*The run record and its supervisor are built (S10, below); the question inbox and the
+coordinator are built to these records, and FORMAT.md's* The `ledger` directory *(format
+2),* The `questions` directory *and* The `claims` directory *are the formats.* Every one of them
 rests on the finding of `docs/research/2026-10-07-headless-agents/`: **DPlanner never
 waits on a process for a person.** A headless run is one turn of a process that exits;
 whatever needs somebody is recorded and the process ends; the answer resumes the same
@@ -987,6 +987,52 @@ its briefing and DPlanner's copy of the plan it wrote (Claude otherwise leaves o
 in `~/.claude/plans/`), and `/tmp` is a RAM disk on the machines this runs on — 76 % full in
 the 10-04 run. It moves to `config_dir()/runs/<run id>/`, derived from the id and never
 stored, because only the launching machine can use it.
+
+### A headless run is driven by its supervisor, and nobody waits on the supervisor
+
+A run needs something to start each turn, read it while it runs and decide what follows —
+and that something must outlive the window that asked for it, or closing the window would
+kill the work. So it is a process of its own per run, `dplanner agent supervise <run>`
+(`modules/agent_supervisor/`), started detached and holding nothing but the run: no library
+open, since a process that lives for hours must not hold the store, and its record is
+outside the plan's files anyway. It parks rather than waits — the process simply exits on
+anything that needs a person — so a parked run costs no process at all, and whoever answers
+starts a supervisor again with `--prompt answer|continue|reset|retry`.
+
+**Three guards, because none of the CLIs has them.** The 10-03 probes left all three CLIs
+silent on a hung API for over five minutes, and opencode looping forever on a malformed
+reply while still emitting events. Silence alone cannot be the test: a twenty-minute test
+suite is silent and working. So the **stall** clock runs only while no tool call is open —
+each reader keeps the open calls in `TurnLog.tools`, and opencode, which reports a tool only
+once it has finished, gets twice the threshold instead — the **runaway** count is events in a
+row with nothing produced (`TurnLog.idle`), and the stage's **wall clock** catches a tool that
+never returns. Each kills the turn's whole process group, since a CLI's own children (a test
+run, a subagent) must die with it, and records its own `why`; the classifier would only have
+said *killed*.
+
+**Retry what time mends, park what it does not.** A crash, a hang, an overrun or a lost turn
+retries after 30 s, 2 min and 10 min — failures.md's backoff — resuming the session if its
+stream ever named one and starting fresh if not, and a fourth failure in a row parks for a
+person: four in a row is a pattern, not luck. A runaway parks at once, because what loops
+once loops again; so do a dead login, an empty balance and a retired model, which no wait
+mends. A turn that ended waiting on its own background work is told to continue straight
+away. A fence read between turns ends the run `stopped`, and a SIGTERM does too, so a run a
+person stopped never reads as lost and is never retried.
+
+**Usage is counted from the turn's own stream.** FORMAT.md's design had cursors into each
+vendor's session records, so that two runs sharing a session would each count only their
+turns. The stream the supervisor already tees *is* exactly one turn's window, so its counts
+need no cursor and no new reader per harness; the supervisor writes them as the turn ends,
+and the next supervisor counts a lost turn from the stream it left. That makes the
+supervisor the record's one writer, so a harvest leaves a headless record alone — beside a
+live supervisor it would be a second writer, and the vendor's whole-session total would
+count a shared session twice. What it costs is subagents the stream does not report.
+
+**One supervisor per run, and the turn says which process it was.** A lock file in the run
+directory holds the supervisor's own `ProcessStamp` (`core/process.py`: pid, boot id, start
+time — a pid alone is reused), so a second supervisor is refused and a stale lock is taken
+over. Each turn records its process's stamp the moment it starts, so a supervisor started
+after a reboot tells a turn still running from one the machine lost.
 
 ### A question is a file, and the inbox is the directory
 

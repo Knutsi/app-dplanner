@@ -43,7 +43,14 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from dplanner.domain.agents import AgentHarness, AgentUsage, RunFacts, RunReport, Tokens
-from dplanner.domain.headless import Headless, StageKind, TurnLog, TurnSpec, typed_message
+from dplanner.domain.headless import (
+    STALL_SECONDS,
+    Headless,
+    StageKind,
+    TurnLog,
+    TurnSpec,
+    typed_message,
+)
 
 CLOCK_SLACK = timedelta(minutes=2)
 
@@ -241,7 +248,14 @@ def stderr_denials(stderr: str) -> list[str]:
     return _AUTO_REJECTED.findall(stderr)
 
 
-HEADLESS = Headless(command=headless_command, read=read_event, stderr_denials=stderr_denials)
+# opencode reports a tool only once it has finished, so no tool is ever seen running and the
+# stall clock never waits on one: its threshold covers a whole tool call instead.
+HEADLESS = Headless(
+    command=headless_command,
+    read=read_event,
+    stderr_denials=stderr_denials,
+    stall=2 * STALL_SECONDS,
+)
 
 
 HARNESS = AgentHarness(

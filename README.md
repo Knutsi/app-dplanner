@@ -544,6 +544,10 @@ src/dplanner/
 │   ├── agent_opencode/         reader of its own records (`domain/agents.py` is the contract),
 │   │                        and its headless half — the argv per playbook stage and a reader
 │   │                        of its JSON stream (`domain/headless.py`: how a turn ended)
+│   ├── agent_supervisor/    the run supervisor — no module.py: `dplanner agent supervise
+│   │                        <run>` drives a headless run turn by turn, guards each turn
+│   │                        (stall, runaway, wall clock), writes it into the ledger
+│   │                        record, then ends, parks or retries the run (supervisor.py)
 │   ├── step_agent_run/      where a launched agent stands — stamped at launch, moved by
 │   │                        `dplanner agent-state`, cleared when the shell ends (`runs.py`
 │   │                        reads the wrapper's report; `terminal.py` finds the window or
