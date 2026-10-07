@@ -8,10 +8,13 @@ the one part of a workspace a person reads in a file browser.
 import csv
 import os
 import re
+import sys
 import tempfile
 import unicodedata
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from pathlib import Path
+from typing import IO
 
 # Norwegian (plus neighbours) transliterated explicitly: NFKD alone would drop ø entirely
 # rather than fold it to "o", and æ→ae matters for readable folder names.
@@ -78,3 +81,25 @@ def write_csv(path: Path, rows: Sequence[Sequence[str]]) -> None:
     """
     with path.open("w", newline="", encoding="utf-8-sig") as handle:
         csv.writer(handle).writerows(rows)
+
+
+@contextmanager
+def os_lock(path: Path, *, wait: bool) -> Iterator[IO[str]]:
+    """An exclusive lock the operating system holds on ``path`` and drops when its holder
+    exits, however it exits. ``BlockingIOError`` when another holds it and ``wait`` is
+    False. The file is never deleted: a lock on a file somebody can unlink is no lock."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a+", encoding="utf-8") as held:
+        if sys.platform == "win32":
+            import msvcrt
+
+            held.seek(0)
+            try:
+                msvcrt.locking(held.fileno(), msvcrt.LK_LOCK if wait else msvcrt.LK_NBLCK, 1)
+            except OSError as error:
+                raise BlockingIOError(str(error)) from error
+        else:
+            import fcntl
+
+            fcntl.flock(held.fileno(), fcntl.LOCK_EX if wait else fcntl.LOCK_EX | fcntl.LOCK_NB)
+        yield held

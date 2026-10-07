@@ -8,6 +8,9 @@ one again once they run out), counted in ``<script>.count``. An entry may:
 - ``pidfile``: write this process's pid there; ``child``: start a child that ignores
   SIGTERM, as a test worker might, and write *its* pid there;
 - ``fence``: fence the ledger record at this path, as a takeover elsewhere would;
+- ``ask``: ``{"plan": <project dir>, "question": <text>}`` — record a question on the run
+  ``$DPLANNER_RUN`` names, as ``dplanner question ask`` does from inside the turn; with
+  ``"answered": <words>``, somebody answers it at once, before the turn has ended;
 - ``on_term``: print these lines when SIGTERM arrives, then exit 143 — a CLI's last totals;
 - print its ``lines`` (a recorded stream); ``close_stdout`` then;
 - ``hold`` that many seconds, silent as a hung API — or ``spam`` content-free events until
@@ -49,6 +52,20 @@ if "fence" in turn:
     raw = json.loads(record.read_text(encoding="utf-8"))
     raw["fence"] = {"at": "2026-10-07T12:00:00+00:00", "by": "a takeover", "why": "taken over"}
     record.write_text(json.dumps(raw), encoding="utf-8")
+if "ask" in turn:
+    from dplanner.domain import questions
+
+    asked = questions.asked(
+        os.environ["DPLANNER_PROJECT"],
+        "s1",
+        time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime()),
+        [questions.one(turn["ask"]["question"])],
+        run=os.environ["DPLANNER_RUN"],
+    )
+    if "answered" in turn["ask"]:
+        given = {turn["ask"]["question"]: turn["ask"]["answered"]}
+        asked = questions.answered(asked, given, {"kind": "person", "name": "Knut"}, asked.asked)
+    questions.write(Path(turn["ask"]["plan"]), asked)
 for line in turn.get("lines", []):
     print(line, flush=True)
 if turn.get("close_stdout"):

@@ -862,8 +862,8 @@ that is sent, which is what lets the Agent tab colour it without ever showing so
 
 ## Runs, questions and claims are three records in the plan
 
-*The run record and its supervisor are built (S10, below); the question inbox and the
-coordinator are built to these records, and FORMAT.md's* The `ledger` directory *(format
+*The run record and its supervisor are built (S10, below), and the question record and its
+door (S13); the inbox cards and the coordinator are built to these records, and FORMAT.md's* The `ledger` directory *(format
 2),* The `questions` directory *and* The `claims` directory *are the formats.* Every one of them
 rests on the finding of `docs/research/2026-10-07-headless-agents/`: **DPlanner never
 waits on a process for a person.** A headless run is one turn of a process that exits;
@@ -1001,8 +1001,69 @@ nothing conflicts. Its body is Claude's `AskUserQuestion` shape, because that sh
 already what a Control Centre card needs (a question, a header, options with descriptions)
 and because the warm path — a Claude process DPlanner hosts over stream-json — hands over
 exactly that and takes back exactly `answers`; any other shape would be a translation in
-both directions. `dplanner ask`, the door every harness can use because every harness can
-run a shell command, writes the same record with one question in it.
+both directions. `dplanner question ask`, the door every harness can use because every
+harness can run a shell command, writes the same record with one question in it.
+
+**The door is a noun's verb, `question ask`, not a word of its own.** The research named it
+`dplanner ask`; every other verb is `<noun> <verb>`, the registry and the generated skill
+index are built on that, and one bare word would have been the first exception to both. An
+agent runs `question ask` as readily as `ask`, and `question list|answer|escalate` sit
+beside it where an agent looking for the answer verb will find it.
+
+**Every park stands on a question, whoever wrote it.** The agent's own question is the one
+it recorded through the door, which the supervisor finds on the run when the turn ends and
+hands to the classifier, so the turn says *asked* even though its last words were "ending my
+turn". Any other park — a question found in prose, a denied permission, an exhausted
+account, a run that cannot go on alone — gets its question written by the supervisor as it
+parks, named on the turn. Otherwise the inbox would show some parked runs and not others,
+and whoever reads it would have to know which endings make a card.
+
+**Answering records; the supervisor delivers.** `question answer` writes the answer and
+nothing else that counts; it nudges the run's supervisor when this machine launched the run,
+but the nudge is not the delivery. Delivery is the supervisor's: whenever it starts, and once
+more *after* it has let go of a parked run, it looks for an answered question on its own run
+and resumes with it. That last look is what makes an answer given at any moment arrive — a
+nudge refused because the old supervisor still held the run is made up for by the old
+supervisor's own look, taken after the lock was free; an answer given while the asking turn
+was still ending parks the turn on that very question and resumes it at once. An answer given
+on another machine waits in the file for the run's own machine.
+
+**The resume is claimed under the run's lock and the question's**, both re-read: the run still
+this machine's, not fenced, not over, its last turn parked on this question, the question
+answered. One ledger write then records the next turn — `prompt: answer`, the answer it
+consumes, no process yet — and only then is the question marked consumed. Just before the
+process starts, the turn is marked `spawning`. A supervisor that dies before the mark leaves a
+turn the next one starts, after the same locked check, without consuming anything again; one
+that dies after it leaves a turn whose agent may already have acted on the answer — the pid is
+written only once the process exists — so that turn ends `lost-at-spawn` and parks for a
+person rather than apply an answer twice. Checking under an earlier snapshot would let a fence
+written meanwhile be overtaken by a resume.
+
+**Cards are written before what they explain, and mended on start.** A parked ending is
+committed with its card already on disk, so a crash leaves at worst a card on a lost turn,
+which the retry withdraws — never a parked run nobody is asked about. A run that goes on by
+itself (a retry, a nudge to continue) or parks again withdraws every earlier card not
+consumed — an answer nobody acted on included, since no turn will consume it now —
+and a run's end withdraws everything it had standing; a supervisor starting on a parked run
+with no card writes one, and on an ended run with cards standing withdraws them.
+
+**Who answers is read from where the call comes from.** Inside a run or an agent's shell the
+caller is the coordinator — there is no flag to say otherwise — and a run may not answer its
+own question; a person's own shell answers as a person. A flag would let the agent a gate is
+meant to check say it was the person.
+
+**A terminal run asks the person in front of it.** In a terminal the developer is right there
+and the agent's process is still waiting for its next message, so `question ask` outside a
+headless run records nothing: it sets the step's `needs-input`, as the briefing used to say
+outright, and tells the agent to put the question in the terminal. Recording it as well would
+need a rule for when such a question closes — the agent simply carries on in its terminal —
+and nothing tells DPlanner that. Every briefing can therefore name one door.
+
+**The warm path is not built.** A Claude process hosted over stream-json offers its own
+`AskUserQuestion` and `ExitPlanMode`, and the record takes them unchanged. It needs a live
+process held open briefly and an unverified mix of `--permission-mode auto` with the stdio
+permission tool, and the cold door already lifts every question into DPlanner, so it waits for
+a step of its own.
 
 **A usage hold is a question too.** It could have been only a fact on the run (`end:
 limit`, `resets`), with the cards reading parked runs beside questions. Then the inbox

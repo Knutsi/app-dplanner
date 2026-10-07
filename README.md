@@ -551,6 +551,10 @@ src/dplanner/
 │   │                        <run>` drives a headless run turn by turn, guards each turn
 │   │                        (stall, runaway, wall clock), writes it into the ledger
 │   │                        record, then ends, parks or retries the run (supervisor.py)
+│   ├── agent_questions/     the question door — no module.py: `dplanner question ask` from
+│   │                        a headless run, `question list|answer|escalate` over the
+│   │                        project's questions/ (`domain/questions.py`); answering resumes
+│   │                        the parked run on this machine (inbox.py)
 │   ├── step_agent_run/      where a launched agent stands — stamped at launch, moved by
 │   │                        `dplanner agent-state`, cleared when the shell ends (`runs.py`
 │   │                        reads the wrapper's report; `terminal.py` finds the window or

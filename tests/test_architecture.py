@@ -87,6 +87,8 @@ HEADLESS_ROLES = (
 HEADLESS_FILES: dict[str, tuple[str, ...]] = {
     "agent_briefing": ("prompt.py",),
     "agent_launch": ("availability.py", "launch.py", "launcher.py", "profiles.py"),
+    # Answering a question and resuming its run: the `question answer` verb and the card.
+    "agent_questions": ("inbox.py",),
     # Reads a run's usage back into the ledger: the wrapper script's `dplanner` call.
     "agent_usage": ("harvest.py",),
     # The run supervisor: a package with no window half, reached by `agent supervise`.

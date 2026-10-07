@@ -491,10 +491,10 @@ A review run carries its `verdict`, and the fix run after it what it `declined`:
   | `end` | Means | The run |
   |---|---|---|
   | `done` | the agent finished its stage | is over |
-  | `asked` | it asked through `dplanner ask`, or ended on a question in prose; `question` names the record | parks until the question is answered |
+  | `asked` | it asked through `dplanner question ask`, or ended on a question in prose; `question` names the record | parks until the question is answered |
   | `denied` | a permission was denied or auto-rejected | parks on a `permission` question |
   | `limit` | the account ran out; `resets` is when it comes back | parks on a `limit` question |
-  | `failed` | a crash, a hang, a runaway, a dead login; `why` says which — `headless.Ending.why`'s words, or the supervisor's own `hang`, `runaway`, `timeout` and `lost` | retries with backoff, then parks on a `blocked` question; a runaway and a failure no retry mends park at once |
+  | `failed` | a crash, a hang, a runaway, a dead login; `why` says which — `headless.Ending.why`'s words, or the supervisor's own `hang`, `runaway`, `timeout`, `lost` and `lost-at-spawn` | retries with backoff, then parks on a `blocked` question; a runaway, a `lost-at-spawn` and a failure no retry mends park at once |
   | `stopped` | a person or the coordinator ended it, or its step went away | is over, and is never retried |
 
   A turn with no `end` is running, or was lost with its machine — which only that machine
@@ -505,8 +505,11 @@ A review run carries its `verdict`, and the fix run after it what it `declined`:
   Windows, where the creation time alone tells two processes apart). A supervisor started on
   a run whose last turn has no end and no live process ends it `failed`, `why: lost`, and
   retries; ending the lost turns of every run when a machine starts is not built yet.
-  `reason` says the rest in words: what failed, or the question the turn ended on until
-  that question is a record of its own.
+  `reason` says the rest in words: what failed, or the question the turn ended on.
+  **`question`** names the question record the run parks on — the one the agent asked
+  through `dplanner question ask`, or the one the supervisor wrote for any other park (a
+  question found in prose, a denial, a limit, a run that cannot go on alone) — so every
+  parked run stands on a card in the inbox.
 - **`usage` is the turn's own consumption, never a running total**, counted from the turn's
   own stream — which is exactly that turn's window of the session, so it needs no cursor into
   the vendor's records — when the turn ends, or when the next supervisor ends a lost one from
@@ -516,6 +519,9 @@ A review run carries its `verdict`, and the fix run after it what it `declined`:
   supervisor is its one writer. Subagents count as far as the stream reports them.
 - **`consumed`** is on the turn an answer resumed: which question, and which answer — its
   identity, not its text. See the questions directory for when an answer may be consumed.
+  A resume that is no answer (`continue`, `reset`, `retry`, or words handed to the
+  supervisor) withdraws the question the run parked on, and a run's end withdraws whatever
+  it still had standing.
 - **Whether a run is running, parked or over is read, never stored.** `ended` and `exit` now
   say the *run* is over — its last turn ended `done` or `stopped`, or a person gave up on
   it — not that a process exited; every turn keeps its own.
@@ -534,8 +540,8 @@ A review run carries its `verdict`, and the fix run after it what it `declined`:
 
 ### The `questions` directory
 
-*Designed, not yet written by any build.* Everything a run needs a person — or the
-coordinator — for, one file per question, so two agents asking at once add two files and
+Written by `dplanner question ask` and the run supervisor (`domain/questions.py`). Everything
+a run needs a person — or the coordinator — for, one file per question, so two agents asking at once add two files and
 git never conflicts:
 
 ```
@@ -576,7 +582,7 @@ git never conflicts:
   for everything else. An agent's own question has no `purpose`.
 - **`questions` is Claude's `AskUserQuestion` shape exactly** — question, header, options
   with descriptions, `multiSelect` — so a hosted Claude's own question is written through
-  unchanged, and `dplanner ask` writes a list of one. `answer.answers` is the shape Claude
+  unchanged, and `dplanner question ask` writes a list of one. `answer.answers` is the shape Claude
   takes back (`updatedInput.answers`): each question's text to the chosen label, or to free
   text.
 - **`state`** is `open`, `escalated` (the coordinator passed it to a person: `escalated`
@@ -593,7 +599,20 @@ git never conflicts:
   the run still resumable — not over, not fenced, its last turn parked on this question — and
   pushed the question marked `consumed` with the turn it starts; a rejected push means fetch
   and check again before the turn begins. The resumed turn records the answer's id
-  (`consumed` on the turn).
+  (`consumed` on the turn). *As built, one machine:* the check is made under the run's lock
+  and the question's, re-reading both; one ledger write records the resumed turn with the
+  answer it consumes before the question is marked `consumed`. Just before its process is
+  started, that turn gains `spawning` (when); a turn found holding an answer with no pid is
+  started only if it has none — one with `spawning` may have acted on the answer, so it ends
+  `failed`, `why: lost-at-spawn`, and the run parks on a `blocked` question naming the answer. The fetch and the push are not
+  written yet. The run's supervisor delivers an answer: it looks for one whenever it starts
+  and after it lets go of a parked run.
+- **Who answers is read from the caller's shell**: inside a run or an agent's shell it is
+  the coordinator (`answer.by.kind`), and a run may not answer its own question.
+- **Every change is a read-modify-write under an OS lock** on
+  `config_dir()/questions/<id>.lock` — per machine, never in the plan — so two answers given
+  on one machine cannot both land. A person types a question as `Q-e1f2`: the first four
+  characters of the id's random half.
 - **A playbook's question is consumed by the pass's owner** — the engine on the machine that
   launched the pass — with the same fetch, check and push, its target the `pass`, `stage` and
   `attempt` rather than a run: still the current gate of a pass not over. Consuming it acts:

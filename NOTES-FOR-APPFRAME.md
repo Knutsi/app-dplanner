@@ -1073,7 +1073,14 @@ LF, and `write_text` translating to `os.linesep` turned a Windows save into a wh
 `write_csv` writes `utf-8-sig`, the BOM being what makes Excel read Unicode. `write_json_atomic`
 and `read_json` are gone (no callers).
 
-**Upstream?** yes — the template's `write_atomic` has the same shared temporary.
+`os_lock(path, wait=)` is added: an exclusive lock the operating system holds (`flock`,
+`msvcrt.locking`) and drops when its holder dies, on a file nobody deletes — so there is no
+stale lock to judge. The run supervisor holds one for its life and one across each
+read-modify-write of a run record; the question store takes one across each change of a
+question, which is why it left `agent_supervisor/supervisor.py` for here.
+
+**Upstream?** yes — the template's `write_atomic` has the same shared temporary; `os_lock` is
+worth carrying for any template app with more than one writing process.
 
 ## `core/markdown.py`
 
