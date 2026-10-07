@@ -354,8 +354,7 @@ class SpawnGuard:
 
 
 def _program(word: str) -> str:
-    name = os.path.basename(word)
-    return name[:-4] if name.lower().endswith(".exe") else name
+    return Path(word).name.removesuffix(".exe")
 
 
 def _launchable_programs() -> frozenset[str]:

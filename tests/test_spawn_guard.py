@@ -6,10 +6,10 @@ import subprocess
 import sys
 
 import pytest
+from tests.platforms import POSIX_MODE_BITS
 
 from dplanner.core.process import spawn_detached
 from dplanner.modules.agent_launch import launcher
-from tests.platforms import POSIX_MODE_BITS
 
 
 def _refused(guard, start):
