@@ -1030,8 +1030,15 @@ history is its runs read in order, so the two cannot disagree.
 **A run is one stage attempt; a resume is a turn.** What resumes is a *session*, and a
 session is what the vendor keeps: `claude -p --resume`, `codex exec resume`, `opencode run
 -s` all continue the one that parked. Making every resume a run would have split one
-conversation's cost and story over several records that each had to name the others; a
-fresh session after a failure, on the other hand, really is a new attempt and gets a new run.
+conversation's cost and story over several records that each had to name the others. A
+fresh session, on the other hand, really is a new attempt and gets a new run — and so does
+a **loop-back**, when a gate sends the work back, even when it resumes the same session:
+the attempt it fixes is over, its verdict judged that attempt and no later one, and the
+next review must be able to say which attempt it read. So a session may span several runs,
+and a run is never found by its session. **The run carries the playbook's results, not
+just its cost**: a review run's `verdict` (pass or changes, and typed findings) and a fix
+run's `declined` findings with their reasons, so a gate's history is read from runs as a
+review's used to be read from its stamps, and `playbooks.md` has why.
 
 **How a turn ended is the record's centre, and it has six words.** The research's five —
 `done`, `asked`, `denied`, `limit`, `failed` — exist because exit codes lie: Claude asks in
@@ -1067,6 +1074,13 @@ would have had two sources with two ways to be answered and two ways to go stale
 `limit` question it is one more card, answered by *Retry now* or by the clock when the reset
 passes — and the run still carries `resets`, because the launcher holds the account's other
 launches on it.
+
+**A playbook's gate is a question too.** A `person` gate and a `coordinator` gate have no
+run — nobody launches anything — so the question carries the gate's `stage` and `attempt`,
+and the playbook's history is still runs and questions read in order. The two gates differ
+only in who may answer: the coordinator may answer a `coordinator` gate's question, and
+must escalate a `person` gate's, because that gate is the playbook's promise that a person
+looked.
 
 **Several writers touch one question, but one after another**: asked, perhaps escalated,
 answered. The verb refuses a second answer, and for the merge that meets two anyway the

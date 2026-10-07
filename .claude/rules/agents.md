@@ -368,8 +368,8 @@ paths:
   reasoning.
 - **Runs, questions and claims are three records in the plan, and there are no others**
   (designed; FORMAT.md's *The `ledger` directory* format 2, *The `questions` directory*, *The
-  `claims` directory*). **A run is the ledger record**: one stage attempt, whose resumes are
-  its `turns`, each ending `done`, `asked`, `denied`, `limit`, `failed` or `stopped` —
+  `claims` directory*). **A run is the ledger record**: one stage attempt, whose resumes —
+  an answer, a reset, a retry — are its `turns` (a loop-back is a new run), each ending `done`, `asked`, `denied`, `limit`, `failed` or `stopped` —
   classified from the stream, never the exit alone — written only by the launching machine;
   running, parked and over are read from the turns, and **the playbook ledger is a step's
   runs**, never a second record. Its working files are `config_dir()/runs/<run id>/`, never

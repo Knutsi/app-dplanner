@@ -436,11 +436,43 @@ a step's stage history is its runs, read in order — there is no other.
 }
 ```
 
+A review run carries its `verdict`, and the fix run after it what it `declined`:
+
+```json
+"verdict": {
+  "outcome": "changes", "summary": "One race in the sweep",
+  "findings": [
+    {"severity": "high", "file": "src/dplanner/domain/at_work.py", "line": 374,
+     "text": "The sweep can delete a claim renewed since it was read",
+     "evidence": "_sweep reads, then unlinks without re-reading"}
+  ]
+}
+```
+
+```json
+"declined": [
+  {"finding": {"run": "20261007T120000Z-77aa01bc", "index": 0},
+   "reason": "_still re-reads just before the unlink; the window is microseconds"}
+]
+```
+
 - **One run is one stage attempt.** Resuming its session — with an answer, after a limit
-  reset, on *Retry now*, or to nudge it on — is another **turn** of the same run; a fresh
-  session is a new run with `attempt` one higher. `playbook`, `stage` and `attempt` are the
-  playbook's words, and `docs/architecture/playbooks.md` says what they mean.
-- **`prompt`** is why the turn began: `launch`, `answer`, `continue`, `reset` or `retry`.
+  reset, on *Retry now*, or to nudge it on — is another **turn** of the same run. A
+  **loop-back** — a gate sent the work back — is a **new run** with the next `attempt`, even
+  when it resumes the same session, because the attempt it fixes is over; so one `session`
+  may span several runs, and a session id never identifies a run. A fresh session is a new
+  run too. `playbook`, `stage` and `attempt` are the playbook's words, and
+  `docs/architecture/playbooks.md` says what they mean.
+- **`prompt`** is why the turn began: `launch` for every run's first turn, whether its session
+  is fresh or resumed for a loop-back, then `answer`, `continue`, `reset` or `retry`.
+- **`verdict`** is on a review run: its typed final message (`--json-schema`,
+  `--output-schema`), recorded by the supervisor and never posted by the agent — `outcome`
+  `pass` or `changes`, a `summary`, and `findings`, each with `severity`, `file`, `line`,
+  `text` and `evidence`. A review that ends without one has no verdict, and that is a
+  failure, never a pass.
+- **`declined`** is on a fix run: each finding the implementer would not act on, by the
+  review run's id and the finding's `index` in its list, with the `reason` the next round
+  reads.
 - **`end`** is how a turn ended, and it is read from the stream and the result, never from
   the exit alone — a headless `success` can hide an open question:
 
@@ -500,6 +532,10 @@ git never conflicts:
   a terminal run its multiplexer says is waiting) or `limit` (`resets` is when the account
   comes back). **A usage hold is a question** answered by *Retry now* or by the clock, so
   every card in the inbox is one of these files and nothing else.
+- **A playbook's gate asks too, and has no run of its own**: its question has no `run`,
+  names no harness, and carries the gate's `stage` and `attempt` beside the step. Its kind is
+  `plan-approval` for a gate after a plan and `decision` for every other gate — a round cap
+  reached included.
 - **`questions` is Claude's `AskUserQuestion` shape exactly** — question, header, options
   with descriptions, `multiSelect` — so a hosted Claude's own question is written through
   unchanged, and `dplanner ask` writes a list of one. `answer.answers` is the shape Claude
@@ -509,8 +545,11 @@ git never conflicts:
   holds `at`, `by` and `why`), `answered`, or `withdrawn` (the run ended or asked again:
   `withdrawn` holds `at` and `why`). `answer.by.kind` is `person`, `coordinator` or
   `clock` — the last only for `limit`.
+- **Who may answer.** A person may answer any question. The coordinator may answer an
+  agent's question and a `coordinator` gate's; a `person` gate's it may only escalate. The
+  gate is named by `stage`, and the playbook says which kind it is.
 - **Several writers, one after another.** The asker creates the file; the coordinator may
-  escalate it; anybody answers it, and the verb refuses a second answer. If a merge meets
+  escalate it; whoever may answer it does, and the verb refuses a second answer. If a merge meets
   two writers anyway, answered beats escalated beats open, and of two answers the earlier
   `answer.at` stands. An open question never times out into an answer.
 - Outside `PLAN_ENTRIES` like `ledger/`, so a window never adopts it as an outside change
