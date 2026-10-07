@@ -2,6 +2,10 @@
 paths:
   - "docs/architecture/playbooks.md"
   - "src/dplanner/domain/agents.py"
+  - "src/dplanner/domain/headless.py"
+  - "tests/domain/test_headless.py"
+  - "tests/modules/test_agent_turns.py"
+  - "tests/fixtures/agent_turns/**"
   - "src/dplanner/modules/{agent_claude,agent_codex,agent_opencode}/harness.py"
   - "docs/research/2026-10-03-playbooks/**"
   - "docs/research/2026-10-07-headless-agents/**"
@@ -53,6 +57,14 @@ paths:
   landing, then the project default, then none (Run Agent).
 - **Every stage is one headless turn**, with the invocation per harness in
   `docs/architecture/playbooks.md`'s *Each stage is one headless turn per harness*: the JSON stream,
-  Claude's `--strict-mcp-config`, `--add-dir` for the plan repository and the run directory,
+  Claude's `--strict-mcp-config`, the plan repository and the run directory writable,
   a typed final message where the CLI has one.
-  Never `claude --bg`, and never a terminal.
+  Never `claude --bg`, and never a terminal. **A harness spells a turn as an argv**
+  (`AgentHarness.headless`, `domain/headless.py`), and **Codex states its stage's mode as `-c`
+  overrides on every turn**, fresh and resumed alike — `exec resume` takes no `-s`,
+  `--approve-for-me` or `--add-dir`, and does not keep the mode its thread began in.
+- **How a turn ended is `Headless.classify`, one function over the `TurnLog` the harness's
+  reader filled** — never the exit alone, never a per-harness copy of the rules. A CLI's quirk
+  goes in its reader or one of the two hooks (`limits`, `stderr_denials`); a new ending shape
+  goes in as a recorded, scrubbed stream under `tests/fixtures/agent_turns/` with its expected
+  end in `tests/modules/test_agent_turns.py`.

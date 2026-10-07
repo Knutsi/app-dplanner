@@ -46,10 +46,19 @@ writes — ``cached`` what was read back from the prompt cache, and ``output`` e
 generated, reasoning included. Cached is its own number because it dwarfs the rest: an
 agent re-reads its whole context on every request, and a session that sent half a million
 fresh tokens read eleven million from cache. One "input" figure would be mostly that.
+
+**A harness has a headless half too** (:class:`~dplanner.domain.headless.Headless`): the argv
+for one unattended turn of each playbook stage, a reader for the CLI's JSON events and how
+the turn ended. It is a second record rather than more templates here, because nothing about
+it is a terminal's: the supervisor spawns the argv itself and never waits on a person.
 """
 
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # domain.headless reads Tokens from here.
+    from dplanner.domain.headless import Headless
 
 
 @dataclass(frozen=True)
@@ -173,6 +182,9 @@ class AgentHarness:
     # launch waits on somebody is read off the command it ran (``launcher.plans_first``),
     # so a profile edited to drop the words launches an agent that does not wait.
     plan_mode: str = ""
+    # How it runs one unattended turn of a playbook stage; None for a CLI this build cannot
+    # run headless.
+    headless: "Headless | None" = None
 
     def marks(self, name: str) -> bool:
         """Whether an environment variable of this name marks one of this CLI's shells."""
@@ -194,6 +206,10 @@ class AgentHarness:
     def counts_tokens(self) -> bool:
         return self.report is not None
 
+    @property
+    def runs_headless(self) -> bool:
+        return self.headless is not None
+
     def capabilities(self) -> tuple[str, ...]:
         """The harness's abilities in words, for a settings page or a listing."""
         words = []
@@ -203,6 +219,8 @@ class AgentHarness:
             words.append("resumes")
         if self.counts_tokens:
             words.append("counts tokens")
+        if self.runs_headless:
+            words.append("runs headless")
         return tuple(words)
 
 
