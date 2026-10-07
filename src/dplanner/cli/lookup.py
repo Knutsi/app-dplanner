@@ -71,8 +71,8 @@ def find_step(library: Library, needle: str, within: Project | None = None) -> S
     ``within`` is the current project, when the invocation has one — however it was found.
     **An id is the library's; a key, a folder name and a title are the project's.** Several
     projects number from 1 and may share a title, so a key the current project does not
-    have was never meant for another one: `DPLANNER_PROJECT=A dplanner review set R26`
-    once turned project B's S26 into a review. Only an id reaches past ``within`` — at least
+    have was never meant for another one: a verb run in project A on `R26` once turned
+    project B's S26 into a review step. Only an id reaches past ``within`` — at least
     as long as the ids the CLI prints, so a bare `26` or a word that happens to be hex can
     never land in somebody else's project.
     """

@@ -502,7 +502,7 @@ def two_projects(cli):
 
 
 def test_a_key_the_current_project_lacks_is_refused_not_found_elsewhere(cli, two_projects):
-    """`DPLANNER_PROJECT=A dplanner review set R26` once rewrote project B's S26."""
+    """A verb run in project A on `R26` once rewrote project B's S26."""
     message = cli("status", "set", "S2", "done", "--project", "Discovery", expect=1)
     assert "no step matching 'S2' in 'Discovery'" in message
     assert data(cli("status", "show", two_projects, "--json"))["status"] != "done"

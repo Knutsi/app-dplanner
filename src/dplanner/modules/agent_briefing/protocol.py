@@ -1,6 +1,6 @@
 """The briefing's opening and closing words: the preflight, and how the agent reports back.
 
-Both name other modules' verbs — ``status set``, ``note add``, ``review …``, ``github set``
+Both name other modules' verbs — ``status set``, ``note add``, ``agent-state``, ``github set``
 — and every one addresses the step by its key, which is what its branch and PR are named
 after.
 """
@@ -11,12 +11,11 @@ from dplanner.core.storage.pointer import WORKTREES_DIR
 from dplanner.domain.locations import CODE, LocationRole, roles_by_id
 from dplanner.domain.model import Library, Step
 from dplanner.domain.repositories import UNSET, RepositoryFacts
-from dplanner.modules.agent_briefing.prompt import listed, quoted
-from dplanner.modules.agent_briefing.worktree import no_worktree, run_name_of
+from dplanner.modules.agent_briefing.prompt import quoted
+from dplanner.modules.agent_briefing.worktree import run_name_of
 from dplanner.modules.notes.aspect import project_ref
 from dplanner.planning.branches import BranchPlan, reading
 from dplanner.planning.kinds import key_of
-from dplanner.planning.review import is_review, reviews, settings
 from dplanner.planning.status import is_done
 
 
@@ -35,9 +34,8 @@ def preamble(
     honest fallback. The second check is the worktree: two agents once "launched into
     fresh worktrees" and did their work on the same branch, so an agent whose step asks
     for a worktree confirms it is in one — by the name the launcher prepared — and stops
-    if it is not. ``in_worktree`` is the caller's word on *this run* — :func:`.worktree.worktree`
-    for Run Agent and ``agent prompt``, never for a conflict the window hands over; a review
-    that gets none is told to leave the checkout as it found it.
+    if it is not. ``in_worktree`` is the caller's word on *this run* — the step's own choice
+    for Run Agent and ``agent prompt``, never for a conflict the window hands over.
     ``facts`` says where the plan lives: apart from the code, or inside it — the shape that
     drifts, so the agent is warned to leave the plan files alone and let the verbs write.
     ``branches`` names the branch the worktree is on, the one the launcher prepared, and
@@ -70,13 +68,6 @@ def preamble(
             " — do not touch the main checkout — and tell the developer the worktree"
             " was not prepared. Commit on that branch; every `dplanner` command still"
             " reaches the plan the window shows."
-        )
-    elif withheld := no_worktree(step):
-        lines.append(
-            f"This step runs in the checkout itself, with no worktree of its own — {withheld}."
-            " Leave the checkout as you found it: no commits, no branch switches, no stashes."
-            " Other agents may be in worktrees beside you, and this checkout is the"
-            " developer's."
         )
     else:
         lines.append(
@@ -174,47 +165,11 @@ def epilogue(library: Library, step: Step, branches: BranchPlan) -> str:
     Every verb names the step by its key: a key is
     unambiguous where a title may match two steps, and it is what the branch and the
     PR are named after; the note verbs name the project too, since a note is the
-    project's record. A review reports through its verdict instead
-    (``_review_epilogue``), and a step a review waits on does not stop at ready for
-    review: it answers the rounds.
+    project's record.
     """
     key = key_of(step) or step.title or "Untitled step"
     ref = quoted(key)
     project = project_ref(library.project_of(step.id))
-    if is_review(step):
-        return _review_epilogue(key, ref, project)
-    reviewers = [other for other in library.dependents(step.id) if reviews(other, step)]
-    if reviewers:
-        who = listed([key_of(other) or other.title for other in reviewers])
-        one = len(reviewers) == 1
-        cap = max(settings(other).max_rounds for other in reviewers)
-        named = "" if one else " (with `--from <review>` when more than one has posted)"
-        finished = (
-            f"- `dplanner status set {ref} ready-for-review`, then `dplanner agent-state set"
-            f" {ref} pending-approval` — push everything and open the PR first. {who}"
-            f" {'reviews' if one else 'review'} this step next, in at most {cap} rounds, and"
-            " you answer, so do not stop at ready for review:\n"
-            f"  1. `dplanner review wait {ref}` returns when a round is posted to you or the"
-            " review ends; exit 3 means nothing yet after nine minutes — run it again.\n"
-            f"  2. Findings arrived: `dplanner review take {ref}`{named} prints them. Settle"
-            " each one — or say why not — commit and push, then `dplanner review reply"
-            f" {ref} --file <reply.md>`, which sets this step ready for review again. Back"
-            " to 1.\n"
-            f"  3. Stop waiting when the review approves — it sets this step done;"
-            f" `dplanner agent-state clear {ref}` and you are finished — or when it hands the"
-            " review to a person (a note says what they must decide: stop there), or after"
-            " an hour of waiting with nothing new: stop, and relaunching this step briefs"
-            " you with any round that arrived meanwhile.\n"
-        )
-    else:
-        finished = (
-            f"- `dplanner status set {ref} ready-for-review` and `dplanner agent-state clear"
-            f" {ref}` — ready for review, never done: a person or a reviewing agent looks next"
-            " and sets it done. That is the step's work finished, not the mid-run"
-            " `plan-for-review` above, which is your plan waiting for a look. If nothing needs"
-            f" reviewing, `dplanner status set {ref} done --because '<why>'` keeps the reason"
-            " as a decision note.\n"
-        )
     base = (
         f" Open it against `{branches.pr_base}`: `gh pr create --base {branches.pr_base}`."
         if branches.pr_base
@@ -245,7 +200,12 @@ def epilogue(library: Library, step: Step, branches: BranchPlan) -> str:
         " developer must answer before you can go on\n"
         + _notes_told(project, ref)
         + "When the work is finished, record it in DPlanner:\n"
-        + finished
+        + f"- `dplanner status set {ref} ready-for-review` and `dplanner agent-state clear"
+        f" {ref}` — ready for review, never done: a person or a reviewing agent looks next"
+        " and sets it done. That is the step's work finished, not the mid-run"
+        " `plan-for-review` above, which is your plan waiting for a look. If nothing needs"
+        f" reviewing, `dplanner status set {ref} done --because '<why>'` keeps the reason"
+        " as a decision note.\n"
         + _handoff_told(project, ref)
         + f"If you cannot finish, `dplanner status set {ref} blocked` and say why in the"
         " handoff note.\n"
@@ -255,33 +215,8 @@ def epilogue(library: Library, step: Step, branches: BranchPlan) -> str:
     )
 
 
-def _review_epilogue(key: str, ref: str, project: str) -> str:
-    """A review's closing words. It opens no branch and no PR — approving carries its
-    subject's — and its verdict is its status, so it is told the verdicts and never a
-    status to set by hand."""
-    return (
-        f"This step is {key}. A review opens no branch and no PR of its own — approving"
-        " carries its subject's onto it — and its verdict is its status: `dplanner review"
-        f" approve {ref}` leaves the subject done and this review ready to merge; `dplanner"
-        f" review escalate {ref} --text '<what they must decide>'` leaves it blocked, with a"
-        " note for a person. Never `status set` either step yourself.\n"
-        "As you work, keep the run state current:\n"
-        f"- `dplanner agent-state set {ref} working` while you read the work and write"
-        " findings\n"
-        f"- `dplanner agent-state set {ref} pending-approval` while you wait on the answer\n"
-        f"- `dplanner agent-state set {ref} needs-input` when you have a question the"
-        " developer must answer before you can go on\n"
-        + _notes_told(project, ref)
-        + _handoff_told(project, ref)
-        + f"Once the review has its verdict, `dplanner agent-state clear {ref}` — the verdict's"
-        " status ends your working claim. If you stop without one, end it yourself:"
-        f" `dplanner agent-work end --step {ref}` — a banner nobody ended is one nobody"
-        " believes next time."
-    )
-
-
 def _notes_told(project: str, ref: str) -> str:
-    """The notes an agent leaves as it goes, as every epilogue words them."""
+    """The notes an agent leaves as it goes, as the epilogue words them."""
     return (
         "As you go, leave notes — the project's record, indexed into the briefing of every"
         " step that comes after the one you made them on. That is the reach: add"

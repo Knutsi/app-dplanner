@@ -22,7 +22,6 @@ from dplanner.planning.branches import A_CUT, is_cut
 from dplanner.planning.check import read as is_check
 from dplanner.planning.feature import is_feature
 from dplanner.planning.milestone import is_milestone
-from dplanner.planning.review import is_review
 from dplanner.planning.scope import ScopeKind, gatherers
 from dplanner.planning.start import read as is_start
 from dplanner.planning.wait import is_wait
@@ -36,7 +35,6 @@ class Kind(Enum):
     CHECK = "check"
     WAIT = "wait"
     CUT = "cut"
-    REVIEW = "review"
     AGENT = "agent"
 
 
@@ -48,7 +46,6 @@ RANKING: Final[tuple[tuple[Kind, str, Callable[[Step], bool]], ...]] = (
     (Kind.CHECK, "C", is_check),
     (Kind.WAIT, "W", is_wait),
     (Kind.CUT, "B", is_cut),
-    (Kind.REVIEW, "R", is_review),
     (Kind.AGENT, "S", is_agent),
 )
 PLAIN_LETTER: Final = "S"

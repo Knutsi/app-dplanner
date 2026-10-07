@@ -11,8 +11,6 @@
         --out docs/screenshots/s18-stack-on-the-canvas
     uv run python scripts/render_graph_editor.py --restack \
         --out docs/screenshots/f19-restack
-    uv run python scripts/render_graph_editor.py --review \
-        --out docs/screenshots/f12-automatic-review
     uv run python scripts/render_graph_editor.py --flow --out docs/screenshots/f20-flow
     uv run python scripts/render_graph_editor.py --branches \
         --out docs/screenshots/branch-stretches
@@ -34,10 +32,9 @@ whole stack picked, a link aimed at its middle landing on
 its first step, a broken stack's gap, the frame's right-click and the strip's two stack
 verbs; since F19, with ``--restack``, the frame's Shift hint under the pointer, a card
 Shift-dragged to the top with the cards easing down to open its slot, one dragged out past
-the frame, and a loose step dragged in — since S40 with no key held; since F12, with
-``--review``, a step and its review, and the arrow's menu; since F20, with ``--flow``, where a
-person is next: the steps ready for review or to merge pulsing — at the height of a breath,
-at rest, and with the review picked; since F28, with
+the frame, and a loose step dragged in — since S40 with no key held; since F20, with
+``--flow``, where a person is next: the steps ready for review or to merge pulsing — at the
+height of a breath, at rest, and with a step picked; since F28, with
 ``--waves``, one plan as its author arranged it and then in Wave view — every card in the
 column of its wave under the ruler, the strip's *Free | Waves* lit on Waves; and with
 ``--branches``, a stretch put on a feature branch — the right-click that puts it there, then
@@ -102,9 +99,6 @@ from dplanner.planning.feature import write as feature_write
 from dplanner.planning.kinds import key_of, kind_word
 from dplanner.planning.milestone import MODULE_ID as MILESTONE_ID
 from dplanner.planning.milestone import write as milestone_write
-from dplanner.planning.review import MODULE_ID as REVIEW_ID
-from dplanner.planning.review import ReviewSettings
-from dplanner.planning.review import write as review_write
 from dplanner.planning.status import MODULE_ID as STATUS_ID
 from dplanner.planning.status import Status, stored
 from dplanner.planning.status import write as status_write
@@ -173,30 +167,23 @@ WINDOW_SIZE = (1400, 720)
 # gesture then closes: two empty columns.
 HOLE = 600.0
 
-# F12: a step, its review, and what follows the review — never the step directly.
-REVIEWED = (
-    ("Build the parser", (0.0, 0.0), "ready-for-review", False),
-    ("Review the parser", (340.0, 0.0), "in-progress", True),
-    ("Ship the parser", (680.0, 0.0), "", False),
-)
-REVIEW_SIZE = (1100, 480)
-# F20: where a person is next. Title, seat, status, the agent run, whether an agent works it
-# and whether it is a review; then who waits on whom.
+# F20: where a person is next. Title, seat, status, the agent run and whether an agent works
+# it; then who waits on whom.
 FLOW = (
-    ("Build the parser", (0.0, -240.0), "ready-for-review", "", True, False),
-    ("Review the parser", (380.0, -240.0), "in-progress", "working", True, True),
-    ("Parse the dates", (0.0, -90.0), "ready-for-review", "", True, False),
-    ("Map the columns", (0.0, 40.0), "in-progress", "working", True, False),
-    ("Merge the import round", (380.0, -25.0), "", "", True, False),
-    ("Write the release notes", (380.0, 150.0), "ready-for-review", "", False, False),
-    ("Land the loader", (380.0, 280.0), "ready-to-merge", "", True, False),
-    ("Ship the importer", (760.0, -25.0), "", "", False, False),
+    ("Build the parser", (0.0, -240.0), "ready-for-review", "", True),
+    ("Harden the parser", (380.0, -240.0), "in-progress", "working", True),
+    ("Parse the dates", (0.0, -90.0), "ready-for-review", "", True),
+    ("Map the columns", (0.0, 40.0), "in-progress", "working", True),
+    ("Merge the import round", (380.0, -25.0), "", "", True),
+    ("Write the release notes", (380.0, 150.0), "ready-for-review", "", False),
+    ("Land the loader", (380.0, 280.0), "ready-to-merge", "", True),
+    ("Ship the importer", (760.0, -25.0), "", "", False),
 )
 FLOW_LINKS = (
-    ("Review the parser", "Build the parser"),
+    ("Harden the parser", "Build the parser"),
     ("Merge the import round", "Parse the dates"),
     ("Merge the import round", "Map the columns"),
-    ("Ship the importer", "Review the parser"),
+    ("Ship the importer", "Harden the parser"),
     ("Ship the importer", "Merge the import round"),
     ("Ship the importer", "Write the release notes"),
     ("Ship the importer", "Land the loader"),
@@ -587,74 +574,9 @@ def render_stacks(app: QApplication, theme: Theme, out: Path, workspace: Path) -
     discard(page)
 
 
-def render_review(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
-    """A step and its review, and the right-click on the arrow between them."""
-    QSettings().clear()
-    apply_theme(app, theme)
-    library_file = workspace / f"review-library-{theme.name}.json"
-    create_library(library_file)
-    init_repo(workspace)
-    session = new_session()
-    assert session.open_initial(library_file)
-    services = session.services
-    assert services is not None
-    services.debounce.set_immediate(True)
-    library = services.document
-
-    directory = seed_project(workspace / f"review-{theme.name}", "Parser")
-    project = services.repo.attach(directory)
-    library.add_child(library.id, project)
-    made = []
-    for title, (x, y), status, review in REVIEWED:
-        step = Step(title=title)
-        AddNodeCommand(project.id, step).redo(library)
-        SetModuleDataCommand(step.id, POSITION_KEY, write_position(x, y)).redo(library)
-        library.set_text(step.id, "step_description", f"{title}, in full.")
-        SetModuleDataCommand(step.id, "estimation", estimate_write(0.25)).redo(library)
-        SetModuleDataCommand(step.id, AGENT_ID, agent_write(True)).redo(library)
-        if status:
-            SetModuleDataCommand(step.id, STATUS_ID, status_write(Status(status), today=DAY)).redo(
-                library
-            )
-        if review:
-            SetModuleDataCommand(step.id, REVIEW_ID, review_write(ReviewSettings())).redo(library)
-            SetModuleDataCommand(step.id, AGENT_RUN_ID, agent_run_write("working")).redo(library)
-        made.append(step.id)
-    work, review_id, ship = made
-    SetEdgesCommand(review_id, "requires", [work]).redo(library)
-    SetEdgesCommand(ship, "requires", [review_id]).redo(library)
-
-    tab = services.tabs.open("project", project.id)
-    assert isinstance(tab, ProjectActivity)
-    page = tab.widget
-    page.resize(*REVIEW_SIZE)
-    page.show()
-    tab.frame()
-    settle(app)
-    # The right-click first, while the tab is the tab host's current one and publishes.
-    arrow = tab._scene._edges[EdgeRef(waiter=review_id, kind="requires", source=work)]
-    menu = tab.context_menu(tab._view.mapFromScene(arrow.path().pointAtPercent(0.5)))
-    menu.popup(QPoint(0, 0))
-    save(menu, out, "menu-review-arrow", theme, app)
-    menu.hide()
-    discard(menu)
-
-    tab._scene.select_steps([])
-    page.setParent(None)
-    page.resize(*REVIEW_SIZE)
-    page.show()
-    tab.frame()
-    tab._scene.advance_motion()
-    tab._scene.advance_motion()
-    save(page, out, "pair", theme, app)
-    page.setParent(None)
-    session.close()
-    discard(page)
-
-
 def render_flow(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
     """Where a person is next: the steps ready for review or to merge, pulsing. Shot at the
-    height of a breath, at rest, and with the review picked."""
+    height of a breath, at rest, and with a step picked."""
     QSettings().clear()
     apply_theme(app, theme)
     library_file = workspace / f"flow-library-{theme.name}.json"
@@ -671,7 +593,7 @@ def render_flow(app: QApplication, theme: Theme, out: Path, workspace: Path) -> 
     project = services.repo.attach(directory)
     library.add_child(library.id, project)
     made: dict[str, StepId] = {}
-    for title, (x, y), status, run, agent, review in FLOW:
+    for title, (x, y), status, run, agent in FLOW:
         step = Step(title=title)
         AddNodeCommand(project.id, step).redo(library)
         SetModuleDataCommand(step.id, POSITION_KEY, write_position(x, y)).redo(library)
@@ -685,8 +607,6 @@ def render_flow(app: QApplication, theme: Theme, out: Path, workspace: Path) -> 
             )
         if run:
             SetModuleDataCommand(step.id, AGENT_RUN_ID, agent_run_write(run)).redo(library)
-        if review:
-            SetModuleDataCommand(step.id, REVIEW_ID, review_write(ReviewSettings())).redo(library)
         made[title] = step.id
     waits: dict[str, list[StepId]] = {}
     for waiter, source in FLOW_LINKS:
@@ -709,7 +629,7 @@ def render_flow(app: QApplication, theme: Theme, out: Path, workspace: Path) -> 
     while tab._scene._phase % PULSE_PERIOD:
         tab._scene.advance_motion()
     save(page, out, "flow-rest", theme, app)
-    tab._scene.select_steps([made["Review the parser"]])
+    tab._scene.select_steps([made["Harden the parser"]])
     while tab._scene._phase % PULSE_PERIOD != PULSE_PERIOD / 2:
         tab._scene.advance_motion()
     save(page, out, "flow-picked", theme, app)
@@ -1064,9 +984,6 @@ def main(argv: list[str]) -> int:
         help="only a stack on the canvas: its frame, its +, linking to it (S18)",
     )
     parser.add_argument(
-        "--review", action="store_true", help="only a step and its review (F12), nothing else"
-    )
-    parser.add_argument(
         "--flow",
         action="store_true",
         help="only the pulsing steps a person moves next (F20)",
@@ -1108,9 +1025,6 @@ def main(argv: list[str]) -> int:
                 continue
             if args.restack:
                 render_restack(app, theme, args.out, Path(tmp))
-                continue
-            if args.review:
-                render_review(app, theme, args.out, Path(tmp))
                 continue
             if args.flow:
                 render_flow(app, theme, args.out, Path(tmp))

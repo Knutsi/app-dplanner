@@ -1,14 +1,13 @@
 ---
 paths:
-  - "src/dplanner/modules/{agent_briefing,agent_launch,agent_usage,step_agent_instruction,step_agent_run,step_review,agent_claude,agent_codex,agent_opencode}/**"
+  - "src/dplanner/modules/{agent_briefing,agent_launch,agent_usage,step_agent_instruction,step_agent_run,agent_claude,agent_codex,agent_opencode}/**"
   - "src/dplanner/domain/agents.py"
-  - "tests/modules/{agent_launch,agent_usage,step_agent_instruction,step_agent_run,step_review}/**"
+  - "tests/modules/{agent_launch,agent_usage,step_agent_instruction,step_agent_run}/**"
   - "tests/modules/test_agent_readers.py"
-  - "tests/cli/test_review*.py"
   - "scripts/render_briefing_size.py"
 ---
 
-# Agents — Run Agent, worktrees, run directories, usage, harnesses, profiles and reviews
+# Agents — Run Agent, worktrees, run directories, usage, harnesses and profiles
 
 - **Running an agent launches a peer, never a task.** *Run Agent* spawns a detached terminal
   the user owns — not a `TaskRunner` body, which would promise cancel and progress nobody
