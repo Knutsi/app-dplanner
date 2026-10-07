@@ -63,12 +63,30 @@ moment a toggle flipped, and renumbering on a kind change would break the branch
 ranking in `planning/kinds.py` orders the kinds — milestone over feature over check over
 wait, cut and review, then step — and every reader takes the answer from there: the key block, every
 CLI row, `find_step` (which accepts `S7`, `s7` and bare `7`, and refuses a bare number
-that names a step in several projects the way it refuses a shared title), the run name,
+that names a step in several projects the way it refuses a shared title — see *A key is
+the current project's, an id the library's* below), the run name,
 and the briefing's verbs, which address the step by key because a key is unambiguous
 where a title may not be. The one cost is that a branch named after `s7` is not renamed
 when the step becomes `F7`; the next launch reuses the worktree by its recorded name only
 if the name matches, so a kind change after work has started earns a second branch. That
 is rare, visible in `git branch`, and cheaper than a branch that lies.
+
+### A key is the current project's, an id the library's
+
+Every project numbers from 1, and two projects may share a title, so `S26` and "review"
+mean nothing until somebody says *in which project*. When the invocation has a current
+project — `--project`, `$DPLANNER_PROJECT`, or found from the working directory, one rule
+whichever — `find_step` answers a key, a folder name or a title from that project alone and
+refuses one it does not have, naming the project. It used to fall back to the whole library
+when the current project had no match, which is how `DPLANNER_PROJECT=A dplanner review set
+R26` turned project B's S26 into a review in the 10-04 run, written into a plan nobody was
+looking at. A key that is not here was never meant for there.
+
+An id is the one thing that reaches past the current project, because it is unique across
+the library by construction and a person or a coordinator addressing another project's step
+has it in hand. It must be at least as long as the eight characters every listing prints,
+so a bare `26` or a title word that happens to be hex can never resolve as the prefix of a
+stranger's id. With no current project, the whole library is the scope, as before.
 
 ## An auto-progress link is an aspect on the step that waits
 

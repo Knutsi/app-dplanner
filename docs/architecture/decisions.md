@@ -581,3 +581,11 @@ disk in the 10-04 run, for `config_dir()/runs/`. Questions and claims are new fi
 project. The machine-local at-work claim was weighed for absorbing into the committed claim
 and kept: its three-minute clock cannot be committed. Now: `agents.md`'s *Runs, questions
 and claims are three records in the plan*.
+
+## 2026-10-07 — A key resolves in the current project, or not at all
+
+`find_step` resolved a key or title in the current project when it could, and otherwise fell
+back to the whole library — so in the 10-04 run `DPLANNER_PROJECT=A dplanner review set R26`
+rewrote project B's S26. Now only an id of at least eight characters reaches past the current
+project (S7 of *Playbooks and autonomous work*). Now: `graph-model.md`'s *A key is the
+current project's, an id the library's*.

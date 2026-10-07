@@ -68,8 +68,11 @@ paths:
   coarser claim first — so a step keeps its number when its
   kind changes and the letter follows. One rule, four readers: the card's key block, every
   CLI row and `find_step` (`S7`, `s7` and `7` all resolve; several projects' `7` is
-  refused), the run name a worktree and branch carry, and the briefing's verbs. Never
-  store the letter, and never mint a number anywhere but `add_child`.
+  refused; **with a current project a key, folder name or title resolves there or not at
+  all** — only an id of eight characters or more names another project's step), the run
+  name a worktree and branch carry, and the briefing's verbs. Never store the letter, and
+  never mint a number anywhere but `add_child`. `docs/architecture/graph-model.md`'s *A key
+  is the current project's, an id the library's* has the reasoning.
 - **An auto-progress link is an aspect on the step that waits, read through the edge.**
   `modules/auto_progress/` stores `{"from": [source ids]}` on the waiter, and an id counts
   only while the waiter's own `requires` lists it (`flagged`) — so no verb that rewrites an

@@ -106,6 +106,12 @@ worker walking that tree; and a fixture that patched a module global raced the *
 does not help with the first and a careful assertion does not help with the second: build over
 a throwaway tree, and stop what is running before you patch under it.
 
+**And it never opens a real terminal or agent CLI**: once a stub that stopped matching opened
+real windows running `claude` against the suite's temp repositories. `tests/conftest.py`'s
+`_no_real_spawns` fails a test that starts one, or anything detached; a test that runs a
+*fake* agent CLI hands its path to `allow_spawn`. A test that hangs fails after 120 s
+(`pytest-timeout`) with every thread's stack, so a hung worker cannot cost a night.
+
 **Qt objects: what the crashes taught, as rules.** Each line is one the suite has died of.
 The diagnoses, the recipes and the shiboken detail are the **`suite-crash` skill**
 (`.claude/skills/suite-crash/SKILL.md`) — load it before debugging the test a crash named, because
