@@ -50,7 +50,7 @@ As you work, keep the run state current:
 - `dplanner agent-state set S8 plan-for-review` when your plan is ready to review
 - `dplanner agent-state set S8 working` while implementing
 - `dplanner agent-state set S8 pending-approval` while waiting on an approval
-- `dplanner agent-state set S8 needs-input` when you have a question the developer must answer before you can go on
+- `dplanner question ask '<question>' --choice '<answer>' … --step S8` when you have a question the developer must answer before you can go on, then end your turn: unattended, the answer resumes you; in a terminal it says you need input, and you wait for the reply there
 As you go, leave notes — the project's record, indexed into the briefing of every step that comes after the one you made them on. That is the reach: add `--reach project` when what you settled belongs to the whole plan rather than this branch. `dplanner note add --help` lists the labels:
 - `dplanner note add Widget decision '<what you chose>' --step S8 --text '<why>'` for each choice the plan should remember (`--supersedes N3` when it reverses an earlier one)
 - `dplanner note add Widget spec-change '<what differs>' --step S8 --text '<what and why>'` where the work had to depart from the spec

@@ -98,6 +98,9 @@ class Turn:
     resets: str = ""  # For "limit", when the account comes back, if known.
     question: str = ""
     consumed: Mapping[str, str] = field(default_factory=dict)
+    # When the supervisor was about to start the process of a turn claimed on an answer: after
+    # it, an absent pid no longer proves the answer was never acted on.
+    spawning: str = ""
     agents: tuple[AgentUsage, ...] = ()  # The turn's own consumption: FORMAT.md's "usage".
 
     def to_json(self) -> dict[str, Any]:
@@ -113,6 +116,7 @@ class Turn:
             "resets": self.resets,
             "question": self.question,
             "consumed": dict(self.consumed),
+            "spawning": self.spawning,
         }
         data.update({key: value for key, value in optional.items() if value})
         if self.exit is not None:
@@ -145,6 +149,7 @@ class Turn:
             consumed=(
                 {str(k): str(v) for k, v in consumed.items()} if isinstance(consumed, dict) else {}
             ),
+            spawning=_text(raw, "spawning"),
             agents=_agents_from_json(agents),
         )
 

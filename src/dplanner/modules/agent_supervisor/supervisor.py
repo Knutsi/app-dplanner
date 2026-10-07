@@ -38,6 +38,13 @@ ends the run rather than resumes it. A turn records its process's stamp too, so 
 supervisor started after a reboot tells a turn still running from one the machine lost,
 and retries the lost one.
 
+**Every park stands on a question, and the supervisor delivers its answer**
+(``domain/questions.py``). The card is written before the parked ending; the answer, given
+anywhere, is looked for whenever a supervisor starts and once more after it lets go of a
+parked run, and the resume is claimed under the run's lock and the question's — the next turn
+written with the answer it consumes before the question is marked consumed, so a crash in
+between leaves a turn to start, never an answer to consume twice.
+
 Qt-free: it is a CLI verb, and the run it drives must outlive every window.
 """
 
@@ -56,6 +63,8 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import IO
 
+from dplanner.cli.discovery import PROJECT_ENV, RUN_ENV
+from dplanner.core.fsio import os_lock
 from dplanner.core.process import (
     CREATE_NEW_PROCESS_GROUP,
     ProcessStamp,
@@ -63,7 +72,7 @@ from dplanner.core.process import (
     spawn_detached,
     stamp_of,
 )
-from dplanner.domain import ledger
+from dplanner.domain import ledger, questions
 from dplanner.domain.agents import (
     AgentHarness,
     AgentUsage,
@@ -82,6 +91,7 @@ from dplanner.domain.headless import (
 )
 from dplanner.domain.ledger import LedgerRecord, Turn
 from dplanner.domain.model import now_stamp
+from dplanner.domain.questions import Question
 from dplanner.modules.agent_briefing.protocol import opening_prompt
 
 # Why a turn after the first began, and what it is told when nobody wrote the words.
@@ -98,6 +108,11 @@ PLAN_FILE = "plan.md"
 # handler may print the turn's last totals on the way out.
 DRAIN_SECONDS = 2.0
 OVER = (TurnEnd.DONE, TurnEnd.STOPPED)
+# A turn claimed on an answer that was starting when its supervisor was lost: it may have
+# acted on the answer, so it is never started again without a person.
+LOST_AT_SPAWN = "lost-at-spawn"
+# Failures no wait mends, beside the ones Ending.needs_person names: they park at once.
+PARK_AT_ONCE = ("runaway", LOST_AT_SPAWN)
 
 
 class RefusedError(Exception):
@@ -142,8 +157,32 @@ def supervise(
     directory the run directories are under, ``config_dir()`` unless a test says otherwise.
     """
     guards = guards or Guards()
-    directory = ledger.run_dir(run, config)
-    with supervising(directory), _stoppable() as stop:
+    said, again = "", False
+    while True:
+        try:
+            said = _drive(project_dir, run, harnesses, prompt, text, guards, config)
+        except RefusedError:
+            if again:  # Another supervisor holds the run, and delivers the answer itself.
+                return said
+            raise
+        # An answer given while this supervisor let go of the run: whoever answered started a
+        # supervisor that either holds the lock now — and delivers it — or found it held and
+        # gave up, which this check, made after letting go, makes up for.
+        if not answer_waiting(project_dir, run):
+            return said
+        prompt, text, again = "", "", True
+
+
+def _drive(
+    project_dir: Path,
+    run: str,
+    harnesses: tuple[AgentHarness, ...],
+    prompt: str,
+    text: str,
+    guards: Guards,
+    config: Path | None,
+) -> str:
+    with supervising(ledger.run_dir(run, config)), _stoppable() as stop:
         record = _record(project_dir, run)
         harness = harness_by_id(harnesses, record.harness)
         if harness is None or harness.headless is None:
@@ -154,6 +193,19 @@ def supervise(
             ending = session.turn(kind, words, stop)
             kind, words = session.next(ending, stop)
         return words
+
+
+def answer_waiting(project_dir: Path, run: str) -> bool:
+    """Whether the run stands parked on a question somebody has answered, or holds a resume
+    claimed on an answer that never started — either way, a supervisor has work to do."""
+    record = ledger.find(project_dir, run)
+    last = record.last_turn if record is not None else None
+    if record is None or last is None or record.over or record.fence:
+        return False
+    if not last.end:
+        return not last.pid and bool(last.consumed)
+    question = questions.find(project_dir, last.question) if last.question else None
+    return question is not None and question.state == questions.ANSWERED
 
 
 def fence(project_dir: Path, run: str, by: str, why: str, config: Path | None = None) -> None:
@@ -176,7 +228,7 @@ def update(
 ) -> LedgerRecord:
     """Read the run's record, change it and write it back, all under the run's record lock."""
     directory = ledger.run_dir(run, config)
-    with _os_lock(directory / RECORD_LOCK, wait=True):
+    with os_lock(directory / RECORD_LOCK, wait=True):
         changed = change(_record(project_dir, run))
         ledger.write(project_dir, changed)
         return changed
@@ -192,6 +244,8 @@ class Session:
     harness: AgentHarness
     headless: Headless
     guards: Guards
+    # The turn a claimed answer resumes with, written before it is spawned.
+    claimed: Turn | None = None
 
     @property
     def directory(self) -> Path:
@@ -202,6 +256,7 @@ class Session:
     def opening(self, prompt: str, text: str, stop: threading.Event) -> tuple[str, str]:
         """The first turn this supervisor starts — the launch, a parked run's resume, or what
         follows a turn the machine lost — as :meth:`next` answers."""
+        self._reconcile()
         record = self.record
         if record.over:
             raise RefusedError(f"run {record.run} is over")
@@ -216,6 +271,8 @@ class Session:
             self._end(TurnEnd(last.end))
             return "", _over(record.run, TurnEnd(last.end))
         if not last.end:
+            if not last.pid and last.consumed:
+                return self._recover(last, stop)
             stamp = ProcessStamp(last.pid, last.boot, last.pid_started)
             if last.pid and is_live(stamp):
                 raise RefusedError(
@@ -223,6 +280,12 @@ class Session:
                 )
             lost = Ending(TurnEnd.FAILED, "lost", "its process is gone")
             return self.next(self._finish(last, self._streamed(last.n), None, lost), stop)
+        if (
+            not text
+            and last.question
+            and (prompt == "answer" or (not prompt and self._answered(last) is not None))
+        ):
+            return self._claim(last)
         if prompt not in PROMPTS:
             raise RefusedError(
                 f"run {record.run} is parked ({_said(last)}); resume it with --prompt "
@@ -230,18 +293,40 @@ class Session:
             )
         if prompt == "answer" and not text:
             raise RefusedError("an answer needs its words: --text")
+        # Words handed to the supervisor, or a resume that is no answer: the run goes on
+        # without what it parked on.
+        self._settle(f"the run resumed with {prompt}")
         return prompt, text or PROMPTS[prompt]
 
     def next(self, ending: Ending, stop: threading.Event) -> tuple[str, str]:
         """What follows a turn: the next turn's prompt and words, or ("", why it stopped)."""
         if ending.end in OVER:
             return "", _over(self.record.run, ending.end)
-        parked = f"run {self.record.run} is parked: {_said(self.record.turns[-1])}"
-        if ending.end is not TurnEnd.FAILED or ending.needs_person or ending.why == "runaway":
-            return "", parked
+        last = self.record.turns[-1]
         failures = _failures(self.record)
-        if failures > len(self.guards.backoff):
-            return "", f"{parked}, {failures} failures in a row"
+        if self._parks(ending, failures):
+            parked = f"run {self.record.run} is parked: {_said(last)}"
+            if ending.end is TurnEnd.FAILED and failures > len(self.guards.backoff):
+                parked += f", {failures} failures in a row"
+            questions.withdraw_unsettled(
+                self.project_dir,
+                self.record.run,
+                "the run parked on another question",
+                keep=last.question,
+                config=self.config,
+            )
+            if self._answered(last) is not None:
+                # Answered while the turn was ending: resume on it at once.
+                try:
+                    return self._claim(last)
+                except RefusedError as refused:
+                    return "", f"{parked}; {refused}"
+            return "", f"{parked}, on {questions.short(last.question)}"
+        # Going on by itself: nothing the run asked before it failed stands any more, an
+        # answer not yet acted on included — no turn will consume it now.
+        questions.withdraw_unsettled(
+            self.project_dir, self.record.run, "the run went on by itself", config=self.config
+        )
         if ending.why != "abandoned-wait" and stop.wait(self.guards.backoff[failures - 1]):
             self._end(TurnEnd.STOPPED)
             return "", _over(self.record.run, TurnEnd.STOPPED)
@@ -256,14 +341,21 @@ class Session:
     # -- one turn ---------------------------------------------------------------------------
 
     def turn(self, kind: str, words: str, stop: threading.Event) -> Ending:
-        n = len(self.record.turns) + 1
+        claimed, self.claimed = self.claimed, None
+        n = claimed.n if claimed is not None else len(self.record.turns) + 1
         spec = self._spec(kind, words)
         env = scrubbed_environment(os.environ, (self.harness,))
+        # What `dplanner question ask` reads to find the run it parks.
+        env[RUN_ENV], env[PROJECT_ENV] = self.record.run, self.record.project
         argv = self.headless.command(spec)
         argv[0] = shutil.which(argv[0], path=env.get("PATH")) or argv[0]
         stream = self.directory / f"turn-{n}.jsonl"
         errors = self.directory / f"turn-{n}.stderr"
-        turn = Turn(n=n, prompt=kind, started=now_stamp())
+        turn = claimed or Turn(n=n, prompt=kind, started=now_stamp())
+        if claimed is not None:
+            # From here an absent pid no longer proves the answer was never acted on.
+            turn = replace(turn, spawning=now_stamp())
+            self._write(turn)
         log = TurnLog()
         with stream.open("w", encoding="utf-8") as tee, errors.open("wb") as err:
             try:
@@ -292,7 +384,12 @@ class Session:
         elif killed:
             ending = Ending(TurnEnd.FAILED, killed, _KILLED_BECAUSE[killed])
         else:
-            ending = self.headless.classify(code, log, stderr)
+            recorded = self._asked_since(turn.started)
+            ending = self.headless.classify(
+                code, log, stderr, recorded.text if recorded is not None else None
+            )
+            if recorded is not None and ending.end is TurnEnd.ASKED:
+                turn = replace(turn, question=recorded.id)
         return self._finish(turn, log, code, ending)
 
     def _spec(self, kind: str, words: str) -> TurnSpec:
@@ -410,6 +507,12 @@ class Session:
             resets=ending.resets.isoformat() if ending.resets else "",
             agents=usage_of(log),
         )
+        if not turn.question and self._parks(ending, _failures(_with_turn(self.record, turn))):
+            # The card first: a crash after it leaves a card on a lost turn, which the next
+            # supervisor withdraws as it retries — never a parked run nobody is asked about.
+            question = _question_for(self.record, turn, ending)
+            questions.write(self.project_dir, question)
+            turn = replace(turn, question=question.id)
         done = ending.end is TurnEnd.DONE
         verdict = (
             dict(log.typed)
@@ -428,12 +531,137 @@ class Session:
             return record
 
         self._update(finished)
+        if ending.end in OVER:
+            self._settle(f"the run is {ending.end}")
         return ending
 
     def _end(self, end: TurnEnd) -> None:
         last = self.record.last_turn
         code = last.exit if last is not None and end is TurnEnd.DONE else None
         self._update(lambda record: record.ended_at(now_stamp(), code))
+        self._settle(f"the run is {end}")
+
+    # -- its questions ------------------------------------------------------------------------
+
+    def _asked_since(self, started: str) -> Question | None:
+        """The question the agent recorded through `dplanner question ask` during the turn —
+        answered already, if somebody was quick."""
+        found = [
+            q
+            for q in questions.of_run(self.project_dir, self.record.run)
+            if not q.settled and q.asked >= started
+        ]
+        return found[-1] if found else None
+
+    def _parks(self, ending: Ending, failures: int) -> bool:
+        """Whether the ending parks the run, ``failures`` being the failed turns in a row."""
+        if ending.end in OVER:
+            return False
+        if ending.end is not TurnEnd.FAILED or ending.needs_person or ending.why in PARK_AT_ONCE:
+            return True
+        return failures > len(self.guards.backoff)
+
+    def _answered(self, turn: Turn) -> Question | None:
+        question = questions.find(self.project_dir, turn.question) if turn.question else None
+        return question if question is not None and question.state == questions.ANSWERED else None
+
+    def _claim(self, last: Turn) -> tuple[str, str]:
+        """Claim the resume on the answer to the question the run parked on — under the run's
+        lock and the question's, re-reading both: the run still this machine's, not fenced,
+        not over, its last turn parked on this question, the question answered. One ledger
+        write records the next turn with the answer it consumes, then the question is marked
+        consumed; a crash between the two leaves a turn :meth:`_recover` starts, never one
+        consumed twice."""
+        run, machine = self.record.run, ledger.machine_id(self.config)
+        with (
+            os_lock(self.directory / RECORD_LOCK, wait=True),
+            questions.held(last.question, self.config),
+        ):
+            record = _record(self.project_dir, run)
+            latest = record.last_turn
+            question = questions.find(self.project_dir, last.question)
+            refusal = _not_ours(record, machine) or (
+                "it is no longer parked on that question"
+                if not record.parked or latest is None or latest.question != last.question
+                else f"{questions.short(last.question)} is gone"
+                if question is None
+                else f"{question.short} is {question.state}, not answered"
+                if question.state != questions.ANSWERED
+                else ""
+            )
+            if refusal or question is None or latest is None:
+                raise RefusedError(f"run {run} cannot resume on its answer: {refusal}")
+            claimed = Turn(
+                n=latest.n + 1,
+                prompt="answer",
+                started=now_stamp(),
+                consumed={"question": question.id, "answer": str(question.answer.get("id", ""))},
+            )
+            ledger.write(self.project_dir, _with_turn(record, claimed))
+            questions.write(
+                self.project_dir, questions.consumed(question, now_stamp(), run, claimed.n)
+            )
+        self.record = _record(self.project_dir, run)
+        self.claimed = claimed
+        self._settle("the run resumed on another answer")
+        return "answer", questions.answer_text(question)
+
+    def _recover(self, claimed: Turn, stop: threading.Event) -> tuple[str, str]:
+        """A turn claimed on an answer whose process has no pid. If it was never about to
+        start — no ``spawning`` — start it, after the claim's own locked check, never
+        consuming the answer again. If it may have started, the agent may already have acted
+        on the answer, so it ends ``failed``/``lost-at-spawn`` and parks for a person."""
+        if claimed.spawning:
+            said = questions.short(claimed.consumed.get("question", ""))
+            lost = Ending(
+                TurnEnd.FAILED,
+                LOST_AT_SPAWN,
+                f"turn {claimed.n} was starting on the answer to {said} when its supervisor was"
+                " lost, and may have acted on it: resume it again only if it did not",
+            )
+            return self.next(self._finish(claimed, self._streamed(claimed.n), None, lost), stop)
+        with os_lock(self.directory / RECORD_LOCK, wait=True):
+            record = _record(self.project_dir, self.record.run)
+            refusal = _not_ours(record, ledger.machine_id(self.config))
+            latest = record.last_turn
+            if not refusal and (latest is None or latest.n != claimed.n or latest.end):
+                refusal = "its claimed turn has moved on"
+            if refusal:
+                raise RefusedError(f"run {record.run} cannot resume on its answer: {refusal}")
+        found = questions.find(self.project_dir, claimed.consumed.get("question", ""))
+        if found is not None and found.answer.get("id") == claimed.consumed.get("answer"):
+            questions.update(
+                self.project_dir,
+                found.id,
+                lambda q: (
+                    questions.consumed(q, now_stamp(), self.record.run, claimed.n)
+                    if q.state == questions.ANSWERED
+                    else q
+                ),
+                self.config,
+            )
+        self.claimed = claimed
+        words = questions.answer_text(found) if found is not None else PROMPTS["continue"]
+        return "answer", words
+
+    def _reconcile(self) -> None:
+        """Mend what a supervisor that died between two writes left: an ended run's cards
+        still standing, a parked run with no card."""
+        record, last = self.record, self.record.last_turn
+        if record.over:
+            self._settle("the run is over")
+            return
+        if last is None or not last.end or last.question or last.end in OVER:
+            return
+        ending = Ending(TurnEnd(last.end), last.why, last.reason)
+        if self._parks(ending, _failures(record)):
+            question = _question_for(record, last, ending)
+            questions.write(self.project_dir, question)
+            self._write(replace(last, question=question.id))
+
+    def _settle(self, why: str, keep: str = "") -> None:
+        """Withdraw what the run no longer waits on: it ended, or went on without it."""
+        questions.withdraw_unsettled(self.project_dir, self.record.run, why, keep, self.config)
 
     def _write(self, turn: Turn) -> None:
         self._update(lambda record: _with_turn(record, turn))
@@ -467,7 +695,7 @@ def supervising(directory: Path) -> Iterator[None]:
     path = directory / LOCK_FILE
     with ExitStack() as stack:
         try:
-            held = stack.enter_context(_os_lock(path, wait=False))
+            held = stack.enter_context(os_lock(path, wait=False))
         except BlockingIOError:
             raise RefusedError(f"the run is already supervised ({_holder(path)})") from None
         held.truncate(0)
@@ -481,6 +709,57 @@ _KILLED_BECAUSE = {
     "runaway": "the stream kept going and the agent produced nothing",
     "timeout": "the stage ran past its wall clock",
 }
+
+
+def _not_ours(record: LedgerRecord, machine: str) -> str:
+    """Why this machine may not start the run's next turn, or "": a resume is claimed only
+    on a run that is not over, not fenced, and was launched here."""
+    if record.over or record.fence:
+        return "it is over" if record.over else "it was fenced"
+    if record.machine and record.machine != machine:
+        return f"{record.host or record.machine} launched it"
+    return ""
+
+
+def _question_for(record: LedgerRecord, turn: Turn, ending: Ending) -> Question:
+    """The question a park that nobody asked through the door stands on: a question found in
+    the agent's words, a denied permission, an exhausted account, or a run that cannot go on
+    alone."""
+    said = ending.question or ending.reason or _said(turn)
+    kind, header, text, body = {
+        TurnEnd.ASKED: (questions.DECISION, "Question", said, ""),
+        TurnEnd.DENIED: (
+            questions.PERMISSION,
+            "Permission",
+            "The agent was denied a permission it needed. How should it go on?",
+            said,
+        ),
+        TurnEnd.LIMIT: (
+            questions.LIMIT,
+            "Usage limit",
+            "The account ran out of usage. Resume when it resets?",
+            said,
+        ),
+    }.get(
+        ending.end,
+        (questions.BLOCKED, "Blocked", f"The run cannot go on alone: {said}", ""),
+    )
+    return questions.asked(
+        record.project,
+        record.step,
+        now_stamp(),
+        [questions.one(text, header)],
+        kind=kind,
+        run=record.run,
+        by={
+            "callsign": record.callsign,
+            "harness": record.harness,
+            "machine": record.machine,
+            "host": record.host,
+        },
+        body=body,
+        resets=turn.resets,
+    )
 
 
 def _record(project_dir: Path, run: str) -> LedgerRecord:
@@ -582,28 +861,6 @@ def _group_alive(process: "subprocess.Popen[str]", group: int) -> bool:
         except PermissionError:
             return True
         return True
-
-
-@contextmanager
-def _os_lock(path: Path, *, wait: bool) -> Iterator[IO[str]]:
-    """An exclusive lock the operating system holds on ``path`` and drops when its holder
-    exits, however it exits. ``BlockingIOError`` when another holds it and ``wait`` is
-    False. The file is never deleted: a lock on a file somebody can unlink is no lock."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a+", encoding="utf-8") as held:
-        if sys.platform == "win32":
-            import msvcrt
-
-            held.seek(0)
-            try:
-                msvcrt.locking(held.fileno(), msvcrt.LK_LOCK if wait else msvcrt.LK_NBLCK, 1)
-            except OSError as error:
-                raise BlockingIOError(str(error)) from error
-        else:
-            import fcntl
-
-            fcntl.flock(held.fileno(), fcntl.LOCK_EX if wait else fcntl.LOCK_EX | fcntl.LOCK_NB)
-        yield held
 
 
 def _holder(path: Path) -> str:

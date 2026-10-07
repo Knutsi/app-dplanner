@@ -360,7 +360,7 @@ the final text and its typed form, the CLI's own error and its machine-readable 
 denials — and `Headless.classify(exit, log, stderr, question)` reads it in one order: killed;
 the CLI's error, by its code before its words (Claude's `rate_limit` is a limit whether the
 words say "rate limit" or a subscription's "You've hit your limit"); a failed exit with no
-message; **the question the turn recorded** through `dplanner ask`, which the supervisor reads
+message; **the question the turn recorded** through `dplanner question ask`, which the supervisor reads
 from the question store and hands in, since an agent that asked through the door ends its turn
 in plain words; a denial (Claude's `permission_denials` under `success`, opencode's
 "auto-rejecting" on stderr, a Codex sentence refusing an act *because* of its sandbox); the

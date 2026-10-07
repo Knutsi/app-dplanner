@@ -317,6 +317,12 @@ nothing to review, say why — `dplanner status set S7 done --because '<reason>'
 reason is kept as a decision note on the step. Ready for review is the *step's* work
 finished; the agent-run state `plan-for-review` is your *plan* waiting for a look, mid-run.
 
+**A question for the developer goes through one door: `dplanner question ask '<question>'
+--choice '<answer>' … --step S7`, then end your turn.** Run unattended, the question is
+recorded on your run and the answer resumes your session; in a terminal it marks the step
+`needs-input` and you ask there. Never wait in a loop for an answer, and never ask only in
+prose when the door is there.
+
 **What happens after Ready for review is not yours to start.** Stop there, and never launch
 another agent from your own shell: the coordinator or a person starts what comes next.
 `progression show` lists an agent that waits on a person — a plan to approve, a question —

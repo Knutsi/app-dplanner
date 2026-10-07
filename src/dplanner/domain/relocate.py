@@ -9,7 +9,8 @@ while its transaction flushes what the move marked.
 What moves is the plan, ``PLAN_ENTRIES``: ``project.dproj``, ``modules/`` and ``steps/``,
 module file areas included, so specs, images and attachments travel — and the usage
 ``ledger/`` beside them (``domain/ledger.py``), which is the plan's history of what its
-agents consumed even though the store never flushes it. What is written into
+agents consumed even though the store never flushes it, and the ``questions/`` they asked
+(``domain/questions.py``). What is written into
 the moved ``project.dproj`` is the one fact the plan needs from then on — the code
 repository it came out of, as git names it — for a plan of the older shape; a plan a plan
 repository held with no code named leaves a repository that was never its code, and moves
@@ -42,6 +43,7 @@ from dplanner.core.storage.provider import StorageError, VersionedStorage
 from dplanner.domain.ledger import LEDGER_DIR
 from dplanner.domain.locations import CODE, Location, write_locations
 from dplanner.domain.model import ProjectId
+from dplanner.domain.questions import QUESTIONS_DIR
 from dplanner.domain.repositories import LEGACY, repository_facts
 from dplanner.domain.store import PLAN_ENTRIES, PROJECT_META, LibraryStore
 
@@ -119,7 +121,7 @@ def move_project(
         )
 
     target.mkdir(parents=True)
-    for name in (*PLAN_ENTRIES, LEDGER_DIR):
+    for name in (*PLAN_ENTRIES, LEDGER_DIR, QUESTIONS_DIR):
         item = source / name
         if item.is_dir():
             shutil.copytree(item, target / name)

@@ -198,7 +198,7 @@ class Headless:
         self, exit_code: int | None, log: TurnLog, stderr: str = "", question: str | None = None
     ) -> Ending:
         """How the turn ended, from its exit, its stream, its stderr and ``question`` — the
-        question the agent recorded through ``dplanner ask`` during the turn, which the
+        question the agent recorded through ``dplanner question ask`` during the turn, which the
         supervisor reads from the question store, since an agent that asked through the door
         then ends its turn in plain words. In this order, because each rule is only true once
         the ones above it are not."""
