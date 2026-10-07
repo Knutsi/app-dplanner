@@ -68,7 +68,16 @@ from collections.abc import Mapping
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from dplanner.domain.agents import AgentHarness, AgentUsage, RunFacts, RunReport, Tokens
+from dplanner.domain.agents import (
+    AgentHarness,
+    AgentUsage,
+    RunFacts,
+    RunReport,
+    Shell,
+    SignedIn,
+    SignIn,
+    Tokens,
+)
 from dplanner.domain.headless import (
     Headless,
     LimitWindow,
@@ -421,6 +430,15 @@ HEADLESS = Headless(
 )
 
 
+def signed_in(shell: Shell) -> SignedIn:
+    """``codex login status``: "Logged in using ChatGPT" on stderr and exit 0, else not."""
+    code, said = shell(("login", "status"))
+    line = next((line.strip() for line in said.splitlines() if line.strip()), "")
+    if code == 0 and line.startswith("Logged in"):
+        return SignedIn(ok=True, detail=line[:1].lower() + line[1:])
+    return SignedIn(ok=False, detail="not signed in")
+
+
 HARNESS = AgentHarness(
     id="codex",
     label="Codex",
@@ -431,4 +449,5 @@ HARNESS = AgentHarness(
     report=report,
     binary="codex",
     headless=HEADLESS,
+    sign_in=SignIn(probe=signed_in, command="codex login"),
 )

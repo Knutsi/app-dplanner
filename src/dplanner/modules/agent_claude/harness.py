@@ -64,6 +64,9 @@ the session; ``rate_limit_event`` carries the account's windows (``unifiedWindow
 ``result`` has the final text, the typed answer, the turn's usage, ``permission_denials`` —
 which a turn that ended ``success`` may still carry — and, on a failure, ``is_error`` with the
 API's status. Its ``subtype`` says ``success`` even then: ``is_error`` is what says it failed.
+
+**Signed in** is ``claude auth status``, which answers JSON (``loggedIn``, ``authMethod``,
+``subscriptionType``) whatever its exit code.
 """
 
 import json
@@ -72,7 +75,16 @@ import re
 from collections.abc import Mapping
 from pathlib import Path
 
-from dplanner.domain.agents import AgentHarness, AgentUsage, RunFacts, RunReport, Tokens
+from dplanner.domain.agents import (
+    AgentHarness,
+    AgentUsage,
+    RunFacts,
+    RunReport,
+    Shell,
+    SignedIn,
+    SignIn,
+    Tokens,
+)
 from dplanner.domain.headless import (
     Headless,
     StageKind,
@@ -337,6 +349,18 @@ def _denial(denial: Mapping[str, object]) -> str:
 HEADLESS = Headless(command=headless_command, read=read_event)
 
 
+def signed_in(shell: Shell) -> SignedIn:
+    _code, said = shell(("auth", "status"))
+    try:
+        status = json.loads(said)
+    except ValueError:
+        return SignedIn(ok=False, detail="`claude auth status` did not answer JSON")
+    if not isinstance(status, dict) or status.get("loggedIn") is not True:
+        return SignedIn(ok=False, detail="not signed in")
+    how = [str(status[key]) for key in ("authMethod", "subscriptionType") if status.get(key)]
+    return SignedIn(ok=True, detail=f"signed in ({', '.join(how)})" if how else "signed in")
+
+
 HARNESS = AgentHarness(
     id="claude",
     label="Claude Code",
@@ -354,4 +378,5 @@ HARNESS = AgentHarness(
     binary="claude",
     plan_mode="--permission-mode plan",
     headless=HEADLESS,
+    sign_in=SignIn(probe=signed_in, command="claude auth login"),
 )

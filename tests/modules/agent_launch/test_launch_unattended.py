@@ -66,3 +66,35 @@ def test_no_terminal_is_a_sentence_and_leaves_no_intent_and_no_claim(
     assert said.startswith("no terminal opened")
     assert launch._deps.intents.pending() == []
     assert status_of(services.document.step(step.id)) is Status.PENDING
+
+
+def test_a_named_harness_runs_through_the_first_profile_running_it(launch, step, monkeypatch):
+    """A playbook's role names a harness, and the launch takes the first profile whose agent
+    command runs it — not the default, which may be the very agent whose work is judged."""
+    from dplanner.modules.agent_launch.profiles import Profile, write_profiles
+
+    write_profiles(
+        [
+            Profile("Mine", "", "first {script}"),
+            Profile("Codex", "codex {prompt}", "second {script}"),
+        ]
+    )
+    opened: list[str] = []
+
+    def resolve(template, *_args, **_kwargs):
+        opened.append(template)
+        return ["fake-term"]
+
+    monkeypatch.setattr(launcher, "resolve_command", resolve)
+    monkeypatch.setattr(launcher, "spawn", lambda *_a, **_k: None)
+    assert launch.launch_unattended(step.id, harness="codex") == ""
+    assert opened == ["second {script}"]
+
+
+def test_a_harness_no_profile_runs_is_refused_never_swapped_for_the_default(launch, step):
+    from dplanner.modules.agent_launch.profiles import Profile, write_profiles
+
+    write_profiles([Profile("Mine", "", "first {script}")])
+    said = launch.launch_unattended(step.id, harness="codex")
+    assert said.startswith("no launch profile runs Codex")
+    assert launch._deps.intents.pending() == []

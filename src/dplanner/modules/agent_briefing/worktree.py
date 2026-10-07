@@ -18,9 +18,8 @@ from dplanner.domain.locations import Placement
 from dplanner.domain.model import Step
 from dplanner.domain.repositories import RepositoryFacts
 from dplanner.modules.step_ticket.aspect import read as ticket_read
-from dplanner.planning.agent import uses_worktree, workplace
+from dplanner.planning.agent import workplace
 from dplanner.planning.kinds import key_of
-from dplanner.planning.review import NO_WORKTREE_FOR_A_REVIEW, is_review
 
 # A run name is a branch name's last component, so it keeps to what git's ref rules allow
 # everywhere: letters, digits, `.`, `_` and `-`, none of them doubled up or at an end.
@@ -83,15 +82,3 @@ def run_name_of(step: Step) -> str:
     from its key and its ticket, so the briefing names the worktree the script prepared."""
     ticket = ticket_read(step)
     return run_name(key_of(step), ticket.key if ticket is not None else "", step.title)
-
-
-def no_worktree(step: Step) -> str:
-    """Why a run of ``step`` gets no worktree whatever its agent aspect says, or "" — the
-    review's rule: it reads the work it reviews where that work is, and commits none."""
-    return NO_WORKTREE_FOR_A_REVIEW if is_review(step) else ""
-
-
-def worktree(step: Step) -> bool:
-    """Whether a run of ``step`` gets a fresh worktree: the step's own choice, unless what
-    the step is rules one out. Every surface asks this rather than the aspect."""
-    return uses_worktree(step) and not no_worktree(step)

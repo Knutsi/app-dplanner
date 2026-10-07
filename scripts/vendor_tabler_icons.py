@@ -106,7 +106,6 @@ GLYPHS: dict[str, str] = {
     "spark": "sparkles",  # An agent does this step.
     "beaker": "flask",  # This step keeps tests.
     "shield": "shield-check",  # A check: everything behind it passing.
-    "review": "message-circle",  # A review: an agent's conversation with the step it waits on.
     "merge": "git-merge",  # A landing: it merges a feature branch back.
     "step": "square-rounded",
     "person": "user",  # A person does this step.

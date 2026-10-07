@@ -481,8 +481,8 @@ origin no view claims, off the stack — with one difference: it is *read off di
 does not dirty anything.
 
 **A merged PR finishes a step waiting on its merge.** *Ready to merge* means exactly that
-the PR is all that is left — a review's `approve` leaves itself there, carrying its
-subject's PR — so the moment GitHub says *merged* is the moment the step is done, and
+the PR is all that is left — a person or a reviewing agent leaves the step there once
+the work is accepted — so the moment GitHub says *merged* is the moment the step is done, and
 nobody should have to remember to say so. It is the same external fact, so it is written
 the same way: `record_merged` in the status aspect applies `status set`'s own command
 directly, with an origin of its own (`MERGED_ORIGIN`, beside `STARTED_ORIGIN`, whose
@@ -497,7 +497,7 @@ merged step as still waiting on it. Three choices shape it:
   and `github refresh|show` all learn a PR merged; the first two share one writer
   (`refresh.adopt`) so the tab cannot write fresh state and forget the rest.
 - **What is stored counts, not only what is fetched.** A merged PR is terminal and never
-  fetched again, but a step can reach *ready to merge* after its PR did — a review approved
+  fetched again, but a step can reach *ready to merge* after its PR did — a step accepted
   once the developer had merged by hand inherits a state nobody will refresh. So each tick,
   and each `github refresh`, also offers the steps whose stored state already reads merged.
   A merged PR on a step nobody accepted says nothing: only *ready to merge* moves.

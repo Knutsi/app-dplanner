@@ -854,7 +854,7 @@ and one stylesheet rule for the progress bar:
   says somebody is at work, the pulse that somebody is waited on — and it runs on the
   ring's clock, so an idle canvas still ticks nothing. What it marks is the boards' *Ready
   to merge* and *Ready for review*, one answer (`docs/architecture/canvas.md`'s *A card pulses where
-  a person moves next*). The talk bubble on a link into a review is a medallion, and still.
+  a person moves next*).
   **The one slide** is a stack making way (`f19-restack/make-way-*`): while a card is
   dragged through a stack, the cards between ease aside over about 120 ms to open
   the slot it would drop into, and close up behind one dragged out. It is allowed because

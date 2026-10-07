@@ -1858,52 +1858,6 @@ def test_the_agent_tab_switches_the_worktree_through_the_undo_stack(services, st
     section.dispose()
 
 
-def _make_review(services, step):
-    from dplanner.domain.commands import SetModuleDataCommand
-    from dplanner.planning.review import MODULE_ID as REVIEW_ID
-    from dplanner.planning.review import ReviewSettings
-    from dplanner.planning.review import write as review_write
-
-    services.undo.push(SetModuleDataCommand(step.id, REVIEW_ID, review_write(ReviewSettings())))
-
-
-def test_a_review_runs_in_the_checkout_whatever_its_worktree_says(services, step, monkeypatch):
-    """A review reads the work it reviews where that work is: the launcher is handed no
-    worktree to prepare, though the step's own aspect still says one."""
-    from dplanner.planning.agent import uses_worktree
-
-    services.document.set_text(step.id, "step_agent_instruction", "Look hard.")
-    _make_review(services, step)
-    select(services, step)
-    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: None)
-    monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
-    seen: list[str] = []
-    real_prepare = launcher.prepare
-
-    def capture(*args, **kwargs):
-        seen.append(kwargs["worktree"])
-        return real_prepare(*args, **kwargs)
-
-    monkeypatch.setattr(launcher, "prepare", capture)
-    services.actions.run("agent.run", services.context.current())
-    assert uses_worktree(step) and seen == [""]
-
-
-def test_the_agent_tab_greys_the_worktree_box_on_a_review_and_says_why(services, step):
-    from dplanner.planning.review import NO_WORKTREE_FOR_A_REVIEW
-
-    services.document.set_text(step.id, "step_agent_instruction", "Look hard.")
-    _make_review(services, step)
-    select(services, step)
-    section = _agent_section(services)
-    section.show_target(step.id)
-    box = section.worktree_box
-    # Shown as the run will be — and not a switch, since ticking it would change nothing.
-    assert not box.isChecked() and not box.isEnabled()
-    assert NO_WORKTREE_FOR_A_REVIEW in box.toolTip()
-    section.dispose()
-
-
 # -- the Type toggles --------------------------------------------------------------------------
 
 

@@ -31,6 +31,11 @@ denials. OpenCode has no schema option, so a typed final message is whatever the
 asked to answer as JSON, and prose is otherwise all there is. Every event names the session
 (``sessionID``); ``step_finish`` carries each request's tokens, summed over the turn; ``text``
 is what the agent said; ``error`` is a failure, with the provider's status.
+
+**Signed in** is a credential *or* a built-in model: OpenCode ran on its own ``opencode/*``
+models with no login at all (2026-10-07), so ``opencode auth list`` saying "0 credentials" is
+not the end of it — ``opencode models opencode`` listing anything is. Both are asked through
+the CLI rather than read from ``auth.json``, so a probe on another machine asks the same.
 """
 
 import json
@@ -42,7 +47,16 @@ from collections.abc import Mapping
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from dplanner.domain.agents import AgentHarness, AgentUsage, RunFacts, RunReport, Tokens
+from dplanner.domain.agents import (
+    AgentHarness,
+    AgentUsage,
+    RunFacts,
+    RunReport,
+    Shell,
+    SignedIn,
+    SignIn,
+    Tokens,
+)
 from dplanner.domain.headless import (
     STALL_SECONDS,
     Headless,
@@ -257,6 +271,21 @@ HEADLESS = Headless(
     stall=2 * STALL_SECONDS,
 )
 
+_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
+_CREDENTIALS = re.compile(r"(\d+) credentials?")
+
+
+def signed_in(shell: Shell) -> SignedIn:
+    _code, said = shell(("auth", "list"))
+    counted = _CREDENTIALS.search(_ESCAPE.sub("", said))
+    count = int(counted.group(1)) if counted else 0
+    if count:
+        return SignedIn(ok=True, detail=f"{count} credential{'s' if count != 1 else ''}")
+    code, models = shell(("models", "opencode"))
+    if code == 0 and any(line.startswith("opencode/") for line in models.splitlines()):
+        return SignedIn(ok=True, detail="no credentials — OpenCode's built-in models")
+    return SignedIn(ok=False, detail="no credentials and no built-in models")
+
 
 HARNESS = AgentHarness(
     id="opencode",
@@ -268,4 +297,5 @@ HARNESS = AgentHarness(
     report=report,
     binary="opencode",
     headless=HEADLESS,
+    sign_in=SignIn(probe=signed_in, command="opencode auth login"),
 )

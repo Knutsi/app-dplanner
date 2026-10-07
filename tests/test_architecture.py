@@ -86,7 +86,7 @@ HEADLESS_ROLES = (
 # and a listed path that no longer exists fails the suite rather than silently leaving the rule.
 HEADLESS_FILES: dict[str, tuple[str, ...]] = {
     "agent_briefing": ("prompt.py",),
-    "agent_launch": ("intents.py", "launcher.py"),
+    "agent_launch": ("availability.py", "intents.py", "launcher.py"),
     # Reads a run's usage back into the ledger: the wrapper script's `dplanner` call.
     "agent_usage": ("harvest.py",),
     # The run supervisor: a package with no window half, reached by `agent supervise`.
@@ -196,7 +196,6 @@ STORED_IDS = frozenset(
         "projects",
         "reopen_tabs",
         "reporting",
-        "review_rounds",
         "settings",
         "shelf",
         "spec",
@@ -208,7 +207,6 @@ STORED_IDS = frozenset(
         "step_milestone",
         "step_order",
         "step_properties",
-        "step_review",
         "step_start",
         "step_status",
         "step_ticket",
@@ -226,6 +224,8 @@ RETIRED_IDS = frozenset(
     {
         "auto_progress",
         "decisions",
+        "review_rounds",
+        "step_review",
         "step_estimation",
         "step_feature",
         "step_handoff",
@@ -246,7 +246,6 @@ PLANNING_ASPECTS = frozenset(
         "step_agent_instruction",
         "step_check",
         "step_milestone",
-        "step_review",
         "step_start",
         "step_status",
         "step_wait",

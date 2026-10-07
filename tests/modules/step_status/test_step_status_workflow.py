@@ -336,17 +336,3 @@ def test_a_retry_after_the_status_was_undone_ends_no_claim(services, make_projec
     assert stored(on_disk) is Status.IN_PROGRESS
     assert [claim.doing for claim in at_work_board.claims()] == ["One"]
     assert NOTICE_ID not in [n.id for n in services.window.notices.notices()]
-
-
-def test_a_refused_review_approval_is_a_refusal_not_a_traceback(cli, monkeypatch):
-    """An agent approving a source that was never put up for review is held at review like
-    any agent's done — said as one line, with nothing written."""
-    cli("project", "create", "Widget")
-    cli("step", "add", "widget", "Build the parser", "--agent")
-    cli("step", "add", "widget", "Review the parser", "--after", "S1", "--agent", "--review")
-    cli("status", "set", "S1", "in-progress")
-    monkeypatch.setenv("CLAUDECODE", "1")
-    said = cli("review", "approve", "R2", expect=1)
-    assert "ready-for-review" in said and "Traceback" not in said
-    assert "in-progress" in cli("status", "show", "S1")
-    assert "pending" in cli("status", "show", "R2")

@@ -918,32 +918,15 @@ identity migration: a format-1 entry has no base, and a merged PR is never asked
 stays unknown; the bump is so an older build, whose `write` rebuilds the entry field by field,
 knows it would drop the key.
 
-**`step_review` makes a step an automatic review of the step it `requires`**:
-`{"on": true, "agent": "codex", "lenses": ["architecture", "my-skill"], "max_rounds": 2}`,
-format 1. `on` is the marker. Every other key is written only when it differs from its
-default, and absence reads as that default:
-- `agent` absent is the default launch profile; present, it is a harness id.
-- `lenses` absent is `["architecture", "security"]`; an empty list is none. A lens this build
-  does not name is a skill of the person's own, kept as written.
-- `max_rounds` absent is 3.
-
-What it reviews is never stored: it is the step the review requires.
-
-**`review_rounds` is the conversation, kept on the step that asks** — a review, or a
-collector — and a ledger of rounds, never a state: `{"rounds": [{"with": "<step id>",
-"opened": "<stamp>", "findings": "…", "posted": "<stamp>", "taken": "<stamp>", "reply":
-"…", "replied": "<stamp>", "approved": "<stamp>", "escalated": "<stamp>", "note": "…",
-"asker_turn_launched": "<stamp>", "party_turn_launched": "<stamp>"}]}`, format 1.
-- `with` names the party answering, and a round's number counts that party's rounds.
-- Every key after `opened` is written when it is said.
-- A round's state and whose turn it is are read off which stamps are present.
-- A key this build does not know is kept when a round is stamped again.
-- `asker_turn_launched` and `party_turn_launched` were the window's auto-launch's, never a
-  verb's, and no build writes them since it left (2026-10-07): when a side had the turn and
-  its agent had gone, the window relaunched it and wrote *the stamp that began that turn* there — `posted` for the party, `replied`
-  (else `opened`) for the asker — so the turn was due once, for every reader. A turn, not a
-  moment: equal means launched, whatever another machine's clock says.
-- A paste forgets the ledger: a conversation belongs to the original.
+**`step_review` and `review_rounds` are retired** (2026-10-07, with no successor; *Retiring
+a module*). `step_review` made a step a review of the step it `requires`: `{"on": true,
+"agent": "codex", "lenses": ["architecture"], "max_rounds": 2}`, format 1, every key but `on`
+written only when it differed from its default. `review_rounds` was the conversation that
+review held, on itself: `{"rounds": [{"with": "<step id>", "opened": "<stamp>", "findings":
+"…", "posted": "<stamp>", "taken": "<stamp>", "reply": "…", "replied": "<stamp>",
+"approved": "<stamp>", "escalated": "<stamp>", "note": "…", …}]}`, format 1. A plan may still
+carry either file, and this build leaves them untouched; a step that carried `step_review`
+reads as the agent step it also was.
 
 **Absence encodes the default, and the default is not always "off".** Every aspect above is
 one most steps do not have, so the marker records the *claim*. Two go the other way:
@@ -1125,4 +1108,4 @@ again. Three rules they make concrete:
   again: it leaves `STORED_IDS` for `RETIRED_IDS` in `tests/test_architecture.py`, which no
   module may declare, since a new module under the old name would adopt files it never
   wrote. `auto_progress` is the worked example (2026-10-07); a review step's `step_review`
-  and `review_rounds` go the same way.
+  and `review_rounds` went the same way.
