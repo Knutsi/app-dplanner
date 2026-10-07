@@ -57,7 +57,6 @@ from dplanner.planning.agent import uses_worktree
 from dplanner.planning.branches import BranchPlan
 from dplanner.planning.kinds import key_of
 from dplanner.planning.status import MODULE_ID as STATUS_ID
-from dplanner.planning.status import Status, stored
 
 
 def _configure(parser: ArgumentParser) -> None:
@@ -127,11 +126,7 @@ def commands(
             )
         # What this machine lost or left half-launched is settled first, so a run it
         # restarts reads as running below.
-        supervisor.revive(
-            [project_dir],
-            claimed=lambda record: _claimed(library, record.step),
-            library=context.store.library_path,
-        )
+        supervisor.revive([project_dir], library=context.store.library_path)
         # Held from here until the run has started, or the run has written nothing.
         held = ExitStack()
         try:
@@ -181,12 +176,13 @@ def commands(
         def start() -> None:
             """The follow-up, once the claim is on disk: start the run, or take the claim
             back and say why."""
+            # The lock is held through a failed start's whole rollback — the record deleted
+            # and the claim's withdrawal written — so no other launch sees the claim between.
             with held:
                 why = start_run(prepared, harnesses, context.store.library_path)
+                back = _withdrawn(context, step, before) if why else ""
             if why:
-                raise CliError(
-                    f"{step.title!r}: no run started — {why}{_withdrawn(context, step, before)}"
-                )
+                raise CliError(f"{step.title!r}: no run started — {why}{back}")
             how = "headless" if args.mode == HEADLESS else "in a terminal"
             context.report(
                 data,
@@ -212,12 +208,6 @@ def commands(
             ),
         )
     ]
-
-
-def _claimed(library: Library, step_id: str) -> bool:
-    """Whether the step still reads in progress — what a launch interrupted before its start
-    is resumed on."""
-    return library.has(step_id) and stored(library.step(step_id)) is Status.IN_PROGRESS
 
 
 def _withdrawn(context: CliContext, step: Step, before: object) -> str:

@@ -505,3 +505,98 @@ def test_the_window_says_the_profiles_cannot_be_read(app, request):
     (notice,) = [n for n in services.window.notices.notices() if n.id == PROFILES_NOTICE]
     assert "is not a profiles file" in notice.words
     assert path.read_text(encoding="utf-8") == "[]"  # Not seeded over.
+
+
+# -- Kettle Watch round 2 -------------------------------------------------------------------
+
+
+def test_revive_never_deletes_a_launch_another_caller_has_just_made(
+    cli, plan, cli_library, started
+):
+    """B read the step pending before A saved its claim. After A started and let go of its
+    lock, and before A's supervisor took its own, B's revive must not delete A's run: it
+    reads the claim from disk inside the step's lock, and even an unclaimed run with no turn
+    is left alone inside the grace."""
+    run = json.loads(cli("agent", "run", "Build it", "--json"))["run"]  # A, its record turnless.
+    assert started == [(plan, run)]
+    stale = supervisor.revive([plan], claimed=lambda _record: False)  # B's old model.
+    assert stale == [] and ledger.find(plan, run) is not None  # Inside the grace: kept.
+    on_disk = supervisor.revive([plan], library=cli_library)  # The claim A saved.
+    assert on_disk == [run] and started == [(plan, run), (plan, run)]
+    held = ledger.run_dir(run)
+    with supervisor.supervising(held):  # A's supervisor has its lock now.
+        assert supervisor.revive([plan], claimed=lambda _record: False, grace=0) == []
+    assert ledger.find(plan, run) is not None
+    assert supervisor.revive([plan], claimed=lambda _record: False, grace=0) == []
+    assert ledger.find(plan, run) is None  # Unclaimed, unheld, past the grace: dropped.
+
+
+def test_a_failed_start_holds_the_lock_until_its_withdrawal_is_written(cli, plan, monkeypatch):
+    """Released any earlier, another launch could find the step claimed and start beneath a
+    withdrawal that then writes it back to pending."""
+    from dplanner.domain.store import LibraryStore
+
+    shown = json.loads(cli("step", "show", "Build it", "--json"))
+    project, step = shown["project"], shown["id"]
+
+    def refuse(_project_dir, _run, **_kw):
+        raise OSError(2, "No such file or directory")
+
+    flushes: list[bool] = []
+    flush = LibraryStore.flush
+
+    def watched(self, marks):
+        try:
+            with supervisor.launching(project, step):
+                flushes.append(False)  # Free: nobody holds the step.
+        except BlockingIOError:
+            flushes.append(True)  # Held by the launch writing this.
+        return flush(self, marks)
+
+    monkeypatch.setattr(supervisor, "start_detached", refuse)
+    monkeypatch.setattr(LibraryStore, "flush", watched)
+    cli("agent", "run", "Build it", expect=1)
+    assert flushes[-2:] == [True, True]  # The claim's flush, then the withdrawal's.
+    with supervisor.launching(project, step):  # And let go once the rollback is written.
+        pass
+
+
+def test_the_window_saves_before_it_starts_even_a_step_already_in_progress(
+    services, step_of, monkeypatch
+):
+    from dplanner.planning.status import status_command
+
+    module = _launch_module(services)
+    monkeypatch.setattr(module, "_deps", replace(module._deps, flush=lambda: False))
+    spawned: list[Path] = []
+    monkeypatch.setattr(launcher, "resolve_command", lambda *_a, **_k: ["fake-term"])
+    monkeypatch.setattr(launcher, "spawn", lambda _cmd, cwd, **_kw: _noted(spawned, cwd))
+    step = step_of("Deploy")
+    status_command(step, Status.IN_PROGRESS, today=date(2026, 10, 7)).redo(services.document)
+    services.actions.run("agent.run", services.context.current())
+    assert not spawned and ledger.records(module._deps.project_dir(step.id)) == []
+    assert stored(step) is Status.IN_PROGRESS  # Its own claim, never withdrawn by a launch.
+
+
+def test_a_relative_library_reaches_every_turn_as_an_absolute_path(
+    tmp_path, allow_spawn, monkeypatch
+):
+    """A turn runs in its worktree, where a relative path names nothing."""
+    from tests.modules.agent_supervisor.test_supervisor import INIT, Rig, result
+
+    from dplanner.domain.library_file import LIBRARY_ENV
+
+    allow_spawn(Path(sys.executable))
+    rig = Rig(tmp_path)
+    rig.play({"lines": [INIT, result()]})
+    seen: list[str] = []
+    spawn = supervisor._spawn
+
+    def watched(argv, cwd, env, err):
+        seen.append(env[LIBRARY_ENV])
+        return spawn(argv, cwd, env, err)
+
+    monkeypatch.setattr(supervisor, "_spawn", watched)
+    monkeypatch.chdir(tmp_path)
+    rig.supervise(library=Path("mine.json"))
+    assert seen == [str(tmp_path.resolve() / "mine.json")]

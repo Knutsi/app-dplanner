@@ -671,11 +671,14 @@ class AgentLaunchModule:
             command = change.command if claim else None
             if command is not None:
                 command.redo(deps.library)
-                if not deps.flush():
+            # Saved every time, not only when this launch made the claim: a step that already
+            # read in progress may hold a claim nobody has saved yet.
+            if not deps.flush():
+                if command is not None:
                     self._withdraw(step, before)
-                    prepared.discard()
-                    span.detail["refused"] = "unsaved"
-                    return None, "its claim could not be saved — save the plan, then run it again"
+                prepared.discard()
+                span.detail["refused"] = "unsaved"
+                return None, "its claim could not be saved — save the plan, then run it again"
             if why := launch.start_run(prepared, deps.harnesses):
                 span.detail["refused"] = why
                 if command is not None:

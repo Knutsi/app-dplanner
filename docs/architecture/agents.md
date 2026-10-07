@@ -120,6 +120,13 @@ were both a hand-built launch drifting from the real one. So there is one
 has no turn and no supervisor holds it; once nobody holds the step's launch lock either, the
 run is started when its step still reads in progress, and its record deleted when it does
 not. The window does that at its start, and `agent run` before it takes its own lock.
+**Everything is read again inside the lock, from disk**: a caller that loaded the step as
+pending before another launch saved its claim would otherwise delete that launch's record in
+the moment between its start and its supervisor taking the run's lock — so the status comes
+from the plan on disk (`claimed_on_disk`), and a record is deleted only past a two-minute
+grace, with no supervisor holding it. The same reasoning keeps a failed start's rollback
+under the lock until the withdrawal is written, and has the window save before every start:
+a step that already read in progress may hold a claim nobody saved.
 
 **The plan's half is the workflow, and the rest is not.** A `workflows.py` returns a
 `Change` and never persists anything; a launch writes files, runs git and spawns processes,

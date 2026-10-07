@@ -60,6 +60,7 @@ import uuid
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import ExitStack, contextmanager, suppress
 from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import IO
 
@@ -94,7 +95,9 @@ from dplanner.domain.ledger import LedgerRecord, Turn
 from dplanner.domain.library_file import LIBRARY_ENV
 from dplanner.domain.model import now_stamp
 from dplanner.domain.questions import Question
+from dplanner.domain.store import LibraryStore
 from dplanner.modules.agent_briefing.protocol import opening_prompt
+from dplanner.planning.status import Status, stored
 
 # Why a turn after the first began, and what it is told when nobody wrote the words.
 PROMPTS = {
@@ -105,6 +108,10 @@ PROMPTS = {
 }
 LOCK_FILE = "supervisor.lock"
 RECORD_LOCK = "record.lock"
+LAUNCHES_DIR = "launches"
+# How old a run with no turn must be before it may be taken for a launch nobody finished: a
+# supervisor started a moment ago may not hold its lock yet.
+LAUNCH_GRACE = 120.0
 PLAN_FILE = "plan.md"
 # How long the stream is still read once its process group has ended: a CLI's SIGTERM
 # handler may print the turn's last totals on the way out.
@@ -162,6 +169,8 @@ def supervise(
     calls must reach.
     """
     guards = guards or Guards()
+    # Absolute: a turn runs in its worktree, where a relative path names nothing.
+    library = library.expanduser().resolve() if library is not None else None
     said, again = "", False
     while True:
         try:
@@ -706,7 +715,7 @@ def start_detached(
     ``dplanner`` is on PATH: a run launched from a branch's build is supervised by that
     build, not by the installed one, which may not know the record's words. ``library`` is
     the library it was launched from, which its turns are told."""
-    named = ["--library", str(library)] if library is not None else []
+    named = ["--library", str(library.expanduser().resolve())] if library is not None else []
     argv = [sys.executable, "-m", "dplanner", *named, "agent", "supervise", run]
     argv += ["--project-dir", str(project_dir)]
     if prompt:
@@ -722,6 +731,7 @@ def revive(
     *,
     claimed: Callable[[LedgerRecord], bool] | None = None,
     library: Path | None = None,
+    grace: float = LAUNCH_GRACE,
 ) -> list[str]:
     """Start a supervisor for every run of this machine a supervisor should hold and none
     does; the runs it started, by id. What a machine's start does:
@@ -730,12 +740,15 @@ def revive(
       supervised again, and the new supervisor ends that turn ``failed``/``lost`` and
       retries it;
     - a run with no turn at all is a launch interrupted between writing its record and
-      starting its supervisor. With ``claimed`` to ask, it is started when its step is still
-      claimed in progress, and its record deleted when it is not — nobody wants that run any
-      more. A launch still under way holds the step's launch lock and is left to finish.
+      starting its supervisor. With ``claimed`` to ask — what the step's status says *on
+      disk*: :func:`claimed_on_disk` over ``library`` unless a caller says otherwise — it is
+      started when its step is still claimed in progress, and its record
+      deleted when it is not and the run is past ``grace``; :func:`_settle` has the rest.
 
     A parked run (its last turn ended) waits for a person and is never touched here."""
     here = ledger.machine_id(config)
+    if claimed is None and library is not None:
+        claimed = claimed_on_disk(library)
     started: list[str] = []
     for project_dir in project_dirs:
         for record in ledger.records(project_dir):
@@ -745,22 +758,75 @@ def revive(
             if record.machine != here or supervised(ledger.run_dir(record.run, config)):
                 continue
             if last is None:
-                if claimed is None:
-                    continue
-                with ExitStack() as held:
-                    try:
-                        held.enter_context(launching(record.project, record.step, config))
-                    except BlockingIOError:
-                        continue  # Its launch is still under way.
-                    if not claimed(record):
-                        ledger.path_for(project_dir, record).unlink(missing_ok=True)
-                        continue
+                if claimed is not None and _settle(
+                    project_dir, record, claimed, config, library, grace
+                ):
+                    started.append(record.run)
+                continue
             start_detached(project_dir, record.run, library=library)
             started.append(record.run)
     return started
 
 
-LAUNCHES_DIR = "launches"
+def _settle(
+    project_dir: Path,
+    record: LedgerRecord,
+    claimed: Callable[[LedgerRecord], bool],
+    config: Path | None,
+    library: Path | None,
+    grace: float,
+) -> bool:
+    """Settle a run with no turn, under its step's launch lock; True when it was started.
+
+    Everything is read again inside the lock — the record from the ledger, the step's status
+    through ``claimed``, which reads what is on disk — because what was read before it may
+    be older than the launch that has since saved its claim and started. A launch's record
+    is only ever deleted when nothing could still be starting it: no supervisor holds the
+    run, its step reads unclaimed, and it is older than ``grace`` seconds — a supervisor
+    started a moment ago may not have taken its lock yet."""
+    with ExitStack() as held:
+        try:
+            held.enter_context(launching(record.project, record.step, config))
+        except BlockingIOError:
+            return False  # Its launch is still under way.
+        fresh = ledger.find(project_dir, record.run)
+        if fresh is None or fresh.turns or fresh.over:
+            return False
+        if supervised(ledger.run_dir(fresh.run, config)):
+            return False
+        if claimed(fresh):
+            start_detached(project_dir, fresh.run, library=library)
+            return True
+        if _age(fresh) > grace:
+            ledger.path_for(project_dir, fresh).unlink(missing_ok=True)
+        return False
+
+
+def claimed_on_disk(library: Path) -> Callable[[LedgerRecord], bool]:
+    """Whether a run's step reads in progress in the plan as it is on disk, read afresh each
+    time it is asked — a model loaded earlier may be older than the launch that has since
+    saved its claim. Only :func:`revive` asks, and only of a run with no turn."""
+
+    def claimed(record: LedgerRecord) -> bool:
+        store = LibraryStore(library)
+        try:
+            plan = store.load()
+            return plan.has(record.step) and stored(plan.step(record.step)) is Status.IN_PROGRESS
+        finally:
+            store.close()
+
+    return claimed
+
+
+def _age(record: LedgerRecord) -> float:
+    """Seconds since the run was launched; none at all for a stamp this build cannot read."""
+    try:
+        launched = datetime.fromisoformat(record.launched)
+    except ValueError:
+        return 0.0
+    if launched.tzinfo is None:
+        launched = launched.replace(tzinfo=UTC)
+    return (datetime.now(UTC) - launched).total_seconds()
 
 
 @contextmanager

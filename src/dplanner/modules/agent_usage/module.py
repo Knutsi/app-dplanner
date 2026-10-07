@@ -32,7 +32,6 @@ from PySide6.QtWidgets import QFileDialog, QWidget
 
 from dplanner.core.fsio import write_csv
 from dplanner.domain.agents import AgentHarness
-from dplanner.domain.ledger import LedgerRecord
 from dplanner.domain.model import Library, NodeId, StepId
 from dplanner.domain.store import LibraryStore
 from dplanner.framework.action_registry import (
@@ -69,7 +68,6 @@ from dplanner.modules.agent_usage.expenditure_activity import (
     rate_of,
 )
 from dplanner.planning.kinds import key_of
-from dplanner.planning.status import Status, stored
 from dplanner.theme.icons import spark_icon
 
 SWEEP_MS = 5 * 60 * 1000
@@ -147,9 +145,7 @@ class AgentUsageModule:
             )
         )
         follow_project_tabs(deps.tabs, ExpenditureActivity, deps.library)
-        supervisor.revive(
-            self._ledger_dirs(), claimed=self._claimed, library=deps.store.library_path
-        )
+        supervisor.revive(self._ledger_dirs(), library=deps.store.library_path)
         if deps.tasks is not None:
             self._runner = TaskRunner(deps.tasks, deps.parent)
             self._runner.busy_changed.connect(self._on_sweep_busy)
@@ -177,12 +173,6 @@ class AgentUsageModule:
 
         if not self._runner.run("Reading agent usage", body, key="agent_run.sweep"):
             self._sweep_again = True
-
-    def _claimed(self, record: LedgerRecord) -> bool:
-        """Whether the run's step still reads in progress: a launch interrupted before its
-        start is started then, and its record dropped once nobody claims the step."""
-        library = self._deps.library
-        return library.has(record.step) and stored(library.step(record.step)) is Status.IN_PROGRESS
 
     def _ledger_dirs(self) -> list[Path]:
         deps = self._deps

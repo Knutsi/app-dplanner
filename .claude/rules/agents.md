@@ -98,10 +98,15 @@ paths:
   claimed=, library=)` starts a supervisor for each run of this machine whose last turn has
   no end and that no supervisor holds (`supervised`, the OS lock) — the supervisor ends the
   turn `failed`/`lost` and retries — and for each run with **no turn** whose step is still
-  claimed (a launch interrupted between its record and its start); such a record whose step
-  is no longer claimed is deleted, and one whose launch lock is held is left to it. The
+  claimed (a launch interrupted between its record and its start). A turnless run is
+  settled **inside the step's launch lock, re-reading the record and the step's status from
+  disk** (`claimed_on_disk(library)`, never a model loaded earlier), and its record is
+  deleted only when no supervisor holds the run, its step reads unclaimed and it is older than
+  `LAUNCH_GRACE` (two minutes) — a supervisor just started may not hold its lock yet. The
   window calls it once at start (`agent_usage`'s module); `agent run` before its own lock.
-  A parked run is a person's, never touched.
+  A parked run is a person's, never touched. A failed start's rollback — the record deleted,
+  the withdrawal written — happens under the launch lock too, and the window saves before
+  every start, a claim it did not make included.
 - **A step names the code location it works in.** With several code rows in a project,
   the agent-instruction entry's `workplace` holds a location id (`aspect.workplace`,
   `with_workplace`; `dplanner agent workplace <step> code:UI|primary`), absent meaning
