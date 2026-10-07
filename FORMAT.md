@@ -423,16 +423,20 @@ a step's stage history is its runs, read in order — there is no other.
   "format": 2, "run": "20261007T101500Z-9c1e44ab", "project": "<id>", "step": "<id>",
   "harness": "claude", "launched": "2026-10-07T10:15:00+00:00", "machine": "<machine id>",
   "session": "…", "mode": "headless",
-  "playbook": "plan-execute-review", "stage": "execute", "attempt": 1,
+  "playbook": "plan-execute-review", "pass": "20261007T101455Z-0d9e8f7a",
+  "stage": "execute", "attempt": 1,
   "callsign": "kettle-three", "claim": "20261007T100212Z-5a0b7c3d",
   "turns": [
     {"n": 1, "prompt": "launch", "started": "…", "ended": "…", "end": "asked", "exit": 0,
-     "question": "20261007T103341Z-e1f2a3b4"},
+     "pid": 41822, "boot": "<boot id>", "question": "20261007T103341Z-e1f2a3b4",
+     "usage": {"from": "<cursor>", "to": "<cursor>", "agents": [ … ]}},
     {"n": 2, "prompt": "answer", "started": "…", "ended": "…", "end": "limit", "exit": 1,
-     "resets": "2026-10-07T15:00:00+00:00"},
-    {"n": 3, "prompt": "reset", "started": "…"}
+     "pid": 42010, "boot": "<boot id>", "resets": "2026-10-07T15:00:00+00:00",
+     "consumed": {"question": "20261007T103341Z-e1f2a3b4", "answer": "20261007T104102Z-4c4c9a01"},
+     "usage": {"from": "<cursor>", "to": "<cursor>", "agents": [ … ]}},
+    {"n": 3, "prompt": "reset", "started": "…", "pid": 51377, "boot": "<boot id>"}
   ],
-  "measurement": "native", "agents": [ … ]
+  "measurement": "native"
 }
 ```
 
@@ -463,6 +467,10 @@ A review run carries its `verdict`, and the fix run after it what it `declined`:
   may span several runs, and a session id never identifies a run. A fresh session is a new
   run too. `playbook`, `stage` and `attempt` are the playbook's words, and
   `docs/architecture/playbooks.md` says what they mean.
+- **`pass`** names the playbook pass the run belongs to; every run and gate question of
+  the pass carries it, so a pass is never inferred from the order of records. The pass's
+  resolved settings — the preset's revision and every override in force — are pinned once,
+  as `pinned` on the first record of the pass, and `playbooks.md` says what they hold.
 - **`prompt`** is why the turn began: `launch` for every run's first turn, whether its session
   is fresh or resumed for a loop-back, then `answer`, `continue`, `reset` or `retry`.
 - **`verdict`** is on a review run: its typed final message (`--json-schema`,
@@ -486,15 +494,28 @@ A review run carries its `verdict`, and the fix run after it what it `declined`:
   | `stopped` | a person or the coordinator ended it, or its step went away | is over, and is never retried |
 
   A turn with no `end` is running, or was lost with its machine — which only that machine
-  can tell, from the run directory.
+  can tell: every turn records the process's `pid` and the machine's `boot` id, and when a
+  machine starts it ends each of its own unended turns whose boot differs or whose pid is
+  gone as `failed`, `why: lost`.
+- **`usage` is the turn's own consumption, never a running total.** `from` and `to` are the
+  harness's cursors into the session's records — main agent and every subagent — at the
+  turn's start and end, and `agents` is what lies between them. A run's usage is its turns'
+  sum, so several runs sharing one session each count only their own turns, and a harvest
+  re-reads one turn's window without moving another's. In format 2 `agents` is on turns,
+  never on the record.
+- **`consumed`** is on the turn an answer resumed: which question, and which answer — its
+  identity, not its text. See the questions directory for when an answer may be consumed.
 - **Whether a run is running, parked or over is read, never stored.** `ended` and `exit` now
   say the *run* is over — its last turn ended `done` or `stopped`, or a person gave up on
   it — not that a process exited; every turn keeps its own.
 - **The launching machine is still the one writer.** Only it has the session's files and
   the worktree, so only it can start the next turn; an answer given anywhere else reaches it
   as the question's file, through git. `callsign` and `claim` say which squad's worker ran it.
+  **The one exception is a `fence`** — `{at, by, why}`, written by a takeover from anywhere —
+  after which the run is over: the launching machine fetches before every turn and ends a
+  fenced run `stopped` instead of resuming it, and in a merge the fence wins.
 - **Why the format is 2:** a format-1 harvest rewrites the record whole from the keys it
-  knows and would drop `turns`. A format-1 build skips a format-2 record, as it skips any
+  knows and would drop `turns`, and format 2 moves usage onto them. A format-1 build skips a format-2 record, as it skips any
   newer one, so the cost of the bump is that such a build does not count these runs' usage.
 
 ### The `questions` directory
@@ -521,9 +542,11 @@ git never conflicts:
      "options": [{"label": "Keep both", "description": "Two clocks, two jobs"},
                  {"label": "Absorb", "description": "One record, committed"}]}
   ],
-  "state": "answered",
-  "answer": {"answers": {"Keep both records, or let the claim absorb at-work?": "Keep both"},
-             "by": {"kind": "person", "name": "Knut"}, "at": "2026-10-07T10:41:02+00:00"}
+  "state": "consumed",
+  "answer": {"id": "20261007T104102Z-4c4c9a01",
+             "answers": {"Keep both records, or let the claim absorb at-work?": "Keep both"},
+             "by": {"kind": "person", "name": "Knut"}, "at": "2026-10-07T10:41:02+00:00"},
+  "consumed": {"at": "2026-10-07T10:41:30+00:00", "run": "20261007T101500Z-9c1e44ab", "turn": 2}
 }
 ```
 
@@ -532,26 +555,38 @@ git never conflicts:
   a terminal run its multiplexer says is waiting) or `limit` (`resets` is when the account
   comes back). **A usage hold is a question** answered by *Retry now* or by the clock, so
   every card in the inbox is one of these files and nothing else.
-- **A playbook's gate asks too, and has no run of its own**: its question has no `run`,
-  names no harness, and carries the gate's `stage` and `attempt` beside the step. Its kind is
-  `plan-approval` for a gate after a plan and `decision` for every other gate — a round cap
-  reached included.
+- **A playbook asks too**: a gate, a round cap reached, or an escalation. Such a question
+  has no `run`, names no harness, and carries `pass`, `stage` and `attempt` beside the step,
+  and `purpose` — `gate`, `round-cap` or `escalation` — so what it is for is never read from
+  its place in the order. Its kind is `plan-approval` for a gate after a plan and `decision`
+  for everything else. An agent's own question has no `purpose`.
 - **`questions` is Claude's `AskUserQuestion` shape exactly** — question, header, options
   with descriptions, `multiSelect` — so a hosted Claude's own question is written through
   unchanged, and `dplanner ask` writes a list of one. `answer.answers` is the shape Claude
   takes back (`updatedInput.answers`): each question's text to the chosen label, or to free
   text.
 - **`state`** is `open`, `escalated` (the coordinator passed it to a person: `escalated`
-  holds `at`, `by` and `why`), `answered`, or `withdrawn` (the run ended or asked again:
-  `withdrawn` holds `at` and `why`). `answer.by.kind` is `person`, `coordinator` or
-  `clock` — the last only for `limit`.
+  holds `at`, `by` and `why`), `answered`, `consumed` (the run resumed on the answer:
+  `consumed` holds `at`, `run` and `turn`), or `withdrawn` (the run ended or asked again:
+  `withdrawn` holds `at` and `why`). `consumed` and `withdrawn` are terminal.
+  `answer.by.kind` is `person`, `coordinator` or `clock` — the last only for `limit` — and
+  `answer.id` is minted as a run id is.
 - **Who may answer.** A person may answer any question. The coordinator may answer an
   agent's question and a `coordinator` gate's; a `person` gate's it may only escalate. The
   gate is named by `stage`, and the playbook says which kind it is.
+- **Only the launching machine consumes an answer**, and only after it has fetched, found
+  the run still resumable — not over, not fenced, its last turn parked on this question — and
+  pushed the question marked `consumed` with the turn it starts; a rejected push means fetch
+  and check again before the turn begins. The resumed turn records the answer's id
+  (`consumed` on the turn).
 - **Several writers, one after another.** The asker creates the file; the coordinator may
-  escalate it; whoever may answer it does, and the verb refuses a second answer. If a merge meets
-  two writers anyway, answered beats escalated beats open, and of two answers the earlier
-  `answer.at` stands. An open question never times out into an answer.
+  escalate it; whoever may answer it does, and the verb refuses a second answer. When a merge
+  meets two writers anyway: **consumed beats everything** — a competing answer, earlier or
+  later, goes into `late` and is shown as a late answer, never applied; **withdrawn beats
+  open, escalated and an answer not yet consumed**; answered beats escalated beats open; of
+  two answers neither consumed, the launching machine consumes the one its fetch found and
+  the other goes into `late`. No timestamp decides anything. An open question never times
+  out into an answer.
 - Outside `PLAN_ENTRIES` like `ledger/`, so a window never adopts it as an outside change
   and reads it by polling a fingerprint; Save commits it; Move Plan carries it. Absence
   encodes the default, a file this build cannot read is skipped, and there is no migration.
@@ -572,28 +607,42 @@ git, so a person or a worker on another machine sees it at their next pull:
   "format": 1, "id": "20261007T100212Z-5a0b7c3d", "project": "<id>",
   "callsign": "kettle", "worker": {"machine": "<machine id>", "host": "knut-arch"},
   "steps": ["<id>", "<id>"],
+  "released": [{"step": "<id>", "at": "…", "by": {"kind": "person", "name": "Knut"}, "why": "blocked"}],
   "started": "2026-10-07T10:02:12+00:00", "heartbeat": "2026-10-07T11:20:40+00:00",
-  "lease_minutes": 90,
+  "lease_minutes": 90, "max_park_hours": 24,
   "ended": {"at": "…", "by": {"kind": "coordinator", "name": "kettle-actual"}, "why": "released"}
 }
 ```
 
 - **One claim per squad**, written by its coordinator; `callsign` is the squad word. Which
   member works which step is on the *run* (`callsign`), not here.
-- **`heartbeat`** is renewed by the coordinator's own `dplanner` runs, and only when it is
-  ten minutes old, so every other call writes nothing. The coordinator commits and pushes
-  its claim when it claims, after each merge and when it releases, and a commit carrying
-  only a heartbeat at most every thirty minutes.
+- **Acquiring is fetch, check, commit, push — before anything is spawned.** The coordinator
+  fetches, refuses if a live claim holds any of the steps (naming the holder), commits the
+  new claim and pushes it; a rejected push means fetch and check again, and only a pushed
+  claim launches work. If a merge still brings two live claims onto one step, **the one
+  pushed first** — the earlier of their adding commits in the remote's history — holds it,
+  and the other squad stands down from that step at its next check, which it makes before
+  every launch and every heartbeat.
+- **`heartbeat`** is renewed, only when it is ten minutes old, by the coordinator's own
+  `dplanner` runs and by the supervisor of any of the squad's runs while that run is live,
+  so a squad whose coordinator waits through a long stage keeps its lease. The coordinator
+  commits and pushes its claim when it claims, after each merge and when it releases, and a
+  commit carrying only a heartbeat at most every thirty minutes.
 - **A claim whose heartbeat is older than `lease_minutes` (default 90) is abandoned**, by the
   reader's clock — the lease is three pushes long so one failed push, or a little clock
-  skew, does not read as death. It is shown as abandoned and deleted by nobody; a new claim
-  may take its steps and names it in `supersedes`, and the old coordinator stands down at
-  its next write when it finds a newer claim on its steps. While a claim stands, a second
-  claim on any of its steps is refused, naming the holder.
-- **`ended`** is written once: by the coordinator (`released`, `done`), or by a person — a
-  *Clear*, or a status that stops one of its steps — who is the director and wins
-  (`by.kind: person`). That is a second writer on purpose; the coordinator re-reads the file
-  before every write, and if a merge meets the two, ended wins.
+  skew, does not read as death — **unless the squad is parked**: every step it still holds
+  has its run parked on an open question, or waits on a gate's. Parked work is still owned,
+  and its claim stands until the oldest of those parks is `max_park_hours` (default 24) old.
+  An abandoned claim is shown as abandoned and deleted by nobody; a new claim may take its
+  steps and names it in `supersedes`, fencing each of the old squad's unfinished runs on
+  them (the run's `fence`), and the old coordinator stands down at its next check.
+- **A person's override releases one step, not the squad.** A status that stops one of the
+  claim's steps moves it from `steps` into `released` and stops that step's worker alone;
+  the squad keeps the rest. A person's *Clear* ends the whole claim. Either is the director's
+  act and a second writer on purpose; the coordinator re-reads the file before every write,
+  and in a merge a release or an end wins.
+- **`ended`** is written once: by the coordinator (`released`, `done`), by a person
+  (`by.kind: person`), or when the last step leaves `steps`.
 - Outside `PLAN_ENTRIES`, polled, committed by Save, carried by Move Plan; absence encodes the
   default, an unreadable file is skipped, no migration. It is the record a multiplayer
   coordination service would broadcast, and git stays the authority.

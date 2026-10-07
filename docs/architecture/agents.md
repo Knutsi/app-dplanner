@@ -1035,7 +1035,14 @@ fresh session, on the other hand, really is a new attempt and gets a new run —
 a **loop-back**, when a gate sends the work back, even when it resumes the same session:
 the attempt it fixes is over, its verdict judged that attempt and no later one, and the
 next review must be able to say which attempt it read. So a session may span several runs,
-and a run is never found by its session. **The run carries the playbook's results, not
+and a run is never found by its session. **Which is why usage moves onto the turns**: the
+format-1 harvest rewrote a session's cumulative total into the record, and three runs on one
+session would have summed it three times. A turn's usage is the slice of the session's
+records — subagents included — between the cursors at its start and its end, so every count
+is somebody's once, and re-harvesting one turn cannot change another stage's cost. And
+**a pass is named, not inferred**: every run and gate question carries `pass`, and the
+pass's resolved settings are pinned on its first record, so a pass parked for a day resumes
+with the cap and reviewer it began with, whatever the step's overrides say now. **The run carries the playbook's results, not
 just its cost**: a review run's `verdict` (pass or changes, and typed findings) and a fix
 run's `declined` findings with their reasons, so a gate's history is read from runs as a
 review's used to be read from its stamps, and `playbooks.md` has why.
@@ -1049,6 +1056,15 @@ filing it under `failed` would have the supervisor retry exactly what somebody j
 The retry-or-abandon split of the 10-03 failure classes is the supervisor's count of
 `failed` turns, not another word. Running, parked and over are read from the turns, never
 stored, so nothing can say a run is parked while its last turn says done.
+
+**A lost turn is found by the machine that ran it, and a takeover fences it.** A turn records
+its `pid` and the machine's boot id, because "no `end`" alone cannot tell a running turn
+from one a reboot killed. Only that machine can look, so it does, when it starts: a turn
+whose boot is not this boot, or whose pid is gone, ends `failed` as `lost`, and the
+supervisor's retry takes it from there. A machine that never comes back cannot do even that,
+so a takeover writes a `fence` on its runs — the one write to a run from anywhere but its
+launcher — and the launcher, fetching before every turn, ends a fenced run rather than
+resuming it.
 
 **The run directory leaves `/tmp`.** A parked run must survive a reboot with its stream,
 its briefing and DPlanner's copy of the plan it wrote (Claude otherwise leaves only the one
@@ -1082,11 +1098,17 @@ only in who may answer: the coordinator may answer a `coordinator` gate's questi
 must escalate a `person` gate's, because that gate is the playbook's promise that a person
 looked.
 
-**Several writers touch one question, but one after another**: asked, perhaps escalated,
-answered. The verb refuses a second answer, and for the merge that meets two anyway the
-order is fixed in the format — answered beats escalated beats open, the earlier answer
-stands — so nobody has to invent it in a conflict. An open question never times out into an
-approval; it is the one thing in this design that waits, and it waits in a file.
+**An answer counts once it is consumed, and only the launching machine consumes.** Two
+people may answer one question on two machines, and an agent may already be acting on the
+first when the second arrives — with an earlier timestamp, on a skewed clock. So no
+timestamp decides: the launching machine fetches, checks the run can still resume, pushes
+the question marked `consumed` and only then starts the turn, which names the answer it
+consumed. From then on that answer is the record's truth, and any competing one is kept as
+a *late answer* and never applied. A withdrawal is terminal too, and beats any answer not
+yet consumed: a run that was stopped must not be resumed by somebody who had not heard.
+Gate, round-cap and escalation questions say which they are in `purpose`, and carry `pass`,
+for the reason runs do. An open question never times out into an approval; it is the one
+thing in this design that waits, and it waits in a file.
 
 ### A claim is a lease in git, and at-work stays beside it
 
@@ -1107,25 +1129,39 @@ git, so its clock has to be slow. Merging them would either commit the fast cloc
 the banner that stops a developer editing what an agent is rewriting. Each points at the
 other, and the band can name the squad by matching its step to a run.
 
+**Acquiring a claim is a push, not a write.** Two machines that pulled the same unclaimed
+step would each add a claim file, and git would merge the two additions without a conflict
+— so a file's existence proves nothing until it is on the remote. A claim is fetched against,
+committed and pushed before anything is spawned, a rejected push is checked again, and if a
+merge still brings two onto one step, the one pushed first holds it. Version one runs on one
+machine, but the protocol is written now so the second machine is not a redesign.
+
 **The cadence keeps git quiet.** The heartbeat is written only when it is ten minutes old —
-by the coordinator's own `dplanner` runs, as at-work is renewed by them, so it needs no
-timer. The claim is pushed when something happened anyway (claimed, merged, released), and a
+by the coordinator's own `dplanner` runs, as at-work is renewed by them, and by the
+supervisor of any of the squad's live runs, because a coordinator waiting out a two-hour
+stage makes no calls and live work must not read as abandoned. The claim is pushed when something happened anyway (claimed, merged, released), and a
 commit that carries nothing but a heartbeat goes at most every thirty minutes. The lease is
 ninety minutes, three pushes, so one rejected push or a little clock skew between machines
 does not read as death; the reader's clock judges it, which is good enough at that length
 and needs no service.
 
-**A stale lease is abandoned, and nothing is deleted.** The window says so; another squad
-may take the steps with a claim that names the old one in `supersedes`; the old coordinator,
-if it was only asleep, finds the newer claim on its next write and stands down. **The
-director wins**: a person who clears the claim, or sets one of its steps done or blocked,
-writes `ended` into the coordinator's file — the one deliberate second writer — and the
-coordinator, re-reading before every write, stops. If a merge meets the two, ended wins.
+**A stale lease is abandoned, and nothing is deleted** — unless the squad is parked. Work
+waiting on a person is still owned, and nothing is live to renew it, so a parked squad keeps
+its claim for up to `max_park_hours` before it reads abandoned. The window says so; another
+squad may take the steps with a claim that names the old one in `supersedes` and fences its
+unfinished runs; the old coordinator, if it was only asleep, finds the newer claim at its
+next check and stands down. **The director wins, one step at a time**: a person who sets one
+of the claim's steps done or blocked moves that step into `released` and stops its worker,
+and the squad keeps the rest — ending the whole claim would hand its other steps to another
+squad while their workers still ran. *Clear* ends all of it. That is the one deliberate
+second writer; the coordinator re-reads before every write, and in a merge the person's act
+wins.
 
 ### What the window reads, and the one-writer rule across all three
 
 The window polls each directory's fingerprint, as Expenditure polls the ledger's; nothing
 here is a plan entry, so none of it is adopted as an outside change or trips the stale check,
 and Save commits all three with the project. Across machines everything meets at git, and
-each record is written so that the meeting is boring: a run has one writer, a question has
-writers in sequence with the merge order written down, a claim has one writer and a director.
+each record is written so that the meeting is boring: a run has one writer and a fence, a question has
+writers in sequence and counts only the answer its run consumed, a claim is held by whoever
+pushed it first and released by a director.

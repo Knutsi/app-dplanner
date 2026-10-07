@@ -376,7 +376,9 @@ paths:
   `/tmp`. **Every inbox card is a file in `questions/`** — `AskUserQuestion`'s shape, a usage
   hold included (`kind: limit`) — so nothing else may feed the inbox. **A claim is a squad's
   lease in `claims/`**: heartbeat at most every ten minutes, a heartbeat-only push at most
-  every thirty, abandoned past a ninety-minute lease, ended by a person over the coordinator.
+  every thirty, acquired by a push before anything spawns, abandoned past a ninety-minute lease
+  unless parked, and a person's override releases one step from it, not the squad.
   It never absorbs the at-work claim, nor the at-work claim it: two clocks, two jobs.
+  **An answer counts only once its run's machine has consumed it.**
   `docs/architecture/agents.md`'s *Runs, questions and claims are three records in the plan*
   has the reasoning.
