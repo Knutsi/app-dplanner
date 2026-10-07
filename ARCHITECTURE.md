@@ -120,6 +120,20 @@ exists, so a renamed section is caught where it is cited.
 - Running an agent launches a peer, not a task
 - Runs, questions and claims are three records in the plan
 
+## [Playbooks — stages, gates, loop-back, presets and headless invocations](docs/architecture/playbooks.md)
+
+- A playbook is a list of stages around one step
+- A gate gets two rounds, then somebody decides
+- A loop-back resumes the session that did the work
+- Who acts: roles, profiles and the four actors
+- The presets
+- A step names its playbook; a project names its default
+- The mark on the one card
+- A failure is never a verdict
+- The run record is the ledger
+- Each stage is one headless turn per harness
+- Decided at S4 (coordinator) — for Knut to confirm at the final review
+
 ## [Specs — the spec editor and its document sources](docs/architecture/specs.md)
 
 - Editing a spec in-app is a replace

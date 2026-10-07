@@ -72,6 +72,9 @@ is rare, visible in `git branch`, and cheaper than a branch that lies.
 
 ## An auto-progress link is an aspect on the step that waits
 
+*A playbook's `progress` stage replaces the auto-progress link, and this section leaves with
+it; `playbooks.md`'s *A playbook is a list of stages around one step* has the design.*
+
 An agent stops at Ready for review, and a plain `requires` is fulfilled by done alone —
 together, the right rules for one step, and a deadlock for the shape the plan runs on: three
 agents in parallel, then one step that takes their branches, lands them and sets them done.

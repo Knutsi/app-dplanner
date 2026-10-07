@@ -83,6 +83,9 @@ says it back* has why.
 
 ## A review is a conversation kept on the step that asks
 
+*A playbook's review stage replaces the review step, and this section leaves with it;
+`playbooks.md`'s *The run record is the ledger* says which of its facts survive and where.*
+
 The spec asked for a step whose agent reviews another's work before it lands. The person
 picks the agent and the lenses and sets a cap on the rounds, and the two agents talk back
 and forth through `dplanner`. Four questions shaped the answer.
@@ -217,6 +220,10 @@ stashes), the Agent tab's box, greyed with the reason, and `agent worktree … o
 Both surfaces import that one function, so neither can declare its own.
 
 ## Auto-progress is launched by the window
+
+*A playbook's `progress` stage and the coordinator replace the window's auto-launch, and this
+section leaves with it; `playbooks.md`'s *A playbook is a list of stages around one step*
+has the design.*
 
 An auto-progress link says a step may start once its sources reach review; a review may
 start once its subject does. Until this, *may* meant a person noticing and clicking Run
