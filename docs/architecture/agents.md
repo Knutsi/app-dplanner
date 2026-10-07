@@ -1059,9 +1059,10 @@ The retry-or-abandon split of the 10-03 failure classes is the supervisor's coun
 stored, so nothing can say a run is parked while its last turn says done.
 
 **A lost turn is found by the machine that ran it, and a takeover fences it.** A turn records
-its `pid` and the machine's boot id, because "no `end`" alone cannot tell a running turn
-from one a reboot killed. Only that machine can look, so it does, when it starts: a turn
-whose boot is not this boot, or whose pid is gone, ends `failed` as `lost`, and the
+its `pid`, the machine's boot id and the process's start time, because "no `end`" alone
+cannot tell a running turn from one a reboot killed, and a pid alone may since belong to
+another process. Only that machine can look, so it does, when it starts: a turn whose three
+no longer match a live process ends `failed` as `lost`, and the
 supervisor's retry takes it from there. A machine that never comes back cannot do even that,
 so a takeover writes a `fence` on its runs — the one write to a run from anywhere but its
 launcher — and the launcher, fetching before every turn, ends a fenced run rather than
@@ -1104,7 +1105,10 @@ people may answer one question on two machines, and an agent may already be acti
 first when the second arrives — with an earlier timestamp, on a skewed clock. So no
 timestamp decides: the launching machine fetches, checks the run can still resume, pushes
 the question marked `consumed` and only then starts the turn, which names the answer it
-consumed. From then on that answer is the record's truth, and any competing one is kept as
+consumed. A playbook's question has no run to resume, so the pass's owner — the
+engine on the machine that launched the pass — consumes it the same way, targeting the
+pass, stage and attempt, and only then completes the step or advances the pass. From then
+on that answer is the record's truth, and any competing one is kept as
 a *late answer* and never applied. A withdrawal is terminal too, and beats any answer not
 yet consumed: a run that was stopped must not be resumed by somebody who had not heard.
 Gate, round-cap and escalation questions say which they are in `purpose`, and carry `pass`,
@@ -1141,14 +1145,18 @@ machine, but the protocol is written now so the second machine is not a redesign
 by the coordinator's own `dplanner` runs, as at-work is renewed by them, and by the
 supervisor of any of the squad's live runs, because a coordinator waiting out a two-hour
 stage makes no calls and live work must not read as abandoned. The claim is pushed when something happened anyway (claimed, merged, released), and a
-commit that carries nothing but a heartbeat goes at most every thirty minutes. The lease is
+commit that carries nothing but a heartbeat goes at most every thirty minutes — pushed by
+the supervisor while the coordinator is silent, and retried at the next beat if it fails,
+since a renewal nobody else sees renews nothing. The lease is
 ninety minutes, three pushes, so one rejected push or a little clock skew between machines
 does not read as death; the reader's clock judges it, which is good enough at that length
 and needs no service.
 
 **A stale lease is abandoned, and nothing is deleted** — unless the squad is parked. Work
 waiting on a person is still owned, and nothing is live to renew it, so a parked squad keeps
-its claim for up to `max_park_hours` before it reads abandoned. The window says so; another
+its claim while its questions are open, escalated, or answered and not yet consumed — an
+answer nobody has acted on is still waiting — until the work resumes, is cancelled, or
+`max_park_hours` passes. The window says so; another
 squad may take the steps with a claim that names the old one in `supersedes` and fences its
 unfinished runs; the old coordinator, if it was only asleep, finds the newer claim at its
 next check and stands down. **The director wins, one step at a time**: a person who sets one

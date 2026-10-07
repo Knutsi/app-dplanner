@@ -428,13 +428,13 @@ a step's stage history is its runs, read in order — there is no other.
   "callsign": "kettle-three", "claim": "20261007T100212Z-5a0b7c3d",
   "turns": [
     {"n": 1, "prompt": "launch", "started": "…", "ended": "…", "end": "asked", "exit": 0,
-     "pid": 41822, "boot": "<boot id>", "question": "20261007T103341Z-e1f2a3b4",
+     "pid": 41822, "boot": "<boot id>", "pid_started": "<start time>", "question": "20261007T103341Z-e1f2a3b4",
      "usage": {"from": "<cursor>", "to": "<cursor>", "agents": [ … ]}},
     {"n": 2, "prompt": "answer", "started": "…", "ended": "…", "end": "limit", "exit": 1,
-     "pid": 42010, "boot": "<boot id>", "resets": "2026-10-07T15:00:00+00:00",
+     "pid": 42010, "boot": "<boot id>", "pid_started": "<start time>", "resets": "2026-10-07T15:00:00+00:00",
      "consumed": {"question": "20261007T103341Z-e1f2a3b4", "answer": "20261007T104102Z-4c4c9a01"},
      "usage": {"from": "<cursor>", "to": "<cursor>", "agents": [ … ]}},
-    {"n": 3, "prompt": "reset", "started": "…", "pid": 51377, "boot": "<boot id>"}
+    {"n": 3, "prompt": "reset", "started": "…", "pid": 51377, "boot": "<boot id>", "pid_started": "<start time>"}
   ],
   "measurement": "native"
 }
@@ -495,9 +495,11 @@ A review run carries its `verdict`, and the fix run after it what it `declined`:
   | `stopped` | a person or the coordinator ended it, or its step went away | is over, and is never retried |
 
   A turn with no `end` is running, or was lost with its machine — which only that machine
-  can tell: every turn records the process's `pid` and the machine's `boot` id, and when a
-  machine starts it ends each of its own unended turns whose boot differs or whose pid is
-  gone as `failed`, `why: lost`.
+  can tell: every turn records the process's `pid`, the machine's `boot` id and the
+  process's start time, `pid_started` (`/proc/<pid>/stat`'s `starttime` on Linux, the
+  process creation time on Windows), and a process is live only if all three still match —
+  so a reused pid never reads as live. When a machine starts it ends each of its own unended
+  turns whose process is not live as `failed`, `why: lost`.
 - **`usage` is the turn's own consumption, never a running total.** `from` and `to` are the
   harness's cursors into the session's records — main agent and every subagent — at the
   turn's start and end, and `agents` is what lies between them. A run's usage is its turns'
@@ -567,8 +569,9 @@ git never conflicts:
   takes back (`updatedInput.answers`): each question's text to the chosen label, or to free
   text.
 - **`state`** is `open`, `escalated` (the coordinator passed it to a person: `escalated`
-  holds `at`, `by` and `why`), `answered`, `consumed` (the run resumed on the answer:
-  `consumed` holds `at`, `run` and `turn`), or `withdrawn` (the run ended or asked again:
+  holds `at`, `by` and `why`), `answered`, `consumed` (the answer was acted on:
+  `consumed` holds `at` and, for an agent's question, the `run` and `turn` it resumed; for a
+  playbook's, the `pass`, `stage` and `attempt` it settled), or `withdrawn` (the run ended or asked again:
   `withdrawn` holds `at` and `why`). `consumed` and `withdrawn` are terminal.
   `answer.by.kind` is `person`, `coordinator` or `clock` — the last only for `limit` — and
   `answer.id` is minted as a run id is.
@@ -580,6 +583,11 @@ git never conflicts:
   pushed the question marked `consumed` with the turn it starts; a rejected push means fetch
   and check again before the turn begins. The resumed turn records the answer's id
   (`consumed` on the turn).
+- **A playbook's question is consumed by the pass's owner** — the engine on the machine that
+  launched the pass — with the same fetch, check and push, its target the `pass`, `stage` and
+  `attempt` rather than a run: still the current gate of a pass not over. Consuming it acts:
+  a Spike's approval completes its step, a gate's verdict or a round-cap decision advances
+  its pass.
 - **Several writers, one after another.** The asker creates the file; the coordinator may
   escalate it; whoever may answer it does, and the verb refuses a second answer. When a merge
   meets two writers anyway: **consumed beats everything** — a competing answer, earlier or
@@ -628,12 +636,16 @@ git, so a person or a worker on another machine sees it at their next pull:
   `dplanner` runs and by the supervisor of any of the squad's runs while that run is live,
   so a squad whose coordinator waits through a long stage keeps its lease. The coordinator
   commits and pushes its claim when it claims, after each merge and when it releases, and a
-  commit carrying only a heartbeat at most every thirty minutes.
+  commit carrying only a heartbeat at most every thirty minutes — **the supervisor does that
+  commit and push while the coordinator is silent**; a failed push is retried at the next
+  beat.
 - **A claim whose heartbeat is older than `lease_minutes` (default 90) is abandoned**, by the
   reader's clock — the lease is three pushes long so one failed push, or a little clock
   skew, does not read as death — **unless the squad is parked**: every step it still holds
-  has its run parked on an open question, or waits on a gate's. Parked work is still owned,
-  and its claim stands until the oldest of those parks is `max_park_hours` (default 24) old.
+  waits on a question that is open, escalated, or answered and not yet consumed. Parked work
+  is still owned, and its claim stands until the work resumes, is cancelled (the question
+  withdrawn, the run fenced or stopped), or the oldest of those parks is `max_park_hours`
+  (default 24) old.
   An abandoned claim is shown as abandoned and deleted by nobody; a new claim may take its
   steps and names it in `supersedes`, fencing each of the old squad's unfinished runs on
   them (the run's `fence`), and the old coordinator stands down at its next check.
