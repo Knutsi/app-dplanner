@@ -569,3 +569,15 @@ its step no longer reads due. Coalescing merged a value command across another w
 so undo restored the older value over theirs; a merge now requires continuity. Now:
 `core.md`'s *A workflow is one function under both surfaces*; `persistence.md`'s *Adopting
 the other writer's changes in place*; `agents.md`'s *Auto-progress is launched by the window*.
+
+## 2026-10-07 — The ledger record becomes the run; at-work is kept beside claims
+
+Before headless runs were built, their records were settled as one design (S3 of
+*Playbooks and autonomous work*). The ledger record, which said only what a launch
+consumed, becomes the run record at format 2 — turns, how each ended, the playbook stage —
+and the playbook ledger is its runs rather than a record of its own. A run's working files
+leave `tempfile.mkdtemp` in `/tmp`, which a reboot empties and which was a nearly full RAM
+disk in the 10-04 run, for `config_dir()/runs/`. Questions and claims are new files in the
+project. The machine-local at-work claim was weighed for absorbing into the committed claim
+and kept: its three-minute clock cannot be committed. Now: `agents.md`'s *Runs, questions
+and claims are three records in the plan*.

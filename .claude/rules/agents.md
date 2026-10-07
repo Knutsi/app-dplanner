@@ -366,3 +366,19 @@ paths:
 
   `docs/architecture/agents.md`'s *A review is a conversation kept on the step that asks* has the
   reasoning.
+- **Runs, questions and claims are three records in the plan, and there are no others**
+  (designed; FORMAT.md's *The `ledger` directory* format 2, *The `questions` directory*, *The
+  `claims` directory*). **A run is the ledger record**: one stage attempt, whose resumes —
+  an answer, a reset, a retry — are its `turns` (a loop-back is a new run), each ending `done`, `asked`, `denied`, `limit`, `failed` or `stopped` —
+  classified from the stream, never the exit alone — written only by the launching machine;
+  running, parked and over are read from the turns, and **the playbook ledger is a step's
+  runs**, never a second record. Its working files are `config_dir()/runs/<run id>/`, never
+  `/tmp`. **Every inbox card is a file in `questions/`** — `AskUserQuestion`'s shape, a usage
+  hold included (`kind: limit`) — so nothing else may feed the inbox. **A claim is a squad's
+  lease in `claims/`**: heartbeat at most every ten minutes, a heartbeat-only push at most
+  every thirty, acquired by a push before anything spawns, abandoned past a ninety-minute lease
+  unless parked, and a person's override releases one step from it, not the squad.
+  It never absorbs the at-work claim, nor the at-work claim it: two clocks, two jobs.
+  **An answer counts only once its run's machine has consumed it.**
+  `docs/architecture/agents.md`'s *Runs, questions and claims are three records in the plan*
+  has the reasoning.
