@@ -35,8 +35,12 @@ def replay(path: Path) -> tuple[Headless, TurnLog, dict[str, object]]:
 
 
 def ended(path: Path) -> tuple[str, str]:
+    """How the turn ended, handed what the supervisor would hand: the exit, the stream, the
+    stderr and the question the turn recorded, where it recorded one."""
     reader, log, record = replay(path)
-    got = reader.classify(record["exit"], log, "\n".join(record["stderr_tail"]))  # type: ignore[arg-type]
+    stderr = "\n".join(record["stderr_tail"])  # type: ignore[arg-type]
+    question = record.get("question")
+    got = reader.classify(record["exit"], log, stderr, question)  # type: ignore[arg-type]
     return got.end, got.why
 
 
@@ -87,19 +91,24 @@ RECORDED = {
     "claude-asked-prose-3": ("asked", "prose"),
     # The plan is the final text; a plan stage parks on it, and that is the engine's to do.
     "claude-plan": ("done", ""),
-    # A question through the ask door ends as done: the record it wrote is what parks it.
-    "claude-ask-door": ("done", ""),
+    # A question through the ask door is the record the turn wrote, handed in.
+    "claude-ask-door": ("asked", "record"),
     "claude-denied-1": ("denied", ""),
     "claude-denied-2": ("denied", ""),
     "claude-limit": ("limit", ""),
+    # A subscription's words name no rate and give no status; the error code says it.
+    "claude-limit-subscription": ("limit", ""),
+    # Answered FAQ headings, and a finished fix that mentions a wait.
+    "claude-done-faq": ("done", ""),
+    "claude-done-fixed-wait": ("done", ""),
     "claude-review-typed": ("done", ""),
     "codex-done": ("done", ""),
-    # Codex in read-only explains in prose; only a typed answer can say it was denied.
-    "codex-readonly": ("done", ""),
-    "codex-ask-door": ("done", ""),
+    # Codex in read-only says it could not, and why: that sentence is the denial.
+    "codex-readonly": ("denied", ""),
+    "codex-ask-door": ("asked", "record"),
     "codex-review-typed": ("done", ""),
     "opencode-done": ("done", ""),
-    "opencode-ask-door": ("done", ""),
+    "opencode-ask-door": ("asked", "record"),
     "opencode-denied": ("denied", ""),
 }
 
@@ -250,7 +259,7 @@ def test_claude_names_a_fresh_session_resumes_it_and_never_lets_add_dir_swallow_
     ]
     at = fresh.index("--add-dir")
     assert fresh[at + 1 : at + 3] == [RUN_DIR, PLAN_REPO] and fresh[at + 3].startswith("--")
-    assert fresh[-1] == "Read your briefing" and fresh[-3] == "--json-schema"
+    assert fresh[-1] == "Read your briefing" and fresh[-4] == "--json-schema"
     resumed = command(spec(StageKind.EXECUTE).resumed("s-1", "Answer: raise"))
     assert option(resumed, "--resume") == "s-1" and "--session-id" not in resumed
     assert resumed[-1] == "Answer: raise"
@@ -280,6 +289,9 @@ def test_codex_states_the_stages_mode_as_overrides_fresh_and_resumed_alike():
         }
         assert option(argv, "--output-schema") == str(Path("C:\\runs\\r1") / "execute.schema.json")
         assert not {"-s", "--sandbox", "--approve-for-me", "--add-dir"} & set(argv)
+    astral = TurnSpec(StageKind.EXECUTE, "go", "/runs/r1", ("/plans/\U0001f680 launch",))
+    roots = overrides(command(astral))["sandbox_workspace_write.writable_roots"]
+    assert roots == ["/runs/r1", "/plans/\U0001f680 launch"]
     fresh, resumed = command(windows_like), command(windows_like.resumed("t-1", "continue"))
     assert fresh[:3] == ["codex", "exec", "--json"] and fresh[-1] == "go"
     assert resumed[:4] == ["codex", "exec", "resume", "--json"] and resumed[-2:] == [
@@ -295,8 +307,74 @@ def test_codex_states_the_stages_mode_as_overrides_fresh_and_resumed_alike():
 def test_opencode_runs_the_plan_agent_to_read_and_auto_to_work():
     command = headless("opencode").command
     assert command(spec(StageKind.PLAN)) == [
-        "opencode", "run", "--format", "json", "--agent", "plan", "Read your briefing",
+        "opencode", "run", "--format", "json", "--agent", "plan", "--", "Read your briefing",
     ]  # fmt: skip
     resumed = command(spec(StageKind.EXECUTE).resumed("ses_1", "continue"))
     assert option(resumed, "--session") == "ses_1" and "--auto" in resumed
     assert resumed[-1] == "continue"
+
+
+def test_an_answer_that_reads_like_a_flag_is_still_the_prompt():
+    # Each parser was checked on 2026-10-07 against a local fake API in a throwaway home:
+    # after "--", "--help MARKER" reached the model as the message, for all four forms.
+    for cli in ("claude", "codex", "opencode"):
+        command = headless(cli).command
+        fresh = command(spec(StageKind.EXECUTE, session="s-1"))
+        assert fresh[-2:] == ["--", "Read your briefing"], cli
+        resumed = command(spec(StageKind.EXECUTE).resumed("s-1", "--help"))
+        tail = ["--", "s-1", "--help"] if cli == "codex" else ["--", "--help"]
+        assert resumed[-len(tail) :] == tail, cli
+        assert resumed.count("--help") == 1, cli
+
+
+def test_codex_reads_a_refusal_for_want_of_permission_and_nothing_less():
+    _, log, _ = replay(FIXTURES / "codex-readonly.json")
+    assert log.denials and "read-only" in log.denials[0]
+    assert codex.refusals("I couldn't commit: writing is not permitted in this sandbox.")
+    for fine in (
+        "Reviewed in a read-only sandbox; no issues found.",
+        "I couldn't reproduce the failure, so I added a test for it.",
+        "Added it. The sandbox is read-only for the plan, which is expected.",
+    ):
+        assert not codex.refusals(fine), fine
+
+
+ODD = [
+    {"type": "system", "subtype": "init", "session_id": 7},
+    {"type": "rate_limit_event", "rate_limit_info": {"unifiedWindows": {
+        "five_hour": {"utilization": "unknown", "resetsAt": 1791353400},
+        "seven_day": {"utilization": 0.3, "resetsAt": 10**20},
+        "opus": "n/a",
+        "hourly": {"utilization": float("nan")},
+    }}},
+    {"type": "assistant", "error": 12, "message": None},
+    {"type": "result", "result": None, "usage": {"input_tokens": "many"},
+     "permission_denials": [3, {"tool_input": "x"}]},
+    {"type": "thread.started", "thread_id": None},
+    {"type": "item.completed", "item": {"type": "agent_message", "text": 5}},
+    {"type": "turn.completed", "usage": {"input_tokens": -1, "cached_input_tokens": "x"}},
+    {"type": "turn.failed", "error": None},
+    {"type": "step_finish", "sessionID": [], "part": {"tokens": {"input": "x", "cache": 4}}},
+    {"type": "text", "part": {"text": None}},
+    {"type": "error", "error": "boom"},
+]  # fmt: skip
+
+
+def test_no_reader_raises_on_a_valid_event_with_odd_values():
+    for cli in ("claude", "codex", "opencode"):
+        reader = headless(cli)
+        log = reader.read_lines(json.dumps(event) for event in ODD)
+        reader.classify(0, log)
+    log = headless("claude").read_lines([json.dumps(ODD[1])])
+    # The odd windows are skipped; the good one stays, its impossible reset unknown.
+    assert [(w.name, w.used, w.resets) for w in log.limits] == [("seven_day", 0.3, None)]
+
+
+def test_a_codex_rollout_with_odd_windows_reads_as_none(tmp_path):
+    folder = tmp_path / "sessions" / "2026" / "10" / "04"
+    folder.mkdir(parents=True)
+    odd = {"payload": {"rate_limits": {"primary": {"used_percent": "high", "resets_at": 1e30}}}}
+    (folder / f"rollout-2026-10-04T21-21-54-{THREAD}.jsonl").write_text(
+        "[]\n" + json.dumps(odd), encoding="utf-8"
+    )
+    assert codex.read_limits(THREAD, tmp_path) == ()

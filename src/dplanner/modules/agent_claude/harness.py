@@ -75,12 +75,11 @@ from pathlib import Path
 from dplanner.domain.agents import AgentHarness, AgentUsage, RunFacts, RunReport, Tokens
 from dplanner.domain.headless import (
     Headless,
-    LimitWindow,
     StageKind,
     TurnLog,
     TurnSpec,
     schema_text,
-    stamp,
+    window,
 )
 
 SESSION_MARKERS = (
@@ -250,8 +249,7 @@ def report(
 
 
 def headless_command(spec: TurnSpec) -> list[str]:
-    # ``--add-dir`` takes a list, so a single-valued option always follows it: the
-    # permission mode, then the schema, then the prompt.
+    # ``--add-dir`` takes a list, so a single-valued option always follows it.
     argv = ["claude", "-p", "--output-format", "stream-json", "--verbose", "--strict-mcp-config"]
     argv += ["--add-dir", spec.run_dir, *spec.writable]
     if spec.resume:
@@ -261,7 +259,8 @@ def headless_command(spec: TurnSpec) -> list[str]:
     argv += ["--permission-mode", "auto" if spec.stage is StageKind.EXECUTE else "plan"]
     if schema := schema_text(spec.stage):
         argv += ["--json-schema", schema]
-    return [*argv, spec.prompt]
+    # "--" ends the options, so an answer that reads like a flag ("--help") is still a prompt.
+    return [*argv, "--", spec.prompt]
 
 
 def read_event(log: TurnLog, event: Mapping[str, object]) -> None:
@@ -273,14 +272,18 @@ def read_event(log: TurnLog, event: Mapping[str, object]) -> None:
         windows = info.get("unifiedWindows") if isinstance(info, dict) else None
         if isinstance(windows, dict):
             log.limits = tuple(
-                LimitWindow(
-                    name, float(window.get("utilization") or 0), stamp(window.get("resetsAt"))
-                )
-                for name, window in windows.items()
-                if isinstance(window, dict)
+                found
+                for name, given in windows.items()
+                if isinstance(given, dict)
+                and (found := window(name, given.get("utilization"), given.get("resetsAt")))
             )
     elif kind == "assistant":
         log.progressed()
+        # A failed request is written as an assistant message carrying the reason's code —
+        # "rate_limit" whatever the words, which on a subscription say "You've hit your limit".
+        code = event.get("error")
+        if isinstance(code, str) and code:
+            log.code = code
     elif kind == "result":
         _read_result(log, event)
 

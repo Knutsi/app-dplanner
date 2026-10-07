@@ -32,9 +32,11 @@ PLAIN = Headless(
 )
 
 
-def ending(exit_code: int | None = 0, stderr: str = "", **fields: object) -> Ending:
+def ending(
+    exit_code: int | None = 0, stderr: str = "", question: str | None = None, **fields: object
+) -> Ending:
     lines = [json.dumps({"field": name, "value": value}) for name, value in fields.items()]
-    return PLAIN.classify(exit_code, PLAIN.read_lines(lines), stderr)
+    return PLAIN.classify(exit_code, PLAIN.read_lines(lines), stderr, question)
 
 
 def test_a_clean_exit_with_nothing_said_is_done():
@@ -45,6 +47,19 @@ def test_a_killed_process_failed_whatever_its_stream_said():
     for code in (None, -9, -15, 137, 143):
         got = ending(code, final="Should I go on?")
         assert (got.end, got.why) == (TurnEnd.FAILED, "killed")
+
+
+def test_a_question_the_turn_recorded_is_asked_whatever_it_said():
+    got = ending(final="I've asked; ending my turn.", question="Raise or return None?")
+    assert got == Ending(TurnEnd.ASKED, "record", question="Raise or return None?")
+    assert ending(1, error="Overloaded", question="Raise?").end is TurnEnd.FAILED
+
+
+def test_the_clis_error_code_is_read_before_its_words():
+    got = ending(1, error="You've hit your limit · resets 3pm", code="rate_limit")
+    assert got.end is TurnEnd.LIMIT
+    assert ending(1, error="Request failed", code="authentication_failed").why == "login"
+    assert ending(1, error="Overloaded", code="something_new").why == "transient"
 
 
 def test_the_clis_own_error_comes_before_a_quiet_ending():
@@ -82,15 +97,22 @@ def test_a_typed_message_is_read_and_beats_prose():
 
 def test_prose_ending_on_a_question_is_asked():
     got = ending(
-        final="I can do either.\n\n**Raise, or return None?** (pick one)\n\nThen I'll go on."
+        final="Either works.\n\n**Raise, or return None?** (pick one)\n\nTell me, and I'll go on."
     )
     assert got == Ending(TurnEnd.ASKED, "prose", question="Raise, or return None?")
+    assert prose_question("Both work.\n\nShould it raise, or return None?") == (
+        "Should it raise, or return None?"
+    )
 
 
-def test_the_prose_question_is_in_the_last_few_lines_and_nowhere_else():
-    assert prose_question("Should it accept strings?\n- Yes\n- No\nTell me, and I'll edit it.")
-    assert not prose_question("Why did it fail?\n" + "\n".join(f"step {n}" for n in range(6)))
+def test_a_prose_question_is_only_one_still_open_at_the_very_end():
+    assert prose_question("Should it accept strings?\n- Yes\n- No\n\nTell me, and I'll edit it.")
+    # Answered where it was asked: an FAQ heading, a question and its answer.
+    assert not prose_question("## Why did it fail?\nA yanked release.\n\nAll tests pass.")
+    assert not prose_question("Why did it fail? A yanked release.\nFixed; all tests pass.")
+    # An offer with no question to answer, and a question well before the end.
     assert not prose_question("Let me know if you'd like changes, or tell me to proceed.")
+    assert not prose_question("Should it raise?\n\nIt raises now.\n\nTests pass.\n\nDone.")
     assert not prose_question("")
 
 
@@ -166,6 +188,13 @@ def test_a_turn_that_ends_to_wait_on_its_own_background_work_was_abandoned():
     assert not got.needs_person
     done = {"outcome": "done", "summary": "Started the build; I'll be notified when it ends."}
     assert ending(typed=done).why == "abandoned-wait"
+    # A finished fix that mentions a wait, a quoted example, and a wait said earlier on.
+    for finished in (
+        "Fixed the worker waiting for the background job; tests pass.",
+        'The log said "Waiting on the build" before the timeout; that is fixed now.',
+        "I'll pick up when the build finishes, I thought.\n\nIt finished; all green.",
+    ):
+        assert not waits_on_itself(finished), finished
     # Waiting on a person is a question, never this.
     for person in (
         "I've asked how divide should behave. Waiting for a person's answer before implementing.",

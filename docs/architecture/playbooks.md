@@ -336,22 +336,31 @@ review ran `find`), which settles the review row.
 
 **How a turn ended is one function over what the stream said.** Each harness's reader
 normalises its CLI into a `TurnLog` — the session, the turn's tokens, the account's windows,
-the final text and its typed form, the CLI's own error, the denials — and
-`Headless.classify(exit, log, stderr)` reads it in one order: killed; the CLI's error (a limit,
-or `failed` with the 10-03 kind); a failed exit with no message; a denial (Claude's
-`permission_denials` under `success`, opencode's "auto-rejecting" on stderr); the typed
-outcome; a turn ended to wait on the agent's own background work ("I'll pick up when it
-finishes" — `failed` as `abandoned-wait`, because headless the work died with the process and
-nobody wakes the agent, so "continue" resumes it); a question in prose; done. A harness differs only in its reader and two hooks — where
-its limit telemetry lives (Codex: the rollout, never `--json`) and the denials it prints to
-stderr. Prose is the fallback, and it is looser than "ends in `?`": headless Claude bolds the
-question and adds "Once you let me know, I'll…", so any of the last five lines ending in `?` is
-the question. A limit's reset is its **fullest** window's: both real Codex limits on 10-04
-struck at 98–99 %, and that window's reset was the message's "try again at" to the minute. A
-hang and a runaway are the supervisor's to detect — the log counts events since the agent last
-produced anything — and what the classifier is then handed is a killed process. The recorded
-streams that hold all of this are `tests/fixtures/agent_turns/`, the 10-03 probes under
-`probes/`.
+the final text and its typed form, the CLI's own error and its machine-readable code, the
+denials — and `Headless.classify(exit, log, stderr, question)` reads it in one order: killed;
+the CLI's error, by its code before its words (Claude's `rate_limit` is a limit whether the
+words say "rate limit" or a subscription's "You've hit your limit"); a failed exit with no
+message; **the question the turn recorded** through `dplanner ask`, which the supervisor reads
+from the question store and hands in, since an agent that asked through the door ends its turn
+in plain words; a denial (Claude's `permission_denials` under `success`, opencode's
+"auto-rejecting" on stderr, a Codex sentence refusing an act *because* of its sandbox); the
+typed outcome; a wait on the agent's own background work (`failed` as `abandoned-wait`,
+because headless the work died with the process and nobody wakes the agent, so "continue"
+resumes it); a question in prose; done. A harness differs only in its reader and two hooks —
+where its limit telemetry lives (Codex: the rollout, never `--json`) and the denials it prints
+to stderr. **The two prose heuristics read only what is still open at the very end**: the final
+paragraph ends on the question, or asks for an answer ("Once you let me know, I'll…") with the
+question just above — so an answered FAQ heading is no question — and the final paragraph
+commits, in the agent's own unquoted words, to waiting on its work — so a finished fix "for the
+worker waiting on the job" is no abandoned wait. A reader never raises on a vendor's odd value:
+a window whose share is not a number is skipped, an impossible reset is unknown. A limit's
+reset is its **fullest** window's: both real Codex limits on 10-04 struck at 98–99 %, and that
+window's reset was the message's "try again at" to the minute. A hang and a runaway are the
+supervisor's to detect — the log counts events since the agent last produced anything — and
+what the classifier is then handed is a killed process. **Every CLI's prompt follows `--`**, so
+an answer that reads like a flag (`--help`) is still the prompt; each parser was checked to
+honour it against a local fake API. The recorded streams that hold all of this are
+`tests/fixtures/agent_turns/`, the 10-03 probes under `probes/`.
 
 **Why these modes.** `acceptEdits` alone denies every Bash call, so an execute stage needs the
 auto-approving mode; on a model that refuses it (Claude's `auto` on Haiku denied the edit) the

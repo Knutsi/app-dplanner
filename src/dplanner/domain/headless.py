@@ -37,6 +37,7 @@ property required, nothing extra — because Codex refuses any other kind.
 """
 
 import json
+import math
 import re
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -106,6 +107,9 @@ class TurnLog:
     typed: Mapping[str, object] | None = None  # The final message, typed, where it is.
     error: str = ""  # The CLI's own last word on why it stopped, "" when it did not fail.
     status: int | None = None  # The HTTP status it gave with the error.
+    # The CLI's own machine-readable reason, where it gives one (Claude's ``rate_limit``):
+    # read before any wording, which changes between plans and releases.
+    code: str = ""
     denials: list[str] = field(default_factory=list)
     events: int = 0
     # Events since the agent last produced anything: what the supervisor's runaway detector
@@ -180,16 +184,23 @@ class Headless:
             self.feed(log, line)
         return log
 
-    def classify(self, exit_code: int | None, log: TurnLog, stderr: str = "") -> Ending:
-        """How the turn ended, from its exit, its stream and its stderr — in this order,
-        because each rule is only true once the ones above it are not."""
+    def classify(
+        self, exit_code: int | None, log: TurnLog, stderr: str = "", question: str | None = None
+    ) -> Ending:
+        """How the turn ended, from its exit, its stream, its stderr and ``question`` — the
+        question the agent recorded through ``dplanner ask`` during the turn, which the
+        supervisor reads from the question store, since an agent that asked through the door
+        then ends its turn in plain words. In this order, because each rule is only true once
+        the ones above it are not."""
         if exit_code is None or exit_code < 0 or exit_code in KILLED:
             return Ending(TurnEnd.FAILED, "killed", f"killed by a signal (exit {exit_code})")
-        if log.error:
-            return ending_for_error(log.error, log.status, self.limits(log))
+        if log.error or log.code:
+            return ending_for_error(log.error, log.status, self.limits(log), log.code)
         if exit_code != 0:
             said = last_line(stderr)
             return Ending(TurnEnd.FAILED, "unknown", f"exit {exit_code}: {said or 'no message'}")
+        if question is not None:
+            return Ending(TurnEnd.ASKED, "record", question=question)
         denials = [*log.denials, *self.stderr_denials(stderr)]
         if denials:
             return Ending(TurnEnd.DENIED, reason="; ".join(denials))
@@ -201,9 +212,9 @@ class Headless:
                 return Ending(TurnEnd.ASKED, "typed", question=question)
             if typed.get("outcome") == "denied":
                 return Ending(TurnEnd.DENIED, "typed", reason=summary)
-        said = f"{log.final} {_text(typed.get('summary')) if typed else ''}"
-        if waits_on_itself(said):
-            return Ending(TurnEnd.FAILED, "abandoned-wait", last_line(log.final) or said[:160])
+        for said in (log.final, _text(typed.get("summary")) if typed else ""):
+            if waits_on_itself(said):
+                return Ending(TurnEnd.FAILED, "abandoned-wait", last_line(said))
         if typed is not None:
             return Ending(TurnEnd.DONE)
         question = prose_question(log.final)
@@ -212,13 +223,30 @@ class Headless:
         return Ending(TurnEnd.DONE)
 
 
+# The machine-readable reasons a CLI gives with an error (Claude's assistant ``error``), and
+# the ending each means — read before the wording, which differs between a subscription's
+# "You've hit your limit" and an API key's "rate limit".
+ERROR_CODES = {
+    "rate_limit": "limit",
+    "authentication_failed": "login",
+    "billing_error": "billing",
+    "server_error": "transient",
+    "model_not_found": "model",
+}
+
+
 def ending_for_error(
-    message: str, status: int | None, limits: Sequence[LimitWindow] = ()
+    message: str, status: int | None, limits: Sequence[LimitWindow] = (), code: str = ""
 ) -> Ending:
-    """What the CLI's own error means — the 10-03 probe classes, read off its words and the
-    HTTP status, since every CLI words them differently."""
+    """What the CLI's own error means — its code where it gives one, else the 10-03 probe
+    classes read off its words and the HTTP status, since every CLI words them differently."""
     m = message.lower()
-    said = message[:160]
+    said = message[:160] or code
+    kind = ERROR_CODES.get(code)
+    if kind == "limit":
+        return Ending(TurnEnd.LIMIT, reason=said, resets=resets(limits))
+    if kind is not None:
+        return Ending(TurnEnd.FAILED, kind, said)
     if status in (401, 403) or re.search(
         r"not logged in|invalid api key|failed to authenticate|401 unauthorized"
         r"|403 forbidden|x-api-key|subscription expired|missing bearer",
@@ -259,39 +287,72 @@ def resets(limits: Sequence[LimitWindow]) -> datetime | None:
     return max(known, key=lambda w: w.used).resets if known else None
 
 
-# How far up from the end of a final message a question still counts as how it ended.
-PROSE_TAIL = 5
+# A final paragraph that asks for an answer without being the question itself: "Once you let
+# me know, I'll edit calc.py" after the bold question, which is how headless Claude asks.
+_REQUEST = re.compile(
+    r"\blet me know\b|\bplease (?:answer|confirm|choose|pick|reply|respond|decide)\b"
+    r"|\bonce you (?:respond|reply|confirm|decide|answer|choose|let me know)\b"
+    r"|\b(?:tell me|which would you|which do you|do you want me to|should I)\b",
+    re.IGNORECASE,
+)
 _TRAILING_ASIDE = re.compile(r"\s*\([^()]*\)\s*$")
+# Quoted words are somebody else's: an example, a log line, a message being described.
+_QUOTED = re.compile(r"`[^`]*`|\"[^\"]*\"|\u201c[^\u201d]*\u201d")
+
+
+def paragraphs(text: str) -> list[list[str]]:
+    """A message's paragraphs, each its non-empty lines, stripped."""
+    blocks = re.split(r"\n\s*\n", text.strip())
+    found = [[line.strip() for line in block.splitlines() if line.strip()] for block in blocks]
+    return [block for block in found if block]
+
+
+def _bare(line: str) -> str:
+    return _TRAILING_ASIDE.sub("", line).strip("*_`># -").strip()
 
 
 def prose_question(text: str) -> str:
-    """The question a final message ends on, or "". Headless Claude cannot use its question
-    tool and asks in prose instead — and rarely as the very last line: it bolds the question
-    and adds "Once you let me know, I'll…" — so any of the last few lines ending in ``?``,
-    markdown and a trailing ``(yes/no)`` aside, is the question."""
-    lines = [line.strip() for line in text.strip().splitlines() if line.strip()]
-    for line in reversed(lines[-PROSE_TAIL:]):
-        bare = _TRAILING_ASIDE.sub("", line).strip("*_`># -").strip()
-        if bare.endswith("?"):
-            return bare
+    """The question a final message leaves open, or "". Headless Claude cannot use its
+    question tool and asks in prose — and the question must still be open at the very end:
+    the final paragraph ends on it, or the final paragraph asks for an answer ("Once you let
+    me know, I'll…") and the question is the last one just above. A question answered by the
+    lines after it — an FAQ heading, "Why did it fail? The dependency was missing." — is not
+    one, and neither is an offer with no question to answer ("Let me know if you'd like
+    changes")."""
+    blocks = paragraphs(text)
+    if not blocks:
+        return ""
+    final = blocks[-1]
+    if _bare(final[-1]).endswith("?"):
+        return _bare(final[-1])
+    if not _REQUEST.search(" ".join(final)):
+        return ""
+    for block in reversed(blocks[-3:-1]):
+        for line in reversed(block):
+            if _bare(line).endswith("?"):
+                return _bare(line)
     return ""
 
 
 _WAITS_ON_ITSELF = re.compile(  # \u2019: the typographic apostrophe agents write
-    r"\bI(?:'|\u2019)?ll pick (?:it |this |things )?(?:up|back up) when\b"
-    r"|\b(?:I(?:'|\u2019)?ll be|I will be) notified\b"
-    r"|\bwait(?:ing)? (?:on|for) (?:the |my |its |a )?(?:full |test )?"
+    r"\bI(?:'|\u2019)?ll (?:pick (?:it |this |things )?(?:back )?up|continue|carry on) when\b"
+    r"|\bI(?:'|\u2019)?ll be notified\b|\bI will be notified\b"
+    r"|(?:^|[.;:!]\s+|\bI(?:'|\u2019)?m |\bI am )(?:now |still )?waiting (?:on|for) "
+    r"(?:the |my |its |a )?(?:full |test )?"
     r"(?:suite|tests?|background|build|run|job|task|workers?|command|process)\b",
-    re.IGNORECASE,
+    re.IGNORECASE | re.MULTILINE,
 )
 
 
 def waits_on_itself(text: str) -> bool:
-    """Whether a final message ends the turn to wait on the agent's own background work — a
-    suite, a build, a task it started. Headless, the process exits with the turn and the work
-    dies with it, and nobody wakes the agent: the turn was abandoned, not finished, and
-    "continue" resumes it. Waiting on a *person* is not this — that is a question."""
-    return bool(_WAITS_ON_ITSELF.search(text))
+    """Whether a message ends its turn committed to wait on the agent's own background work —
+    a suite, a build, a task it started — said in its final paragraph, in its own words.
+    Headless, the process exits with the turn and the work dies with it, and nobody wakes the
+    agent: the turn was abandoned, not finished, and "continue" resumes it. A finished fix
+    that mentions a wait ("fixed the worker waiting for the job") is not this, nor a quoted
+    example, nor waiting on a *person* — that is a question."""
+    blocks = paragraphs(text)
+    return bool(blocks) and bool(_WAITS_ON_ITSELF.search(_QUOTED.sub("", "\n".join(blocks[-1]))))
 
 
 def typed_message(text: str) -> Mapping[str, object] | None:
@@ -311,11 +372,28 @@ def last_line(text: str) -> str:
     return lines[-1][:160] if lines else ""
 
 
-def stamp(epoch: object) -> datetime | None:
-    """An epoch-seconds field as a time; None for anything else."""
-    if isinstance(epoch, (int, float)) and not isinstance(epoch, bool):
-        return datetime.fromtimestamp(epoch, UTC)
+def number(value: object) -> float | None:
+    """A field that should be a finite number, or None — a reader never raises on a vendor's
+    odd value."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
+        return float(value)
     return None
+
+
+def stamp(epoch: object) -> datetime | None:
+    """An epoch-seconds field as a time; None for anything else, or out of range."""
+    seconds = number(epoch)
+    try:
+        return datetime.fromtimestamp(seconds, UTC) if seconds is not None else None
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
+def window(name: str, used: object, resets_at: object, scale: float = 1) -> LimitWindow | None:
+    """One usage window from a vendor's fields — ``used`` in its own scale (Claude a fraction,
+    Codex a percentage) — or None when the share is not a number."""
+    share = number(used)
+    return LimitWindow(name, share / scale, stamp(resets_at)) if share is not None else None
 
 
 def _text(value: object) -> str:

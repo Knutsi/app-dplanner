@@ -76,8 +76,8 @@ from dplanner.domain.headless import (
     TurnLog,
     TurnSpec,
     schema_file,
-    stamp,
     typed_message,
+    window,
 )
 
 ROLLOUT_NAME = re.compile(r"^rollout-.*-([0-9a-f-]{36})(?:_.*)?\.jsonl$")
@@ -325,11 +325,14 @@ def headless_command(spec: TurnSpec) -> list[str]:
         settings = {**APPROVE_FOR_ME, "sandbox_workspace_write.writable_roots": roots}
     argv = ["codex", "exec", *(["resume"] if spec.resume else []), "--json"]
     for key, value in settings.items():
-        argv += ["-c", f"{key}={json.dumps(value)}"]  # a JSON string or list is TOML too
+        # A JSON string or list is TOML too — unescaped, since TOML refuses the surrogate
+        # pairs JSON escapes an astral character into.
+        argv += ["-c", f"{key}={json.dumps(value, ensure_ascii=False)}"]
     schema = schema_file(spec)
     if schema is not None:
         argv += ["--output-schema", str(schema)]
-    return [*argv, *([spec.session] if spec.resume else []), spec.prompt]
+    # "--" ends the options, so an answer that reads like a flag ("--help") is still a prompt.
+    return [*argv, "--", *([spec.session] if spec.resume else []), spec.prompt]
 
 
 def read_event(log: TurnLog, event: Mapping[str, object]) -> None:
@@ -342,6 +345,7 @@ def read_event(log: TurnLog, event: Mapping[str, object]) -> None:
         if isinstance(item, dict) and item.get("type") == "agent_message":
             log.final = str(item.get("text") or "")
             log.typed = typed_message(log.final)
+            log.denials = refusals(log.final)
     elif kind == "turn.completed":
         usage = event.get("usage")
         if isinstance(usage, dict):
@@ -350,6 +354,27 @@ def read_event(log: TurnLog, event: Mapping[str, object]) -> None:
         error = event.get("error")
         log.error = str(error.get("message", "")) if isinstance(error, dict) else str(error)
         log.error = log.error or "the turn failed"
+
+
+# Codex in a read-only sandbox does not fail: it says it could not and hands the change back
+# as text. A sentence that both refuses an act and names the sandbox as why is a denial; one
+# that only mentions the sandbox ("reviewed read-only; no issues") is not.
+_REFUSED = re.compile(
+    r"\b(?:couldn(?:'|\u2019)?t|could not|can(?:'|\u2019)?t|cannot|was unable to|am unable to)"
+    r" (?:\w+ )?(?:edit|write|modify|change|create|commit|apply|run|delete|save)\b",
+    re.IGNORECASE,
+)
+_BECAUSE_SANDBOX = re.compile(
+    r"read-only|sandbox|not (?:allowed|permitted)|permission"
+    r"|writ(?:e|ing) is (?:not )?(?:enabled|blocked)",
+    re.IGNORECASE,
+)
+
+
+def refusals(text: str) -> list[str]:
+    """The sentences of a final message that refuse an act for want of permission."""
+    sentences = re.split(r"(?<=[.!?])\s+|\n+", text)
+    return [s.strip()[:160] for s in sentences if _REFUSED.search(s) and _BECAUSE_SANDBOX.search(s)]
 
 
 def read_limits(thread: str, home: Path | None = None) -> tuple[LimitWindow, ...]:
@@ -369,13 +394,11 @@ def read_limits(thread: str, home: Path | None = None) -> tuple[LimitWindow, ...
             continue
         limits = payload.get("rate_limits") if isinstance(payload, dict) else None
         windows = tuple(
-            LimitWindow(
-                name,
-                float(window.get("used_percent") or 0) / 100,
-                stamp(window.get("resets_at")),
-            )
+            found
             for name in ("primary", "secondary")
-            if isinstance(limits, dict) and isinstance(window := limits.get(name), dict)
+            if isinstance(limits, dict)
+            and isinstance(given := limits.get(name), dict)
+            and (found := window(name, given.get("used_percent"), given.get("resets_at"), 100))
         )
         # A limit of another kind ("premium") is recorded with no windows at all, right
         # after the account's own: it says nothing about when the account comes back.

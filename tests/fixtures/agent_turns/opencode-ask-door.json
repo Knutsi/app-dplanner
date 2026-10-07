@@ -16,5 +16,6 @@
   "{\"type\":\"step_finish\",\"timestamp\":1791347441564,\"sessionID\":\"ses_eeb5f821fffedOEPQLWFOM13Mc\",\"part\":{\"id\":\"prt_114a0bf99001IEO6VtCCVI8726\",\"reason\":\"stop\",\"snapshot\":\"0b5146d69a7f3435916ca594d9f5fe68057ea59a\",\"messageID\":\"msg_114a09eaa001w3hfwRpQjG4Q4s\",\"sessionID\":\"ses_eeb5f821fffedOEPQLWFOM13Mc\",\"type\":\"step-finish\",\"tokens\":{\"total\":12200,\"input\":258,\"output\":30,\"reasoning\":8,\"cache\":{\"write\":0,\"read\":11904}},\"cost\":0}}"
  ],
  "stdout_tail": [],
- "stderr_tail": []
+ "stderr_tail": [],
+ "question": "How should divide(a, b) behave when b is zero?"
 }

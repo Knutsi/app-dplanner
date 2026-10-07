@@ -195,7 +195,8 @@ def headless_command(spec: TurnSpec) -> list[str]:
     if spec.resume:
         argv += ["--session", spec.session]
     argv += ["--auto"] if spec.stage is StageKind.EXECUTE else ["--agent", "plan"]
-    return [*argv, spec.prompt]
+    # "--" ends the options, so an answer that reads like a flag ("--help") is still a prompt.
+    return [*argv, "--", spec.prompt]
 
 
 def read_event(log: TurnLog, event: Mapping[str, object]) -> None:
