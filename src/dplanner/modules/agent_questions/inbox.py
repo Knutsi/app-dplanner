@@ -1,9 +1,14 @@
 """Answering a question, and resuming the run that parked on it — one function, so the CLI's
 ``question answer`` and the Control Centre's card cannot drift.
 
-Answering only *records* the answer. The run's own machine consumes it: the supervisor,
-started here when this is that machine and the run still stands parked on this very question.
-An answer given anywhere else waits in the file for that machine to notice it.
+Answering only *records* the answer. The run's supervisor delivers it: it looks for an
+answered question on its run whenever it starts and before it lets go of a parked run, and
+claims the resume under the run's lock and the question's. Starting one here is a nudge, never
+the delivery — a supervisor still letting go refuses it and finds the answer itself. An answer
+given on another machine waits in the file for the run's own machine.
+
+**Who answers is read from where the call comes from, never claimed.** A caller inside a run
+is the coordinator, whatever it says, and may not answer the question its own run asked.
 """
 
 from collections.abc import Callable, Mapping
@@ -30,15 +35,19 @@ def answer(
     given: str,
     by: Mapping[str, str],
     *,
+    caller_run: str = "",
     machine: str | None = None,
     config: Path | None = None,
     resume: Resume = start_detached,
 ) -> Answered:
-    """Record ``given`` as the answer, then resume the run it parks when this machine may.
-    Raises ``ValueError`` with the reason when ``by`` may not answer it, or it is no longer
-    open to an answer."""
+    """Record ``given`` as the answer, then nudge the supervisor of the run it parks when this
+    machine launched it. ``caller_run`` is the run the caller works in (``$DPLANNER_RUN``).
+    Raises ``ValueError`` with the reason when the caller may not answer it, or it is no
+    longer open to an answer."""
 
     def answering(question: Question) -> Question:
+        if caller_run and question.run == caller_run:
+            raise ValueError(f"{question.short} is your own run's question: a person answers it")
         if refused := questions.may_answer(question, by.get("kind", "")):
             raise ValueError(refused)
         answers = questions.answers_for(question, given)
@@ -48,8 +57,11 @@ def answer(
     why_not = resumable(project_dir, question, machine or ledger.machine_id(config))
     if why_not:
         return Answered(question, f"{question.short} answered; {why_not}")
-    resume(project_dir, question.run, prompt="answer")
-    return Answered(question, f"{question.short} answered; resuming run {question.run}")
+    try:
+        resume(project_dir, question.run, prompt="answer")
+    except OSError as error:  # The run's supervisor finds the answer when it next starts.
+        return Answered(question, f"{question.short} answered; could not start its run: {error}")
+    return Answered(question, f"{question.short} answered; run {question.run} resumes with it")
 
 
 def resumable(project_dir: Path, question: Question, machine: str) -> str:

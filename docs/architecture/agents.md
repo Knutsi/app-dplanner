@@ -975,15 +975,35 @@ account, a run that cannot go on alone — gets its question written by the supe
 parks, named on the turn. Otherwise the inbox would show some parked runs and not others,
 and whoever reads it would have to know which endings make a card.
 
-**Answering records; consuming resumes.** `question answer` writes the answer and, when the
-run was launched on this machine and still stands parked on that very question, starts the
-supervisor with `--prompt answer`. The supervisor marks the question consumed, under its
-lock, before the turn starts, and the turn names the answer it consumed. An answer given on
-another machine waits in the file until something on the run's machine notices it — the
-window's inbox or the playbook engine — because only that machine has the session to resume.
-A run that ends, or goes on without its answer (*continue*, *Retry now*, words handed straight
-to the supervisor), withdraws what it was parked on, so a card never outlives the run it was
-for.
+**Answering records; the supervisor delivers.** `question answer` writes the answer and
+nothing else that counts; it nudges the run's supervisor when this machine launched the run,
+but the nudge is not the delivery. Delivery is the supervisor's: whenever it starts, and once
+more *after* it has let go of a parked run, it looks for an answered question on its own run
+and resumes with it. That last look is what makes an answer given at any moment arrive — a
+nudge refused because the old supervisor still held the run is made up for by the old
+supervisor's own look, taken after the lock was free; an answer given while the asking turn
+was still ending parks the turn on that very question and resumes it at once. An answer given
+on another machine waits in the file for the run's own machine.
+
+**The resume is claimed under the run's lock and the question's**, both re-read: the run still
+this machine's, not fenced, not over, its last turn parked on this question, the question
+answered. One ledger write then records the next turn — `prompt: answer`, the answer it
+consumes, no process yet — and only then is the question marked consumed. A supervisor that
+dies in between leaves a turn holding an answer and no pid, which the next supervisor starts
+rather than consuming anything again. Checking under an earlier snapshot would let a fence
+written meanwhile be overtaken by a resume.
+
+**Cards are written before what they explain, and mended on start.** A parked ending is
+committed with its card already on disk, so a crash leaves at worst a card on a lost turn,
+which the retry withdraws — never a parked run nobody is asked about. A run that goes on by
+itself (a retry, a nudge to continue) withdraws the open questions of the turn that failed,
+and a run's end withdraws everything it had standing; a supervisor starting on a parked run
+with no card writes one, and on an ended run with cards standing withdraws them.
+
+**Who answers is read from where the call comes from.** Inside a run or an agent's shell the
+caller is the coordinator — there is no flag to say otherwise — and a run may not answer its
+own question; a person's own shell answers as a person. A flag would let the agent a gate is
+meant to check say it was the person.
 
 **A terminal run asks the person in front of it.** In a terminal the developer is right there
 and the agent's process is still waiting for its next message, so `question ask` outside a

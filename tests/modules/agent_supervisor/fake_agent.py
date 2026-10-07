@@ -9,7 +9,8 @@ one again once they run out), counted in ``<script>.count``. An entry may:
   SIGTERM, as a test worker might, and write *its* pid there;
 - ``fence``: fence the ledger record at this path, as a takeover elsewhere would;
 - ``ask``: ``{"plan": <project dir>, "question": <text>}`` — record a question on the run
-  ``$DPLANNER_RUN`` names, as ``dplanner question ask`` does from inside the turn;
+  ``$DPLANNER_RUN`` names, as ``dplanner question ask`` does from inside the turn; with
+  ``"answered": <words>``, somebody answers it at once, before the turn has ended;
 - ``on_term``: print these lines when SIGTERM arrives, then exit 143 — a CLI's last totals;
 - print its ``lines`` (a recorded stream); ``close_stdout`` then;
 - ``hold`` that many seconds, silent as a hung API — or ``spam`` content-free events until
@@ -61,6 +62,9 @@ if "ask" in turn:
         [questions.one(turn["ask"]["question"])],
         run=os.environ["DPLANNER_RUN"],
     )
+    if "answered" in turn["ask"]:
+        given = {turn["ask"]["question"]: turn["ask"]["answered"]}
+        asked = questions.answered(asked, given, {"kind": "person", "name": "Knut"}, asked.asked)
     questions.write(Path(turn["ask"]["plan"]), asked)
 for line in turn.get("lines", []):
     print(line, flush=True)

@@ -188,7 +188,7 @@ def test_a_question_asked_through_the_door_is_answered_consumed_and_resumes_the_
         config=rig.config,
         resume=lambda *args, **kwargs: resumed.append((*args, kwargs)),
     )
-    assert resumed == [(rig.plan, RUN, {"prompt": "answer"})] and "resuming" in done.said
+    assert resumed == [(rig.plan, RUN, {"prompt": "answer"})] and "resumes with it" in done.said
 
     assert rig.supervise(prompt="answer") == f"run {RUN} is done"
     answered = stored(rig.plan, question.id)
@@ -244,6 +244,132 @@ def test_an_answer_refuses_to_resume_a_run_another_machine_launched(rig):
     )
     assert not resumed and "knut-laptop" in done.said
     assert stored(rig.plan, question.id).state == "answered"
+
+
+def test_an_answer_given_before_the_turn_ends_parks_on_it_and_resumes_at_once(rig):
+    """Finding 3: answered while the asking process was still exiting."""
+    ask = {"plan": str(rig.plan), "question": "Keep both?", "answered": "Absorb"}
+    rig.play({"ask": ask, "lines": [INIT, result("Ending my turn.")]}, {"lines": [result()]})
+    assert rig.supervise() == f"run {RUN} is done"
+    (question,) = questions.records(rig.plan)
+    first, second = rig.record.turns
+    assert (first.end, first.question) == ("asked", question.id)
+    assert second.prompt == "answer" and second.consumed["question"] == question.id
+    assert question.state == "consumed" and "Absorb" in rig.specs[-1].prompt
+
+
+def _answer_the_park(rig: Rig) -> Question:
+    (question,) = [q for q in questions.records(rig.plan) if q.state == "open"]
+    person = {"kind": "person", "name": "Knut"}
+    given = questions.answers_for(question, "Keep both")
+    answered = questions.answered(question, given, person, question.asked)
+    questions.write(rig.plan, answered)
+    return answered
+
+
+def test_an_answer_given_while_the_supervisor_lets_go_is_still_delivered(rig, monkeypatch):
+    """Finding 4: the nudge the answer gave was refused by the supervisor letting go."""
+    rig.play({"lines": recorded("claude-asked-prose-1")}, {"lines": [result()]})
+    drive = supervisor._drive
+    calls: list[str] = []
+
+    def then_answer(*args: object) -> str:
+        said = drive(*args)  # type: ignore[arg-type]
+        if not calls:
+            calls.append(said)
+            _answer_the_park(rig)
+        return said
+
+    monkeypatch.setattr(supervisor, "_drive", then_answer)
+    assert rig.supervise() == f"run {RUN} is done"
+    assert [turn.prompt for turn in rig.record.turns] == ["launch", "answer"]
+
+
+def test_a_resume_claimed_but_never_started_is_started_and_never_consumed_twice(rig, monkeypatch):
+    """Finding 5: the claim is on disk before the process is, and recovery spawns it."""
+    rig.play({"lines": recorded("claude-asked-prose-1")}, {"lines": [result()]})
+    rig.supervise()
+    question = _answer_the_park(rig)
+
+    def crash(*_: object) -> None:
+        raise SystemExit("the machine went down")
+
+    monkeypatch.setattr(supervisor, "_spawn", crash)
+    with pytest.raises(SystemExit):
+        rig.supervise(prompt="answer")
+    claimed = rig.record.turns[-1]
+    assert (claimed.n, claimed.prompt, claimed.pid, claimed.end) == (2, "answer", 0, "")
+    assert stored(rig.plan, question.id).state == "consumed"
+
+    monkeypatch.undo()
+    assert rig.supervise() == f"run {RUN} is done"
+    assert [turn.n for turn in rig.record.turns] == [1, 2]
+    assert stored(rig.plan, question.id).consumed["turn"] == 2
+    assert "Keep both" in rig.specs[-1].prompt
+
+
+def test_the_claim_rereads_the_run_under_its_locks(rig, monkeypatch):
+    """Finding 6: another machine's run, and a fence landing after the opening's check."""
+    rig.play({"lines": recorded("claude-asked-prose-1")}, {"lines": [result()]})
+    rig.supervise()
+    question = _answer_the_park(rig)
+    ledger.write(rig.plan, replace(rig.record, machine="elsewhere", host="knut-laptop"))
+    with pytest.raises(RefusedError, match="knut-laptop launched it"):
+        rig.supervise(prompt="answer")
+    ledger.write(rig.plan, replace(rig.record, machine=""))
+
+    machine_id = ledger.machine_id
+
+    def fenced_meanwhile(directory: Path | None = None) -> str:
+        supervisor.fence(rig.plan, RUN, "a takeover", "taken over", rig.config)
+        return machine_id(directory)
+
+    monkeypatch.setattr(ledger, "machine_id", fenced_meanwhile)
+    with pytest.raises(RefusedError, match="fenced"):
+        rig.supervise(prompt="answer")
+    assert stored(rig.plan, question.id).state == "answered"
+    assert len(rig.record.turns) == 1 and len(rig.specs) == 1
+
+
+def test_an_automatic_retry_withdraws_what_the_failed_turn_asked(rig):
+    """Finding 7: the question a crashed turn asked does not stand beside the retry."""
+    ask = {"plan": str(rig.plan), "question": "Keep both?"}
+    rig.play({"ask": ask, "lines": [INIT], "hold": 30}, {"lines": [result()]})
+    assert rig.supervise() == f"run {RUN} is done"
+    assert rig.ends() == [("failed", "hang"), ("done", "")]
+    (question,) = questions.records(rig.plan)
+    assert question.withdrawn["why"] == "the run went on by itself"
+
+
+def test_the_card_is_written_before_the_parked_ending(rig, monkeypatch):
+    """Finding 8: a crash writing the park leaves a card, never a parked run with none."""
+    rig.play({"lines": recorded("claude-asked-prose-1")})
+    write = ledger.write
+
+    def crash_on_the_park(project_dir: Path, record: LedgerRecord) -> bool:
+        if record.turns and record.turns[-1].end == "asked":
+            raise OSError("disk full")
+        return write(project_dir, record)
+
+    monkeypatch.setattr(ledger, "write", crash_on_the_park)
+    with pytest.raises(OSError):
+        rig.supervise()
+    assert [q.kind for q in questions.records(rig.plan)] == ["decision"]
+
+
+def test_starting_mends_a_park_with_no_card_and_an_end_with_cards_standing(rig):
+    """Finding 8: what a supervisor that died between two writes left behind."""
+    asked = Turn(n=1, prompt="launch", started="…", ended="…", end="asked", reason="Why?")
+    ledger.write(rig.plan, rig.record.with_turns((asked,)))
+    with pytest.raises(RefusedError, match="--prompt"):
+        rig.supervise()
+    (card,) = questions.records(rig.plan)
+    assert (card.text, rig.record.turns[0].question) == ("Why?", card.id)
+
+    ledger.write(rig.plan, rig.record.ended_at("2026-10-07T11:00:00+00:00", 0))
+    with pytest.raises(RefusedError, match="is over"):
+        rig.supervise()
+    assert stored(rig.plan, card.id).state == "withdrawn"
 
 
 def test_a_limit_and_a_dead_login_park_without_a_retry(rig, tmp_path):

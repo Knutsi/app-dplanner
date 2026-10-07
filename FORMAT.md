@@ -596,8 +596,14 @@ git never conflicts:
   the run still resumable — not over, not fenced, its last turn parked on this question — and
   pushed the question marked `consumed` with the turn it starts; a rejected push means fetch
   and check again before the turn begins. The resumed turn records the answer's id
-  (`consumed` on the turn). *As built, one machine:* the check and the `consumed` write are
-  made under the question's lock and the run's; the fetch and the push are not written yet.
+  (`consumed` on the turn). *As built, one machine:* the check is made under the run's lock
+  and the question's, re-reading both; one ledger write records the resumed turn with the
+  answer it consumes before the question is marked `consumed`, and a turn found holding an
+  answer with no process is started, never consumed again. The fetch and the push are not
+  written yet. The run's supervisor delivers an answer: it looks for one whenever it starts
+  and after it lets go of a parked run.
+- **Who answers is read from the caller's shell**: inside a run or an agent's shell it is
+  the coordinator (`answer.by.kind`), and a run may not answer its own question.
 - **Every change is a read-modify-write under an OS lock** on
   `config_dir()/questions/<id>.lock` — per machine, never in the plan — so two answers given
   on one machine cannot both land. A person types a question as `Q-e1f2`: the first four

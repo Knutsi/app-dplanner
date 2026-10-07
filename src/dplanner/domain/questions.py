@@ -25,6 +25,7 @@ longer allows. Nothing here resumes anything: that is the supervisor's, which co
 
 import json
 from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
@@ -79,16 +80,14 @@ class Question:
     state: str = OPEN
     answer: Mapping[str, Any] = field(default_factory=dict)  # {id, answers, by: {kind, name}, at}
     escalated: Mapping[str, Any] = field(default_factory=dict)  # {at, by, why}
-    consumed: Mapping[str, Any] = field(
-        default_factory=dict
-    )  # {at, run, turn} or {at, pass, stage, attempt}
+    # {at, run, turn}, or a playbook's {at, pass, stage, attempt}.
+    consumed: Mapping[str, Any] = field(default_factory=dict)
     withdrawn: Mapping[str, Any] = field(default_factory=dict)  # {at, why}
     late: tuple[Mapping[str, Any], ...] = ()  # Answers that lost a merge: shown, never applied.
 
     @property
     def short(self) -> str:
-        """``Q-e1f2``: the first four of the id's random half, for a person to type."""
-        return "Q-" + self.id.rpartition("-")[2][:4]
+        return short(self.id)
 
     @property
     def text(self) -> str:
@@ -169,6 +168,11 @@ class Question:
             withdrawn=_mapping(raw, "withdrawn"),
             late=tuple(a for a in late if isinstance(a, dict)) if isinstance(late, list) else (),
         )
+
+
+def short(id_: str) -> str:
+    """``Q-e1f2``: the first four of an id's random half, for a person to type."""
+    return "Q-" + id_.rpartition("-")[2][:4]
 
 
 def one(question: str, header: str = "", options: Sequence[tuple[str, str]] = ()) -> dict[str, Any]:
@@ -339,10 +343,9 @@ def update(
     change: Callable[[Question], Question],
     config: Path | None = None,
 ) -> Question:
-    """Read the question, change it and write it back, under the question's OS lock — kept in
-    ``config``, never the plan, so a lock file is never committed. ``change`` raises to
-    refuse."""
-    with os_lock((config or config_dir()) / QUESTIONS_DIR / f"{id_}.lock", wait=True):
+    """Read the question, change it and write it back, under :func:`held`. ``change`` raises
+    to refuse."""
+    with held(id_, config):
         question = find(project_dir, id_)
         if question is None:
             raise LookupError(f"no question {id_} in {project_dir}")
@@ -352,19 +355,35 @@ def update(
         return changed
 
 
+@contextmanager
+def held(id_: str, config: Path | None = None) -> Iterator[None]:
+    """The question's OS lock — in ``config``, never the plan, so a lock file is never
+    committed. Whoever changes the question holds it; a run's record lock, when both are
+    needed, is taken first."""
+    with os_lock((config or config_dir()) / QUESTIONS_DIR / f"{id_}.lock", wait=True):
+        yield
+
+
 def withdraw_unsettled(
-    project_dir: Path, run: str, why: str, keep: str = "", config: Path | None = None
+    project_dir: Path,
+    run: str,
+    why: str,
+    keep: str = "",
+    config: Path | None = None,
+    states: Sequence[str] = UNSETTLED,
 ) -> None:
-    """Withdraw every question the run still has standing but ``keep``: it ended, asked
-    again, or went on without them. One answered meanwhile is withdrawn too — the run is
-    no longer parked on it, so no turn will consume it."""
+    """Withdraw the run's questions in ``states`` but ``keep``: it ended, asked again, or went
+    on without them. By default one answered meanwhile is withdrawn too — the run is no
+    longer parked on it, so no turn will consume it; an automatic retry, which may yet park
+    on it, passes the open states alone."""
+
+    def withdrawing(question: Question) -> Question:
+        return withdrawn(question, why, now_stamp()) if question.state in states else question
+
     for question in of_run(project_dir, run):
-        if question.settled or question.id == keep:
-            continue
-        try:
-            update(project_dir, question.id, lambda q: withdrawn(q, why, now_stamp()), config)
-        except (LookupError, ValueError):
-            continue  # Settled by somebody else between the read and the lock.
+        if question.state in states and question.id != keep:
+            with suppress(LookupError):
+                update(project_dir, question.id, withdrawing, config)
 
 
 def fingerprint(project_dir: Path) -> tuple[tuple[str, int], ...]:

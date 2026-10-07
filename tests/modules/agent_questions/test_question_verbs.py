@@ -95,10 +95,10 @@ def test_listing_answering_and_escalating(cli, project, monkeypatch):
     listed = cli("question", "list", "--open")
     assert question.short in listed and "S1" in listed and "Keep both?" in listed
 
-    escalated = cli(
-        "question", "escalate", question.short, "--why", "a product call", "--as", "coordinator"
-    )
-    assert "escalated" in escalated
+    monkeypatch.setenv("DPLANNER_RUN", "20261007T120000Z-c0c0c0c0")  # The coordinator's run.
+    assert "escalated" in cli("question", "escalate", question.short, "--why", "a product call")
+    assert stored(project, question.id).escalated["by"]["kind"] == "coordinator"
+    monkeypatch.delenv("DPLANNER_RUN")  # A person's own shell.
     said = cli("question", "answer", question.short, "absorb", "--by", "Knut")
     # The run has not parked on it yet, so nothing is resumed — the answer waits in the file.
     assert "not parked on it" in said
@@ -110,15 +110,39 @@ def test_listing_answering_and_escalating(cli, project, monkeypatch):
     assert "no question" in cli("question", "answer", "Q-zzzz", "x", expect=1)
 
 
-def test_the_coordinator_may_not_answer_a_person_gate(cli, project):
+def test_a_run_may_not_answer_its_own_question(cli, project, monkeypatch):
+    monkeypatch.setenv("DPLANNER_RUN", RUN)
+    cli("question", "ask", "May I skip the tests?", "--choice", "Yes", "--choice", "No")
+    (question,) = questions.records(project)
+    said = cli("question", "answer", question.short, "Yes", expect=1)
+    assert "your own run's question" in said
+    assert stored(project, question.id).state == "open"
+
+
+def _person_gate(project: Path) -> Question:
     gate = replace(
         questions.asked("p", "s", "2026-10-07T10:00:00+00:00", [questions.one("Ship it?")]),
         purpose="gate",
         stage="person",
     )
     questions.write(project, gate)
-    said = cli("question", "answer", gate.short, "yes", "--as", "coordinator", expect=1)
-    assert "escalates it" in said
+    return gate
+
+
+def test_an_agent_cannot_answer_a_person_gate_or_say_it_is_a_person(cli, project, monkeypatch):
+    gate = _person_gate(project)
+    monkeypatch.setenv("DPLANNER_RUN", "20261007T120000Z-c0c0c0c0")  # Inside some run.
+    assert "escalates it" in cli("question", "answer", gate.short, "yes", expect=1)
+    with pytest.raises(SystemExit):  # There is no flag to claim to be a person.
+        cli("question", "answer", gate.short, "yes", "--as", "person")
+    assert stored(project, gate.id).state == "open"
+
+
+def test_an_agent_shell_with_no_run_is_still_the_coordinator(cli, project, monkeypatch):
+    gate = _person_gate(project)
+    monkeypatch.setenv("CLAUDECODE", "1")  # Claude Code's shell marker, no run named.
+    assert "escalates it" in cli("question", "answer", gate.short, "yes", expect=1)
+    monkeypatch.delenv("CLAUDECODE")
     assert "parks no run" in cli("question", "answer", gate.short, "yes")
 
 

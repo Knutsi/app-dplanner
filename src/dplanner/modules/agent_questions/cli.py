@@ -6,9 +6,10 @@ the run parks on it, and the answer resumes the same session. Every harness can 
 command, so this door is the same for all of them. An agent in a terminal has a person at
 hand: there ``question ask`` records nothing and sets ``needs-input``, as it always did.
 
-``answer`` records an answer and resumes the run when this machine launched it; ``escalate``
-is the coordinator passing a question to a person. None of them commits: the window's Save
-does.
+``answer`` records an answer, which the run's supervisor delivers; ``escalate`` is the
+coordinator passing a question to a person. Who acts is read from the shell: inside a run or
+an agent's shell it is the coordinator, which may not answer its own run's question. None of
+them commits: the window's Save does.
 """
 
 import getpass
@@ -33,14 +34,22 @@ ASKABLE = (questions.DECISION, questions.PLAN_APPROVAL, questions.BLOCKED)
 
 def commands(*, in_agent_shell: Callable[[], bool]) -> list[CliCommand]:
     def by(args: Namespace) -> dict[str, str]:
-        """Who acts: the coordinator from inside an agent's shell, else a person."""
-        kind = args.as_ or (questions.COORDINATOR if in_agent_shell() else questions.PERSON)
+        """Who acts, read from where the call comes from: inside a run or an agent's shell it
+        is the coordinator — an agent cannot say it is a person — and elsewhere a person."""
+        agent = bool(os.environ.get(RUN_ENV)) or in_agent_shell()
+        kind = questions.COORDINATOR if agent else questions.PERSON
         return {"kind": kind, "name": args.by or getpass.getuser()}
 
     def _answer(context: CliContext, args: Namespace) -> int:
         project_dir, question = _question(context, args.question)
         try:
-            done = inbox.answer(project_dir, question.id, " ".join(args.answer), by(args))
+            done = inbox.answer(
+                project_dir,
+                question.id,
+                " ".join(args.answer),
+                by(args),
+                caller_run=os.environ.get(RUN_ENV, ""),
+            )
         except (LookupError, ValueError) as error:
             raise CliError(str(error)) from error
         context.report({**done.question.to_json(), "said": done.said}, done.said)
@@ -196,13 +205,7 @@ def _configure_escalate(parser: ArgumentParser) -> None:
 
 
 def _configure_by(parser: ArgumentParser) -> None:
-    parser.add_argument(
-        "--as",
-        dest="as_",
-        choices=(questions.PERSON, questions.COORDINATOR),
-        default="",
-        help="who acts (default: the coordinator inside an agent's shell, else a person)",
-    )
+    # Whether a person or the coordinator acts is read from the shell, never given here.
     parser.add_argument("--by", default="", help="your name or callsign (default: your user)")
 
 

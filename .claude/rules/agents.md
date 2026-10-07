@@ -329,13 +329,19 @@ paths:
   withdraws that run's earlier one, and tells the agent to end its turn; outside a headless
   run it records nothing and sets `needs-input`. The supervisor hands the recorded question to
   `classify`, and writes the question for every other park (prose, denied, limit, blocked) —
-  `Turn.question` always names one. `question answer` records and, only for a run this
-  machine launched that is parked on that question, starts the supervisor with `--prompt
-  answer`, which **consumes** the answer under the question's OS lock before the turn starts
-  (`inbox.answer`, the one function the card calls too). A resume that is no answer and a
-  run's end withdraw what the run had standing. The coordinator may not answer a `person`
-  gate (`may_answer`); `question escalate` passes an open question to a person. No warm
-  hosting of Claude's own question tools yet. `docs/architecture/agents.md`'s *A question
+  `Turn.question` always names one, and the card is written **before** the parked ending.
+  `question answer` only records (`inbox.answer`, the one function the card calls too) and
+  nudges; **the supervisor delivers** — it looks for an answered question on its run when it
+  starts and again after letting go of a parked run — and **claims** the resume under the
+  run's lock and the question's, re-reading both (this machine's, not fenced, not over,
+  parked on that question), writing the next turn with the answer before marking it
+  consumed; a turn holding an answer and no pid is started, never re-consumed. **Who answers
+  is the caller's shell**: inside a run or an agent's shell, the coordinator, never its own
+  run's question — no flag says otherwise. An automatic retry withdraws the failed turn's
+  open questions; a start mends a park with no card and an ended run's standing cards; a
+  resume that is no answer and a run's end withdraw what the run had standing. The
+  coordinator may not answer a `person` gate (`may_answer`); `question escalate` passes an
+  open question to a person. No warm hosting of Claude's own question tools yet. `docs/architecture/agents.md`'s *A question
   is a file, and the inbox is the directory* has the reasoning.
 - **A headless run is driven by its supervisor, and nothing waits on it.** `dplanner agent
   supervise <run>` (`modules/agent_supervisor/`, started detached by
@@ -346,7 +352,8 @@ paths:
   stream — and then ends, parks or retries: `done`/`stopped` end it; `asked`, `denied`,
   `limit`, a runaway and a failure no retry mends park it and the process exits; other
   failures retry after 30 s, 2 min and 10 min, and a fourth in a row parks. A parked run
-  resumes only by `--prompt answer|continue|reset|retry`. It opens no library. **Its locks
+  resumes by `--prompt answer|continue|reset|retry`, or bare on an answered question. It
+  opens no library. **Its locks
   are the OS's** (`supervisor.lock` for its life, `record.lock` across every read-modify-write
   of the record — `fence()` takes it too), never a file judged stale and deleted. **A kill
   ends the whole process group**, and every way out of a turn ends it, so nothing runs
