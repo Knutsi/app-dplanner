@@ -313,8 +313,7 @@ checkout with no worktree of its own — leave that checkout as you found it.
 **An agent finishes at Ready for review, never at done.** When your work on a step is
 finished, `dplanner status set S7 ready-for-review`: a person or a reviewing agent looks
 next, sets it `ready-to-merge` once it is accepted and `done` once it has landed — and
-nothing that waits on the step starts before then, except a step that collects it over an
-auto-progress link, which starts now and takes your branch. From inside an agent's shell, `status
+nothing that waits on the step starts before then. From inside an agent's shell, `status
 set <agent step> done` on a step nobody has reviewed is refused; when there is genuinely
 nothing to review, say why — `dplanner status set S7 done --because '<reason>'` — and the
 reason is kept as a decision note on the step. Ready for review is the *step's* work
@@ -322,24 +321,10 @@ finished; the agent-run state `plan-for-review` is your *plan* waiting for a loo
 A step a review waits on does not stop there: its briefing says to wait for the review's
 rounds and answer them (below).
 
-**What happens after Ready for review is not yours to start.** When your `status set` makes
-a collector or a review *due* — every prerequisite finished, at least one through an
-auto-progress link — the terminal says so (`Now due: C9 …`), and `progression show` marks
-it `due`. With a DPlanner window open whose *Agent profiles ▸ When a step becomes due* is
-on, that window launches its agent within seconds, claimed in progress; with none, it waits
-for a person. Either way, stop as you would have: never launch another agent from your own
-shell. `progression show` lists an agent that waits on a person — a plan to approve, a
-question — under **Waits for you**, not Running; and work under review that a live agent
-takes on from there — its review, a collector — under **Taken by an agent**, not Ready for
-review, which names a person's turn alone.
-
-**A step that collects other steps' work lands it, and finishes them.** Its briefing has
-*Work you collect*: each source's status, branch, PR and worktree on this machine. Merge each
-into your branch as a merge commit of its own, reconcile what they could not see of each
-other, review the whole — and once a source's work has landed, `dplanner status set <source>
-done` yourself: that is your job, and the CLI allows it. A step whose briefing names who
-collects it leaves its own done to them, so push everything and open the PR before `status
-set <step> ready-for-review`.
+**What happens after Ready for review is not yours to start.** Stop there, and never launch
+another agent from your own shell: the coordinator or a person starts what comes next.
+`progression show` lists an agent that waits on a person — a plan to approve, a question —
+under **Waits for you**, not Running.
 
 **A step on a feature branch opens its PR there, and a landing brings the branch back.** A
 *cut* starts a branch and a *landing* merges it back; the steps between them work on it
@@ -373,9 +358,7 @@ through `dplanner review`, one verb per turn:
   pending-approval`, run `review wait S7`. When findings arrive, `review take S7`, do the
   work, push, and `review reply S7 --file reply.md` — S7 is ready for review again — then
   wait again, until the review approves (S7 is done) or escalates. After an hour with
-  nothing new, stop: relaunching S7 briefs you with any round that arrived — and a window
-  that launches what becomes due relaunches whichever side has the turn once its agent has
-  gone, once per round.
+  nothing new, stop: relaunching S7 briefs you with any round that arrived.
 
 Both briefings carry this protocol — the review's `## Instructions` are generated from its
 lenses, its cap and its subject, with its description as what to look for — and a
@@ -384,9 +367,8 @@ agent picks it up where it stands.
 
 `review wait` reads the plan afresh until it is your turn, then exits 0 with what arrived;
 after nine minutes it exits 3, and you run it again. Give the tool call running it a longer
-timeout than that, or shorten the wait with `--timeout`. A collector sends work back to a
-source the same way: `review start C9 --to S4`, then `post` and `wait` with the same `--to`.
-`review show <step>` prints a conversation.
+timeout than that, or shorten the wait with `--timeout`. `review show <step>` prints a
+conversation.
 
 ## Recording your work on GitHub
 

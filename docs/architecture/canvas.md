@@ -549,8 +549,7 @@ a lone step is just a line of one, so the root's hand-wiring became `create_step
 inputs or dependents follow, in the place in each list where the old end stood, so a list
 whose neighbour did not change is not rewritten. A step joining is disconnected first — both
 kinds, as Isolate takes them — and a step leaving goes with no links at all, which is how
-the developer asked for a drag in and a drag out to behave. A moved link arrives plain,
-without an auto-progress flag, the way a redirected one does. A link that no longer resolves
+the developer asked for a drag in and a drag out to behave. A link that no longer resolves
 stays where it is, since moving a ghost is a write the graph's own refusals turn down, and a
 kind this build does not know is carried untouched. The seat is the first member's, so it is
 handed on whenever the first changes — and only when one was stored.
@@ -582,8 +581,8 @@ links in at the frame's top and out from under its "+"; the developer turned tha
 the way in is on the left and the way out on the right, as everywhere else on the canvas —
 and that also kept the handle, the marks and the drawn arrow in one place. The first design
 of the chain hid its arrows and painted
-connectors in their place; review sank it, because a chain link is a real link — it can
-auto-progress, and the rails that say so live on `EdgeItem`; it lights when a member is
+connectors in their place; review sank it, because a chain link is a real link — it wears
+its branch's lane, which lives on `EdgeItem`; it lights when a member is
 picked, so the spotlight kept a member's stack-mates in view; and it can be picked and
 removed. So the edge asks each end for a port — `(point, heading)` — and a card answers its
 near edge travelling across, which is every curve the canvas drew before, while the frame
@@ -815,15 +814,15 @@ squiggle below covers it, and the Problems panel then says *which* thing is wron
 
 ## A card pulses where a person moves next
 
-A step ready to merge, and a step ready for review that no live agent takes on, breathe: a
+A step ready to merge, and a step ready for review, breathe: a
 glow in the key block's own tone swells and fades round the card every 3.2 seconds. The
 rule is `canvas.md`'s; the three decisions behind it are these.
 
 **It is a fact, not a way of looking.** The marks above are a preference because what they
 light is a reading of the graph a person may not want; this is the plan saying *you are
 waited on here*, and a preference that could switch it off would be a way to stop hearing
-that. So it is an accent the root translates — `_persons_turn`, over `progression.taken` —
-never a field on `Look`, and it is the boards' own answer: the card pulses exactly when the
+that. So it is an accent the root translates — the step's status, ready for review or to
+merge — never a field on `Look`, and it is the boards' own answer: the card pulses exactly when the
 Step statuses tab and the Control Centre list it under *Ready to merge* or *Ready for
 review* (*Progression is the status-aware frontier*). Why a pulse at all, where everything
 else on a card is still, is DESIGN.md's *Focus and motion*: the one fact waiting on the
@@ -837,33 +836,10 @@ reach is measured into `PAINT_MARGIN` like every other decoration's.
 
 **It rides the ring's clock.** Two timers on one scene would be two things ticking on an
 idle canvas's behalf and two phases to line up; the one clock (`advance_motion`) moves the
-ring's dashes, the flowing chevrons and the pulse's breath together and stops the moment
+ring's dashes and the pulse's breath together and stops the moment
 nothing moves. The period is 20 of its phase units — a divisor of the phase's wrap, so a
 breath never jumps — and slow on purpose, so the pulse reads as *waiting* beside the ring's
 *working*.
-
-## An arrow into a review wears its talk bubble
-
-A link into a review step carries the review's glyph — the talk bubble its Type toggle
-wears — in a circle at the middle of its length. The spec asked for it so a review reads as
-a review from across the graph, and the arrow is the right place: a review is a relation to
-the step it reviews, not only a kind of card.
-
-**A medallion, and only here.** The same step's instructions first asked for a chevron
-medallion on every auto-progress link as well; F11 had already drawn those links doubled
-with chevrons along their whole length, which reads from across the graph where a medallion
-at the middle would be a dot (N65). A link into a review is doubled by that same rule — every
-link into a review auto-progresses — so the bubble adds what the rails cannot say: *this
-arrow is a conversation*. `EdgeAccent.medallion` names a glyph and nothing more, so the
-canvas still never learns what a review is.
-
-**It is found the way the chevrons are.** The middle is half the flattened track's length,
-walked by hand — `percentAtLength` costs ~40 µs a call — and the chevrons stop a clearance
-short of it either side, so a flowing mark passes behind the bubble rather than through its
-rim. It is part of what a press and a hover hit (`shape()` takes in its disc), and the
-bounding rect grows while the accent names one, a function of the accent alone, so a sync
-that moves nothing changes no geometry. A stack's own link is a card's gap long; a bubble
-there would sit on both cards, so an arrow too short for it wears none.
 
 ## A problem is a squiggle, and the reading is shared
 
@@ -1111,8 +1087,8 @@ the one that says where.
 A branch stretch (*A branch stretch is bracketed by a cut and a landing*) has to be seen for
 what it is: which work goes on which branch. Two marks say it, each where nothing else
 already speaks. **The lane** is a translucent band of the branch's colour under the arrows
-of its work — under, because the arrow's own ink already means lit, picked, receding and
-flowing, and the rails already mean auto-progress; the colour is dealt from a qualitative
+of its work — under, because the arrow's own ink already means lit, picked and receding;
+the colour is dealt from a qualitative
 set, since two branches side by side are peers where milestones are a sequence. **The
 strip** names the branch in words across the card's foot, and it is the one exception to
 *nothing in words*: a branch is a name a person has to read, and a medallion could say only

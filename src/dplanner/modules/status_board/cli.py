@@ -13,24 +13,21 @@ The projects are positionals because ``--project`` is every verb's own option al
 
 The status reader arrives as a function from the composition root — a wait is over only
 on its day, and a wait is still a module's — and the estimate is the planning tier's own.
-So does what is **due**: the agent steps a window that launches what becomes due would start
-on its own, marked on their rows, and **Waits for you** — running work whose agent waits on
-a person — which ``asks_person`` splits from Running. **Taken by an agent** is the other
-half of that line: work under review that an agent takes on from there, which ``is_agent``
-splits from Ready for review, so that section names a person's turn alone.
+So does **Waits for you** — running work whose agent waits on a person — which
+``asks_person`` splits from Running.
 
 Qt-free by rule — see ``HEADLESS_FILES`` in ``tests/test_architecture.py``.
 """
 
 from argparse import ArgumentParser, Namespace
-from collections.abc import Callable, Collection, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
 from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.lookup import find_project
-from dplanner.domain.model import Library, Project, Step, StepId
+from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.short_titles import UNTITLED
 from dplanner.planning.progression import Progression, across, estimated_progress
 from dplanner.planning.status import Status
@@ -43,30 +40,24 @@ SEVERAL = "one project at a time — pass --all to read several as one board"
 class _Readers:
     status_for: Callable[[Step], Status]
     counts_as_work: Callable[[Step], bool]
-    auto_progresses: Callable[[Step, Step], bool]
     is_agent: Callable[[Step], bool]
     asks_person: Callable[[Step], bool]
-    due: Callable[[Library, Project, Callable[[Step], Status]], Sequence[Step]]
 
 
 def commands(
     *,
     status_in: Callable[[Library, date], Callable[[Step], Status]],
     counts_as_work: Callable[[Step], bool],
-    auto_progresses: Callable[[Step, Step], bool],
     is_agent: Callable[[Step], bool],
     asks_person: Callable[[Step], bool],
-    due: Callable[[Library, Project, Callable[[Step], Status]], Sequence[Step]],
 ) -> list[CliCommand]:
     """``status_in`` reads a step's status in a library on a day — a wait is done once it is
-    over, which only the day can say. ``auto_progresses`` says which links free their waiter
-    from review on; ``is_agent`` whether an agent works a step, which every row says;
-    ``asks_person`` whether a running step's agent waits on a person; ``due`` which steps of
-    a project a window would launch on its own, read with the day's statuses."""
+    over, which only the day can say. ``is_agent`` says whether an agent works a step, which
+    every row says; ``asks_person`` whether a running step's agent waits on a person."""
 
     def show(context: CliContext, args: Namespace) -> int:
         status_for = status_in(context.library, context.clock.today())
-        readers = _Readers(status_for, counts_as_work, auto_progresses, is_agent, asks_person, due)
+        readers = _Readers(status_for, counts_as_work, is_agent, asks_person)
         return _show(context, args, readers)
 
     return [
@@ -115,20 +106,9 @@ def _show(context: CliContext, args: Namespace, readers: _Readers) -> int:
     library = context.library
     projects = _projects(library, args)
     found = across(
-        library,
-        projects,
-        readers.status_for,
-        readers.counts_as_work,
-        readers.auto_progresses,
-        readers.asks_person,
-        readers.is_agent,
+        library, projects, readers.status_for, readers.counts_as_work, readers.asks_person
     )
     weighted = estimated_progress(found)
-    due = {
-        step.id
-        for project in projects
-        for step in readers.due(library, project, readers.status_for)
-    }
 
     def row(step: Step, **more: Any) -> dict[str, Any]:
         return {
@@ -136,7 +116,6 @@ def _show(context: CliContext, args: Namespace, readers: _Readers) -> int:
             "title": step.title,
             "project": library.project_of(step.id).id,
             "agent": readers.is_agent(step),
-            "due": step.id in due,
             **more,
         }
 
@@ -150,7 +129,6 @@ def _show(context: CliContext, args: Namespace, readers: _Readers) -> int:
             "running": len(found.running),
             "asking": len(found.asking),
             "review": len(found.review),
-            "taken": len(found.taken),
             "merge": len(found.merge),
             "attention": len(found.attention),
             "ready": len(found.ready),
@@ -161,7 +139,6 @@ def _show(context: CliContext, args: Namespace, readers: _Readers) -> int:
         "asking": named(found.asking),
         "merge": named(found.merge),
         "review": named(found.review),
-        "taken": named(found.taken),
         "running": named(found.running),
         "ready": [row(step, unlocks=found.unlocks[step.id]) for step in found.ready],
         "upcoming": [
@@ -178,7 +155,7 @@ def _show(context: CliContext, args: Namespace, readers: _Readers) -> int:
         finished, total = weighted
         data["estimated_days"] = {"done": finished, "total": total}
     spans = projects if args.all else ()
-    context.report(data, _report(library, found, weighted, spans, readers.is_agent, due))
+    context.report(data, _report(library, found, weighted, spans, readers.is_agent))
     return 0
 
 
@@ -188,11 +165,9 @@ def _report(
     weighted: tuple[float, float] | None,
     spans: Sequence[Project],
     is_agent: Callable[[Step], bool],
-    due: Collection[StepId],
 ) -> str:
     """The board as text. ``spans`` is the projects of a board across several — each row then
-    leads with its project's name — and empty for one project's, which needs no name. A row
-    in ``due`` says so: a window that launches what becomes due starts it."""
+    leads with its project's name — and empty for one project's, which needs no name."""
     if not found.total:
         return "No steps yet."
     across_words = f" across {len(spans)} projects" if len(spans) > 1 else ""
@@ -206,9 +181,8 @@ def _report(
 
     def line(step: Step, *facts: str) -> str:
         """A row: its project where the board spans several, its title, and in brackets
-        whether an agent works it, whether it is due, and whatever else the section says."""
-        marks = (*(("agent",) if is_agent(step) else ()), *(("due",) if step.id in due else ()))
-        said = ", ".join((*marks, *facts))
+        whether an agent works it, and whatever else the section says."""
+        said = ", ".join((*(("agent",) if is_agent(step) else ()), *facts))
         where = f"{library.project_of(step.id).title or UNTITLED} · " if spans else ""
         return f"{where}{title(step)}  ({said})" if said else f"{where}{title(step)}"
 
@@ -227,7 +201,6 @@ def _report(
     section("Ready to merge", [unblocking(step) for step in found.merge])
     section("Ready for review", [unblocking(step) for step in found.review])
     section("Running", [line(step) for step in found.running])
-    section("Taken by an agent", [line(step) for step in found.taken])
     section("Ready to start", [unblocking(step) for step in found.ready])
     section(
         "Up next",

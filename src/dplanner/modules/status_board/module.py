@@ -110,15 +110,9 @@ class ProgressionDeps:
     clock: Clock = field(default_factory=Clock)
     # Whether a step is work at all: a wait is not, and is on no row and in no count.
     counts_as_work: Callable[[Step], bool] = field(default=lambda _step: True)
-    # Whether a waiter may start once a source it requires is ready for review — an
-    # auto-progress link, read through the owning aspect by the composition root.
-    auto_progresses: Callable[[Step, Step], bool] = field(default=lambda _waiter, _source: False)
     # Whether a running step's agent waits on a person — a plan to approve, a question to
     # answer: the agent-run aspect's reading, which puts the row under *Waits for you*.
     asks_person: Callable[[Step], bool] = field(default=lambda _step: False)
-    # Whether an agent works a step: a step under review that an agent takes on from there
-    # is that agent's turn, not a person's, and leaves *Ready for review*.
-    is_agent: Callable[[Step], bool] = field(default=lambda _step: False)
     # The verbs a person runs over the ticked rows, named by the composition root: which
     # they are is a fact about other modules. None seated is a build without them.
     verbs: tuple[StripVerb, ...] = ()

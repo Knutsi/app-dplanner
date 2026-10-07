@@ -86,7 +86,7 @@ HEADLESS_ROLES = (
 # and a listed path that no longer exists fails the suite rather than silently leaving the rule.
 HEADLESS_FILES: dict[str, tuple[str, ...]] = {
     "agent_briefing": ("prompt.py",),
-    "agent_launch": ("due.py", "intents.py", "launcher.py"),
+    "agent_launch": ("intents.py", "launcher.py"),
     # Reads a run's usage back into the ledger: the wrapper script's `dplanner` call.
     "agent_usage": ("harvest.py",),
     # A branch stretch's run plan, and the edits it makes.
@@ -158,8 +158,8 @@ CONCRETE_STORAGE = (
 
 # Ceilings (rule 12), recorded on 4 October 2026. Lower one by hand when its count falls;
 # never raise it.
-ROOT_LINES = 3541
-DIRECT_COMMANDS = 141
+ROOT_LINES = 3375
+DIRECT_COMMANDS = 137
 
 # Every id a module stores data, settings or files under (rule 13). Stored ids are public:
 # plans on disk, user settings and the keychain know a module by them.
@@ -168,7 +168,6 @@ STORED_IDS = frozenset(
         "agent_at_work",
         "agent_usage",
         "appearance",
-        "auto_progress",
         "branch_cut",
         "branch_land",
         "checklist",
@@ -214,6 +213,21 @@ STORED_IDS = frozenset(
         "step_wait",
         "testing",
         "time_estimates",
+    }
+)
+
+# Every id a module once stored under and no longer does (rule 13, FORMAT.md's *Retiring a
+# module*). A retired id is never declared again: plans on disk may still carry its files,
+# kept untouched as data nobody declares, and a new module under the same name would read
+# them as its own.
+RETIRED_IDS = frozenset(
+    {
+        "auto_progress",
+        "decisions",
+        "step_estimation",
+        "step_feature",
+        "step_handoff",
+        "step_release",
     }
 )
 
@@ -838,6 +852,17 @@ def test_stored_module_ids_never_change() -> None:
     added = sorted(found - STORED_IDS)
     assert not removed, f"stored ids no longer declared: {removed} — a stored id never changes"
     assert not added, f"new stored ids: {added} — add them to STORED_IDS"
+
+
+def test_a_retired_module_id_is_never_declared_again() -> None:
+    """Rule 13's other half: a retired id's files may still sit in plans on disk, so a module
+    declaring it again would adopt data it never wrote."""
+    from dplanner.modules import default_module_formats
+
+    found = declared_module_ids() | {f.module_id for f in default_module_formats()}
+    assert not RETIRED_IDS & STORED_IDS, "an id is either stored or retired, never both"
+    reused = sorted(RETIRED_IDS & found)
+    assert not reused, f"retired ids declared again: {reused} — pick a new id"
 
 
 def test_planning_admits_only_the_listed_aspects() -> None:

@@ -32,12 +32,9 @@ def report_source(
     status_in: Callable[[Library, date], Callable[[Step], Status]],
     counts_as_work: Callable[[Step], bool],
     key_of: Callable[[Step], str],
-    auto_progresses: Callable[[Step, Step], bool],
 ) -> ReportSource:
     def source(library: Library, project: Project, _files: FilesFor, day: date) -> Contribution:
-        found = progression(
-            library, project, status_in(library, day), counts_as_work, auto_progresses
-        )
+        found = progression(library, project, status_in(library, day), counts_as_work)
         if not found.total:
             return Contribution()
         placed = [

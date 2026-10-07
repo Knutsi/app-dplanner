@@ -1,5 +1,4 @@
-"""The review step in the window: the Review template, the Review tab, and the link into a
-review on the canvas's Edge menu.
+"""The review step in the window: the Review template and the Review tab.
 
 W is an agent's work and R its review, waiting on it. Everything runs through the
 application the composition root builds, so the wiring is under test as much as the module.
@@ -9,8 +8,6 @@ import pytest
 
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
 from dplanner.domain.model import Step
-from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
-from dplanner.modules.canvas.selection import EdgeRef
 from dplanner.modules.step_review.aspect import MODULE_ID as ROUNDS_ID
 from dplanner.modules.step_review.aspect import opened, said
 from dplanner.planning import agent
@@ -21,8 +18,6 @@ from dplanner.planning.review import (
     settings,
     write,
 )
-
-TOGGLE = "links.auto_progress"
 
 
 @pytest.fixture
@@ -112,16 +107,3 @@ def test_the_conversation_follows_the_ledger_written_outside(services, project, 
     assert [row[1] for row in tab.rows()] == ["Trailing whitespace.", "Trimmed."]
     assert tab.empty.isHidden()
     assert "answered round 1" in tab.standing.words()
-
-
-def test_a_link_into_a_review_is_offered_checked_and_greyed(services, project):
-    work, review = by_title(project, "Build the parser"), by_title(project, "Review the parser")
-    SetModuleDataCommand(review.id, MODULE_ID, write(ReviewSettings())).redo(services.document)
-    services.tabs.open("project", project.id)
-    edge = EdgeRef(review.id, "requires", work.id)
-    services.context.set_scope(
-        SCOPE_SELECTION, (ContextNode(selection_uri("edge", edge.entity_id())),)
-    )
-    said = services.actions.spec(TOGGLE).state(services.context.current())
-    assert said.checked is True and not said.enabled
-    assert said.label is not None and "is a review" in said.label

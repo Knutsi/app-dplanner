@@ -18,8 +18,8 @@ paths:
   (`status set`, `agent-state set`, `note add`). **The graph gates launching**: a step
   whose `requires` do not all read done (through `status_for` on the module's Deps, the
   Step statuses tab's seam, where a wait reads done once it is over and a step under
-  review or waiting on its merge does not — unless the link into this step auto-progresses,
-  `progression.outstanding()` being the one answer) gets a confirmation
+  review or waiting on its merge does not — `progression.outstanding()` being the one
+  answer) gets a confirmation
   naming them before a shell opens — the
   person may know the work landed unrecorded, so it asks rather than refuses, **once for
   the whole gesture** whichever of the chosen steps wait.
@@ -31,8 +31,7 @@ paths:
   and say nothing. Past *Settings ▸ Agent profiles*'s **Max agents launched at once** (four by
   default, per user and per machine like the terminal beside it) the count itself is the
   refusal — a lasso is one flick of the wrist, and a deskful of terminals is not what it
-  meant. What the window launches on its own is held to the same number as a *live* cap
-  (below).
+  meant.
   **A launch that opened a shell claims the step is in progress** — `mark_started`, the
   writer half of that same seam, applied off the undo stack the way the launch stamp is
   (`planning/status.py`'s `record_started`), because Ctrl+Z must not file a step as pending while
@@ -40,8 +39,8 @@ paths:
   run that stopped at its third step has claimed two. It is the *Agent profiles ▸ On launch* switch
   beside *Max agents launched at once*, on by default: the agent's own first report is
   minutes away and a step somebody is working on that still reads pending is a lie the
-  plan was never asked to tell. Only Run Agent and its unattended twin `launch_due` make
-  the claim — in the step loop, never in the shared `_launch` — so a conflict handed to an
+  plan was never asked to tell. Only Run Agent and its unattended twin `launch_unattended`
+  make the claim — in the step loop, never in the shared `_launch` — so a conflict handed to an
   agent, a merge of two writers' plan files and not the step's work, claims nothing.
   **The briefing never rides in argv, and the peer is a top-level session.** The
   agent's opening line is `launcher.opening_prompt` — a pointer at `prompt.md`, carrying
@@ -77,49 +76,17 @@ paths:
   reads the same), and `tests/conftest.py`'s `_no_agent_shell` scrubs the markers so the
   suite never depends on being run by an agent. `docs/architecture/agents.md`'s *An agent finishes
   at Ready for review* has the reasoning.
-- **A step that collects is briefed with what it collects, and its sources are told.**
-  `agent_briefing/blocks.py`'s `step_sections` adds *Work you collect* for a step with auto-progress links: each
-  source's key, title, status, branch, PR and worktree — `agent_briefing.worktree.workdir(facts, source)`
-  under the source's run name, said as a path only when the directory is on this machine —
-  then the duty to land that work, the right to `status set <source> done`, and the way to
-  send unready work back (`review start|post|wait <collector> --to <source>`). That is why
-  `step_sections` is handed the repository facts, as the preamble is. Each source's
-  `epilogue` names who collects it and leaves its done to them. The status guard
-  needed nothing: an agent may already finish a step under review.
-- **The window launches what the plan made due, and only a window does.** Due is the one
-  headless derivation `agent_launch/due.py`'s `due_now` (the root only widens
-  *running* with the watched runs): `progression.due` (an agent step, pending, no run, nothing
-  outstanding, and a prerequisite fulfilled *through* an auto-progress link) and
-  `step_review/aspect.py`'s `due_turns` (a conversation's side with the turn, no run, not launched for that
-  turn — `*_turn_launched` holds the stamp that began it, equality not order). The terminal
-  says it (`_status_written` after every status-moving verb, text only; `progression show`'s
-  `due`) and `agent_launch/auto_launch.py` launches it: **level-triggered** — after
-  every change of any origin, the day turning, a run ending (`StepAgentRunDeps.ended`), the
-  watcher settling (`LibraryWatchDeps.settled`) and once at start, over a **0 ms**
-  `Debounced` registered with the service — never on an edge, and never held behind a
-  modal, which a view's settle is; a title or prose edit only forgets that step's refusal. A pass stands down while
-  `changed_underneath()`, asked only once something is due and the **live cap** (*Max
-  agents* against the tracker's live runs) has a slot; re-reads each step before its shell
-  opens; launches through `launch_due`, which asks nothing (no confirmation, no clone, no
-  fallback — a refusal is a status line, remembered until that step, the switch or a
-  profile changes); **records its intent before the spawn** (`intents.py`, beside the lock,
-  forgotten only once a flush succeeded and its step no longer reads due — a leftover is
-  reconciled first: a started shell is claimed, an unstarted one refused and *kept*, so a
-  window built later refuses it too, until a person edits that step — a change made while a
-  pass runs is the pass's own claim, never that answer; and writes the
-  claim at the spawn — in progress whatever *On launch*
-  says, or the round's stamp for a turn — flushing at once. It must run **after** the
-  adoption that woke it (the store mutes dirty forwarding while adopting), so its tests turn
-  immediate mode off and `flush_all()`. The profile is the step's (`preferred_agent`: a
-  review's agent, refused when no profile runs it). **Who launches**: *Agent profiles ▸ When
-  a step becomes due*, per user and machine, **off by default**, and among windows on one
-  library the holder of a `LaunchLock` (`QLockFile` under `config_dir()/auto-launch/`,
-  stale only once its process is gone), built once per session by `new_session` so a
-  reload keeps the hold — none in a test or script unless handed a directory. **Plan mode
-  waits on a person**: `record_launch(plans_first=)` from the harness's `plan_mode` words,
-  `asks_person` for *Waits for you*, and a notice while an agent launched here waits.
-  `docs/architecture/agents.md`'s *Auto-progress is launched by the window* has the reasoning and
-  the race across machines.
+- **An unattended launch asks nobody, and writes its intent before its shell.**
+  `AgentLaunchModule.launch_unattended(step_id)` is Run Agent for one step with every
+  question a person answers taken out — no graph gate, no clone, no prompt fallback; a
+  refusal is a sentence — through the step's own profile (`_profile_for`: a review's agent,
+  refused when no profile runs it). **It records its intent before the spawn**
+  (`intents.py`, under `AgentLaunchDeps.intents`), drops it when no shell opened, claims the
+  step in progress whatever *On launch* says, flushes, and forgets the intent once the claim
+  is on disk. Nothing calls it yet and no intents directory is wired: `dplanner agent run`
+  (S11) is the launch it is kept for, and puts intents beside its run records.
+  `docs/architecture/agents.md`'s *A launch writes its intent before its shell* has the
+  reasoning.
 - **A step names the code location it works in.** With several code rows in a project,
   the agent-instruction entry's `workplace` holds a location id (`aspect.workplace`,
   `with_workplace`; `dplanner agent workplace <step> code:UI|primary`), absent meaning
@@ -334,29 +301,27 @@ paths:
 - **A review is a conversation kept on the step that asks.** `modules/step_review/` holds
   two aspect ids. `step_review` is the settings: agent, lenses and cap, with absence
   meaning the default profile, architecture and security, and three rounds.
-  `review_rounds` is the ledger, on the review or on a collector. Rules:
+  `review_rounds` is the ledger, on the review. Rules:
   - **The subject is the step a review `requires`, read off the graph and never stored.**
     Lint `review.subject` names a review with none or several.
   - **A round holds only texts and stamps.** Its state and whose turn it is are derived
     (`step_review.aspect.turn`), never stored.
-  - **Who a step may talk to is whoever it takes work from review on** (the root's
-    `auto_progress.aspect.auto_progresses`), so a collector sends work upstream with the same verbs and `--to`.
+  - **Who a step may talk to is the step it reviews** (`planning.review.reviews`).
     `approve` and `escalate` are a review's alone.
   - **Every status a `review` verb moves goes through `status_command`**, the writer
     `status set` uses, handed in as the root's `set_status`. A stopped status ends a claim
     exactly as `status set` does.
-  - **The window posts nothing, and reads all of it** — its one write to the ledger is a
-    turn's launch stamp (below): the Review tab is the settings and a
+  - **The window posts nothing, and reads all of it**: the Review tab is the settings and a
     read-only list, and *Step ▸ Review Conversation…* (`review.conversation`; the tab's
     *Open Conversation…* and a row's double-click) opens `conversation_dialog.py`'s dialog — every
     message beside the picked one in full, live on the ledger. It is **enabled by the ledger,
-    never by the aspect** (`rounds(step)`), so a collector's upstream conversation opens
-    too, and the tab and the dialog build their rows with one `message_rows`.
+    never by the aspect** (`rounds(step)`), and the tab and the dialog build their rows
+    with one `message_rows`.
   - **Each side is briefed with the conversation.** A review's `## Instructions` is
     generated (`agent_briefing/instructions.py`) from its aspect and its subject — whom, each lens's
     `Lens.asks` (an id this build does not name is a skill to use), the round protocol and
     the cap — and its own prose rides inside as what to look for. *Work you review* says
-    where the subject's work is (`blocks.py`'s `_source_line`, *Work you collect*'s line), and the run
+    where the subject's work is (`blocks.py`'s `_source_line`, *Work you land*'s line), and the run
     gets no worktree. A step a review `reviews()` is told to set `pending-approval`, `review
     wait`, take and reply, and when to stop waiting; a review's epilogue is its verdicts.
     A conversation still going is a *Review rounds with …* section on both sides, so a

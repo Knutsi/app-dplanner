@@ -53,7 +53,6 @@ As you go, leave notes — the project's record, indexed into the briefing of ev
 - `dplanner note add Widget later '<what>' --step S4` for work you noticed and did not do
 When the work is finished, record it in DPlanner:
 - `dplanner status set S4 ready-for-review` and `dplanner agent-state clear S4` — ready for review, never done: a person or a reviewing agent looks next and sets it done. That is the step's work finished, not the mid-run `plan-for-review` above, which is your plan waiting for a look. If nothing needs reviewing, `dplanner status set S4 done --because '<why>'` keeps the reason as a decision note.
-- S5 collects this step's work: it may start as soon as you set ready-for-review, and takes your branch or PR from there — so push everything and open the PR first. Leave this step's done to it.
 - `dplanner note add Widget handoff '<one line the next worker needs>' --step S4 --file -` with what whoever picks up after you must know — where things are, what is half done, what bit you. Title it as the fact it is; the body carries the detail. Add `--for S12` for a step that must read it in full, `--reach project` if every step should see it regardless; `dplanner note attach Widget <id> <file>` for files.
 If you cannot finish, `dplanner status set S4 blocked` and say why in the handoff note.
 Each of those statuses ends your working claim. If you stop without setting one, end it yourself: `dplanner agent-work end --step S4` — a banner nobody ended is one nobody believes next time.

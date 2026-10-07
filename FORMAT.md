@@ -32,7 +32,6 @@ Four places, and the choice is not stylistic:
 | Per user, per machine (Qt-free) | a working clone DPlanner keeps for a verb that needed the repository here and nobody had checked out — Run Agent's code, a report's destination — under the default clone policy | `core/storage/kept.py` under `config_dir()/checkouts/<name>-<digest of remote>`, one per repository; recorded in the library file's `checkouts` map like any checkout | it is a checkout: commits an agent made there and never pushed are in it and nowhere else, so it is not wiped by the application |
 
 | Per user, per machine (GUI only) | preferences: panel layout, model choices, the agent launch profiles | `framework/user_config.py`'s `get_global` (QSettings) | no |
-| Per user, per machine (GUI only) | which window launches what becomes due: one lock per library, held by the window whose *When a step becomes due* is on | a `QLockFile` at `config_dir()/auto-launch/<library_scope(library path)>.lock` (`agent_launch/auto_launch.py`) — stale only once its process is gone; beside it, `<library_scope>/<run id>.json` per launch still in flight, written before its shell is spawned and removed once its claim is on disk (`agent_launch/intents.py`) | no — it is a process that is running here, now |
 | Per user, per machine, per library | where the user left off: open index folders, open tabs | `framework/user_config.py`'s `get_scoped`, under `library_scope(path)` | no |
 | The OS keychain | credentials, API keys — the LLM keys, a Confluence token per site (`spec_confluence.token:<host>`) | `core/secrets.py` | no, and never on disk |
 
@@ -891,13 +890,9 @@ the other, format 1, a count written as a float. A wait is no work: no worker ta
 has no status, and every tally leaves it out, while the graph treats it as any other step.
 The schedule reads it through the root's `wait_of` as the domain's `Wait`.
 
-**`auto_progress` names the links a step collects its sources' work across**:
-`{"from": ["<step id>", …]}` on the step that waits, format 1. A listed id counts only while
-the step's own `requires` holds it, so an edge verb never rewrites the list and a stale id is
-inert rather than wrong; a paste renames the ids of the copied steps and drops the rest, and
-an entry left naming nothing is removed. Absence is every link plain. It needs no format
-bump for the rule above: an older build carries the entry untouched and reads every link
-as plain.
+**`auto_progress` is retired** (2026-10-07, with no successor; *Retiring a module*). It
+was `{"from": ["<step id>", …]}`, format 1, on a step that waited: the links it took work
+across from review on. A plan may still carry the file, and this build leaves it untouched.
 
 **`branch_cut` makes a step the cut a feature branch starts from**: `{"branch":
 "feature/stacks"}`, format 1 — a name git accepts, since it reaches a script verbatim. A cut
@@ -934,10 +929,10 @@ collector — and a ledger of rounds, never a state: `{"rounds": [{"with": "<ste
 - Every key after `opened` is written when it is said.
 - A round's state and whose turn it is are read off which stamps are present.
 - A key this build does not know is kept when a round is stamped again.
-- `asker_turn_launched` and `party_turn_launched` are the window's, never a verb's: when a
-  side has the turn and its agent has gone, a window launching what becomes due relaunches
-  it and writes *the stamp that began that turn* there — `posted` for the party, `replied`
-  (else `opened`) for the asker — so the turn is due once, for every reader. A turn, not a
+- `asker_turn_launched` and `party_turn_launched` were the window's auto-launch's, never a
+  verb's, and no build writes them since it left (2026-10-07): when a side had the turn and
+  its agent had gone, the window relaunched it and wrote *the stamp that began that turn* there — `posted` for the party, `replied`
+  (else `opened`) for the asker — so the turn was due once, for every reader. A turn, not a
   moment: equal means launched, whatever another machine's clock says.
 - A paste forgets the ledger: a conversation belongs to the original.
 
@@ -1011,7 +1006,7 @@ set` and an agent's launch all record them, and restored by undo with the rest o
 entry. The word is one of `pending`, `in-progress`, `ready-for-review`, `ready-to-merge`,
 `done`, `blocked`; the two in the middle came later **with no format bump**, because a
 build that does not know a word reads it as *unknown* and leaves the entry as it is. Unknown
-holds the step — never due, never launched, listed under Blocked — since reading it as
+holds the step — never ready, never launched, listed under Blocked — since reading it as
 pending would start work another build may already have running. Pending is still absence, but a step set back
 to pending keeps its days: an entry with no `status` key, which reads as pending. A copy
 keeps the status and forgets the days, which were the original's. An older entry has no
@@ -1114,3 +1109,11 @@ again. Three rules they make concrete:
   **string constant and never an import**, since a module may not import another. Do that
   only where the alternative is worse: here it is keeping a second description beside the
   step's own, which is the duplication the format change exists to remove.
+- **A module with no successor leaves its data where it is.** Nothing declares the retired
+  id, so its files are *data nobody declares* (`core/module_data.py`) and round-trip
+  untouched — an older build opening the plan still reads them — and no successor is coupled
+  to a dead module just to delete them. What keeps that safe is that the id is never used
+  again: it leaves `STORED_IDS` for `RETIRED_IDS` in `tests/test_architecture.py`, which no
+  module may declare, since a new module under the old name would adopt files it never
+  wrote. `auto_progress` is the worked example (2026-10-07); a review step's `step_review`
+  and `review_rounds` go the same way.

@@ -186,19 +186,12 @@ CHIP_TONES = {
 class EdgeAccent:
     """How an arrow should look beyond its kind, in the canvas's own vocabulary.
 
-    ``doubled`` draws the line as two rails with chevrons running between them towards
-    the step that waits — work that moves along on its own; ``flowing`` sets the
-    chevrons moving, on the scene's motion clock; ``medallion`` names a glyph the arrow
-    wears in a circle at its middle — the canvas knows the glyph, never what it stands
-    for; ``lane`` is a colour, "#rrggbb", laid as a translucent band *under* the arrow — a
+    ``lane`` is a colour, "#rrggbb", laid as a translucent band *under* the arrow — a
     feature branch the work on it goes onto, which the arrow's own ink, lit and picked and
     faded as it is, never has to carry. The composition root decides which arrow is which,
     the same seam as :class:`NodeAccent`.
     """
 
-    doubled: bool = False
-    flowing: bool = False
-    medallion: str = ""  # "" → none.
     lane: str = ""  # "" → none.
 
 

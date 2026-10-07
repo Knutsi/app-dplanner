@@ -1,12 +1,12 @@
 """``dplanner review …`` — a review step and its conversation, driven from two terminals.
 
-The step that **asks** — a review, or a collector sending work back upstream — opens a round
+The step that **asks** — a review — opens a round
 with ``start`` and says what it found with ``post``; the step that **answers** acknowledges
 with ``take`` and answers with ``reply``; ``wait`` blocks either side until it is its turn.
 A review ends it: ``approve`` finishes the reviewed step and leaves the review ready to
 merge, carrying the reviewed step's PR, and ``escalate`` hands it to a person. Who a step
-may talk to is who it takes work from review on — a review's subject, a collector's
-auto-progress sources — so ``--to`` and ``--from`` default to the only one.
+may talk to is who it takes work from review on — a review's subject (``reviews``) — so
+``--to`` and ``--from`` default to the only one.
 
 Each verb is one command in one run, and each status it moves goes through the same writer
 ``status set`` uses, so a finished step's at-work claim ends exactly as it would there.
@@ -55,6 +55,7 @@ from dplanner.planning.review import (
     is_review,
     lens_words,
     no_review,
+    reviews,
     settings,
     subjects,
     write,
@@ -86,7 +87,6 @@ class _Talk:
 
 def commands(
     *,
-    auto_progresses: Callable[[Step, Step], bool],
     status_for: Callable[[Step], Status | Unknown],
     set_status: SetStatus,
     inherit_refs: Callable[[Step, Step], Command | None],
@@ -96,11 +96,11 @@ def commands(
     harnesses: Sequence[AgentHarness],
 ) -> list[CliCommand]:
     """Every reader here is another module's, handed over by the composition root:
-    ``auto_progresses`` is who a step takes work from review on; ``set_status`` writes a
+    ``set_status`` writes a
     status as ``status set`` does and ends a stopped step's claim; ``inherit_refs`` is the
     command copying one step's GitHub refs onto another; ``note_escalation`` keeps a note
     for a person on the review and answers its id."""
-    talk = _Conversations(auto_progresses, status_for, key_of)
+    talk = _Conversations(status_for, key_of)
 
     def run_set(context: CliContext, args: Namespace) -> int:
         return _set(context, args, works_nobody, harnesses)
@@ -294,11 +294,9 @@ class _Conversations:
 
     def __init__(
         self,
-        auto_progresses: Callable[[Step, Step], bool],
         status_for: Callable[[Step], Status | Unknown],
         key_of: Callable[[Step], str],
     ) -> None:
-        self.auto_progresses = auto_progresses
         self.status_for = status_for
         self.key_of = key_of
 
@@ -310,15 +308,11 @@ class _Conversations:
 
     def parties(self, library: Library, asker: Step) -> list[Step]:
         """The steps ``asker`` takes work from review on: whom it may send findings."""
-        return [
-            source for source in library.requires(asker.id) if self.auto_progresses(asker, source)
-        ]
+        return [source for source in library.requires(asker.id) if reviews(asker, source)]
 
     def askers(self, library: Library, party: Step) -> list[Step]:
         """The steps that take ``party``'s work from review on: who may send it findings."""
-        return [
-            waiter for waiter in library.dependents(party.id) if self.auto_progresses(waiter, party)
-        ]
+        return [waiter for waiter in library.dependents(party.id) if reviews(waiter, party)]
 
     def party(self, context: CliContext, asker: Step, needle: str | None) -> Step:
         """``--to``, or the only step ``asker`` takes work from."""
@@ -337,8 +331,7 @@ class _Conversations:
         if not found:
             raise CliError(
                 f"{self.ref(asker)} takes no step's work from review on — a review talks to "
-                f"the step it waits on (`dplanner step link {self.ref(asker)} <step>`), a "
-                "collector to its auto-progress sources"
+                f"the step it waits on (`dplanner step link {self.ref(asker)} <step>`)"
             )
         raise CliError(f"{self.ref(asker)} talks to {self._keys(found)} — name one with --to")
 

@@ -263,8 +263,8 @@ def due_turns(
     A side a person has finished or blocked is theirs: never due — nor one whose status this
     build cannot read, which ``status_for`` hands in as blocked (``status.held``): readiness
     reads a :class:`~dplanner.planning.status.Status` and nothing else. A conversation's first
-    turn — the asker's, before any round — is not here: a review is due to *start* the way
-    any step is, by what it waits on (``progression.due``).
+    turn — the asker's, before any round — is not here: a review starts the way any step
+    does, once what it waits on is done.
     """
     found = []
     for asker in project.steps:

@@ -475,8 +475,8 @@ is how the Steps lane stopped drawing the origin under every feature. Now: `coll
 
 A doubled arrow first cost 1.5 ms to lay out on every sync, placing each chevron with
 `QPainterPath.percentAtLength` at about 40 µs a call. `follow()` was changed to flatten the
-curve once and walk the polyline (0.2 ms). Now: `graph-model.md`'s *An auto-progress link is
-an aspect on the step that waits*.
+curve once and walk the polyline (0.2 ms). The doubled arrow left with auto-progress on
+2026-10-07 (below).
 
 ## 2026-09-27 — The project's forms left the card stack
 
@@ -555,8 +555,8 @@ Undoing a rename restored the old title over the agent's newer one, and nothing 
 commands now remember what their redo left and refuse otherwise. The first auto-launch
 spawned, claimed in memory and flushed afterwards, so a window that died in between launched
 the step again; `launch_due` now writes an intent before it spawns. Now: `persistence.md`'s
-*Adopting the other writer's changes in place*; `agents.md`'s *Auto-progress is launched by
-the window*.
+*Adopting the other writer's changes in place*; `agents.md`'s *A launch writes its intent
+before its shell*.
 
 ## 2026-10-04 — Effects wait for the save in the window too; intents outlive a refusal
 
@@ -568,7 +568,8 @@ been refused in memory, so a new window launched the step again; an intent now g
 its step no longer reads due. Coalescing merged a value command across another writer's edit,
 so undo restored the older value over theirs; a merge now requires continuity. Now:
 `core.md`'s *A workflow is one function under both surfaces*; `persistence.md`'s *Adopting
-the other writer's changes in place*; `agents.md`'s *Auto-progress is launched by the window*.
+the other writer's changes in place*; `agents.md`'s *A launch writes its intent before its
+shell*.
 
 ## 2026-10-07 — The ledger record becomes the run; at-work is kept beside claims
 
@@ -589,3 +590,22 @@ back to the whole library — so in the 10-04 run `DPLANNER_PROJECT=A dplanner r
 rewrote project B's S26. Now only an id of at least eight characters reaches past the current
 project (S7 of *Playbooks and autonomous work*). Now: `graph-model.md`'s *A key is the
 current project's, an id the library's*.
+
+## 2026-10-07 — Auto-progress and the window's auto-launch were removed
+
+An auto-progress link let a step start once a step it waited on read ready for review, so a
+collector could land three agents' branches and a review could start on its subject; the
+window then launched what that made due, on its own, from one window per library. Playbooks
+replace both (S5 of *Playbooks and autonomous work*): what used to be a second card and a
+flagged arrow is a stage on the one step, and DPlanner never starts the next step itself —
+the coordinator or a person does. Gone with it: the `auto_progress` aspect, its verbs and
+lint, `step add --auto-progress`, the Edge menu's toggle, `progression`'s `due` and `taken`
+(Ready for review is a person's turn whatever waits on it), *Now due*, `project graph`'s
+`==>`, the briefing's *Work you collect*, and the canvas's doubled, flowing and medallion
+arrows, so `EdgeAccent` is a lane alone. Review steps fall back to plain links until S6
+removes them. Kept: the unattended launch's intent and claim, as `launch_unattended`, for
+`dplanner agent run`. The stored `auto_progress.json` is retired with no successor: it is
+left as data nobody declares, and the id is in `RETIRED_IDS`, which no module may declare
+again. A machine's old `config_dir()/auto-launch/` and the `auto_launch` setting are left
+behind, read by nothing. Now: `agents.md`'s *A launch writes its intent before its shell*;
+FORMAT.md's *Retiring a module*.

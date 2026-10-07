@@ -86,10 +86,6 @@ class LibraryWatchDeps:
     # question this module asks another module, and the answer decides only whether the
     # collision is *thrown* at the user or left for them to pick up.
     agent_at_work: Callable[[ProjectId], str] | None = None
-    # Told after every settle and every answer — once the store has taken in what it could,
-    # and even when that changed nothing the model announced (Keep Mine, a project still
-    # unreadable): whoever stood down while the plan was changed underneath looks again.
-    settled: Callable[[], None] = lambda: None
 
 
 class LibraryWatchModule:
@@ -175,7 +171,6 @@ class LibraryWatchModule:
             # it goes quiet raises it — the question is deferred, never dropped.
             self._asked = waiting
             self._ask_soon.start()
-        self._deps.settled()
 
     # -- the question ---------------------------------------------------------------------------
 
@@ -260,7 +255,6 @@ class LibraryWatchModule:
         self._asked = frozenset()
         deps.notices.clear_notice(NOTICE_ID)
         deps.autosave.resume()
-        deps.settled()
 
     def _anchor(self, conflicts: Sequence[Conflict]) -> StepId | None:
         """The step an agent run is tracked on: the first step among the conflicts."""
