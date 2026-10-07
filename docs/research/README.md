@@ -30,3 +30,8 @@ changes, write a new note and link back.
   Codex reviewers in herdr, to a reviewed PR into `main`. A field test of autonomous execution:
   steering counts, bugs found, friction in DPlanner, herdr and Codex, failure modes, and what a
   daemon would need. The effect boundary failed three review rounds, and cross-vendor review earned its cost.
+- [2026-10-07 — Headless agents: questions, plan approval, limits and never getting stuck](2026-10-07-headless-agents/README.md):
+  eleven small live experiments with Claude Code, Codex and opencode run headless. One question
+  door (`dplanner ask`) plus resume works for all three; Claude's native question tool exists
+  only when DPlanner hosts it; plan mode is plan → park → resume; nothing blocks headless but
+  every CLI fails quietly; both vendors publish limit resets, and a session survives a 429.
