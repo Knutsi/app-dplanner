@@ -514,6 +514,7 @@ def _agents(
     from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
     from dplanner.modules.agent_at_work.module import AgentAtWorkDeps, AgentAtWorkModule
     from dplanner.modules.agent_briefing.worktree import mainline
+    from dplanner.modules.agent_launch.launch import read_absolute
     from dplanner.modules.agent_launch.module import AgentLaunchDeps, AgentLaunchModule
     from dplanner.modules.agent_usage.aspect import ledger_dir, step_usage_words
     from dplanner.modules.agent_usage.module import AgentUsageDeps, AgentUsageModule
@@ -529,10 +530,9 @@ def _agents(
 
     services, library, store = root.services, root.library, root.store
 
-    def read_absolute(path: str) -> bytes | None:
-        """Asset bytes by absolute path — module file areas hand those out now."""
-        file = Path(path)
-        return file.read_bytes() if file.is_file() else None
+    def ledger_of(step_id: str) -> Path | None:
+        """Where a step's runs are recorded: its project's ledger directory."""
+        return ledger_dir(store, library.project_of(step_id).id) if library.has(step_id) else None
 
     def reveal_step(step_id: str) -> None:
         """Select a step in its project: ``steps.reveal`` against a context naming it."""
@@ -564,9 +564,7 @@ def _agents(
             harnesses=agent_harnesses(),
             ended=ended,
             # Where each run's ledger record lives.
-            project_dir=lambda step_id: (
-                ledger_dir(store, library.project_of(step_id).id) if library.has(step_id) else None
-            ),
+            project_dir=ledger_of,
         )
     )
     # The ledger's sweep and the Expenditure tab, whose rows look as the Order tab's do.
@@ -657,6 +655,10 @@ def _agents(
             # Manage Agent Profiles… lands on the module's own settings page.
             open_settings=settings.open,
             clock=services.clock,
+            # A run's record is written before its terminal opens; worktrees on a task.
+            project_dir=ledger_of,
+            tasks=services.tasks,
+            notices=services.window,
             flush=services.autosave.saved,
         )
     )
@@ -2762,6 +2764,7 @@ def default_cli_commands(
     from dplanner.domain.workflow import AgentRun, Person
     from dplanner.modules.agent_at_work import cli as at_work_cli
     from dplanner.modules.agent_briefing.worktree import mainline
+    from dplanner.modules.agent_launch import cli as launch_cli
     from dplanner.modules.agent_questions import cli as questions_cli
     from dplanner.modules.agent_supervisor import cli as supervisor_cli
     from dplanner.modules.agent_usage import cli as usage_cli
@@ -2828,6 +2831,7 @@ def default_cli_commands(
         board = at_work_board()
 
     workflow = _status_workflow()
+    plan_branches = lambda lib, step, facts: branch_plan(lib, step, mainline(facts, step))  # noqa: E731
 
     def end_claim(claim: "EndClaim") -> bool:
         return board.end(claim.project, claim.step)
@@ -2898,9 +2902,10 @@ def default_cli_commands(
         *ticket_cli.commands(),
         *description_cli.commands(),
         *docs_cli.commands(kinds=scopes),
-        *agent_cli.commands(
-            roles=default_location_roles(),
-            branch_plan=lambda lib, step, facts: branch_plan(lib, step, mainline(facts, step)),
+        *agent_cli.commands(roles=default_location_roles(), branch_plan=plan_branches),
+        # Run Agent from a terminal: the window's launch workflow, headless or in a terminal.
+        *launch_cli.commands(
+            roles=default_location_roles(), branch_plan=plan_branches, harnesses=agent_harnesses()
         ),
         *agent_state_cli.commands(),
         # A run's usage and its supervisor read the harness that ran it: the window's tuple.

@@ -118,10 +118,11 @@ same vendor in a fresh session when only one CLI is usable here, saying so on th
 
 **A role names a harness and, optionally, a model** — `implementer` and `reviewer` are the two
 the presets use. A role is portable: it says *claude*, never a path or a terminal. At launch a
-role maps to **the first launch profile whose agent command runs that harness**, which is what
-`launch_unattended(step_id, harness=)` already does (`agent_launch/module.py`'s
-`_profile_for`), and a role no profile runs is refused rather than swapped for the default, which may be the very
-agent whose work is reviewed. A headless stage uses only the profile's agent half — no stage
+role maps to **the first launch profile whose agent command runs that harness**, and a role
+no profile runs is refused rather than swapped for the default, which may be the very agent
+whose work is reviewed — the lookup `launch_unattended` made, which left with it in S11; the
+launch itself is `agent_launch/launch.py`'s, handed a `Profile` (*One launch under both
+surfaces* in `agents.md`). A headless stage uses only the profile's agent half — no stage
 opens a terminal. **Whether a role's agent can run here** — installed, a version, signed in — is
 `agent_launch/availability.py`'s `why_not` over the roles' harnesses, read from a short cache
 and never probed on the UI thread, so Run Playbook greys a playbook with the reason, and the
@@ -275,8 +276,8 @@ State stays derived — where a pass stands, the round, the card's phrase — bu
 stored: which pass a record belongs to and why a question was asked are fields, read, never
 reconstructed from ordering. The engine derives whatever is due from the pass's records and
 launches it **once**: a stage attempt is due when its predecessor's verdict says so and no run
-for it exists, and the run file, written before the process spawns (the intent rule
-`launch_unattended` already keeps), is the claim.
+for it exists, and the run file, written before the process spawns (`launch.py`'s rule, *One
+launch under both surfaces* in `agents.md`), is the claim.
 
 ### What of the review rounds ledger survives
 
@@ -315,7 +316,8 @@ its subject read off `requires`); lenses as a step setting — they become the r
 prompt; `review wait`, since no process waits; the agent-written `post`, `approve` and
 `escalate`; and `due_turns`. Auto-progress and the window's auto-launch left in S5, a
 collector's upstream conversations with them, keeping the unattended launch's intent and
-claim as `launch_unattended` for `agent run`.
+claim as `launch_unattended` for `agent run` — which S11 then replaced with the one launch
+both surfaces run (`agents.md`'s *One launch under both surfaces*).
 
 ## Each stage is one headless turn per harness
 

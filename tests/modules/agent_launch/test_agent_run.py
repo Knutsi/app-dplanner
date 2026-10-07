@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from PySide6.QtWidgets import QSpinBox
 from tests.facts import code_row
+from tests.launching import checkout_of, committed
 from tests.platforms import POSIX_MODE_BITS, SH, SYMLINKS
 
 from dplanner.domain.agents import scrubbed_environment
@@ -346,264 +347,14 @@ def test_the_windows_script_reports_the_same_two_files(tmp_path):
     assert "pause" in script
 
 
-def test_a_run_name_isolates_the_run_beside_the_pointer_file(tmp_path):
-    """The worktree lives in .dplanner-worktrees/, never .dplanner/: the latter is the
-    pointer *file* a project kept in a subfolder leaves at the repository root, and the
-    first version's `git worktree add` under it failed on every such project."""
-    script = prepare("p", tmp_path, worktree="s7-build-it", platform="linux").script.read_text()
+@pytest.mark.parametrize("platform", ["linux", "win32"])
+def test_the_script_runs_no_git_and_starts_the_agent_where_it_is_told(tmp_path, platform):
+    """The worktree is prepared before the script exists (``worktree.prepare``), so the
+    script only moves into the directory it is handed — the same for every kind of run."""
     tree = tmp_path / ".dplanner-worktrees" / "s7-build-it"
-    assert f'git worktree add --no-track -b "agent/s7-build-it" "{tree}" "$start"' in script
-    assert f'git worktree add "{tree}" "agent/s7-build-it"' in script  # Reused on the next run.
-    assert "info/exclude" in script  # The worktree dir never pollutes git status.
-    assert f'cd "{tree}"' in script
-    assert "git worktree prune" in script
-
-
-def test_no_run_name_means_no_git_lines(tmp_path):
-    assert "git worktree add" not in prepare("p", tmp_path, platform="linux").script.read_text()
-
-
-@pytest.mark.parametrize("platform", ["linux", "win32"])
-def test_a_new_branch_starts_from_the_remote_never_the_checkout(tmp_path, platform):
-    """The script fetches and starts the branch from the remote's default — looked up, since
-    nothing here knows it — so a checkout left on another branch is nobody's base."""
-    script = prepare("p", tmp_path, worktree="s7-x", platform=platform).script.read_text()
-    assert "git fetch --quiet origin" in script
-    assert "symbolic-ref --quiet --short refs/remotes/origin/HEAD" in script
-    assert "gh-merge-base" not in script  # No base named: gh's default is the right one.
-
-
-@pytest.mark.parametrize("platform", ["linux", "win32"])
-def test_a_plan_names_the_start_the_base_and_the_branch_to_cut(tmp_path, platform):
-    """A member of a stretch: its own branch, started from the stretch's with no upstream,
-    its PR held to the stretch's branch, and the branch cut on the remote when missing."""
-    plan = BranchPlan(
-        start="origin/feature/stacks",
-        create="feature/stacks",
-        create_from="origin/main",
-        pr_base="feature/stacks",
-    )
-    files = prepare("p", tmp_path, worktree="s7-x", platform=platform, branches=plan)
-    script = files.script.read_text()
-    assert "start=origin/feature/stacks" in script.replace('start="', "start=")
-    assert 'origin "origin/main:refs/heads/feature/stacks"' in script
-    assert "--no-track" in script and "--track" not in script.replace("--no-track", "")
-    assert 'git config "branch.agent/s7-x.gh-merge-base" "feature/stacks"' in script
-    assert "symbolic-ref" not in script  # The plan named the start; nothing is looked up.
-
-
-def test_a_landing_works_on_the_feature_branch_and_tracks_it(tmp_path):
-    plan = BranchPlan(work_branch="feature/stacks", start="origin/feature/stacks", pr_base="main")
-    script = prepare("p", tmp_path, worktree="s9-land", platform="linux", branches=plan)
-    text = script.script.read_text()
-    tree = tmp_path / ".dplanner-worktrees" / "s9-land"
-    assert f'git worktree add --track -b "feature/stacks" "{tree}" "$start"' in text
-    assert "agent/s9-land" not in text
-
-
-def test_a_branch_git_would_refuse_never_reaches_a_script(tmp_path):
-    with pytest.raises(ValueError, match="not a branch"):
-        prepare("p", tmp_path, worktree="s7-x", branches=BranchPlan(pr_base='x"; rm -rf ~'))
-
-
-def _git(repo, *args):
-    import subprocess
-
-    return subprocess.run(
-        ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
-    ).stdout.strip()
-
-
-@pytest.fixture
-def cloned_repo(tmp_path):
-    """A checkout of a bare remote with one commit on main — origin/HEAD set, as a clone
-    has it — left on a branch of its own that the remote has never seen."""
-    import subprocess
-
-    remote = tmp_path / "origin.git"
-    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(remote)], check=True)
-    seed = tmp_path / "seed"
-    subprocess.run(["git", "init", "-q", "-b", "main", str(seed)], check=True)
-    _git(seed, "config", "user.email", "t@example.com")
-    _git(seed, "config", "user.name", "t")
-    _git(seed, "commit", "-q", "--allow-empty", "-m", "on main")
-    _git(seed, "push", "-q", str(remote), "main")
-    repo = tmp_path / "repo"
-    subprocess.run(["git", "clone", "-q", str(remote), str(repo)], check=True)
-    _git(repo, "config", "user.email", "t@example.com")
-    _git(repo, "config", "user.name", "t")
-    _git(repo, "checkout", "-q", "-b", "elsewhere")
-    _git(repo, "commit", "-q", "--allow-empty", "-m", "on elsewhere")
-    return repo
-
-
-# What the agent reports: the commit it started from and the branch it tracks, if any.
-WHERE = (
-    "sh -c 'git log -1 --format=%s; git rev-parse --abbrev-ref @{u} || echo untracked' # {prompt}"
-)
-
-
-def _prepared(repo, run_dir, name, plan=DEFAULT_BRANCHES):
-    run_dir.mkdir()
-    return prepare(
-        "p",
-        repo,
-        agent_command=WHERE,
-        worktree=name,
-        platform="linux",
-        directory=run_dir,
-        branches=plan,
-    )
-
-
-@SH
-def test_a_fresh_worktree_starts_at_the_remotes_default_branch(cloned_repo, tmp_path):
-    done = _run_script(_prepared(cloned_repo, tmp_path / "run", "s1-x"))
-    assert done.returncode == 0, done.stdout + done.stderr
-    assert "on main" in done.stdout and "on elsewhere" not in done.stdout
-    assert "untracked" in done.stdout
-
-
-@SH
-def test_the_first_run_in_a_stretch_cuts_its_branch_and_starts_from_it(cloned_repo, tmp_path):
-    plan = BranchPlan(
-        start="origin/feature/x",
-        create="feature/x",
-        create_from="origin/main",
-        pr_base="feature/x",
-    )
-    done = _run_script(_prepared(cloned_repo, tmp_path / "run", "s2-x", plan))
-    assert done.returncode == 0, done.stdout + done.stderr
-    assert "on main" in done.stdout and "untracked" in done.stdout
-    assert _git(tmp_path / "origin.git", "branch", "--list", "feature/x")
-    assert _git(cloned_repo, "config", "branch.agent/s2-x.gh-merge-base") == "feature/x"
-    assert _git(cloned_repo, "branch", "--show-current") == "elsewhere"  # Never switched.
-
-
-@SH
-def test_a_cut_from_the_remotes_default_finds_it_on_a_checkout_that_was_never_told(
-    cloned_repo, tmp_path
-):
-    """A checkout made by init and remote-add has no origin/HEAD: the script asks the
-    remote which branch is its default before it pushes from it."""
-    from dplanner.planning.branches import DEFAULT_START
-
-    _git(cloned_repo, "remote", "set-head", "origin", "-d")
-    plan = BranchPlan(
-        start="origin/feature/y",
-        create="feature/y",
-        create_from=DEFAULT_START,
-        pr_base="feature/y",
-    )
-    done = _run_script(_prepared(cloned_repo, tmp_path / "run", "s5-x", plan))
-    assert done.returncode == 0, done.stdout + done.stderr
-    assert "on main" in done.stdout
-    assert _git(tmp_path / "origin.git", "branch", "--list", "feature/y")
-
-
-@SH
-def test_a_landing_checks_out_the_feature_branch_tracking_it(cloned_repo, tmp_path):
-    _git(cloned_repo, "push", "-q", "origin", "origin/main:refs/heads/feature/x")
-    plan = BranchPlan(work_branch="feature/x", start="origin/feature/x", pr_base="main")
-    done = _run_script(_prepared(cloned_repo, tmp_path / "run", "s3-land", plan))
-    assert done.returncode == 0, done.stdout + done.stderr
-    assert "origin/feature/x" in done.stdout
-
-
-@SH
-def test_a_branch_gone_from_the_remote_is_never_cut_again(cloned_repo, tmp_path):
-    """No ``create``: the stretch has already run, so a missing branch was deleted — landed,
-    most likely — and starting it afresh from main would put members' work nowhere."""
-    plan = BranchPlan(start="origin/feature/gone", pr_base="feature/gone")
-    files = _prepared(cloned_repo, tmp_path / "run", "s4-x", plan)
-    done = _run_script(files)
-    assert done.returncode == 1
-    assert "There is no origin/feature/gone" in done.stdout
-    assert files.exit_file.read_text().strip() == "1"
-
-
-@pytest.fixture
-def pointed_repo(tmp_path):
-    """A repository whose plan sits in a subfolder — so the root carries the `.dplanner`
-    pointer *file* the old worktree path collided with."""
-    import subprocess
-
-    from dplanner.core.storage.locations import init_repo
-    from dplanner.domain.seed import seed_project
-
-    repo = init_repo(tmp_path / "repo")
-    seed_project(repo / "planning", "Discovery")
-    assert (repo / ".dplanner").is_file()
-    git = ["git", "-C", str(repo)]
-    subprocess.run([*git, "config", "user.email", "t@example.com"], check=True)
-    subprocess.run([*git, "config", "user.name", "t"], check=True)
-    subprocess.run([*git, "add", "-A"], check=True)
-    subprocess.run([*git, "commit", "-qm", "init"], check=True)
-    return repo
-
-
-def _run_script(files):
-    import subprocess
-
-    return subprocess.run(
-        ["sh", str(files.script)], capture_output=True, text=True, stdin=subprocess.DEVNULL
-    )
-
-
-@SH
-def test_the_script_puts_the_agent_in_its_worktree_on_its_branch(pointed_repo, tmp_path):
-    """End to end, in a real repository with the pointer file: the worktree is created on
-    the first run, reused on the second, and the agent starts inside it on its branch."""
-    run_dir = tmp_path / "run"
-    run_dir.mkdir()
-    files = prepare(
-        "p",
-        pointed_repo,
-        agent_command="sh -c 'pwd; git branch --show-current' # {prompt}",
-        worktree="s1-discovery",
-        platform="linux",
-        directory=run_dir,
-    )
-    for _ in range(2):
-        done = _run_script(files)
-        assert done.returncode == 0, done.stdout + done.stderr
-        assert f"{pointed_repo}/.dplanner-worktrees/s1-discovery\nagent/s1-discovery" in done.stdout
-        assert files.exit_file.read_text().strip() == "0"
-    assert (pointed_repo / ".dplanner-worktrees" / "s1-discovery" / ".git").is_file()
-    assert "/.dplanner-worktrees/" in (pointed_repo / ".git" / "info" / "exclude").read_text()
-
-
-@SH
-def test_a_worktree_that_cannot_be_prepared_stops_the_run(pointed_repo, tmp_path):
-    """Never the main checkout by accident: git's refusal ends the run with a failed
-    exit, which the window reports, instead of carrying on where the plan is."""
-    (pointed_repo / ".dplanner-worktrees").mkdir()
-    (pointed_repo / ".dplanner-worktrees" / "s2-stale").write_text("in the way")
-    (tmp_path / "run").mkdir()
-    files = prepare(
-        "p",
-        pointed_repo,
-        agent_command="sh -c 'echo RAN' # {prompt}",
-        worktree="s2-stale",
-        platform="linux",
-        directory=tmp_path / "run",
-    )
-    done = _run_script(files)
-    assert done.returncode == 1
-    assert "RAN" not in done.stdout
-    assert "Could not prepare the worktree" in done.stdout
-    assert files.exit_file.read_text().strip() == "1"
-
-
-def test_a_run_name_is_the_key_the_ticket_and_the_slug_made_ref_safe():
-    from dplanner.modules.agent_briefing.worktree import ref_safe, run_name
-
-    assert run_name("F7", "PROJ-12", "Build the modal") == "f7-PROJ-12-build-the-modal"
-    assert run_name("S3", "", "Wire it (v2)!") == "s3-wire-it-v2"
-    assert run_name("", "", "") == "step"
-    assert ref_safe("a..b//c ~^:?*[\\") == "a-b-c"
-    assert ref_safe("-.lead and trail.-") == "lead-and-trail"
-    assert len(run_name("S1", "", "x" * 200)) <= 60
+    script = prepare("p", tree, platform=platform).script.read_text()
+    assert "git " not in script
+    assert str(tree) in script
 
 
 def test_a_command_without_the_placeholder_still_gets_the_prompt(tmp_path):
@@ -804,7 +555,8 @@ def test_picking_a_terminal_prefills_its_command(app):
     terminals, marked when not installed, and Automatic is the empty template."""
     from PySide6.QtWidgets import QComboBox, QLineEdit
 
-    from dplanner.modules.agent_launch.settings_page import build_page, launch_command
+    from dplanner.modules.agent_launch.profiles import launch_command
+    from dplanner.modules.agent_launch.settings_page import build_page
 
     page = build_page(None, platform="darwin")
     combo = page.findChild(QComboBox, "AgentTerminalCombo")
@@ -824,7 +576,8 @@ def test_picking_a_terminal_prefills_its_command(app):
 def test_picking_a_preset_prefills_the_command(app):
     from PySide6.QtWidgets import QComboBox, QLineEdit
 
-    from dplanner.modules.agent_launch.settings_page import agent_command, build_page
+    from dplanner.modules.agent_launch.profiles import agent_command
+    from dplanner.modules.agent_launch.settings_page import build_page
 
     page = build_page(None, harnesses=HARNESSES)
     combo = page.findChild(QComboBox, "AgentPresetCombo")
@@ -844,11 +597,9 @@ def test_a_preset_text_an_earlier_version_shipped_is_still_that_preset(app, tmp_
     the session id and the directory, never resumable. It is the preset."""
     from PySide6.QtWidgets import QComboBox
 
-    from dplanner.framework.user_config import set_global
     from dplanner.modules.agent_launch.launcher import current_command, resume_command
-    from dplanner.modules.agent_launch.profiles import AGENT_COMMAND_KEY
-    from dplanner.modules.agent_launch.settings_page import agent_command, build_page
-    from dplanner.planning.agent import MODULE_ID
+    from dplanner.modules.agent_launch.profiles import Profile, agent_command, write_profiles
+    from dplanner.modules.agent_launch.settings_page import build_page
 
     claude = HARNESSES[0]
     assert claude.superseded
@@ -860,8 +611,7 @@ def test_a_preset_text_an_earlier_version_shipped_is_still_that_preset(app, tmp_
     old = "claude --permission-mode plan {prompt}"
     script = prepare("p", tmp_path, agent_command=old, platform="linux").script.read_text()
     assert "--add-dir" in script and "--session-id" in script
-    # The single setting profiles replaced is read as the default profile.
-    set_global(MODULE_ID, AGENT_COMMAND_KEY, old)
+    write_profiles([Profile("Mine", old)])
     assert agent_command(HARNESSES) == claude.command
     page = build_page(None, harnesses=HARNESSES)
     combo = page.findChild(QComboBox, "AgentPresetCombo")
@@ -1140,7 +890,7 @@ def test_each_projects_own_repository_root_is_the_workdir(
     from dplanner.domain.model import Step
     from dplanner.domain.seed import seed_project
 
-    second_repo = init_repo(tmp_path / "second")
+    second_repo = committed(init_repo(tmp_path / "second"))
     directory = seed_project(second_repo, "Satellite")
     satellite = services.repo.attach(directory)
     services.document.add_child(services.document.id, satellite)
@@ -1154,7 +904,7 @@ def test_each_projects_own_repository_root_is_the_workdir(
     monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
     services.actions.run("agent.run", services.context.current())
     ((_command, cwd),) = calls
-    assert cwd == second_repo
+    assert checkout_of(cwd) == second_repo
 
 
 def test_a_separated_plans_agent_runs_in_the_code_checkout(services, step, tmp_path, monkeypatch):
@@ -1163,7 +913,7 @@ def test_a_separated_plans_agent_runs_in_the_code_checkout(services, step, tmp_p
     from dplanner.core.storage.locations import init_repo
     from dplanner.domain.commands import SetFieldCommand
 
-    code = init_repo(tmp_path / "widget")
+    code = committed(init_repo(tmp_path / "widget"))
     project = services.document.project_of(step.id)
     services.undo.push(
         SetFieldCommand(project.id, "locations", code_row("https://github.com/acme/widget"))
@@ -1177,7 +927,7 @@ def test_a_separated_plans_agent_runs_in_the_code_checkout(services, step, tmp_p
     monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
     services.actions.run("agent.run", services.context.current())
     ((_command, cwd),) = calls
-    assert cwd == code
+    assert checkout_of(cwd) == code
 
 
 def test_a_code_repository_not_checked_out_here_is_cloned_before_the_agent(
@@ -1204,7 +954,7 @@ def test_a_code_repository_not_checked_out_here_is_cloned_before_the_agent(
     assert state.label == "Run &Agent… — clones acme/widget first"
 
     asked: list[list[str]] = []
-    kept = init_repo(tmp_path / "config" / "checkouts" / "widget-0123")
+    kept = committed(init_repo(tmp_path / "config" / "checkouts" / "widget-0123"))
 
     def ensure(repositories, done):
         asked.append(list(repositories))
@@ -1221,7 +971,7 @@ def test_a_code_repository_not_checked_out_here_is_cloned_before_the_agent(
     services.actions.run("agent.run", services.context.current())
     assert asked == [["https://github.com/acme/widget"]]
     ((_command, cwd),) = calls
-    assert cwd == kept and refreshed
+    assert checkout_of(cwd) == kept and refreshed
     assert services.actions.spec("agent.run").state(services.context.current()).label is None
 
     # A clone that fails launches nothing and says so.
@@ -1436,7 +1186,7 @@ def test_running_spawns_a_terminal_in_the_projects_repo_root(
     services.actions.run("agent.run", services.context.current())
     ((command, cwd),) = calls
     assert command[0] == "fake-term"
-    assert cwd == library_repo
+    assert cwd == library_repo / ".dplanner-worktrees" / "s1-deploy"
 
 
 def test_a_successful_launch_stamps_the_run_state(services, step, monkeypatch):
@@ -1740,7 +1490,7 @@ def test_a_selection_spanning_two_projects_opens_each_shell_in_its_own_repositor
     from dplanner.domain.seed import seed_project
 
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
-    second_repo = init_repo(tmp_path / "second")
+    second_repo = committed(init_repo(tmp_path / "second"))
     satellite = services.repo.attach(seed_project(second_repo, "Satellite"))
     services.document.add_child(services.document.id, satellite)
     select_all(services, step, briefed(services, satellite, "Wire the antenna"))
@@ -1750,7 +1500,7 @@ def test_a_selection_spanning_two_projects_opens_each_shell_in_its_own_repositor
     monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: calls.append(cwd))
     monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
     services.actions.run("agent.run", services.context.current())
-    assert calls == [library_repo, second_repo]
+    assert [checkout_of(cwd) for cwd in calls] == [library_repo, second_repo]
 
 
 def test_one_box_asks_about_every_chosen_step_that_waits(services, step, monkeypatch):
@@ -1812,8 +1562,11 @@ def test_step_add_no_worktree_marks_the_step_and_opts_it_out(cli):
     assert shown["agent"] is True and shown["worktree"] is False
 
 
-def test_the_run_uses_a_worktree_only_when_the_step_says_so(services, step, monkeypatch):
-    """The launcher is handed the run name — key, ticket, slug — or nothing at all."""
+def test_the_run_uses_a_worktree_only_when_the_step_says_so(
+    services, step, library_repo, monkeypatch
+):
+    """The agent works in the worktree named for the run — key, ticket, slug — or in the
+    checkout itself."""
     from dplanner.domain.commands import SetModuleDataCommand
     from dplanner.modules.step_ticket.aspect import MODULE_ID as TICKET_ID
     from dplanner.modules.step_ticket.aspect import Ticket
@@ -1825,20 +1578,21 @@ def test_the_run_uses_a_worktree_only_when_the_step_says_so(services, step, monk
     select(services, step)
     monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: None)
     monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
-    seen: list[str] = []
+    seen: list[Path] = []
     real_prepare = launcher.prepare
 
-    def capture(*args, **kwargs):
-        seen.append(kwargs["worktree"])
-        return real_prepare(*args, **kwargs)
+    def capture(text, workdir, **kwargs):
+        seen.append(workdir)
+        return real_prepare(text, workdir, **kwargs)
 
     monkeypatch.setattr(launcher, "prepare", capture)
     services.actions.run("agent.run", services.context.current())
-    assert seen == ["s1-PROJ-9-deploy"]
+    tree = library_repo / ".dplanner-worktrees" / "s1-PROJ-9-deploy"
+    assert seen == [tree] and (tree / ".git").is_file()
 
     services.undo.push(SetModuleDataCommand(step.id, MODULE_ID, write_state(True, worktree=False)))
     services.actions.run("agent.run", services.context.current())
-    assert seen == ["s1-PROJ-9-deploy", ""]
+    assert seen == [tree, library_repo]
 
 
 def test_the_agent_tab_switches_the_worktree_through_the_undo_stack(services, step):
@@ -2323,7 +2077,7 @@ def test_a_step_works_in_the_code_location_it_names_else_the_primary(
     from dplanner.domain.locations import Location
     from dplanner.planning.agent import MODULE_ID, with_workplace
 
-    widget, ui = init_repo(tmp_path / "widget"), init_repo(tmp_path / "ui")
+    widget, ui = (committed(init_repo(tmp_path / name)) for name in ("widget", "ui"))
     project = services.document.project_of(step.id)
     rows = (
         Location("l1", "code", "https://github.com/acme/widget"),
@@ -2338,7 +2092,7 @@ def test_a_step_works_in_the_code_location_it_names_else_the_primary(
 
     select(services, step)
     services.actions.run("agent.run", services.context.current())
-    assert calls[-1][1] == widget  # The primary.
+    assert checkout_of(calls[-1][1]) == widget  # The primary.
 
     services.undo.push(SetModuleDataCommand(step.id, MODULE_ID, with_workplace(step, "l2")))
     select(services, step)
@@ -2347,12 +2101,12 @@ def test_a_step_works_in_the_code_location_it_names_else_the_primary(
     services.repo.set_checkout("https://github.com/acme/ui", ui)
     select(services, step)
     services.actions.run("agent.run", services.context.current())
-    assert calls[-1][1] == ui
+    assert checkout_of(calls[-1][1]) == ui
 
     services.undo.push(SetFieldCommand(project.id, "locations", rows[:1]))
     select(services, step)
     services.actions.run("agent.run", services.context.current())
-    assert calls[-1][1] == widget  # The named row is gone: the primary again.
+    assert checkout_of(calls[-1][1]) == widget  # The named row is gone: the primary again.
 
 
 def test_agent_workplace_names_a_code_location_from_the_terminal(cli_stdin):

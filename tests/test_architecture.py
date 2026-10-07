@@ -86,7 +86,7 @@ HEADLESS_ROLES = (
 # and a listed path that no longer exists fails the suite rather than silently leaving the rule.
 HEADLESS_FILES: dict[str, tuple[str, ...]] = {
     "agent_briefing": ("prompt.py",),
-    "agent_launch": ("availability.py", "intents.py", "launcher.py"),
+    "agent_launch": ("availability.py", "launch.py", "launcher.py", "profiles.py"),
     # Answering a question and resuming its run: the `question answer` verb and the card.
     "agent_questions": ("inbox.py",),
     # Reads a run's usage back into the ledger: the wrapper script's `dplanner` call.

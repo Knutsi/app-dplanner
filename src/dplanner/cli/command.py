@@ -46,7 +46,9 @@ class CliContext:
     claim — once everything it changed has been written: ``open_library`` runs each after a
     successful flush and none after a failed one, so a run that wrote nothing has released
     nothing. A step that reports what it did reports from there, so success is said only
-    once it is true.
+    once it is true. ``unwritten`` is its mirror: what a run that wrote nothing — the verb
+    raised, or the flush was refused — must take back of what it did outside the plan
+    beforehand, such as a run record written ahead of the claim it waited on.
     """
 
     out: TextIO
@@ -57,6 +59,7 @@ class CliContext:
     marks: set[DirtyMark] = field(default_factory=set)
     clock: Clock = field(default_factory=Clock)
     after_flush: list[Callable[[], None]] = field(default_factory=list)
+    unwritten: list[Callable[[], None]] = field(default_factory=list)
 
     @property
     def library(self) -> Library:

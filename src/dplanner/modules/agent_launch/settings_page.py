@@ -73,7 +73,9 @@ from dplanner.modules.agent_launch.launcher import (
 from dplanner.modules.agent_launch.profiles import (
     Profile,
     add_profiles,
-    default_profile,
+    agent_command,
+    launch_command,
+    problem,
     read_profiles,
     suggested_name,
     unique_name,
@@ -97,18 +99,6 @@ DEFAULT_MAX_AGENTS = 4
 # The ceiling the field offers. Not a judgement about hardware — a spin box needs a range,
 # and a number typed past this one is far likelier a slip than an intention.
 MAX_AGENTS_CEILING = 20
-
-
-def agent_command(harnesses: tuple[AgentHarness, ...], profile: Profile | None = None) -> str:
-    """The profile's agent command, read through the harnesses: a text an earlier version
-    shipped for a harness is that harness, so the dropdown shows it and the wrapper runs
-    its current command. The default profile's when none is given."""
-    return current_command((profile or default_profile()).agent_command, harnesses)
-
-
-def launch_command(profile: Profile | None = None) -> str:
-    """The profile's terminal template; "" means Automatic — the first installed preset."""
-    return (profile or default_profile()).launch_command
 
 
 def max_agents() -> int:
@@ -434,7 +424,11 @@ def build_page(
         terminal_edit,
     )
     editor.addStretch(1)
-    block(layout, captioned("Profiles", page, PROFILES_HINT), columns_host)
+    # A profiles file that cannot be read is never written over: the list is shown read-only
+    # with the reason where its hint would be, until somebody fixes or removes the file.
+    unreadable = problem()
+    columns_host.setEnabled(not unreadable)
+    block(layout, captioned("Profiles", page, unreadable or PROFILES_HINT), columns_host)
 
     limit_row = QWidget(page)
     limit_layout = QHBoxLayout(limit_row)

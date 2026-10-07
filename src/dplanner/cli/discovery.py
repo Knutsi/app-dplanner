@@ -15,7 +15,7 @@ loss that shows up months later, in a project nobody can reconstruct.
 import json
 import os
 from collections.abc import Callable, Iterator, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import TextIO
 
@@ -267,18 +267,30 @@ def open_library(
     migrate_module_data(store, formats, library)
     migrate_shelved(store, formats)
     try:
-        yield context
         try:
+            yield context
             store.flush(context.marks)
         except StaleWorkspaceError as error:
             # Somebody else wrote to the same folder while the verb ran — another CLI run,
             # or a window that autosaved. Refusing is what makes a second lock unnecessary:
             # the loser is told, nothing is overwritten, and running again picks up the
             # change.
+            _unwind(context.unwritten)
             raise CliError(f"{error} — nothing was written; run this again") from error
+        except BaseException:
+            _unwind(context.unwritten)
+            raise
         _settle(context.after_flush)
     finally:
         store.close()
+
+
+def _unwind(owed: Sequence[Callable[[], None]]) -> None:
+    """Take back what a run that wrote nothing did beforehand, every one of them and the
+    last first, without hiding why the run failed."""
+    for step in reversed(owed):
+        with suppress(Exception):
+            step()
 
 
 def _settle(owed: Sequence[Callable[[], None]]) -> None:
