@@ -491,7 +491,7 @@ A review run carries its `verdict`, and the fix run after it what it `declined`:
   | `asked` | it asked through `dplanner question ask`, or ended on a question in prose; `question` names the record | parks until the question is answered |
   | `denied` | a permission was denied or auto-rejected | parks on a `permission` question |
   | `limit` | the account ran out; `resets` is when it comes back | parks on a `limit` question |
-  | `failed` | a crash, a hang, a runaway, a dead login; `why` says which — `headless.Ending.why`'s words, or the supervisor's own `hang`, `runaway`, `timeout` and `lost` | retries with backoff, then parks on a `blocked` question; a runaway and a failure no retry mends park at once |
+  | `failed` | a crash, a hang, a runaway, a dead login; `why` says which — `headless.Ending.why`'s words, or the supervisor's own `hang`, `runaway`, `timeout`, `lost` and `lost-at-spawn` | retries with backoff, then parks on a `blocked` question; a runaway, a `lost-at-spawn` and a failure no retry mends park at once |
   | `stopped` | a person or the coordinator ended it, or its step went away | is over, and is never retried |
 
   A turn with no `end` is running, or was lost with its machine — which only that machine
@@ -598,8 +598,10 @@ git never conflicts:
   and check again before the turn begins. The resumed turn records the answer's id
   (`consumed` on the turn). *As built, one machine:* the check is made under the run's lock
   and the question's, re-reading both; one ledger write records the resumed turn with the
-  answer it consumes before the question is marked `consumed`, and a turn found holding an
-  answer with no process is started, never consumed again. The fetch and the push are not
+  answer it consumes before the question is marked `consumed`. Just before its process is
+  started, that turn gains `spawning` (when); a turn found holding an answer with no pid is
+  started only if it has none — one with `spawning` may have acted on the answer, so it ends
+  `failed`, `why: lost-at-spawn`, and the run parks on a `blocked` question naming the answer. The fetch and the push are not
   written yet. The run's supervisor delivers an answer: it looks for one whenever it starts
   and after it lets go of a parked run.
 - **Who answers is read from the caller's shell**: inside a run or an agent's shell it is

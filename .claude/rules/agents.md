@@ -335,11 +335,14 @@ paths:
   starts and again after letting go of a parked run — and **claims** the resume under the
   run's lock and the question's, re-reading both (this machine's, not fenced, not over,
   parked on that question), writing the next turn with the answer before marking it
-  consumed; a turn holding an answer and no pid is started, never re-consumed. **Who answers
+  consumed; a turn holding an answer and no pid is started only if it was never marked
+  `spawning` (and after the same locked check) — marked, it ends `lost-at-spawn` and parks
+  on a `blocked` card, never applying an answer twice. **Who answers
   is the caller's shell**: inside a run or an agent's shell, the coordinator, never its own
-  run's question — no flag says otherwise. An automatic retry withdraws the failed turn's
-  open questions; a start mends a park with no card and an ended run's standing cards; a
-  resume that is no answer and a run's end withdraw what the run had standing. The
+  run's question — no flag says otherwise. Going on by itself or parking again withdraws
+  every earlier card not consumed; a start mends a park with no card and an ended run's
+  standing cards; a resume that is no answer and a run's end withdraw what the run had
+  standing. The
   coordinator may not answer a `person` gate (`may_answer`); `question escalate` passes an
   open question to a person. No warm hosting of Claude's own question tools yet. `docs/architecture/agents.md`'s *A question
   is a file, and the inbox is the directory* has the reasoning.

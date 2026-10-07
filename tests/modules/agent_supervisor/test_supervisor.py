@@ -285,27 +285,65 @@ def test_an_answer_given_while_the_supervisor_lets_go_is_still_delivered(rig, mo
     assert [turn.prompt for turn in rig.record.turns] == ["launch", "answer"]
 
 
-def test_a_resume_claimed_but_never_started_is_started_and_never_consumed_twice(rig, monkeypatch):
-    """Finding 5: the claim is on disk before the process is, and recovery spawns it."""
+def test_a_resume_that_may_have_started_is_never_started_again(rig, monkeypatch):
+    """Round 2: lost between the spawn and the pid's write, the agent may have acted on the
+    answer — so recovery parks it for a person instead of starting the answer twice."""
     rig.play({"lines": recorded("claude-asked-prose-1")}, {"lines": [result()]})
     rig.supervise()
     question = _answer_the_park(rig)
+    marked: list[str] = []
 
     def crash(*_: object) -> None:
+        marked.append(rig.record.turns[-1].spawning)
         raise SystemExit("the machine went down")
 
     monkeypatch.setattr(supervisor, "_spawn", crash)
     with pytest.raises(SystemExit):
         rig.supervise(prompt="answer")
+    assert marked and marked[0]  # The marker was on disk before the process could start.
     claimed = rig.record.turns[-1]
     assert (claimed.n, claimed.prompt, claimed.pid, claimed.end) == (2, "answer", 0, "")
-    assert stored(rig.plan, question.id).state == "consumed"
 
     monkeypatch.undo()
+    started = len(rig.specs)
+    said = rig.supervise()
+    assert "lost-at-spawn" in said and len(rig.specs) == started  # No second start.
+    assert rig.ends()[-1] == ("failed", "lost-at-spawn") and rig.record.parked
+    card = stored(rig.plan, rig.record.turns[-1].question)
+    assert card.kind == "blocked" and question.short in card.text
+    assert stored(rig.plan, question.id).consumed["turn"] == 2
+
+
+def _claimed_but_never_spawned(rig: Rig) -> Question:
+    """A run whose supervisor claimed a resume on an answer and died before its marker."""
+    rig.play({"lines": recorded("claude-asked-prose-1")}, {"lines": [result()]})
+    rig.supervise()
+    question = _answer_the_park(rig)
+    claimed = Turn(
+        n=2,
+        prompt="answer",
+        started="2026-10-07T11:00:00+00:00",
+        consumed={"question": question.id, "answer": question.answer["id"]},
+    )
+    ledger.write(rig.plan, rig.record.with_turns((*rig.record.turns, claimed)))
+    return question
+
+
+def test_a_resume_claimed_but_never_about_to_start_is_started_once(rig):
+    question = _claimed_but_never_spawned(rig)
     assert rig.supervise() == f"run {RUN} is done"
     assert [turn.n for turn in rig.record.turns] == [1, 2]
     assert stored(rig.plan, question.id).consumed["turn"] == 2
     assert "Keep both" in rig.specs[-1].prompt
+
+
+def test_recovering_a_claim_rereads_the_run_under_its_lock(rig):
+    """Round 2, finding 6: recovery takes the claim's own locked check."""
+    _claimed_but_never_spawned(rig)
+    ledger.write(rig.plan, replace(rig.record, machine="elsewhere", host="knut-laptop"))
+    with pytest.raises(RefusedError, match="knut-laptop launched it"):
+        rig.supervise()
+    assert len(rig.specs) == 1  # Only the first turn ever started.
 
 
 def test_the_claim_rereads_the_run_under_its_locks(rig, monkeypatch):
@@ -339,6 +377,23 @@ def test_an_automatic_retry_withdraws_what_the_failed_turn_asked(rig):
     assert rig.ends() == [("failed", "hang"), ("done", "")]
     (question,) = questions.records(rig.plan)
     assert question.withdrawn["why"] == "the run went on by itself"
+
+
+def test_going_on_or_parking_again_withdraws_every_earlier_card(rig, tmp_path):
+    """Round 2, finding 7: an answer not acted on is withdrawn too, and a new park withdraws
+    the card it replaces."""
+    answered = {"plan": str(rig.plan), "question": "Keep both?", "answered": "Absorb"}
+    rig.play({"ask": answered, "lines": [INIT], "hold": 30}, {"lines": [result()]})
+    rig.supervise()
+    (question,) = questions.records(rig.plan)
+    assert (question.state, question.withdrawn["why"]) == ("withdrawn", "the run went on by itself")
+
+    other = Rig(tmp_path / "other")
+    asked = {"plan": str(other.plan), "question": "Keep both?"}
+    other.play({"ask": asked, "lines": recorded("claude-limit"), "exit": 1})
+    other.supervise()
+    kinds = {q.kind: q.state for q in questions.records(other.plan)}
+    assert kinds == {"decision": "withdrawn", "limit": "open"}
 
 
 def test_the_card_is_written_before_the_parked_ending(rig, monkeypatch):

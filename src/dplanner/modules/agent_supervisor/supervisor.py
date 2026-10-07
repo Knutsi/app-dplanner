@@ -108,6 +108,11 @@ PLAN_FILE = "plan.md"
 # handler may print the turn's last totals on the way out.
 DRAIN_SECONDS = 2.0
 OVER = (TurnEnd.DONE, TurnEnd.STOPPED)
+# A turn claimed on an answer that was starting when its supervisor was lost: it may have
+# acted on the answer, so it is never started again without a person.
+LOST_AT_SPAWN = "lost-at-spawn"
+# Failures no wait mends, beside the ones Ending.needs_person names: they park at once.
+PARK_AT_ONCE = ("runaway", LOST_AT_SPAWN)
 
 
 class RefusedError(Exception):
@@ -267,7 +272,7 @@ class Session:
             return "", _over(record.run, TurnEnd(last.end))
         if not last.end:
             if not last.pid and last.consumed:
-                return self._recover(last)
+                return self._recover(last, stop)
             stamp = ProcessStamp(last.pid, last.boot, last.pid_started)
             if last.pid and is_live(stamp):
                 raise RefusedError(
@@ -303,6 +308,13 @@ class Session:
             parked = f"run {self.record.run} is parked: {_said(last)}"
             if ending.end is TurnEnd.FAILED and failures > len(self.guards.backoff):
                 parked += f", {failures} failures in a row"
+            questions.withdraw_unsettled(
+                self.project_dir,
+                self.record.run,
+                "the run parked on another question",
+                keep=last.question,
+                config=self.config,
+            )
             if self._answered(last) is not None:
                 # Answered while the turn was ending: resume on it at once.
                 try:
@@ -310,13 +322,10 @@ class Session:
                 except RefusedError as refused:
                     return "", f"{parked}; {refused}"
             return "", f"{parked}, on {questions.short(last.question)}"
-        # Going on by itself: what the run asked before it failed no longer stands.
+        # Going on by itself: nothing the run asked before it failed stands any more, an
+        # answer not yet acted on included — no turn will consume it now.
         questions.withdraw_unsettled(
-            self.project_dir,
-            self.record.run,
-            "the run went on by itself",
-            config=self.config,
-            states=(questions.OPEN, questions.ESCALATED),
+            self.project_dir, self.record.run, "the run went on by itself", config=self.config
         )
         if ending.why != "abandoned-wait" and stop.wait(self.guards.backoff[failures - 1]):
             self._end(TurnEnd.STOPPED)
@@ -343,6 +352,10 @@ class Session:
         stream = self.directory / f"turn-{n}.jsonl"
         errors = self.directory / f"turn-{n}.stderr"
         turn = claimed or Turn(n=n, prompt=kind, started=now_stamp())
+        if claimed is not None:
+            # From here an absent pid no longer proves the answer was never acted on.
+            turn = replace(turn, spawning=now_stamp())
+            self._write(turn)
         log = TurnLog()
         with stream.open("w", encoding="utf-8") as tee, errors.open("wb") as err:
             try:
@@ -544,7 +557,7 @@ class Session:
         """Whether the ending parks the run, ``failures`` being the failed turns in a row."""
         if ending.end in OVER:
             return False
-        if ending.end is not TurnEnd.FAILED or ending.needs_person or ending.why == "runaway":
+        if ending.end is not TurnEnd.FAILED or ending.needs_person or ending.why in PARK_AT_ONCE:
             return True
         return failures > len(self.guards.backoff)
 
@@ -567,17 +580,15 @@ class Session:
             record = _record(self.project_dir, run)
             latest = record.last_turn
             question = questions.find(self.project_dir, last.question)
-            refusal = ""
-            if record.over or record.fence:
-                refusal = "it is over" if record.over else "it was fenced"
-            elif record.machine and record.machine != machine:
-                refusal = f"{record.host or record.machine} launched it"
-            elif not record.parked or latest is None or latest.question != last.question:
-                refusal = "it is no longer parked on that question"
-            elif question is None:
-                refusal = f"{questions.short(last.question)} is gone"
-            elif question.state != questions.ANSWERED:
-                refusal = f"{question.short} is {question.state}, not answered"
+            refusal = _not_ours(record, machine) or (
+                "it is no longer parked on that question"
+                if not record.parked or latest is None or latest.question != last.question
+                else f"{questions.short(last.question)} is gone"
+                if question is None
+                else f"{question.short} is {question.state}, not answered"
+                if question.state != questions.ANSWERED
+                else ""
+            )
             if refusal or question is None or latest is None:
                 raise RefusedError(f"run {run} cannot resume on its answer: {refusal}")
             claimed = Turn(
@@ -592,11 +603,31 @@ class Session:
             )
         self.record = _record(self.project_dir, run)
         self.claimed = claimed
+        self._settle("the run resumed on another answer")
         return "answer", questions.answer_text(question)
 
-    def _recover(self, claimed: Turn) -> tuple[str, str]:
-        """Start a turn claimed on an answer whose process never started — the answer is
-        already this turn's, so it is never consumed again."""
+    def _recover(self, claimed: Turn, stop: threading.Event) -> tuple[str, str]:
+        """A turn claimed on an answer whose process has no pid. If it was never about to
+        start — no ``spawning`` — start it, after the claim's own locked check, never
+        consuming the answer again. If it may have started, the agent may already have acted
+        on the answer, so it ends ``failed``/``lost-at-spawn`` and parks for a person."""
+        if claimed.spawning:
+            said = questions.short(claimed.consumed.get("question", ""))
+            lost = Ending(
+                TurnEnd.FAILED,
+                LOST_AT_SPAWN,
+                f"turn {claimed.n} was starting on the answer to {said} when its supervisor was"
+                " lost, and may have acted on it: resume it again only if it did not",
+            )
+            return self.next(self._finish(claimed, self._streamed(claimed.n), None, lost), stop)
+        with os_lock(self.directory / RECORD_LOCK, wait=True):
+            record = _record(self.project_dir, self.record.run)
+            refusal = _not_ours(record, ledger.machine_id(self.config))
+            latest = record.last_turn
+            if not refusal and (latest is None or latest.n != claimed.n or latest.end):
+                refusal = "its claimed turn has moved on"
+            if refusal:
+                raise RefusedError(f"run {record.run} cannot resume on its answer: {refusal}")
         found = questions.find(self.project_dir, claimed.consumed.get("question", ""))
         if found is not None and found.answer.get("id") == claimed.consumed.get("answer"):
             questions.update(
@@ -678,6 +709,16 @@ _KILLED_BECAUSE = {
     "runaway": "the stream kept going and the agent produced nothing",
     "timeout": "the stage ran past its wall clock",
 }
+
+
+def _not_ours(record: LedgerRecord, machine: str) -> str:
+    """Why this machine may not start the run's next turn, or "": a resume is claimed only
+    on a run that is not over, not fenced, and was launched here."""
+    if record.over or record.fence:
+        return "it is over" if record.over else "it was fenced"
+    if record.machine and record.machine != machine:
+        return f"{record.host or record.machine} launched it"
+    return ""
 
 
 def _question_for(record: LedgerRecord, turn: Turn, ending: Ending) -> Question:

@@ -988,15 +988,19 @@ on another machine waits in the file for the run's own machine.
 **The resume is claimed under the run's lock and the question's**, both re-read: the run still
 this machine's, not fenced, not over, its last turn parked on this question, the question
 answered. One ledger write then records the next turn — `prompt: answer`, the answer it
-consumes, no process yet — and only then is the question marked consumed. A supervisor that
-dies in between leaves a turn holding an answer and no pid, which the next supervisor starts
-rather than consuming anything again. Checking under an earlier snapshot would let a fence
+consumes, no process yet — and only then is the question marked consumed. Just before the
+process starts, the turn is marked `spawning`. A supervisor that dies before the mark leaves a
+turn the next one starts, after the same locked check, without consuming anything again; one
+that dies after it leaves a turn whose agent may already have acted on the answer — the pid is
+written only once the process exists — so that turn ends `lost-at-spawn` and parks for a
+person rather than apply an answer twice. Checking under an earlier snapshot would let a fence
 written meanwhile be overtaken by a resume.
 
 **Cards are written before what they explain, and mended on start.** A parked ending is
 committed with its card already on disk, so a crash leaves at worst a card on a lost turn,
 which the retry withdraws — never a parked run nobody is asked about. A run that goes on by
-itself (a retry, a nudge to continue) withdraws the open questions of the turn that failed,
+itself (a retry, a nudge to continue) or parks again withdraws every earlier card not
+consumed — an answer nobody acted on included, since no turn will consume it now —
 and a run's end withdraws everything it had standing; a supervisor starting on a parked run
 with no card writes one, and on an ended run with cards standing withdraws them.
 
