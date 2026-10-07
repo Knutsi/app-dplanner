@@ -773,6 +773,15 @@ every point — and they need an OTLP collector listening on this machine, which
 feature to build when a transcript reader has failed, not before. Its console exporter
 writes to the agent's own stdout, so it cannot serve an interactive session.
 
+**A harness has a headless half, and it is a second record.** `AgentHarness.headless` is a
+`domain/headless.py` `Headless`: the argv for one unattended turn of a playbook stage, a reader
+for the CLI's JSON events and how the turn ended. It is not more templates beside `command`
+because nothing about it is a terminal's: the supervisor spawns the argv itself, with no shell
+to quote for and no person to wait on, and reads the stream as it comes. Classification is one
+function over what the readers normalise, so each CLI's quirks live in its own reader and the
+order of the rules is written once; `playbooks.md`'s *Each stage is one headless turn per
+harness* has the table and the reasons.
+
 ### A launch profile is a name over the two choices
 
 Run Agent has always asked two questions — which agent, which terminal — and the settings

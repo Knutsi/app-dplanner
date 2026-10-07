@@ -21,10 +21,21 @@ so the tree is the session and every descendant. Read through the standard libra
 OpenCode's own; anything the query cannot read answers ``None``. The account is the
 provider and whether ``auth.json`` holds a key or a login for it — its ``type`` and
 nothing else.
+
+**Headless.** One turn is ``opencode run --format json``, resumed with ``--session <id>``. A
+plan and a review run as the built-in ``plan`` agent; an execute turn runs with ``--auto``,
+which approves every permission the configuration does not deny. Without it a permission is
+not asked for but refused, said only on stderr — ``permission requested: edit (calc.py);
+auto-rejecting`` — and the run exits 0 having done nothing, which is why stderr is read for
+denials. OpenCode has no schema option, so a typed final message is whatever the agent was
+asked to answer as JSON, and prose is otherwise all there is. Every event names the session
+(``sessionID``); ``step_finish`` carries each request's tokens, summed over the turn; ``text``
+is what the agent said; ``error`` is a failure, with the provider's status.
 """
 
 import json
 import os
+import re
 import sqlite3
 import sys
 from collections.abc import Mapping
@@ -32,6 +43,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from dplanner.domain.agents import AgentHarness, AgentUsage, RunFacts, RunReport, Tokens
+from dplanner.domain.headless import Headless, StageKind, TurnLog, TurnSpec, typed_message
 
 CLOCK_SLACK = timedelta(minutes=2)
 
@@ -178,6 +190,59 @@ def _account(provider: str, beside: Path) -> dict[str, str]:
     return words
 
 
+def headless_command(spec: TurnSpec) -> list[str]:
+    argv = ["opencode", "run", "--format", "json"]
+    if spec.resume:
+        argv += ["--session", spec.session]
+    argv += ["--auto"] if spec.stage is StageKind.EXECUTE else ["--agent", "plan"]
+    return [*argv, spec.prompt]
+
+
+def read_event(log: TurnLog, event: Mapping[str, object]) -> None:
+    log.session = log.session or str(event.get("sessionID") or "")
+    kind = event.get("type")
+    part = event.get("part")
+    part = part if isinstance(part, dict) else {}
+    if kind == "step_finish":
+        tokens = part.get("tokens")
+        if isinstance(tokens, dict):
+            cache = tokens.get("cache")
+            cache = cache if isinstance(cache, dict) else {}
+            step = Tokens(
+                input=_count(tokens.get("input")) + _count(cache.get("write")),
+                cached=_count(cache.get("read")),
+                output=_count(tokens.get("output")) + _count(tokens.get("reasoning")),
+            )
+            log.tokens += step
+            if step.worked:
+                log.progressed()
+    elif kind == "text":
+        log.final = str(part.get("text") or "")
+        log.typed = typed_message(log.final)
+    elif kind == "error":
+        error = event.get("error")
+        error = error if isinstance(error, dict) else {}
+        data = error.get("data")
+        data = data if isinstance(data, dict) else {}
+        log.error = f"{error.get('name', 'error')}: {data.get('message', '')}"
+        status = data.get("statusCode")
+        log.status = status if isinstance(status, int) else None
+
+
+def _count(value: object) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
+_AUTO_REJECTED = re.compile(r"permission requested: (.+?); auto-rejecting")
+
+
+def stderr_denials(stderr: str) -> list[str]:
+    return _AUTO_REJECTED.findall(stderr)
+
+
+HEADLESS = Headless(command=headless_command, read=read_event, stderr_denials=stderr_denials)
+
+
 HARNESS = AgentHarness(
     id="opencode",
     label="OpenCode",
@@ -187,4 +252,5 @@ HARNESS = AgentHarness(
     shell_markers=("OPENCODE", "OPENCODE_PID"),
     report=report,
     binary="opencode",
+    headless=HEADLESS,
 )

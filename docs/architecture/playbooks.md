@@ -298,27 +298,59 @@ window's auto-launch leave in S5, keeping `launch_due`'s intent and claim for `a
 
 ## Each stage is one headless turn per harness
 
-Every stage runs headless: one process, one turn, then it exits (park and resume). The
-invocation per stage, from the 2026-10-07 experiments — S8 puts it on each harness:
+Every stage runs headless: one process, one turn, then it exits (park and resume). Each
+harness's `harness.py` spells it as an argv (`domain/headless.py`'s `Headless.command` over a
+`TurnSpec`), built at S8 from the 2026-10-07 experiments and the checks below it:
 
-| Stage | Claude Code | Codex | opencode |
+| Stage | Claude Code (`claude -p`) | Codex (`codex exec`) | opencode (`opencode run`) |
 |---|---|---|---|
-| plan | `claude -p --permission-mode plan` | `codex exec -s read-only` | `opencode run --agent plan` *(to confirm)* |
-| execute | resume, `--permission-mode auto` | `codex exec resume <id> --approve-for-me` | `opencode run -s <id> --auto` |
-| review | a new `claude -p --permission-mode plan` *(to confirm whether read-only Bash — `git diff`, the tests — runs there)* | `codex exec -s read-only` | `opencode run --agent plan` |
-| resume after an answer or a reset | `claude -p --resume <id>` and one prompt | `codex exec resume <id>` | `opencode run -s <id>` |
+| plan | `--permission-mode plan` | `-c sandbox_mode="read-only" -c approval_policy="never"` | `--agent plan` |
+| execute | `--permission-mode auto --json-schema <turn>` | `-c sandbox_mode="workspace-write" -c approval_policy="on-request" -c approvals_reviewer="auto_review" -c sandbox_workspace_write.writable_roots=[…] --output-schema <file>` | `--auto` |
+| review | `--permission-mode plan --json-schema <verdict>` | read-only, as plan, `--output-schema <file>` | `--agent plan` |
+| a fresh session | `--session-id <id>`, minted at launch | — (Codex mints the thread) | — |
+| the next turn: an answer, a reset, a retry, a loop-back | `--resume <id>`, same mode | `codex exec resume … <id> <prompt>`, **same overrides** | `--session <id>`, same mode |
 
 **Every turn carries:**
 - the JSON stream — `--output-format stream-json --verbose`, `--json`, `--format json` — which
   the supervisor tees into the run directory and classifies;
-- Claude's `--strict-mcp-config` with DPlanner's own MCP list, because a headless Claude
-  otherwise inherits the person's claude.ai connectors (mail, calendar);
-- `--add-dir` for the **plan repository** and the run directory — the 10-04 run's 21 Codex
-  sandbox prompts were the plan repository outside the writable roots;
-- Claude's `--session-id`, minted at launch, as today;
+- Claude's `--strict-mcp-config` and no MCP list, because a headless Claude otherwise inherits
+  the person's claude.ai connectors (mail, calendar);
+- the run directory and the **plan repository** as writable — Claude's `--add-dir`, Codex's
+  `writable_roots` on an execute turn — since the 10-04 run's 21 Codex sandbox prompts were the
+  plan repository outside the writable roots;
 - a typed final message where the CLI has one (`--json-schema`, `--output-schema`), so a
-  verdict and a question are read, not guessed from prose;
+  verdict and a question are read, not guessed from prose — `domain/headless.py`'s
+  `TURN_SCHEMA` for execute and `VERDICT_SCHEMA` for review, both strict because Codex takes no
+  other kind; a plan has none, because its final text *is* the plan;
 - the scrubbed environment every launch already gets.
+
+**Codex states its mode on every turn, as `-c` overrides.** The research's
+`codex exec resume <id> --approve-for-me` does not parse: `exec resume` takes none of `-s`,
+`--approve-for-me` or `--add-dir` (0.160.0), and a resumed thread does not keep the mode it
+began in — a read-only thread resumed bare came back `workspace-write`. Read off the rollout's
+`turn_context` against the fake API, `--approve-for-me --add-dir <d>` is exactly the four
+overrides in the table, and they hold on `exec resume`; so a fresh turn uses them too, and the
+two spellings cannot drift. A review in Claude's plan mode does run read-only Bash (a recorded
+review ran `find`), which settles the review row.
+
+**How a turn ended is one function over what the stream said.** Each harness's reader
+normalises its CLI into a `TurnLog` — the session, the turn's tokens, the account's windows,
+the final text and its typed form, the CLI's own error, the denials — and
+`Headless.classify(exit, log, stderr)` reads it in one order: killed; the CLI's error (a limit,
+or `failed` with the 10-03 kind); a failed exit with no message; a denial (Claude's
+`permission_denials` under `success`, opencode's "auto-rejecting" on stderr); the typed
+outcome; a turn ended to wait on the agent's own background work ("I'll pick up when it
+finishes" — `failed` as `abandoned-wait`, because headless the work died with the process and
+nobody wakes the agent, so "continue" resumes it); a question in prose; done. A harness differs only in its reader and two hooks — where
+its limit telemetry lives (Codex: the rollout, never `--json`) and the denials it prints to
+stderr. Prose is the fallback, and it is looser than "ends in `?`": headless Claude bolds the
+question and adds "Once you let me know, I'll…", so any of the last five lines ending in `?` is
+the question. A limit's reset is its **fullest** window's: both real Codex limits on 10-04
+struck at 98–99 %, and that window's reset was the message's "try again at" to the minute. A
+hang and a runaway are the supervisor's to detect — the log counts events since the agent last
+produced anything — and what the classifier is then handed is a killed process. The recorded
+streams that hold all of this are `tests/fixtures/agent_turns/`, the 10-03 probes under
+`probes/`.
 
 **Why these modes.** `acceptEdits` alone denies every Bash call, so an execute stage needs the
 auto-approving mode; on a model that refuses it (Claude's `auto` on Haiku denied the edit) the

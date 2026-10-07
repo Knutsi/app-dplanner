@@ -1,0 +1,24 @@
+{
+ "cli": "codex",
+ "exit": 0,
+ "probe": "codex-ask-door",
+ "source": "docs/research/2026-10-07-headless-agents/ experiment E5: asked through the stub ask command, then ended its turn",
+ "signal_sent": null,
+ "timed_out_after_s": null,
+ "stdout_lines": 9,
+ "stdout_head": [
+  "{\"type\":\"thread.started\",\"thread_id\":\"01a1149e-8ba4-7821-94a4-0f5cc568f22f\"}",
+  "{\"type\":\"turn.started\"}",
+  "{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"I’ll inspect `calc.py` and ask how division by zero should behave using the required command.\"}}",
+  "{\"type\":\"item.started\",\"item\":{\"id\":\"item_1\",\"type\":\"command_execution\",\"command\":\"/usr/bin/bash -lc \\\"pwd; rg --files -g 'AGENTS.md' -g 'calc.py' -g '*test*' -g 'pyproject.toml'\\\"\",\"aggregated_output\":\"\",\"exit_code\":null,\"status\":\"in_progress\"}}",
+  "{\"type\":\"item.completed\",\"item\":{\"id\":\"item_1\",\"type\":\"command_execution\",\"command\":\"/usr/bin/bash -lc \\\"pwd; rg --files -g 'AGENTS.md' -g 'calc.py' -g '*test*' -g 'pyproject.toml'\\\"\",\"aggregated_output\":\"<scratch>/hx/w/e5x\\ncalc.py\\n\",\"exit_code\":0,\"status\":\"completed\"}}",
+  "{\"type\":\"item.started\",\"item\":{\"id\":\"item_2\",\"type\":\"command_execution\",\"command\":\"/usr/bin/bash -lc '<scratch>/hx/bin/dplanner-ask \\\"How should divide(a, b) behave when b is zero?\\\" --choice \\\"Raise ZeroDivisionError\\\" --choice \\\"Return None\\\"'\",\"aggregated_output\":\"\",\"exit_code\":null,\"status\":\"in_progress\"}}",
+  "{\"type\":\"item.completed\",\"item\":{\"id\":\"item_2\",\"type\":\"command_execution\",\"command\":\"/usr/bin/bash -lc '<scratch>/hx/bin/dplanner-ask \\\"How should divide(a, b) behave when b is zero?\\\" --choice \\\"Raise ZeroDivisionError\\\" --choice \\\"Return None\\\"'\",\"aggregated_output\":\"Recorded as Q2. A person will answer it. End your turn now without doing anything else; you will be resumed with the answer.\\n\",\"exit_code\":0,\"status\":\"completed\"}}",
+  "{\"type\":\"item.completed\",\"item\":{\"id\":\"item_3\",\"type\":\"agent_message\",\"text\":\"The question about division by zero is recorded. I’ll wait for the person’s answer before changing `calc.py`.\"}}",
+  "{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":32109,\"cached_input_tokens\":28032,\"cache_write_input_tokens\":0,\"output_tokens\":198,\"reasoning_output_tokens\":0}}"
+ ],
+ "stdout_tail": [],
+ "stderr_tail": [
+  "Reading additional input from stdin..."
+ ]
+}

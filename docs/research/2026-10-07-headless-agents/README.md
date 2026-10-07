@@ -139,6 +139,13 @@ is **park and resume**:
   allow-list.
 - Codex: `exec --approve-for-me`, with the plan repo as `--add-dir`. The 10-04 run hit 21
   sandbox prompts because that repo was outside the writable roots.
+  - *Correction, 2026-10-07 (S8):* that holds for a fresh `exec` only. `codex exec resume`
+    (0.160.0) accepts none of `-s`, `--approve-for-me` or `--add-dir`, and a resumed thread
+    does not keep its mode, so a resume — and, for one spelling, every turn — states it as
+    `-c` overrides: `sandbox_mode="workspace-write"`, `approval_policy="on-request"`,
+    `approvals_reviewer="auto_review"`, `sandbox_workspace_write.writable_roots=[…]`
+    (checked on the rollout's `turn_context` against the fake API).
+    `docs/architecture/playbooks.md` has the table as built.
 - opencode: `run --auto`, or a permission config.
 
 **Before every launch.**
