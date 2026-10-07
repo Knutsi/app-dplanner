@@ -680,6 +680,37 @@ false done loses work without a word. Two misreadings are accepted as that fallb
 limits rather than chased: a question quoted at the very end reads as asked, and "waiting on
 the build was the bug" reads as an abandoned wait.
 
+### Installed is not usable
+
+A CLI on PATH can still be unable to run a turn: signed out, or broken. Headless, that is
+worse than missing — a signed-out Claude retries for minutes before it fails — so each harness
+says how to ask (`AgentHarness.sign_in`) and `agent_launch/availability.py` asks in three
+levels, stopping at the first that fails: on PATH, a version, signed in. The sign-in probes are
+the research's (`docs/research/2026-10-07-headless-agents/` §9): `claude auth status`'s JSON,
+`codex login status` (which answers on stderr, so a shell gives both streams together), and
+for OpenCode a credential **or** a built-in model — it ran on its own `opencode/*` models with
+no login at all, so "0 credentials" alone would have called a working agent dead. Which of
+those built-in models are free is not told apart: any model the `opencode` provider lists
+counts, and the row says it is running on them.
+
+**Everything goes through a shell bound to the found path.** The harness's probe gets a
+`Shell` that runs *its* CLI with arguments; it never names a binary, so a Windows `.cmd` shim
+runs as `which` found it, and a probe of another machine — a worker — is another `which` and
+another shell, with nothing in a harness to change. OpenCode's credentials are asked of the
+CLI rather than read from `auth.json` for the same reason.
+
+**Asking is fresh, reading is cached.** The Setup Checklist's rows always probe — a person who
+has just signed in and pressed *Re-check* must see it — and every probe lands in the cache;
+`cached` and `why_not` read it and never run a CLI, so a state callback on the UI thread may
+ask whether a playbook's agents can run. A reading lives a minute, which is long enough for a
+menu opened twice and short enough that a sign-in elsewhere is noticed. One shared cache per
+process is the composition root's to wire when Run Playbook reads it (S17); until then each
+checklist builds its own.
+
+**A CLI that is not installed is not a problem.** Nobody needs all three, so its row is well
+and says it is optional; *An agent CLI* is the row that fails when none can run. Only a CLI
+that is there and cannot run asks for something, with its own sign-in command as the remedy.
+
 ### A launch profile is a name over the two choices
 
 Run Agent has always asked two questions — which agent, which terminal — and the settings

@@ -533,7 +533,8 @@ src/dplanner/
 │   │                        script that prepares the worktree and reports back, `profiles.py`
 │   │                        the named agent-and-terminal pairs, seeded once, `settings_page.py`
 │   │                        and `detect_dialog.py` their page, `intents.py` an unattended
-│   │                        launch's intent, written before its shell
+│   │                        launch's intent, written before its shell, `availability.py`
+│   │                        whether each agent CLI can run here (on PATH, version, signed in)
 │   ├── agent_briefing/      what an agent is told — no module.py, headless all through:
 │   │                        the preflight and the report-back protocol (protocol.py), the
 │   │                        step's and project's facts (blocks.py), the instructions
