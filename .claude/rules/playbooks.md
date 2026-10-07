@@ -24,8 +24,9 @@ paths:
   first gate.
 - **`progress` accepts the step on its feature branch and is refused on the mainline**, where
   it becomes a `person` gate — checked at run time, from the step's `BranchPlan`.
-- **Rounds: 2 by default, at most 5; *changes* on the last round is a `decision`
-  question**, to the coordinator when one drives the run, else a person. Never a silent
+- **Rounds: 2 by default, at most 5, counted in verdicts given, never attempts** — a failed or
+  replaced reviewer spends no round. ***Changes* on the last round is a `decision` question** of
+  purpose `round-cap`, to the coordinator when one drives the run, else a person. Never a silent
   extra round. `docs/architecture/playbooks.md`'s *A gate gets two rounds, then somebody
   decides*.
 - **A loop-back resumes the work stage's session**; it runs fresh with the findings only when
@@ -35,18 +36,21 @@ paths:
   session that did the work*.
 - **A failure is never a verdict.** Only a gate's typed verdict (*pass*/*changes*) spends a
   round; a turn that ended asked, denied, limit, failed or stopped parks, retries or asks.
-- **The run record is the ledger; a playbook keeps no record of its own.** Each agent stage
-  attempt is one run (`playbook`, `stage`, `attempt`, `turns`), and a loop-back is a new
-  attempt, never a turn; each person or coordinator gate and each escalation is one question
-  (`plan-approval` after a plan, else `decision`). Findings are on the review run's `verdict`,
-  declines on the fix run's `declined`. The coordinator may answer a `coordinator` gate and
-  must escalate a `person` gate. `docs/architecture/playbooks.md`'s *The run record is the
-  ledger* maps every review-round fact to its new home.
+- **The run record is the ledger; a playbook keeps no record of its own.** A **pass** (one run
+  of a playbook on a step) has an id every run and gate question carries, and pins its resolved
+  `settings` (preset and revision, rounds, roles, overrides) once, on its first record. Each
+  agent stage attempt is one run (`pass`, `stage`, `attempt`, `turns`), and a loop-back is a new
+  attempt, never a turn; each gate question is `plan-approval` after a plan, else `decision`,
+  with a typed `purpose` (`gate`, `round-cap`, `escalation`). Identity is stored, never derived
+  from the order of records. Findings are on the review run's `verdict`, declines on the fix
+  run's `declined`. The coordinator may answer a `coordinator` gate and must escalate a `person`
+  gate. `docs/architecture/playbooks.md`'s *The run record is the ledger* maps every
+  review-round fact to its new home.
 - **A role names a harness, never a profile or a path**, and maps at launch to the first
   profile running it; an unrunnable role is refused, never swapped for the default.
 - **Presets are built-in data**, no playbook files in the plan repository yet. A step's
   choice is its aspect (absence encodes the default), then the project's landing default on a
-  landing, then the project default, then none (Run Agent). A pass pins its playbook.
+  landing, then the project default, then none (Run Agent).
 - **Every stage is one headless turn**, with the invocation per harness in
   `docs/architecture/playbooks.md`'s *Each stage is one headless turn per harness*: the JSON stream,
   Claude's `--strict-mcp-config`, `--add-dir` for the plan repository and the run directory,

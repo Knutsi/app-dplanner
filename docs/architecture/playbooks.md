@@ -68,14 +68,16 @@ because a step moves onto and off a branch with an ordinary edit.
 
 ## A gate gets two rounds, then somebody decides
 
-A gate's `rounds` is how many times it may **see** the work: 2 by default, at most 5. *Changes*
-on the last round does not buy another round. It **escalates**: a question of kind
-`decision`, with the choices *accept as is*, *one more round*, *take over*, *stop*, and every
-finding still open shown with both positions — the gate's and the implementer's reason for
-declining it. The question goes to the coordinator when one drives the run, and to a person
-otherwise; the coordinator may answer it or escalate it to a person. **There is never a silent
-extra round**: two rounds and then a person is what the 2026-10-01 orchestration research
-settled, and an agent pair arguing a third time is the debate the evidence advises against.
+A gate's `rounds` is how many **verdicts** it may give in a pass: 2 by default, at most 5. A
+round is a verdict given, never an attempt made — a reviewer that crashed, or whose session was
+replaced by a fresh one, gave no verdict and spent no round. *Changes* on the last round does
+not buy another round. It **escalates**: a question of kind `decision` and purpose `round-cap`,
+with the choices *accept as is*, *one more round*, *take over*, *stop*, and every finding still
+open shown with both positions — the gate's and the implementer's reason for declining it. The
+question goes to the coordinator when one drives the run, and to a person otherwise; the
+coordinator may answer it or escalate it to a person. **There is never a silent extra round**:
+two rounds and then a person is what the 2026-10-01 orchestration research settled, and an agent
+pair arguing a third time is the debate the evidence advises against.
 
 **The implementer may decline a finding, with a reason.** It does not argue back in a chat
 loop; it says *no, because…* in its fix, and the gate's next round sees the reason. A finding
@@ -185,9 +187,13 @@ change of default reaches every step that never chose. The playbook package name
    (`{"default": …, "landing": …}`);
 4. else none: the step has Run Agent, as today, and *Run Playbook ▸* still lists every preset.
 
-**A run pins its playbook.** A playbook pass records the preset it started with on every run
-(*The run record is the ledger*), so an edit of the step's choice applies to the next pass,
-never to the one under way, and the step panel says so.
+**A pass pins its settings.** A **pass** is one run of a playbook on a step, from *Run
+Playbook* until it ends. At its start the engine resolves what the pass will run — the preset
+id and its revision (a built-in preset's number, raised whenever its stage list changes), the
+round cap, the roles' harnesses, and every override the step's aspect had — and writes that
+once, on the pass's first record (*The run record is the ledger*). An edit of the step's choice
+therefore applies to the next pass, never to the one under way, even when the pass is parked
+for days, and the step panel says so.
 
 ## The mark on the one card
 
@@ -215,13 +221,20 @@ the coordinator answers is one question under `questions/`. The playbook's state
 those, the way a review's state was read from its stamps.
 
 **What the run carries for a playbook:**
-- `playbook` — the preset id the pass runs (pinned for the pass).
+- `pass` — the pass's id, minted at *Run Playbook* like a run's, carried by every run and gate
+  question of the pass. Identity is never derived from the order of the records.
+- `settings` — on the pass's first record only, the resolved settings the pass pinned
+  (*A pass pins its settings*): `{preset, revision, rounds, roles, overrides}`. The first record
+  is the pass's first run, or its first gate question when the pass begins at a `person` or
+  `coordinator` gate.
 - `stage` — the stage's **id in that playbook**: its kind, numbered if the kind repeats in the
   list (`review`, `review-2`). An id rather than an index, so a run stays readable after the
   preset list is reordered.
 - `attempt` — **how many times this stage has run in this pass, counting this one**, from 1.
-  For a gate it *is* the round (`review` attempt 2 is *Review 2/2*). For a work stage it is 1
-  plus the fixes so far. A resume *within* an attempt — an answer, a limit's reset, *Retry
+  It counts executions, not rounds: a gate's round is the number of verdicts it has given in
+  the pass (*A gate gets two rounds, then somebody decides*), so a review that failed and was
+  replaced is attempt 2 of round 1. For a work stage it is 1 plus the fixes so far, and any
+  replacements. A resume *within* an attempt — an answer, a limit's reset, *Retry
   now* — is another **turn** of the same run. **A loop-back is a new run**, the next attempt,
   naming the same `session` when it resumes it: the attempt it fixes is over (its last turn
   ended *done*, and `ended` is written once), and the next review's verdict must say which
@@ -233,16 +246,19 @@ those, the way a review's state was read from its stamps.
 - `turns` — each process invocation and how it ended.
 
 A gate a person or the coordinator answers has no run, so its question carries the same
-`stage` and `attempt` beside the step.
+`pass`, `stage` and `attempt` beside the step, and a typed **`purpose`**:
+- `gate` — a `person` or `coordinator` gate asking for its verdict;
+- `round-cap` — *changes* on a gate's last round (*A gate gets two rounds, then somebody
+  decides*), with the open findings and both positions;
+- `escalation` — anything else the pass cannot settle alone, raised by the engine or the
+  coordinator: a person is asked to stop, take over or go on.
 
-A **pass** is one playbook run over the step, from *Run Playbook* until it ends, and it needs
-no field of its own. Inside a pass an attempt 1 only ever moves *forward* through the list — a
-loop-back is attempt 2 or more — so walking the step's runs and gate questions in order, **a
-new pass begins at an attempt 1 whose stage is not after the previous record's**, or whose
-`playbook` differs. The engine derives whatever is
-due from that and launches it **once**: a stage attempt is due when its predecessor's verdict
-says so and no run for it exists, and the run file, written before the process spawns (the
-intent rule `launch_due` already keeps), is the claim.
+State stays derived — where a pass stands, the round, the card's phrase — but identity is
+stored: which pass a record belongs to and why a question was asked are fields, read, never
+reconstructed from ordering. The engine derives whatever is due from the pass's records and
+launches it **once**: a stage attempt is due when its predecessor's verdict says so and no run
+for it exists, and the run file, written before the process spawns (the intent rule `launch_due`
+already keeps), is the claim.
 
 ### What of the review rounds ledger survives
 
@@ -258,7 +274,7 @@ record that already owns it:
 | `taken` | the next `execute` attempt's `launched` |
 | `reply` / `replied` | that execute run's `declined` — each `{finding, reason}`, naming a finding on the review run — and its end |
 | `approved` | a verdict of *pass*: on the review run, or the answer to a `person` / `coordinator` question |
-| `escalated` + `note` | a question of kind `decision`, its text the open findings and both positions |
+| `escalated` + `note` | a question of kind `decision`, purpose `round-cap`, its text the open findings and both positions |
 | `asker_turn_launched` / `party_turn_launched` | the run file's existence for that stage and attempt — the claim |
 | `with` (the party) | gone: the party is always the step itself |
 
@@ -316,8 +332,8 @@ for a stage.
 ## Decided at S4 (coordinator) — for Knut to confirm at the final review
 
 Each was a product question for Knut, with a recommendation. Knut reviews the whole branch when
-it lands, so the coordinator decided each at S4 as recommended, and Knut confirms or reverses them in
-that review.
+it lands, so the coordinator decided each at S4 as recommended, and Knut confirms or reverses
+them in that review.
 
 | # | Question | Decided | Why |
 |---|---|---|---|
