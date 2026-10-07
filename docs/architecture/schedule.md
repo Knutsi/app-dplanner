@@ -76,8 +76,9 @@ The rules worth writing down, because each was a decision:
 - **Ready for review is a person's turn.** Whatever waits on a step under review, a person
   moves it next — to merge, or back to its agent — so it is on the boards' *Ready for review*
   and its card pulses (*A card pulses where a person moves next*): one answer, two surfaces.
-  The rule that let a waiting agent take such a step over — a collector or a review across a
-  link that auto-progressed — left with auto-progress (`decisions.md`, 2026-10-07).
+  The rule that let a waiting agent take such a step over — a collector or a review step across
+  a link that auto-progressed — left with auto-progress and review steps (`decisions.md`,
+  2026-10-07).
 - **A blocked or reviewed prerequisite still counts as "on the board"** for the one-move
   lookahead: its dependents stay in *upcoming*, pointing at it. The alternative — demoting
   them to waiting — would make the queue churn every time a prerequisite flips between

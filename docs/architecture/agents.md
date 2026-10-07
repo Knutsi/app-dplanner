@@ -1,4 +1,4 @@
-# Agents — Run Agent, worktrees, run directories, usage, harnesses, profiles and reviews
+# Agents — Run Agent, worktrees, run directories, usage, harnesses and profiles
 
 The reasoning behind `.claude/rules/agents.md`: the rules there are the short, imperative form,
 and this file is why. `ARCHITECTURE.md` is the index of every area.
@@ -33,18 +33,13 @@ tab's Prompt page and `dplanner agent prompt` all assemble through it, so no sur
 brief a step differently. A described, uninstructed step renders its text as
 `## Instructions` — the heading the executing agent actually obeys.
 
-**A review is the one step whose instructions are generated.** What a review must do is
-the same for every review — read its subject through its lenses, post findings, wait,
-approve or escalate within its cap — and what differs is data its aspect already holds
-(the lenses, the cap) and its subject, which the graph holds. Asking somebody to write that
-protocol into every review's description would be asking for it to drift from the verbs,
-so `instruction` hands a review to `_review_instruction`, which writes it from
-the aspect and the subject. The step's own prose is not dropped: it rides inside the block
-as *what to look for*, the one thing a person adds to a review, and is still said once. A
-lens this build names carries its question (`Lens.asks`, beside the checkbox that picks
-it); one it does not name is a skill of the person's own, so the agent is told to use that
-skill rather than guess what the word means. `A review is a conversation kept on the step
-that asks` has the rest of how both sides are briefed.
+**A landing is the one step whose instructions are generated.** What a landing must do is
+the same for every landing — check its stretch has merged, merge the mainline in, open the
+branch's PR — and what differs is data the graph already holds: the branch, its base and the
+steps on it. Asking somebody to write that protocol into every landing's description would be
+asking for it to drift from the branch model, so `instruction` hands a landing to
+`_landing_instruction`, which writes it from the stretch it closes. The step's own prose is
+not dropped: it rides inside the block as *what else to see to*, and is still said once.
 
 ## An agent finishes at Ready for review
 
@@ -81,133 +76,6 @@ The same `status set` also takes the agent's banner down: a status that says nob
 working the step ends the at-work claim on it — *An agent at work says so, and the window
 says it back* has why.
 
-## A review is a conversation kept on the step that asks
-
-*A playbook's review stage replaces the review step, and this section leaves with it;
-`playbooks.md`'s *The run record is the ledger* says which of its facts survive and where.*
-
-The spec asked for a step whose agent reviews another's work before it lands. The person
-picks the agent and the lenses and sets a cap on the rounds, and the two agents talk back
-and forth through `dplanner`. Four questions shaped the answer.
-
-**What a review is.** A review is a step, as *Status is an aspect, and step types are
-emergent* rules. It is an agent step carrying `step_review`, keyed `R`. Its entry holds only
-how the review is run: the agent (a harness id, absent for the default profile), the lenses
-(absent for architecture and security) and the cap (absent for three). Absence encodes each
-default, so a later change of default reaches every review that never chose.
-
-**What it reviews is read off the graph.** Its *subject* is the step it `requires`, never an
-id stored in the entry. Relinking a review re-aims it, and no verb that rewrites edges
-learns that reviews exist. The price is that a review can be linked to nothing or to
-several steps, and lint's `review.subject` says so rather than a verb refusing, because a
-plan reshaped in several calls passes through both.
-
-**A link into a review is a plain link.** A review must start while its subject reads
-ready for review, and its subject becomes done only when the review approves it. That was
-answered by auto-progress, which let a review start from review on; it left with
-auto-progress (`decisions.md`, 2026-10-07), and review steps leave next for a playbook's
-review stage (`playbooks.md`'s *A playbook is a list of stages around one step*).
-
-**The conversation lives on the step that asks.** Three homes were weighed:
-
-| Where | Cost |
-|---|---|
-| **On the reviewed step** | One step can be answering two reviews at once. Each would need its own list keyed by asker, and the cap would sit on the step that does not own it. |
-| **In the notes log** | Notes are the project's record, indexed into every later briefing. A round is a turn in a protocol with a state; a log full of them would bury every decision. |
-| **On the asker** (`review_rounds`, chosen) | The asker owns the questions and the cap. Each round names its party. |
-
-Both sides write that one entry, through verbs in separate runs, and the stale-workspace
-check serialises them. **A round holds only texts and stamps**: opened, posted, taken,
-replied, then approved or escalated. Its state and whose turn it is are **derived from
-which stamps are there**, never stored. A stored state could disagree with its stamps, and
-the verbs, `review wait` and the Review tab would each need to keep it true.
-
-**Each verb moves the statuses the way the person would.**
-- `post` puts the subject back in progress.
-- `reply` makes it ready for review again.
-- `approve` sets the subject done and the review ready to merge. It also copies the
-  subject's branch and PR onto the review, so the review carries the PR into the merge.
-- `escalate` blocks the review. What the person must decide becomes a handoff note, which
-  is where the house already says why a step is blocked.
-
-Every one of these goes through `status_command`, the writer `status set` uses. So a
-stopped status ends an at-work claim the same way whichever verb stopped the work.
-
-**`review wait` polls, and holds nothing while it does.** The other side is another
-process, often in another terminal, possibly on another machine once the plan syncs. The
-CLI has no process to be told anything, so the waiting side reads.
-- Each poll opens a fresh `LibraryStore` and closes it. The run's own library would be
-  stale by the second poll, and there is no lock to hold: the stale-workspace check is the
-  whole of the coordination.
-- A whole library loads in tens of milliseconds, so it polls every two seconds.
-- The default timeout is nine minutes, under the ten minutes an agent CLI allows one tool
-  call.
-- On a timeout it exits **3**, which is neither a refusal (1) nor an arrival (0). An
-  agent's loop can tell *nothing yet* from *wrong*.
-
-The loop is one pure function, `await_turn(load, ready, timeout, sleep, clock)`. A test
-drives it with a sleep that writes the other side's turn between polls, and no thread.
-
-The window has no verb that posts a finding, because only an agent writes one. The Review
-tab shows the conversation read-only, following the ledger as the verbs write it. The rule
-is in `.claude/rules/agents.md`, and the edge rule in `.claude/rules/graph-model.md`.
-
-**A conversation is read in a dialog of its own, and the ledger is what opens it.** The
-Review tab lists each message as a heading and its first line, which says where a review
-stands but not what it said, and a finding is prose. *Step ▸ Review Conversation…* — and
-the tab's *Open Conversation…*, and a double-click on one of its rows — opens
-`step_review/conversation_dialog.py`:
-- the messages on the left, each wearing who said it: the review's glyph for the step that
-  asks, the agent's for the step that answers;
-- the picked message rendered in full on the right;
-- where the conversation stands, in the footer's status slot.
-
-Three choices shaped it:
-
-- **It is enabled by the ledger, not by the aspect.** The state asks `rounds(step)`, one entry's rows, because an action
-  state runs on every announce. It greys with *no rounds yet* on a review and *not a review*
-  anywhere else.
-- **It follows the ledger while it is open.** An agent's `review reply` arrives from another
-  process. The watcher adopts it on a timer of its own rather than a settle, so nothing holds
-  the adoption back behind the modal: *A settle behind a modal waits for it* is about the
-  views behind one. The dialog hears `module_data_changed` directly, as the tab does. It keeps
-  the reader's pick by the message's identity (party, round, kind), not its row, because a
-  ledger can gain a stamp on an earlier round.
-- **One builder names each message**, for the tab and the dialog alike (`message_rows`,
-  `where_it_stands`), so the two cannot word a message differently. The tab's full-text
-  tooltip went: the dialog is where a message is read.
-
-**Both agents are briefed with the protocol, because the verbs alone do not say when to
-use them.** A review and its subject are two peers in two terminals that never talk except
-through the plan, so each briefing has to carry its half of the conversation in full:
-- **The review** is told whom it reviews and where that work is (*Work you review*, the
-  same line *Work you land* prints, so a landing and a review are never told where work is
-  two ways), through which lenses, the round protocol and the cap (its generated
-  `## Instructions`, *The description is the instructions*), and that its verdict is its
-  status — its epilogue asks for no PR and no `status set`, because `approve` and
-  `escalate` move both steps and carry the subject's PR.
-- **The reviewed step** is told not to stop at *ready for review*: set `pending-approval`,
-  `review wait`, take each round, fix, push and reply. And it is told when to stop — the
-  review approves (it is done), escalates (a person decides), or an hour passes with
-  nothing new. That last one is what makes waiting safe to abandon: a relaunched step is
-  briefed with any round that arrived meanwhile.
-- **A conversation still going is a section of the briefing on both sides** (*Review
-  rounds with …*: where it stands, then what each side said). Nothing stores that a step
-  is mid-review; the ledger is read when the briefing is assembled, so relaunching either
-  agent resumes the conversation instead of starting a second one. An ended conversation
-  is left to the Review tab — it asks nothing of the next worker.
-
-**A review runs in no worktree of its own.** An agent step gets a fresh worktree by
-default, and a review in one would be reading a new branch off `main` — not the work it
-reviews. What it reads is the subject's worktree when that is on this machine, and its
-PR or branch otherwise, without checking anything out; it commits nothing, so it needs no
-branch. That is a fact about what a review *is*, not a choice somebody should have to
-untick, so `agent_briefing.worktree.no_worktree` rules a worktree out whatever the agent
-aspect says, and every surface asks its `worktree(step)`: the launch, the preflight
-(which tells a review to leave the checkout as it found it — no commits, branch switches or
-stashes), the Agent tab's box, greyed with the reason, and `agent worktree … on`, refused.
-Both surfaces import that one function, so neither can declare its own.
-
 ## A launch writes its intent before its shell
 
 A launch nobody watches — `AgentLaunchModule.launch_unattended`, kept for `dplanner agent
@@ -233,9 +101,9 @@ spawns too, and is the claim `agent run` keeps.
 **It asks nobody.** No prerequisite confirmation, no clone (a repository not checked out
 here is a refusal naming Run Agent, which clones), no prompt fallback: a refusal is a
 sentence. The claim is made whatever *On launch* says, or nothing would say the step was
-taken. The profile is the step's: a review that names an agent runs through the first
-profile running it, and a named agent no profile runs is refused rather than swapped for
-the default, which may be the very agent whose work is reviewed.
+taken. The profile is the first one running the harness the launch names — a playbook
+role's agent — and a harness no profile runs is refused rather than swapped for the
+default, which may be the very agent whose work is reviewed.
 
 **Plan mode is waiting on a person, and says so.** The Claude preset starts in plan mode, so
 a launched Claude writes a plan and waits for somebody to approve it — and a session in plan

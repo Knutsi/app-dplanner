@@ -76,10 +76,11 @@ paths:
   suite never depends on being run by an agent. `docs/architecture/agents.md`'s *An agent finishes
   at Ready for review* has the reasoning.
 - **An unattended launch asks nobody, and writes its intent before its shell.**
-  `AgentLaunchModule.launch_unattended(step_id)` is Run Agent for one step with every
-  question a person answers taken out — no graph gate, no clone, no prompt fallback; a
-  refusal is a sentence — through the step's own profile (`_profile_for`: a review's agent,
-  refused when no profile runs it). **It records its intent before the spawn**
+  `AgentLaunchModule.launch_unattended(step_id, harness=)` is Run Agent for one step with
+  every question a person answers taken out — no graph gate, no clone, no prompt fallback; a
+  refusal is a sentence — through the first profile running `harness` (a playbook role's
+  agent; `_profile_for`), else the default, **refused rather than swapped for the default**
+  when no profile runs it. **It records its intent before the spawn**
   (`intents.py`, under `AgentLaunchDeps.intents`), drops it when no shell opened, claims the
   step in progress whatever *On launch* says, flushes, and forgets the intent once the claim
   is on disk. Nothing calls it yet and no intents directory is wired: `dplanner agent run`
@@ -135,12 +136,9 @@ paths:
   and tells the agent to **stop if it is not in it**; the epilogue addresses every verb by
   the step's key. Inside a worktree the CLI resolves the branch's copy of the plan to the
   library project of the same id (`cli/discovery.py`), so `dplanner status set` reaches
-  the plan the window shows. **What a step is can rule a worktree out**: `agent_briefing.worktree.no_worktree`
-  says why — a review reads the work it reviews — and every surface asks its
-  `worktree(step)`, never the aspect: Run Agent, `agent prompt`,
-  *Open Terminal in Worktree|Checkout*, the Agent tab (its box unticked and greyed with the
-  reason) and `agent worktree … on` (refused). `docs/architecture/agents.md`'s *A worktree is the
-  step's decision* has the reasoning.
+  the plan the window shows. Every surface reads the one answer, `planning.agent.uses_worktree`:
+  Run Agent, `agent prompt`, *Open Terminal in Worktree|Checkout* and the Agent tab.
+  `docs/architecture/agents.md`'s *A worktree is the step's decision* has the reasoning.
 - **A run starts from the remote, and the plan names its base.** `planning.branches.BranchPlan` —
   decided once by `branches/plan.py`'s `branch_plan`, handed to Run Agent as `branch_plan` and to
   `brief()` as a plain value — is the branch a worktree is
@@ -154,7 +152,7 @@ paths:
   ref, never checking one out, and **refuses a branch gone from the remote** rather than
   re-cut it from the mainline. It sets `gh-merge-base` as a backstop for the `--base` the
   epilogue names; the preamble checks the plan's branch. Every name is checked with
-  `sparse.valid_ref` before it reaches a script. A landing is briefed like a review is —
+  `sparse.valid_ref` before it reaches a script. A landing is briefed by what it is —
   its instructions generated from the stretch it closes (`agent_briefing/instructions.py`, *Work you
   land*): merge the mainline in as a merge commit, never a squash, and open the branch's
   own PR — and **without the project's standing instruction**, which is written for the
@@ -297,40 +295,6 @@ paths:
   Control Centre's strip is the same seat over ticks from several projects**, and nothing
   was added for it: the gate asks each chosen step's own project where a shell opens, so
   *Run 2 Agents…* over two projects is one gesture opening each in its own checkout.
-- **A review is a conversation kept on the step that asks.** `modules/step_review/` holds
-  two aspect ids. `step_review` is the settings: agent, lenses and cap, with absence
-  meaning the default profile, architecture and security, and three rounds.
-  `review_rounds` is the ledger, on the review. Rules:
-  - **The subject is the step a review `requires`, read off the graph and never stored.**
-    Lint `review.subject` names a review with none or several.
-  - **A round holds only texts and stamps.** Its state and whose turn it is are derived
-    (`step_review.aspect.turn`), never stored.
-  - **Who a step may talk to is the step it reviews** (`planning.review.reviews`).
-    `approve` and `escalate` are a review's alone.
-  - **Every status a `review` verb moves goes through `status_command`**, the writer
-    `status set` uses, handed in as the root's `set_status`. A stopped status ends a claim
-    exactly as `status set` does.
-  - **The window posts nothing, and reads all of it**: the Review tab is the settings and a
-    read-only list, and *Step ▸ Review Conversation…* (`review.conversation`; the tab's
-    *Open Conversation…* and a row's double-click) opens `conversation_dialog.py`'s dialog — every
-    message beside the picked one in full, live on the ledger. It is **enabled by the ledger,
-    never by the aspect** (`rounds(step)`), and the tab and the dialog build their rows
-    with one `message_rows`.
-  - **Each side is briefed with the conversation.** A review's `## Instructions` is
-    generated (`agent_briefing/instructions.py`) from its aspect and its subject — whom, each lens's
-    `Lens.asks` (an id this build does not name is a skill to use), the round protocol and
-    the cap — and its own prose rides inside as what to look for. *Work you review* says
-    where the subject's work is (`blocks.py`'s `_source_line`, *Work you land*'s line), and the run
-    gets no worktree. A step a review `reviews()` is told to set `pending-approval`, `review
-    wait`, take and reply, and when to stop waiting; a review's epilogue is its verdicts.
-    A conversation still going is a *Review rounds with …* section on both sides, so a
-    relaunch resumes it.
-  - **`review wait` reads a fresh `LibraryStore` each poll and holds nothing between.** It
-    exits 0 on an arrival and 3 on a timeout, under an agent tool's ten minutes. Its loop is
-    `await_turn`, tested with an injected sleep and never a thread.
-
-  `docs/architecture/agents.md`'s *A review is a conversation kept on the step that asks* has the
-  reasoning.
 - **Runs, questions and claims are three records in the plan, and there are no others**
   (designed; FORMAT.md's *The `ledger` directory* format 2, *The `questions` directory*, *The
   `claims` directory*). **A run is the ledger record**: one stage attempt, whose resumes —

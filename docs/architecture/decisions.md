@@ -609,3 +609,26 @@ left as data nobody declares, and the id is in `RETIRED_IDS`, which no module ma
 again. A machine's old `config_dir()/auto-launch/` and the `auto_launch` setting are left
 behind, read by nothing. Now: `agents.md`'s *A launch writes its intent before its shell*;
 FORMAT.md's *Retiring a module*.
+
+## 2026-10-07 — Review steps were removed
+
+A review was a step: an agent step carrying `step_review` (keyed `R`; agent, lenses and a cap
+of rounds) whose subject was the step it `requires`, holding a conversation with that subject
+in `review_rounds` on itself — rounds of texts and stamps whose state was derived, never
+stored — through `dplanner review start|post|take|reply|approve|escalate|wait`. Both sides were
+briefed with the protocol, the review got a generated `## Instructions` and no worktree, and
+the window showed it read-only in a Review tab and *Review Conversation…*. Playbooks replace it
+(S6 of *Playbooks and autonomous work*): a review is a gate stage on the one step, its findings
+a typed verdict on a run, its round cap a question — what made a second card per step and an
+agent pair waiting on each other in two terminals. Gone with it: the aspect, the verbs, `step
+add --review`, the lint (`review.subject`, `review.bypassed`), the toggle, tab, template,
+medallion and glyph, `Kind.REVIEW`, the briefing's review instruction, epilogue, *Work you
+review* and *Review rounds with …*, `due_turns`, and the rule that a review runs in no worktree
+(`no_worktree`; every surface now reads `uses_worktree`). Kept: what its ledger taught —
+`playbooks.md`'s *What of the review rounds ledger survives* — and the profile lookup by
+harness, as `launch_unattended(harness=)` for a playbook role. `step_review` and
+`review_rounds` are retired with no successor: a plan's files stay as data nobody declares and
+the ids are in `RETIRED_IDS`; a step that carried `step_review` reads as the agent step it also
+was. The full reasoning as it stood is the review section of `agents.md` at `dfc0de0` (`git
+show dfc0de0:docs/architecture/agents.md`). Now: `playbooks.md`; FORMAT.md's *Retiring a
+module*.

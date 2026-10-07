@@ -132,7 +132,7 @@ should do.
    `estimate set`, and a description written as the executing agent's instructions (`step
    add … --feature --agent --days N --describe-file -` when you read it out of the spec
    already knowing this). Its briefing carries the passages it was read from, it gathers
-   its own tests, and the check or review the topology asks for follows it directly. A
+   its own tests, and the check the topology asks for follows it directly. A
    feature and its only work step, one waiting on the other, is one launch and one review
    drawn as two steps, and a card on the graph that says nothing the other does not. Keep
    them apart only when the feature gathers several steps, or work a different person does.
@@ -141,7 +141,7 @@ should do.
    makes the feature wait on the work that flows into it, and `scope show '<feature>'`
    prints what it then gathers. A feature you only thought of here is born the same way it
    was at step 4, with `step add … --feature`. Follow the topology for what comes after — a
-   check, a review. `agent prompt <step>` shows exactly what any executing agent will
+   check. `agent prompt <step>` shows exactly what any executing agent will
    receive: read it and ask whether it is enough to work from.
 9. **Run `dplanner project lint <project>` before handing the plan over.** It lists every
    step missing a description or estimate, every agent step with nothing to brief it,
@@ -176,7 +176,7 @@ already has the first one's context. So, **unless the project's topology says ot
 lump similar work into one large step**: the five endpoints of one API, the three views
 that share a layout, the migrations and the model they serve. Cut a step only where the
 graph needs a boundary — a real dependency another step waits on, a feature step that
-gathers the work of several, a check or a review the topology asks for, or work that
+gathers the work of several, a check the topology asks for, or work that
 belongs to a different person or agent. A feature is not a boundary on its own: a feature
 one run delivers *is* its work step (step 7). A plan of many thin steps is a plan
 of many launches; a plan of a few well-batched steps is what an agent and its reviewer both
@@ -226,10 +226,8 @@ one PR. A link waits for its source to be done, so never draw a step that merges
 prerequisites' work — it would wait on them while they wait on it. Where each step can be
 reviewed and merged on its own, leave them on the mainline and let every step land by itself.
 
-**A review step** is an agent that reviews the step it waits on, with a cap on the rounds
-before a person decides. `dplanner step add <project> 'Review the parser' --after S7 --agent
---review` puts it between S7 and whatever follows. Link what comes next after the review,
-never after S7 directly: `project lint` names a step that goes round it (`review.bypassed`).
+**Never draw a review as a step of its own.** Reviewing is how a step gets done, not more
+work beside it: until a step can run a playbook with a review stage, a person reviews its PR.
 
 ## A stretch on its own branch
 
@@ -239,8 +237,8 @@ branch put S4 S5 S6 --branch feature/<name>`. A *cut* is born before the steps a
 *landing* after, and the links from outside move onto the two, so the stretch has one way in
 and one way out. Each step's PR then merges into the feature branch, and merging there is
 what accepts it; the landing — an agent step — merges the mainline in and opens the
-branch's own PR. **Review the landing, not each step**: a review step after the landing
-reads the whole branch at once. Link work the stretch builds on into the cut, never into
+branch's own PR. **Review the landing, not each step**: a person reviews the landing's PR —
+the whole branch at once — or, once playbooks run, the landing's *Review only* playbook does. Link work the stretch builds on into the cut, never into
 its middle (`project lint` names it, `branch.late-entry`), and keep milestones outside it —
 a release whose work is not on the mainline yet is not a release. `dplanner branch show`
 says what is on each branch; `dplanner branch remove` takes one away again.

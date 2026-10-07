@@ -109,11 +109,10 @@ exists, so a renamed section is caught where it is cited.
 - A project names its locations
 - Save spans repositories; the exit dialog says what it records
 
-## [Agents — Run Agent, worktrees, run directories, usage, harnesses, profiles and reviews](docs/architecture/agents.md)
+## [Agents — Run Agent, worktrees, run directories, usage, harnesses and profiles](docs/architecture/agents.md)
 
 - The description is the instructions
 - An agent finishes at Ready for review
-- A review is a conversation kept on the step that asks
 - A launch writes its intent before its shell
 - Running an agent launches a peer, not a task
 - Runs, questions and claims are three records in the plan

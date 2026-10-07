@@ -63,7 +63,7 @@ paths:
   undo, a paste and an import — and written to `step.json` / `project.dproj` (format 2;
   the migration numbers an old project's steps in `children` order). The **letter is
   presentation**: `planning.kinds.key_of` reads the kind off the one `RANKING` — `M`
-  milestone, `F` feature, `C` check, `W` wait, `B` cut, `R` review, `S` otherwise, the
+  milestone, `F` feature, `C` check, `W` wait, `B` cut, `S` otherwise, the
   coarser claim first — so a step keeps its number when its
   kind changes and the letter follows. One rule, four readers: the card's key block, every
   CLI row and `find_step` (`S7`, `s7` and `7` all resolve; several projects' `7` is
@@ -89,6 +89,6 @@ paths:
   that crosses another stretch, and by one that splits a stack (`stack.stack_split`, the
   graph editor's fact handed in). Remove is never partial, so the window asks first.
   `planning.kinds.works_nobody` is what a wait and a cut share — "a wait", "a branch cut" — and
-  every module refusing such a step a status, an agent, a review or a test words its
+  every module refusing such a step a status, an agent or a test words its
   refusal from it. `docs/architecture/graph-model.md`'s *A branch stretch is bracketed by a cut and
   a landing* has the reasoning.
