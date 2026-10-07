@@ -520,7 +520,7 @@ src/dplanner/
 │   │                        block, name.py leading it; every view's double-click on a step
 │   │                        opens it, and New opens it on the step it just made)
 │   │
-│   │   ── the fourteen aspect modules (`dplanner aspect list`); the `step_` prefix is not the
+│   │   ── the aspect modules (`dplanner aspect list`); the `step_` prefix is not the
 │   │      marker — `estimation`, `github` and `spec` are aspects too, and `step_order` /
 │   │      `step_properties` are views of steps, not aspects:
 │   ├── estimation/          estimates: the editor, the bulk Estimates tab, the `estimate` verbs
@@ -560,6 +560,10 @@ src/dplanner/
 │   ├── step_milestone/      the steps that mark a milestone — the Milestone tab and the Type ▸ Milestone toggle
 │   ├── step_wait/           a step that holds what requires it, until a day or for working days: the
 │   │                        Type ▸ Wait toggle, the Wait template, its Details block, `dplanner wait`
+│   ├── step_playbook/       which playbook runs a step: the nine built-in presets (presets.py),
+│   │                        the step's choice and the project's defaults (aspect.py), its
+│   │                        Details block, the Playbooks tab of Project ▸ Settings…,
+│   │                        `dplanner playbook list|show|set`
 │   ├── feature/             a step that is a feature: the Type ▸ Feature toggle, the Feature
 │   │                        tab (the spec passages it was read from), the Specs tab's Cite…
 │   │                        menu, `dplanner feature` (list, show, cite, uncite, reanchor)

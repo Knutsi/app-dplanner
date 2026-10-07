@@ -135,6 +135,7 @@ HEADLESS_FILES: dict[str, tuple[str, ...]] = {
     "spec_git": ("source.py",),
     "step_agent_run": ("runs.py", "terminal.py"),
     "step_order": ("export.py",),
+    "step_playbook": ("presets.py",),
     "testing": ("export.py", "filing.py", "format.py", "references.py", "runs.py"),
 }
 
@@ -204,6 +205,7 @@ STORED_IDS = frozenset(
         "step_description",
         "step_milestone",
         "step_order",
+        "step_playbook",
         "step_properties",
         "step_start",
         "step_status",

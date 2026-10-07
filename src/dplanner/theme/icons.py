@@ -407,6 +407,11 @@ def person_icon(color: str | QColor) -> QIcon:
     return glyph_icon("person", color)
 
 
+def playbook_icon(color: str | QColor) -> QIcon:
+    """A list ticked off: a playbook runs this step, stage by stage."""
+    return glyph_icon("playbook", color)
+
+
 def beaker_icon(color: str | QColor) -> QIcon:
     """A flask: this step keeps tests."""
     return glyph_icon("beaker", color)

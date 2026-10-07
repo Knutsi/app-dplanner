@@ -328,3 +328,25 @@ def test_the_ring_is_painted_outside_the_body_and_moves_with_the_phase(app):
     assert any(inked) and not all(inked)  # Dashes and gaps.
     assert render(NodeAccent(chip_text="working", chip_tone="info"), phase=2.0) != inked
     assert QRectF(0, 0, NODE_W, NODE_H).adjusted(-RING_GAP, 0, 0, 0).left() > -PAINT_MARGIN
+
+
+def test_a_step_that_chose_its_playbook_wears_the_medallion_and_an_inherited_one_does_not(
+    services, project, tab
+):
+    from dplanner.modules.step_playbook import aspect as playbook
+    from dplanner.modules.step_playbook.presets import PRESETS
+
+    step = project.steps[0]
+    services.undo.push(
+        SetModuleDataCommand(
+            project.id,
+            playbook.MODULE_ID,
+            playbook.write_project(playbook.Defaults(default=PRESETS[0])),
+        )
+    )
+    assert "playbook" not in node(tab, step)._accent.icons
+    choice = playbook.Choice(PRESETS[-1])
+    services.undo.push(SetModuleDataCommand(step.id, playbook.MODULE_ID, playbook.write(choice)))
+    assert "playbook" in node(tab, step)._accent.icons
+    services.undo.undo()
+    assert "playbook" not in node(tab, step)._accent.icons

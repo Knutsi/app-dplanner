@@ -230,8 +230,9 @@ class NodeAccent:
     tone_color: str = ""
     # Icon medallions on the top edge, left end, in order: "tag" (a milestone the graph
     # aims at), "layers" (a feature: it collects the work behind it), "beaker" (this step
-    # keeps tests), "shield" (a check: it stands for everything behind it passing). Who
-    # works the step is the key block's glyph, and a card says a thing once.
+    # keeps tests), "shield" (a check: it stands for everything behind it passing), "merge"
+    # (a landing), "playbook" (it chose the playbook that runs it). Who works the step is
+    # the key block's glyph, and a card says a thing once.
     icons: tuple[str, ...] = ()
     stat_text: str = ""  # The one number a step answers with — full ink, never faded.
     stat_strong: bool = False  # Bold the stat: this node's number is the point of it.
