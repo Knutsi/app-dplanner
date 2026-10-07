@@ -114,13 +114,6 @@ def test_a_step_under_review_is_briefed_with_the_findings_posted_to_it(cli):
     assert "## Review rounds" not in prompt(cli, "S1")
 
 
-def test_a_collector_is_told_to_send_unready_work_back_upstream(cli, cli_stdin):
-    cli("step", "add", "widget", "Land it", "--after", "S1", "--agent", "--auto-progress")
-    cli_stdin("describe", "set", "S3", "--file", "-", stdin="Merge the parser.")
-    collected = section(prompt(cli, "S3"), "Work you collect")
-    assert "`dplanner review post S3 --to S1 --file <findings.md>`" in collected
-
-
 def test_a_review_runs_in_no_worktree_and_the_verb_says_why(cli):
     refused = cli("agent", "worktree", "R2", "on", expect=1)
     assert NO_WORKTREE_FOR_A_REVIEW in refused

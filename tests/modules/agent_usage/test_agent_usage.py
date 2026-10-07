@@ -280,7 +280,7 @@ def test_usage_rows_kept_on_a_step_move_into_the_ledger_at_the_next_open(cli, wo
 
 
 def test_a_window_opened_over_kept_usage_rows_moves_them_into_the_ledger(
-    app, cli, cli_library, workspace, at_work_board, launch_locks
+    app, cli, cli_library, workspace, at_work_board
 ):
     """The window absorbs the retired aspect as the CLI does: ``AgentUsageModule`` declares
     its format, so the builder's migration moves the rows before any module reads."""
@@ -293,7 +293,7 @@ def test_a_window_opened_over_kept_usage_rows_moves_them_into_the_ledger(
     old.parent.mkdir(exist_ok=True)
     old.write_text(json.dumps({"runs": [{"harness": "claude", "session": "s1", "input": 9}]}))
 
-    session = new_session(at_work=at_work_board, launch_locks=launch_locks)
+    session = new_session(at_work=at_work_board)
     try:
         assert session.open_initial(cli_library)
         assert not old.exists()

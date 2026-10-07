@@ -399,13 +399,7 @@ class StatusBoard(EntityActivity):
         deps = self._deps
         self._each = {
             project.id: progression(
-                deps.library,
-                project,
-                deps.status_for,
-                deps.counts_as_work,
-                deps.auto_progresses,
-                deps.asks_person,
-                deps.is_agent,
+                deps.library, project, deps.status_for, deps.counts_as_work, deps.asks_person
             )
             for project in self._projects()
         }

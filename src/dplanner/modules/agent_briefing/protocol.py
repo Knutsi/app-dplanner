@@ -13,7 +13,6 @@ from dplanner.domain.model import Library, Step
 from dplanner.domain.repositories import UNSET, RepositoryFacts
 from dplanner.modules.agent_briefing.prompt import listed, quoted
 from dplanner.modules.agent_briefing.worktree import no_worktree, run_name_of
-from dplanner.modules.auto_progress.aspect import collectors
 from dplanner.modules.notes.aspect import project_ref
 from dplanner.planning.branches import BranchPlan, reading
 from dplanner.planning.kinds import key_of
@@ -184,16 +183,6 @@ def epilogue(library: Library, step: Step, branches: BranchPlan) -> str:
     project = project_ref(library.project_of(step.id))
     if is_review(step):
         return _review_epilogue(key, ref, project)
-    takers = [key_of(other) or other.title for other in collectors(library, step)]
-    collected = (
-        f"- {listed(takers)} {'collects' if len(takers) == 1 else 'collect'} this step's work:"
-        f" {'it' if len(takers) == 1 else 'each'} may start as soon as you set"
-        " ready-for-review, and takes your branch or PR from there — so push everything"
-        " and open the PR first. Leave this step's done to "
-        f"{'it' if len(takers) == 1 else 'them'}.\n"
-        if takers
-        else ""
-    )
     reviewers = [other for other in library.dependents(step.id) if reviews(other, step)]
     if reviewers:
         who = listed([key_of(other) or other.title for other in reviewers])
@@ -257,7 +246,6 @@ def epilogue(library: Library, step: Step, branches: BranchPlan) -> str:
         + _notes_told(project, ref)
         + "When the work is finished, record it in DPlanner:\n"
         + finished
-        + collected
         + _handoff_told(project, ref)
         + f"If you cannot finish, `dplanner status set {ref} blocked` and say why in the"
         " handoff note.\n"

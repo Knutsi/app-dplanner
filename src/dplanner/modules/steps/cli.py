@@ -61,10 +61,6 @@ type RemoveSteps = Callable[[Library, Sequence[StepId], str], Command]
 type Duplicate = Callable[[CliContext, Sequence[StepId], Project], list[Step]]
 
 
-def _plain(_waiter: Step, _source: Step) -> bool:
-    return False
-
-
 def _no_key(_step: Step) -> str:
     return ""
 
@@ -121,7 +117,6 @@ def commands(
     step_authors: Sequence[StepAuthor] = (),
     key_of: Callable[[Step], str] = _no_key,
     *,
-    auto_progresses: Callable[[Step, Step], bool] = _plain,
     branches_in: Callable[[Project], Mapping[StepId, str]] = _no_branches,
     remove_steps: RemoveSteps = remove_steps_command,
     duplicate: Duplicate,
@@ -129,8 +124,7 @@ def commands(
     """``step_authors`` let ``step add`` author the step in the same call, in report order.
     ``key_of`` is the step's readable key (``S7``, ``F3``) — the letter is a fact about
     aspects this file never reads, so the root hands the rule in and every row prints the
-    same key the canvas paints; ``auto_progresses`` marks, in ``step show``, a link its
-    waiter may start across from review on; ``branches_in`` names the feature branch each
+    same key the canvas paints; ``branches_in`` names the feature branch each
     step's work is on. ``remove_steps`` is how ``step remove`` builds its removal — the
     graph editor's, which closes a stack round a member that goes — and ``duplicate`` is
     the canvas's Duplicate (:func:`~dplanner.modules.canvas.cli.duplicator`)."""
@@ -226,9 +220,7 @@ def commands(
             path=("step", "show"),
             summary="One step: what it waits on, what waits on it, and its aspects.",
             configure=step_arg,
-            run=partial(
-                _step_show, key_of=key_of, auto_progresses=auto_progresses, branches_in=branches_in
-            ),
+            run=partial(_step_show, key_of=key_of, branches_in=branches_in),
             examples=("dplanner step show read-the-spec",),
         ),
         CliCommand(
@@ -346,7 +338,6 @@ def _step_show(
     context: CliContext,
     args: Namespace,
     key_of: Callable[[Step], str] = _no_key,
-    auto_progresses: Callable[[Step, Step], bool] = _plain,
     branches_in: Callable[[Project], Mapping[StepId, str]] = _no_branches,
 ) -> int:
     library = context.library
@@ -358,7 +349,6 @@ def _step_show(
         "project": project.id,
         "branch": branch,
         "dependents": [other.id for other in library.dependents(step.id)],
-        "auto_progress": [other.id for other in waiting if auto_progresses(step, other)],
         "aspects": {key: dict(value) for key, value in sorted(step.module_data.items())},
         "text": sorted(step.module_text),
     }
@@ -366,15 +356,11 @@ def _step_show(
     def named(others: Sequence[Step]) -> str:
         return ", ".join(f"{key_of(s)} {s.title}".strip() for s in others)
 
-    def marked(source: Step) -> str:
-        mark = " (auto-progress)" if auto_progresses(step, source) else ""
-        return f"{key_of(source)} {source.title}".strip() + mark
-
     lines = [f"{key_of(step)} {step.title}".strip() + f"  {step.id}", f"  in {project.title}"]
     if branch:
         lines.append(f"  on branch: {branch}")
     if waiting:
-        lines.append("  waits on: " + ", ".join(marked(source) for source in waiting))
+        lines.append("  waits on: " + named(waiting))
     blocked = library.dependents(step.id)
     if blocked:
         lines.append("  blocks:   " + named(blocked))

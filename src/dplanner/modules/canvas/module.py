@@ -90,8 +90,8 @@ class CanvasDeps:
     # holds; what is wrong with a plan is *derived* from it, on a settle of its own, so it
     # lands after the change that caused it and has to say so itself.
     accents_changed: "CoreSignal[str] | None" = None
-    # The same for the arrows, keyed (waiter, kind, source): which links auto-progress, and
-    # which of those carry work that is being done right now. Absent means a plain arrow.
+    # The same for the arrows, keyed (waiter, kind, source): which lie on a feature branch's
+    # lane. Absent means a plain arrow.
     edge_accents: Callable[[str], Mapping[Edge, EdgeAccent]] = field(default=_no_edge_accents)
     # Which of a project's cards wear a branch strip under the body, and so stand
     # ``STRIP_H`` taller — the same steps whose accent names one. The canvas sizes its cards

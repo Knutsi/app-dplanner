@@ -37,13 +37,6 @@ to be found before it can help is one that helps nobody — and a switch rather 
 because a plan whose statuses somebody else keeps by hand should not have the window
 writing into it.
 
-The fourth is *When a step becomes due*: whether this window launches, on its own, the
-agent on a step the plan made due — a collector whose sources, or a review whose subject,
-reached review, or a side of a review whose agent has gone (``auto_launch.py``). **Off by
-default**: it spends terminals and tokens nobody clicked for, and every machine that opens
-the plan with it on is one more launcher, so the person turns it on where agents should run.
-Only one window per library on this machine launches; the other one's page says so.
-
 Per user, per machine — a colleague's terminal is not the workspace's business, which is
 why this is a GLOBAL-scope section and never a file in the plan. Whether a step's agent
 gets a fresh worktree is *not* here: that is a fact about the step, kept on its agent
@@ -69,7 +62,7 @@ from dplanner.framework.settings_registry import settings_page
 from dplanner.framework.table import Cell, Column, Table
 from dplanner.framework.toolbar import Toolbar
 from dplanner.framework.user_config import get_global, set_global
-from dplanner.framework.widgets import block, caption, captioned, note
+from dplanner.framework.widgets import block, caption, captioned
 from dplanner.modules.agent_launch.detect_dialog import DetectedProfilesDialog
 from dplanner.modules.agent_launch.launcher import (
     TerminalPreset,
@@ -93,7 +86,6 @@ from dplanner.theme.tokens import FIELD_GAP, SECTION_GAP
 
 MAX_AGENTS_KEY = "max_agents"
 START_IN_PROGRESS_KEY = "start_in_progress"
-AUTO_LAUNCH_KEY = "auto_launch"
 
 CUSTOM_LABEL = "Custom"
 # What a preset dropdown asks room for: a harness row reads long, and a dropdown sized to its
@@ -136,12 +128,6 @@ def start_in_progress() -> bool:
     return bool(get_global(MODULE_ID, START_IN_PROGRESS_KEY, True))
 
 
-def auto_launch() -> bool:
-    """Whether this machine's window launches what becomes due. Off unless the person turned
-    it on: nothing spends a terminal and tokens that nobody asked for."""
-    return bool(get_global(MODULE_ID, AUTO_LAUNCH_KEY, False))
-
-
 def terminal_label(preset: TerminalPreset, installed: bool) -> str:
     label = f"{preset.label} — multiplexer" if preset.multiplexer else preset.label
     return label if installed else f"{label} — not found"
@@ -176,23 +162,13 @@ TERMINAL_HINT = (
 LIMIT_HINT = (
     "How many agents Run Agent may launch from one selection. Each is a terminal, a worktree"
     " and a session of its own; select more than this and the verb says so instead of"
-    " filling the desk. What this window launches on its own never takes the agents it is"
-    " running past it: a due step waits for one to end."
+    " filling the desk."
 )
 LAUNCH_HINT = (
     "Run Agent sets the step's status to in progress as the terminal opens, so the plan"
     " shows the work has started without waiting for the agent to say so. It is not undone"
     " when the agent stops: the agent says it is ready for review, and done is yours, from"
     " Step ▸ Status."
-)
-DUE_HINT = (
-    "A step is due when an agent should start it and nobody has to decide: a collector whose"
-    " last source, or a review whose subject, reached Ready for review — or a review's side"
-    " whose turn it is and whose agent has gone. Launched through the review's agent or the"
-    " default profile, claimed in progress, and within Max agents; turned on, it also starts"
-    " whatever became due while no window was open. One window per library launches. Claude"
-    " starts in plan mode and waits for you to approve its plan: a profile that does not ask"
-    " is yours to make."
 )
 
 
@@ -363,12 +339,7 @@ def build_page(
     parent: QWidget | None,
     platform: str = sys.platform,
     harnesses: tuple[AgentHarness, ...] = (),
-    launching: Callable[[], str] = lambda: "",
-    changed: Callable[[], None] = lambda: None,
 ) -> QWidget:
-    """``launching`` says why this window does not launch although the switch is on — another
-    window holds the library's lock — or ""; ``changed`` is told when the switch or a profile
-    changes, so what the launcher refused is tried again."""
     page, layout = settings_page(parent)
     page.setObjectName("AgentSettingsPage")
     current = {"row": 0}
@@ -378,7 +349,6 @@ def build_page(
         followed the change, and the row is what shows it."""
         update_profile(current["row"], harnesses=harnesses, platform=platform, **changes)
         profiles.reload(current["row"])
-        changed()
 
     name_edit = QLineEdit(page)
     name_edit.setObjectName("AgentProfileName")
@@ -444,25 +414,6 @@ def build_page(
     started_box.setChecked(start_in_progress())
     started_box.toggled.connect(lambda on: set_global(MODULE_ID, START_IN_PROGRESS_KEY, bool(on)))
 
-    due_box = QCheckBox("Launch its agent from this window", page)
-    due_box.setObjectName("AgentAutoLaunchBox")
-    due_box.setChecked(auto_launch())
-    holder = note("", page)
-    holder.setObjectName("AgentAutoLaunchNote")
-
-    def say_holder() -> None:
-        words = launching()
-        holder.setText(words[:1].upper() + words[1:] + "." if words else "")
-        holder.setVisible(bool(words))
-
-    def switch(on: bool) -> None:
-        set_global(MODULE_ID, AUTO_LAUNCH_KEY, bool(on))
-        changed()
-        say_holder()  # Now, while the dialog stands: the pass itself waits behind it.
-
-    due_box.toggled.connect(switch)
-    say_holder()
-
     # The profiles beside the editor for the picked one, as one block under one caption.
     columns_host = QWidget(page)
     columns = QHBoxLayout(columns_host)
@@ -492,6 +443,5 @@ def build_page(
     limit_layout.addStretch(1)
     block(layout, captioned("Max agents launched at once", page, LIMIT_HINT), limit_row)
     block(layout, captioned("On launch", page, LAUNCH_HINT), started_box)
-    block(layout, captioned("When a step becomes due", page, DUE_HINT), due_box, holder)
     layout.addStretch(1)
     return page

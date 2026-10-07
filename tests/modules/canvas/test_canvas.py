@@ -1838,8 +1838,7 @@ def offered(tab, scene_pos):
 
 
 def test_a_right_click_on_an_arrow_picks_it_and_offers_the_link_verbs(services, project, tab):
-    """What an arrow is for, and nothing else: removed, made to auto-progress, or one of its
-    ends moved."""
+    """What an arrow is for, and nothing else: removed, or one of its ends moved."""
     first, second = project.steps
     services.undo.push(SetEdgesCommand(second.id, "requires", [first.id]))
     scene(tab).select_step(first.id)
@@ -1847,7 +1846,6 @@ def test_a_right_click_on_an_arrow_picks_it_and_offers_the_link_verbs(services, 
 
     assert offered(tab, a_point_on(edge)) == [
         "Remove Link",
-        "Auto-progress — S2 is not an agent step",
         ("Redirect", ["To Step", "From Step"]),
     ]
     assert scene(tab).selection().steps == ()
@@ -2005,7 +2003,6 @@ def test_a_mixed_pick_leads_with_narrowing_and_offers_each_kind_below(services, 
         "Links",
         [
             "Remove Link",
-            "Auto-progress — S2 is not an agent step",
             ("Redirect", ["To Step", "From Step"]),
         ],
     )
