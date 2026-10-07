@@ -29,23 +29,15 @@ paths:
   frontier is a per-step check, not `ordering.ready()`'s wave one. **Ready for review and
   ready to merge are on the board and not done**: each is a partition of its own
   (`review`, `merge`), one move away for the lookahead, out of the percent — and a plain
-  `requires` is fulfilled by `done` alone, so nothing starts on work nobody accepted.
-  **An auto-progress link is fulfilled from review on** (`auto_progresses`, handed in beside
-  `status_for`): `progression.outstanding()` is the one answer the frontier, the lookahead
-  and Run Agent's gate read, so a step that collects its sources is Ready to start once they
-  are under review (`graph-model.md`).
-  **Some of Ready to start is due, and an agent waiting on a person is on the board.**
-  `progression.due` is the part of the frontier nobody decides to launch — an agent step,
-  pending, no run, a prerequisite fulfilled *through* an auto-progress link — read with the
-  review turns by `agent_launch/due.py`'s `due_now`, marked `due` by `progression show`, and launched by
-  a window (`agents.md`). `asks_person` (the agent-run aspect's reading: `plan-for-review`,
+  `requires` is fulfilled by `done` alone, so nothing starts on work nobody accepted —
+  `progression.outstanding()` is the one answer the frontier, the lookahead and Run Agent's
+  gate read.
+  **An agent waiting on a person is on the board.** `asks_person` (the agent-run aspect's
+  reading: `plan-for-review`,
   `needs-input`, or a plan-mode launch that has said nothing since) splits running work
   into `asking`, the **Waits for you** group under Blocked on both boards and in
   `progression show`; the report keeps the default, since it publishes the plan.
-  **Ready for review is a person's turn**: `progression.taken` — a step waiting on it across
-  an auto-progress link, worked by an agent (`is_agent`, handed in beside `asks_person`),
-  neither blocked nor done — splits work an agent takes on into `taken`, off both boards
-  like running work and *Taken by an agent* in `progression show`, so the boards' *Ready for
+  **Ready for review is a person's turn**, whatever waits on it, so the boards' *Ready for
   review* is exactly what the canvas pulses for (`canvas.md`).
   **Every partition a person acts on is ranked by `unlocks`** (the map covers every step
   of work not done), ties in project order. **The surface is named for the question and

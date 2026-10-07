@@ -3,16 +3,15 @@ paths:
   - "src/dplanner/domain/{model,commands,ids}.py"
   - "src/dplanner/cli/lookup.py"
   - "src/dplanner/modules/steps/**"
-  - "{src/dplanner,tests}/modules/{auto_progress,branches}/**"
+  - "{src/dplanner,tests}/modules/branches/**"
   - "src/dplanner/domain/branches.py"
   - "tests/domain/test_{model,ids}.py"
   - "tests/modules/canvas/test_stack_edits.py"
-  - "tests/cli/test_auto_progress_verbs.py"
   - "tests/domain/test_branches.py"
   - "tests/cli/test_branch_verbs.py"
 ---
 
-# Graph model — edges, auto-progress links, step numbers and isolation
+# Graph model — edges, step numbers and isolation
 
 - **Every model change goes through a command** on the single undo stack, and carries an
   `origin` so the view that made the edit can ignore its own echo. Two kinds of change
@@ -70,32 +69,12 @@ paths:
   CLI row and `find_step` (`S7`, `s7` and `7` all resolve; several projects' `7` is
   refused), the run name a worktree and branch carry, and the briefing's verbs. Never
   store the letter, and never mint a number anywhere but `add_child`.
-- **An auto-progress link is an aspect on the step that waits, read through the edge.**
-  `modules/auto_progress/` stores `{"from": [source ids]}` on the waiter, and an id counts
-  only while the waiter's own `requires` lists it (`flagged`) — so no verb that rewrites an
-  edge list learns the aspect exists, a redirected link arrives plain, and undoing a removal
-  restores the flag with the link. **Never repair the list from an edge verb**; the one
-  place ids change is a paste, which hands every `PastePolicy` the old→new map
-  (`remap_for_paste`). **Whether a link frees its waiter from review on** is the one
-  `auto_progress.aspect.auto_progresses`, handed as `auto_progresses(waiter, source)` to the progression walk,
-  Run Agent's gate, `project graph`/`step show`, the canvas's `edge_accents` and its pulse
-  (`progression.taken`, which the boards read too), so every
-  surface agrees with the frontier — **and a link into a review always auto-progresses**, by
-  the review's rule ORed in there rather than by a flag written onto it; the Edge menu shows
-  such a link checked and greyed with that reason (`AutoProgressDeps.always`). **Whether a
-  step must land its sources' work** is the flag alone — the aspect's `sources` and
-  `collectors`, read by *Work you collect*, the source's epilogue, `auto-progress list` and
-  lint — because that duty is only ever given by flagging. Only an agent step collects: the
-  Edge menu's *Auto-progress* greys on any other waiter, and lint `auto-progress.waiter`
-  names one the CLI or a hand edit made.
-  `docs/architecture/graph-model.md`'s *An auto-progress link is an aspect on the step that waits*
-  weighs it against data on the edge and a new edge kind.
 - **A branch stretch is a cut and a landing, and what is on it is derived.**
   `modules/branches/` holds two aspects: `branch_cut` (`{"branch": …}`) on a step nobody
   works — no status of its own, done once what it waits on is (a wait of no days, composed
   in `schedule.status_on`, never through the schedule's `wait_of`) — and `branch_land`
   (`{"cut": id}`) on the agent step that merges it back, counted only while that cut is
-  upstream (auto-progress's rule: a stored id read through the graph). **Membership is
+  upstream (a stored id read through the graph, never repaired by an edge verb). **Membership is
   never stored**: `domain/branches.py` reads it forwards — everything after the cut, until
   the landing — and nesting is derived (a stretch whose cut and landing are both members of
   another is a branch off it; a step's base is the innermost *open* stretch holding it).

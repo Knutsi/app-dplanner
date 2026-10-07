@@ -205,8 +205,8 @@ a cloud over nine identical stems, taught that the look is most of the message.
 ## Motion is a library
 
 The canvas already moved in two places, each on a hand-rolled `QTimer` — the agent ring
-and the auto-progress chevrons step every 80 ms, twelve frames a second, and the spinner
-has its own — and Home's garden would have been a third. `framework/motion/` is what they
+and the pulse step every 80 ms, twelve frames a second, and the spinner has its own — and
+Home's garden would have been a third. `framework/motion/` is what they
 share instead, shaped for the canvas though Home is its first user:
 
 - **One clock per surface, at the display's rate, only while seen.** `FrameClock` runs on
@@ -373,7 +373,7 @@ that picked*:
   where Ctrl+V lives; one enabled QAction may own a shortcut);
 - the **plane** as a place — `select`: Find, Lasso, Select Nearest;
 - a **mixed** pick — `narrow`: Select Only Steps, Select Only Links;
-- a picked **arrow** — `links`: Remove Link, Auto-progress and the Redirect pair;
+- a picked **arrow** — `links`: Remove Link and the Redirect pair;
 - the drawing itself — `arrange`, `look`, `panels` as before;
 - picked **steps** — Step: Rename, Delete, Connect, Link, Unlink (the link between two
   picked steps, which a table can offer with no arrow in sight), Isolate, and *Show in ▸

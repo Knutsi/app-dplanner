@@ -100,6 +100,6 @@ def test_an_ended_conversation_and_a_side_a_person_settled_are_never_due():
 
 
 def test_a_conversation_not_opened_yet_is_nobodys_turn_here():
-    """A review starts because its subject reached review, which ``progression.due`` says."""
+    """A review starts the way any step does, once what it waits on is done."""
     library, project, _work, _review = conversation()
     assert due(library, project) == []

@@ -102,21 +102,19 @@ learns that reviews exist. The price is that a review can be linked to nothing o
 several steps, and lint's `review.subject` says so rather than a verb refusing, because a
 plan reshaped in several calls passes through both.
 
-**Every link into a review auto-progresses, by rule rather than by flag.** A review must
-start while its subject reads ready for review, and its subject becomes done only when the
-review approves it — the collector's deadlock again. The rule is ORed into the one
-`auto_progress.aspect.auto_progresses`, so the frontier, Run Agent's gate, the doubled edge on the canvas and
-`project graph` agree without a word each. Nothing is written onto the review. The Edge
-menu's *Auto-progress* shows such a link checked and greyed, with its reason (*Hidden
-means absent; disabled means not now*).
+**A link into a review is a plain link.** A review must start while its subject reads
+ready for review, and its subject becomes done only when the review approves it. That was
+answered by auto-progress, which let a review start from review on; it left with
+auto-progress (`decisions.md`, 2026-10-07), and review steps leave next for a playbook's
+review stage (`playbooks.md`'s *A playbook is a list of stages around one step*).
 
 **The conversation lives on the step that asks.** Three homes were weighed:
 
 | Where | Cost |
 |---|---|
-| **On the reviewed step** | One step can be answering two askers at once, a review and a collector. Each would need its own list keyed by asker, and the cap would sit on the step that does not own it. |
+| **On the reviewed step** | One step can be answering two reviews at once. Each would need its own list keyed by asker, and the cap would sit on the step that does not own it. |
 | **In the notes log** | Notes are the project's record, indexed into every later briefing. A round is a turn in a protocol with a state; a log full of them would bury every decision. |
-| **On the asker** (`review_rounds`, chosen) | The asker owns the questions and the cap. Each round names its party. A collector's conversations with three sources are three rounds lists in one entry. |
+| **On the asker** (`review_rounds`, chosen) | The asker owns the questions and the cap. Each round names its party. |
 
 Both sides write that one entry, through verbs in separate runs, and the stale-workspace
 check serialises them. **A round holds only texts and stamps**: opened, posted, taken,
@@ -134,12 +132,6 @@ the verbs, `review wait` and the Review tab would each need to keep it true.
 
 Every one of these goes through `status_command`, the writer `status set` uses. So a
 stopped status ends an at-work claim the same way whichever verb stopped the work.
-
-**A collector talks the same way.** Who a step may talk to is whoever it takes work from
-review on — `auto_progresses` again: a review's subject, or a collector's flagged sources.
-So `start`, `post`, `take`, `reply` and `wait` serve a collector sending work back upstream,
-with `--to` naming the source. `approve` and `escalate` are a review's verdicts: a collector
-refuses them and names its own way out, `status set`.
 
 **`review wait` polls, and holds nothing while it does.** The other side is another
 process, often in another terminal, possibly on another machine once the plan syncs. The
@@ -172,10 +164,7 @@ the tab's *Open Conversation…*, and a double-click on one of its rows — open
 
 Three choices shaped it:
 
-- **It is enabled by the ledger, not by the aspect.** A collector sending work back upstream
-  keeps the same `review_rounds` entry and talks with the same verbs (*A collector talks the
-  same way*). Gating on `is_review` would have hidden the one conversation that has no other
-  place in the window. The state asks `rounds(step)`, one entry's rows, because an action
+- **It is enabled by the ledger, not by the aspect.** The state asks `rounds(step)`, one entry's rows, because an action
   state runs on every announce. It greys with *no rounds yet* on a review and *not a review*
   anywhere else.
 - **It follows the ledger while it is open.** An agent's `review reply` arrives from another
@@ -183,7 +172,7 @@ Three choices shaped it:
   the adoption back behind the modal: *A settle behind a modal waits for it* is about the
   views behind one. The dialog hears `module_data_changed` directly, as the tab does. It keeps
   the reader's pick by the message's identity (party, round, kind), not its row, because a
-  collector's ledger can gain a stamp on an earlier round.
+  ledger can gain a stamp on an earlier round.
 - **One builder names each message**, for the tab and the dialog alike (`message_rows`,
   `where_it_stands`), so the two cannot word a message differently. The tab's full-text
   tooltip went: the dialog is where a message is read.
@@ -192,8 +181,8 @@ Three choices shaped it:
 use them.** A review and its subject are two peers in two terminals that never talk except
 through the plan, so each briefing has to carry its half of the conversation in full:
 - **The review** is told whom it reviews and where that work is (*Work you review*, the
-  same line *Work you collect* prints, so a collector and a review are never told where
-  work is two ways), through which lenses, the round protocol and the cap (its generated
+  same line *Work you land* prints, so a landing and a review are never told where work is
+  two ways), through which lenses, the round protocol and the cap (its generated
   `## Instructions`, *The description is the instructions*), and that its verdict is its
   status — its epilogue asks for no PR and no `status set`, because `approve` and
   `escalate` move both steps and carry the subject's PR.
@@ -219,145 +208,44 @@ aspect says, and every surface asks its `worktree(step)`: the launch, the prefli
 stashes), the Agent tab's box, greyed with the reason, and `agent worktree … on`, refused.
 Both surfaces import that one function, so neither can declare its own.
 
-## Auto-progress is launched by the window
+## A launch writes its intent before its shell
 
-*A playbook's `progress` stage and the coordinator replace the window's auto-launch, and this
-section leaves with it; `playbooks.md`'s *A playbook is a list of stages around one step*
-has the design.*
+A launch nobody watches — `AgentLaunchModule.launch_unattended`, kept for `dplanner agent
+run` (S11) when the window's auto-launch left with auto-progress (`decisions.md`, 2026-10-07)
+— is Run Agent for one step with the person's questions taken out, and an external effect
+whose claim reaches the plan only at a flush. Two rules came out of the auto-launch that
+first needed them, and they are what is kept.
 
-An auto-progress link says a step may start once its sources reach review; a review may
-start once its subject does. Until this, *may* meant a person noticing and clicking Run
-Agent, which is the one thing the round of three agents and a collector was meant not to
-need. The spec's question was who starts it — *likely an issue for race conditions* — and
-whether it could just happen when a step's dependencies are fulfilled. It happens now, and
-five decisions say how.
+**The intent is written first.** Spawning, claiming in memory and flushing afterwards
+leaves no trace when the process dies in between, and the next launcher finds the step
+unclaimed and launches it again. So the launch writes an intent (`intents.py`: step, run
+id, actor, run directory) before it spawns, drops it when no shell opened, claims the step
+in progress, and forgets the intent only once autosave says the claim is on disk. An intent
+found left over later is a launch that was interrupted: a shell that started (its wrapper
+wrote the `shell` file into the run directory) is a run, and one that never started is a
+person's to start again — **never retried blind**, since a shell slow to start would
+otherwise be a second one. The intent is this machine's fact, never the plan's: a run
+directory and a pid mean nothing on another machine. Only an unattended launch records one;
+a person's Run Agent is watched by the person who clicked it. The run record S3 designed
+(*Runs, questions and claims are three records in the plan*) is written before the process
+spawns too, and is the claim `agent run` keeps.
 
-**Only a window launches.** The terminal cannot: which agent CLI, which terminal and how
-many at once are this desk's settings, kept per user in QSettings, which the CLI has no
-business reading — and an agent that launched its collector from its own shell would start
-a child of itself, the nested session *The peer is a top-level session* exists to prevent.
-So the terminal's half is to *say* it: `status set` and the `review` verbs print a line for
-every step the change made due (`_status_written`, the wrapper already on the status-moving
-verbs, generalised rather than joined by a second one), and `progression show` marks due
-rows. `--json` keeps its one document — the line is text for whoever reads the terminal,
-and `progression show --json` carries `due` for a caller that parses.
-
-**What is due is one derivation, read by every surface.** `agent_launch/due.py`'s
-`due_now` joins two owners' halves and never stores the answer — headless, so that a process
-with no window can one day launch by the same rule; the root only widens *running* with the
-runs the window watches, and `due.claim` is the claim either would write:
-- `progression.due` — an agent step, pending, with no run recorded, nothing it waits on
-  unfinished, and at least one prerequisite fulfilled *through* an auto-progress link (it
-  reads review or merge across one). The last clause is the difference from Ready to
-  start: a collector whose sources a person set done by hand is ready for a person to
-  launch; one whose sources just reached review was made ready by the flag, and the flag's
-  promise is that it starts on its own.
-- `step_review.aspect.due_turns` — a side of a conversation whose turn it is (`step_review.aspect.turn`), whose
-  agent has gone, and that nobody launched *for this turn*. That last needs memory the
-  graph does not have, so the round keeps it: `party_turn_launched` / `asker_turn_launched`
-  hold the stamp that began the turn launched for, and equal means launched. A stamp that
-  names the turn rather than the moment is immune to another machine's clock, and it lives
-  in the ledger so the terminal, a second window and a second machine all read the same
-  answer. It covers a collector's upstream conversations too, since the ledger is shared.
-
-**Level-triggered, never edge-triggered.** The launcher (`agent_launch/
-auto_launch.py`) does not react to "A3 moved to review": the window may have been closed
-when it happened, or adopt three such moves in one tick, and an edge missed is a collector
-never started. It re-derives what is due after every change of any origin — adopted
-outside changes included — when a run ends, when the day turns (a dated wait can make a
-step due overnight) and once at start, which also launches what became due while no window
-was open. What makes a level trigger launch once is **the claim, written the moment the
-shell opens**: the run stamp, and in progress for what auto-progress made due or the
-round's stamp for a turn — both off the undo stack like the launch stamp, and flushed at
-once rather than after autosave's pause. The next pass reads the step as no longer due. In
-the window, *running* is also a run the tracker is watching, so a claim still on its way to
-disk can never make a live shell's step due again. The claim is made whatever *On launch*
-says, because without it the step is due again the moment its run ends; a turn's claim is
-the stamp alone, since `post` and `reply` already moved its side's status.
-
-**A launch is an external effect: its intent is written before the shell.** The claim
-reaches the plan file at the pass's flush, so spawning, claiming in memory and flushing
-afterwards leaves no trace when the window dies in between, and the next one launches the
-step again. So `launch_due` writes an intent (`intents.py`: step, run id,
-actor, run directory) under the lock's own directory before it spawns, drops it when no
-shell opened, and the pass forgets it only once autosave says everything is on disk *and*
-its step no longer reads due — a successful flush says nothing about an intent whose launch
-was never claimed. A
-pass that finds one left over reconciles it before launching anything: a shell that
-started (its wrapper wrote the `shell` file into the run directory) is a run, so its step
-is claimed; one that never started is refused with a sentence for a person — **never
-retried blind**, since a shell slow to start would otherwise be a second one. The refused
-intent stays on disk, because the refusal in memory dies with the window and the next one
-would find the step due with nothing to stop it; it goes when a person edits that step, which
-is the answer the refusal waited for, or when a later pass finds the shell file after all and
-claims it — and that claim, made by the pass itself, is not taken for the person's answer, so
-the intent stays until the claim is saved. The intent is
-this machine's fact, beside the lock, never the plan's: a run directory and a pid mean
-nothing on another machine. Only the unattended launch records one; a person's Run Agent is
-watched by the person who clicked it.
-
-**It never launches on a plan it has not seen.** A pass stands down while the plan changed
-underneath and is not taken in yet (`changed_underneath`, asked only when something is due
-and a slot is free — the walk is the tracker's 300–500 ms on a large library), and it must
-run *after* the adoption that woke it: the store mutes dirty forwarding while it adopts, so
-a claim written inside an adoption would never reach disk. A **0 ms** settle guarantees the
-order — once per event-loop turn, so a burst adopted in one tick is one pass — which is why
-the launcher's tests run with coalescing on. And unlike a view's settle it never waits
-behind a modal (*A settle behind a modal waits for it* is about rebuilding what a person is
-not looking at): the first run found a first-start checklist left open holding every
-launch, and a dialog left open is exactly the desk nobody is at. A pass is cheap enough to
-run that often — 0.75 ms over an 820-step library — and a title or prose, which never make
-a step due, do not wake it at all. A stand-down is woken by the
-library watcher's `settled` hook as well as by model signals, because some settles change
-nothing the model announces — *Keep Mine*, an identical rewrite, a project still unreadable.
-Each step is re-read from the live model just before its shell opens. Past *Max agents*
-live runs — this window's tracker's count — the rest wait, the status bar says who, and the
-tracker's `ended` hook retries: a run that ends frees a slot even when the agent had
-already cleared its state and the plan did not change.
-
-**An unattended launch asks nobody.** `launch_due` is Run Agent for one step with the
-person's questions taken out: no prerequisite confirmation (a due step waits on nothing),
-no clone (a repository not checked out here is a refusal naming Run Agent, which clones),
-no prompt fallback. A refusal is a sentence in the status bar and is remembered for the
-step until the step, the switch or a profile changes — a refusal repeated every settle
-would be a retry nobody asked for. The profile is the step's: a review that names an agent
-runs through the first profile running it, and a named agent no profile runs is refused
-rather than swapped for the default, which may be the very agent whose work is reviewed.
+**It asks nobody.** No prerequisite confirmation, no clone (a repository not checked out
+here is a refusal naming Run Agent, which clones), no prompt fallback: a refusal is a
+sentence. The claim is made whatever *On launch* says, or nothing would say the step was
+taken. The profile is the step's: a review that names an agent runs through the first
+profile running it, and a named agent no profile runs is refused rather than swapped for
+the default, which may be the very agent whose work is reviewed.
 
 **Plan mode is waiting on a person, and says so.** The Claude preset starts in plan mode, so
-an auto-launched Claude writes a plan and waits for somebody to approve it — and a session
-in plan mode runs nothing that writes, so it never reports `plan-for-review` itself. The
-launch stamp carries it instead (`plans_first`, read off the command through the harness's
+a launched Claude writes a plan and waits for somebody to approve it — and a session in plan
+mode runs nothing that writes, so it never reports `plan-for-review` itself. The launch
+stamp carries it instead (`plans_first`, read off the command through the harness's
 `plan_mode` words, so a profile edited out of plan mode launches an agent that does not
-wait), and `asks_person` reads it with the states that ask: such a step is *Waits for
-you* on the boards and in `progression show` (*Progression is the status-aware frontier*),
-and while one this window launched unattended waits, a notice names it with *Show
-Terminal*. That notice's memory is the session's; after a reload the boards still list it.
-A profile that does not ask first is the person's to make — nothing ships one.
+wait), and `asks_person` reads it with the states that ask: such a step is *Waits for you*
+on the boards and in `progression show` (*Progression is the status-aware frontier*).
 
-**Who may launch.** The switch is *Agent profiles ▸ When a step becomes due*, per user and
-per machine, **off by default**: it spends terminals and tokens nobody clicked for, and
-every machine that opens the plan with it on is one more launcher. Among windows on one
-library on one machine, only the holder of a `QLockFile` under `config_dir()/auto-launch/`
-launches, and the other window's page says so. The lock is stale only once its process is
-gone (`setStaleLockTime(0)`), so a crash never locks the next window out, and it belongs to
-the *session* — `new_session` builds the holder once and hands it to every build — because
-a reload builds the new window before it discards the old, and the new one must not find
-itself locked out by its predecessor.
-
-**The race, across machines.** On one machine the lock makes one window the launcher, and a
-claim written at the spawn and flushed at once makes the launch happen once: the next pass,
-in that window or after its reload, reads the step as launched. Across machines nothing is
-shared but the plan, and the plan travels by commits: the claim reaches another machine
-only when one saves and the other pulls. Two machines with the switch on can therefore both
-see a collector due, and both launch it, within one sync interval — each claim is true on
-its own machine, and the second to land meets the first as an ordinary conflict on that
-step's status. No lock can close that gap without a server, which DPlanner does not have;
-what closes it is that the switch is per machine and off until a person turns it on, so the
-honest setup is one machine that runs the agents.
-
-The rules are in `.claude/rules/agents.md` (the launcher) and `.claude/rules/schedule.md`
-(what is due, *Waits for you*).
+The rules are in `.claude/rules/agents.md`.
 
 ## Running an agent launches a peer, not a task
 
@@ -479,8 +367,8 @@ claiming where the shells stop, so three steps of which the third found no termi
 two marked and one not; and an agent handed two writers' versions of a plan file is never
 marked as doing the step's work — it is merging, and marking that step in progress would
 be the same lie in the other direction. The verb decides; the mechanism obeys. The one
-other maker is its unattended twin, `launch_due`, which claims whatever *On launch* says
-(*Auto-progress is launched by the window*).
+other maker is its unattended twin, `launch_unattended`, which claims whatever *On launch*
+says (*A launch writes its intent before its shell*).
 
 Nothing un-claims it. Finishing is the agent's own `dplanner status set … done`, or the
 person's from Step ▸ Status — the run ending clears the agent *chip* (that state is about

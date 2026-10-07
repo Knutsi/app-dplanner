@@ -337,7 +337,7 @@ format bump**: an older build reads a word it does not know as `Unknown` and lea
 entry on disk. It once read such a word as pending, and the structural review's probe showed
 what that costs: an otherwise eligible agent step became due again, so a window on an older
 build would relaunch work a newer one had claimed. Unknown holds the step instead —
-`status.held` reads it as blocked, so `progression.due` and `step_review.aspect.due_turns` skip it and
+`status.held` reads it as blocked, so the frontier and `step_review.aspect.due_turns` skip it and
 the board lists it with Blocked, and Run Agent refuses it, so no launch writes
 `in-progress` over the word. Absent data is the only thing that reads as pending. `started` is
 stamped the first time a step enters any *worked* status — in progress, under review or

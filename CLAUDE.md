@@ -306,7 +306,7 @@ the reasoning.
 | `persistence.md` | save, two writers, outside changes, reload and repositories |
 | `cli.md` | the entry word, install, the checklist, the topology gate, the skill and reports |
 | `runtime.md` | telemetry, diagnostics, discarding a build, LLM calls and dictation |
-| `graph-model.md` | edges, auto-progress links, step numbers and isolation |
+| `graph-model.md` | edges, step numbers and isolation |
 | `playbooks.md` | stages, gates, loop-back, presets, the step's playbook and headless invocations |
 
 ## The one chain every change follows

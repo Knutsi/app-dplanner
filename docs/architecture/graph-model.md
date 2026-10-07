@@ -1,4 +1,4 @@
-# Graph model — edges, auto-progress links, step numbers and isolation
+# Graph model — edges, step numbers and isolation
 
 The reasoning behind `.claude/rules/graph-model.md`: the rules there are the short, imperative
 form, and this file is why. `ARCHITECTURE.md` is the index of every area.
@@ -70,73 +70,6 @@ when the step becomes `F7`; the next launch reuses the worktree by its recorded 
 if the name matches, so a kind change after work has started earns a second branch. That
 is rare, visible in `git branch`, and cheaper than a branch that lies.
 
-## An auto-progress link is an aspect on the step that waits
-
-*A playbook's `progress` stage replaces the auto-progress link, and this section leaves with
-it; `playbooks.md`'s *A playbook is a list of stages around one step* has the design.*
-
-An agent stops at Ready for review, and a plain `requires` is fulfilled by done alone —
-together, the right rules for one step, and a deadlock for the shape the plan runs on: three
-agents in parallel, then one step that takes their branches, lands them and sets them done.
-That step cannot start until they are done, and they are done only once it has landed them.
-So a link may **auto-progress**: its waiter may start as soon as the source reads ready for
-review or ready to merge, and the waiter's briefing makes landing that work its job. Three
-places to keep the flag were weighed:
-
-| Where | Cost |
-|---|---|
-| **Data on the edge** — edges become objects with fields | A project-format bump older builds refuse to open, for one boolean; and every writer of an edge list (Link, Unlink, Redirect, Isolate, paste, import) learns to carry a field it does not care about. |
-| **A new edge kind** — `auto` beside `requires` and `relates` | Every reader of `requires` — ordering, the schedule, cones, cycles, lint, redirect, the report — has to learn that `auto` orders too, or silently miss it; an older build keeps the kind but stops ordering by it. |
-| **An aspect on the step that waits** — `{"from": [source ids]}` | None of the above: no format bump, an older build ignores it, and the graph learns nothing. (Chosen, N2.) |
-
-It follows *Status is an aspect*: the flag is a fact about the step that waits — *I take
-these steps' work from review on* — so it lives on that step, and the derivation that wants
-it is handed a function, `auto_progresses(waiter, source)`, exactly as it is handed
-`status_for`. `planning/progression.py`'s `outstanding()` is the one answer — a source is
-fulfilled when it is done, or under review or waiting on its merge across a flagged link —
-and the Step statuses tab, `progression show`, the report and Run Agent's gate all read it.
-
-**A listed id counts only while the link exists, and nothing repairs it.** `flagged(step)`
-intersects the list with the step's own `requires`, which the waiter holds, so no verb that
-rewrites edges learns the aspect exists. A removed, redirected or isolated link leaves its
-id inert, which is exactly *a redirected link arrives plain*; and undoing the removal
-restores the flag with the link, because the list was never touched. The cost is one
-surprise worth writing down: remove a flagged link and make it again, and it remembers its
-flag. A paste is the one place ids change, so `PastePolicy` is handed the old→new map (the
-five other policies ignore it) and the copies keep their flags; `project import` makes new
-ids without a policy, so an imported plan's flags go inert — the same gap named layouts
-have.
-
-**Only an agent collects.** The flag's whole promise is a briefing — *Work you collect*
-names each source's status, branch, PR and worktree on this machine, the duty to land that
-work and the right to `status set <source> done`, and each source's epilogue names who takes
-its work — and only an agent reads one. So the Edge menu's toggle greys on a waiter that is
-not an agent step, and lint `auto-progress.waiter` names one that arrived another way. The
-CLI still writes it, saying so, because a plan reshaped in several calls passes through that
-state. The right to finish a source needed no new rule: an agent may already set done a step
-under review, which is where a collected source stands.
-
-**It is drawn as work that moves on its own.** The canvas never learns the word: the root
-translates the flag into an `EdgeAccent` (`doubled`, `flowing`), as it does a node's
-`NodeAccent`. A doubled arrow is two rails with chevrons between them pointing at the step
-that waits — read from across the graph, where a medallion at the middle would be a dot —
-and its chevrons move while the source wears the live ring, on the ring's own clock: the
-motion that says *somebody is at work on this*, carried along to the step that will take
-the work. `project graph` draws the same link `==>`, and `step show` marks it.
-
-Two measurements shaped the painter. Placing a chevron with `QPainterPath.percentAtLength`
-costs about 40 µs a call, which would make a doubled arrow 1.5 ms to lay out — on every
-sync, which runs once per keystroke. `follow()` flattens the curve once and walks the
-polyline (0.2 ms), and it returns at once when the arrow's two ends have not moved, which is
-nearly every sync: 17 µs → 4 µs for *every* arrow, plain ones included. A flowing arrow's
-tick re-walks the cached polyline only, 0.13 ms per 80 ms.
-
-*Collect* here is not a scope's collecting (*A check is a scope over the graph, and so is a
-milestone*): a scope gathers a cone of steps for coverage and documentation, while this
-takes a handful of branches and lands them. The aspect's readers say `sources` and
-`collectors`, the briefing says *Work you collect*, and the scope code never meets either.
-The rule is in `.claude/rules/graph-model.md`.
-
 ## A branch stretch is bracketed by a cut and a landing
 
 Where an agent step's work lands is the plan's decision, not an accident of what the code
@@ -170,8 +103,8 @@ refuses such a step a status, an agent, a review or a test words its refusal fro
 it hands back, where each had a wait's sentence of its own.
 
 **The pairing is stored; membership is derived.** A landing names its cut, and the name
-counts only while the cut is upstream — auto-progress's rule, a stored id read through the
-graph — because the alternative, pairing each landing with the nearest open cut, silently
+counts only while the cut is upstream — a stored id read through the graph, which no verb
+that rewrites edges learns about — because the alternative, pairing each landing with the nearest open cut, silently
 re-paired two stretches running side by side the moment one link moved, and every member's
 PR would have gone into the other branch. Membership is `domain/branches.py`'s, read
 **forwards**: everything after the cut, until the landing. Read the other way — everything

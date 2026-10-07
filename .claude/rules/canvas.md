@@ -286,7 +286,7 @@ paths:
   a port** — a point and a heading: every card's near side, across, as always — so a
   stack's way in meets its first card's side and its way out leaves its last card's, the
   sockets any card has — and the chain's own links drawn **straight, down the frame's
-  middle**, still `EdgeItem`s, so they keep auto-progress rails, lighting and picking. The "+" is `StackAddItem` (z 0.5), and a
+  middle**, still `EdgeItem`s, so they keep their lane, lighting and picking. The "+" is `StackAddItem` (z 0.5), and a
   press on it runs `stacks.add_below` on the last card through a constructed context. A
   stacked card is never Qt-movable, shows a link handle only as the last, grows only right
   and down (`resize_command` stores no seat for a member below the first). **A drag moves
@@ -382,44 +382,28 @@ paths:
   right now". The ring is derived from the chip (`NodeAccent.chip_text`), so one field says
   both.
 - **The canvas has one motion clock.** One `QTimer` on the scene (`_motion_clock`,
-  `advance_motion`) moves every ring, every pulse and every flowing arrow on one phase, and
-  runs only while a card `moves()` or an arrow `flows()` — `_settle_motion_clock` after every
-  sync, so an idle canvas ticks nothing. A new motion rides this clock, never a timer of its
+  `advance_motion`) moves every ring and every pulse on one phase, and runs only while a
+  card `moves()` — `_settle_motion_clock` after every sync, so an idle canvas ticks nothing. A new motion rides this clock, never a timer of its
   own; the one exception is a gesture's own `FrameClock` (the restack's make-way), which
   lives and dies with the gesture. A test calls `advance_motion()` rather than waiting.
-- **A step a person moves next pulses.** `NodeAccent.pulse`, translated by the root's
-  `_persons_turn`: ready to merge, always; ready for review unless a live agent takes it on
-  (`progression.taken` — a step waiting on it across an auto-progress link, worked by an
-  agent, neither blocked nor done), the very rule that keeps it off the boards' *Ready for
-  review*. `paint_pulse` breathes bands of the **key tone** round the body, painted before
+- **A step a person moves next pulses.** `NodeAccent.pulse`, set by the root's
+  `step_accents` for a step ready for review or ready to merge — the boards' *Ready for
+  review* and *Ready to merge*, the same rule. `paint_pulse` breathes bands of the **key tone** round the body, painted before
   it, reaching `PULSE_REACH` inside `PAINT_MARGIN`, over `PULSE_PERIOD` of the clock's phase
   (3.2 s, a divisor of its wrap). DESIGN.md's *Focus and motion* says why it may move;
   `docs/architecture/canvas.md`'s *A card pulses where a person moves next* has the reasoning.
 - **An arrow says more than its kind only through an `EdgeAccent`, translated by the root.**
   `requires` is solid with a head, `relates` dashed without one; beyond that the canvas
   reads `CanvasDeps.edge_accents(project_id)` once per sync, keyed (waiter, kind,
-  source), and `GraphScene.sync` pushes it onto new and existing arrows alike. A *doubled*
-  arrow — an auto-progress link — is two rails `RAIL_GAP` apart with a chevron every
-  `CHEVRON_PITCH` pointing at the step that waits, both cached in `EdgeItem.follow()` —
-  which does nothing while the arrow's ends stand, and places chevrons by walking the
-  flattened curve, never `percentAtLength` (~40 µs a call, on every sync); a
-  *flowing* one moves its chevrons on the motion clock's phase (`advance_motion`), which the
-  root sets while the source wears the live ring — one motion, carried along the link, and
-  still one timer. **A *medallion* is a glyph in a circle at the middle of the arrow's
-  length** — the root puts the review's talk bubble on every link into a review — found by
-  walking the same flattened track, drawn opaque in the arrow's own ink, and kept
-  `MEDALLION_CLEAR` clear of the chevrons, which pass behind it; `shape()` takes in its disc
-  and `boundingRect()` grows by it while the accent names one, and an arrow too short to hold
-  it (`MEDALLION_ROOM`, a stack's own link) wears none. Auto-progress wears no medallion: the
-  rails already say it along the whole link (N65). **A *lane* is a colour laid under the
-  arrow** — `LANE_W` wide at `LANE_ALPHA`, inside the edge's margin, so its geometry never
+  source), and `GraphScene.sync` pushes it onto new and existing arrows alike;
+  `EdgeItem.follow()` does nothing while the arrow's ends stand. **A *lane* is a colour laid
+  under the arrow** — `LANE_W` wide at `LANE_ALPHA`, inside the edge's margin, so its geometry never
   changes and the ink on top keeps being lit, picked and faded: the root lays it on every
   arrow of work on a feature branch not yet landed, in a colour dealt from
   `theme/palettes.LANES` in the order the branches were cut, and takes it away once the
   landing is done — colour means *not on main yet*. Every look stays inside its margin and
-  keeps the lit, picked, hovered and dimmed rules. `docs/architecture/graph-model.md`'s *An
-  auto-progress link is an aspect on the step that waits* and *An arrow into a review wears its talk bubble*
-  have the reasoning.
+  keeps the lit, picked, hovered and dimmed rules. `docs/architecture/graph-model.md`'s *A
+  branch stretch is bracketed by a cut and a landing* has the reasoning.
 - **A step placed by pointing at a spot earns a stored position.** `StepVerbs.born()` is
   the one place a step is born on the canvas — New and the double-click on empty space
   through `create()`, New Stack and a stack's "+" with the command a stack builder made —
