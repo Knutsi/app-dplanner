@@ -51,7 +51,8 @@ paths:
   gate. `docs/architecture/playbooks.md`'s *The run record is the ledger* maps every
   review-round fact to its new home.
 - **A role names a harness, never a profile or a path**, and maps at launch to the first
-  profile running it; an unrunnable role is refused, never swapped for the default.
+  profile running it; an unrunnable role is refused, never swapped for the default. Whether
+  its agent can run *here* is `Availability.why_not` (`agents.md`'s *Installed is not usable*).
 - **Presets are built-in data**, no playbook files in the plan repository yet. A step's
   choice is its aspect (absence encodes the default), then the project's landing default on a
   landing, then the project default, then none (Run Agent).

@@ -51,10 +51,17 @@ fresh tokens read eleven million from cache. One "input" figure would be mostly 
 for one unattended turn of each playbook stage, a reader for the CLI's JSON events and how
 the turn ended. It is a second record rather than more templates here, because nothing about
 it is a terminal's: the supervisor spawns the argv itself and never waits on a person.
+
+**Installed is not usable.** A CLI on PATH may be broken or signed out, and a headless turn on
+a dead login is a three-minute retry storm rather than an answer. So a harness says how to ask
+whether it is signed in (:class:`SignIn`), and an :class:`AgentStatus` is the level a probe
+reached — on PATH, a version, signed in. The probe talks to the CLI only through a
+:data:`Shell`, never by path, which is the seam a probe *on another machine* will take.
 """
 
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from enum import IntEnum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # domain.headless reads Tokens from here.
@@ -145,6 +152,61 @@ class RunReport:
 
 RunReader = Callable[[RunFacts], RunReport | None]
 
+# Runs *this* CLI with these arguments: its exit code and what it said, stdout and stderr
+# together (Codex says "Logged in" on stderr). Raises OSError, or TimeoutError when it does
+# not answer in time. The harness never names its binary: the shell found it.
+Shell = Callable[[Sequence[str]], tuple[int, str]]
+
+
+@dataclass(frozen=True)
+class SignedIn:
+    ok: bool
+    detail: str = ""  # "signed in (claude.ai, max)", "not signed in"
+
+
+@dataclass(frozen=True)
+class SignIn:
+    """How a harness tells whether it can run here: a probe over its own CLI, and what a
+    person types to sign in."""
+
+    probe: Callable[[Shell], SignedIn]
+    command: str  # "claude auth login"
+
+
+class AgentLevel(IntEnum):
+    """How far a status probe got, in the order it asks."""
+
+    MISSING = 0  # Not on PATH.
+    BROKEN = 1  # On PATH, but would not say its version.
+    SIGNED_OUT = 2
+    USABLE = 3
+
+
+@dataclass(frozen=True)
+class AgentStatus:
+    """Whether one agent CLI can run here, and the words for it."""
+
+    harness: str  # The harness id.
+    label: str  # "Claude Code".
+    level: AgentLevel
+    version: str = ""
+    detail: str = ""  # What the last level reached said: "not on PATH", "signed in (…)".
+
+    @property
+    def usable(self) -> bool:
+        return self.level is AgentLevel.USABLE
+
+    @property
+    def reason(self) -> str:
+        """Why it cannot run here — what a disabled entry says; "" when it can."""
+        if self.usable:
+            return ""
+        if self.level is AgentLevel.MISSING:
+            return f"{self.label} is not installed"
+        if self.level is AgentLevel.BROKEN:
+            return f"{self.label} is installed but broken: {self.detail}"
+        return f"{self.label} is installed but not signed in"
+
 
 @dataclass(frozen=True)
 class AgentHarness:
@@ -185,6 +247,9 @@ class AgentHarness:
     # How it runs one unattended turn of a playbook stage; None for a CLI this build cannot
     # run headless.
     headless: "Headless | None" = None
+    # How to ask whether it is signed in; None for a CLI this build cannot ask, which counts
+    # as usable once it says its version.
+    sign_in: SignIn | None = None
 
     def marks(self, name: str) -> bool:
         """Whether an environment variable of this name marks one of this CLI's shells."""

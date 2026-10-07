@@ -121,7 +121,11 @@ role maps to **the first launch profile whose agent command runs that harness**,
 review's preferred agent is already found (`agent_launch/module.py`'s `_profile_for`), and a
 role no profile runs is refused rather than swapped for the default, which may be the very
 agent whose work is reviewed. A headless stage uses only the profile's agent half — no stage
-opens a terminal.
+opens a terminal. **Whether a role's agent can run here** — installed, a version, signed in — is
+`agent_launch/availability.py`'s `why_not` over the roles' harnesses, read from a short cache
+and never probed on the UI thread, so Run Playbook greys a playbook with the reason, and the
+reviewer's *same vendor* fallback reads the same answer (`agents.md`'s *Installed is not
+usable*).
 
 **Four actors, and each is a record somebody else can read.** An agent stage is a run (S3's
 record). A `person` gate, a `coordinator` gate and an escalation are each a **question** — one

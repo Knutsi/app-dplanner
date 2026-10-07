@@ -255,6 +255,17 @@ paths:
   launch time and the sessions other runs have not claimed, and the found id, kept on
   the ledger record, is what makes such a run resumable afterwards. `docs/architecture/agents.md`'s
   *An agent CLI is a harness* has the reasoning.
+- **Installed is not usable: an agent's status is three levels, asked through a shell.**
+  `agent_launch/availability.py`'s `probe` walks on PATH → `--version` → the harness's
+  `sign_in` (`AgentHarness.sign_in`: a probe over a `Shell` and the command a person signs in
+  with) and answers an `AgentStatus` whose level is the first it could not pass; a hang (10 s)
+  or a CLI that will not run is words, never a raise. A harness never names its binary to its
+  probe — the shell is bound to the path `which` found, which is the seam a probe on another
+  machine takes. **`check` probes; `cached` and `why_not` never do**, so a UI-thread reader
+  reads a reading at most a minute old, or "checking…", and a `TaskRunner` runs
+  `refresh_stale`. The checklist has a row per harness beside *An agent CLI*; a CLI not on
+  PATH is well (*not installed — optional*), and only broken or signed out is advice.
+  `docs/architecture/agents.md`'s *Installed is not usable* has the reasoning.
 - **Which terminal opens is a table, not a chain — and the multiplexers are its last
   rows.** `launcher.TERMINALS` is one row per known terminal *and multiplexer* per
   platform with a probe saying whether it is installed; *Automatic* is the first
