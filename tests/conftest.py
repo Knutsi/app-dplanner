@@ -7,9 +7,18 @@ The model here mirrors production: a per-test **library file** lists project dir
 each inside a git repository. ``session`` opens the library the way ``dplanner.app.main``
 does; ``make_project`` gives GUI tests a *real* project (seeded on disk, attached to the
 store) because a project with no directory cannot hold module files any more.
+
+**No test starts a real terminal or agent CLI** — ``_no_real_spawns`` fails it. A test that
+runs a *fake* agent CLI on purpose takes ``allow_spawn`` and hands it the fake's path; nothing
+else gets through.
 """
 
 import os
+import shlex
+import shutil
+import subprocess
+from pathlib import Path
+from typing import Any
 
 # Must precede any PySide6 import: the platform plugin is chosen when Qt's GUI layer loads.
 # setdefault rather than a plain assignment so a developer can export QT_QPA_PLATFORM=xcb
@@ -314,6 +323,93 @@ def _fresh_session_settings():
         settings.beginGroup(group)
         settings.remove("")
         settings.endGroup()
+
+
+class SpawnGuard:
+    """What ``_no_real_spawns`` refuses, and what a test let through on purpose."""
+
+    def __init__(self, forbidden: frozenset[str]) -> None:
+        self.forbidden = forbidden
+        self.allowed: set[Path] = set()
+        self.refused: list[list[str]] = []
+
+    def allow(self, executable: Path) -> None:
+        """Let this one file run — a fake agent CLI the test wrote, whatever it is named."""
+        self.allowed.add(executable.resolve())
+
+    def check(self, argv: list[str], kwargs: dict[str, Any]) -> None:
+        program = _program(argv[0])
+        env = kwargs.get("env") or os.environ
+        found = shutil.which(argv[0], path=env.get("PATH"))
+        if found is not None and Path(found).resolve() in self.allowed:
+            return
+        detached = kwargs.get("start_new_session") or kwargs.get("creationflags", 0) & 0x8
+        if program in self.forbidden or (detached and program != "git"):
+            self.refused.append(argv)
+            pytest.fail(
+                f"a test started {argv!r} for real — stub launcher.spawn (or the seam that"
+                " reaches it), or hand a fake to the allow_spawn fixture",
+                pytrace=False,
+            )
+
+
+def _program(word: str) -> str:
+    name = os.path.basename(word)
+    return name[:-4] if name.lower().endswith(".exe") else name
+
+
+def _launchable_programs() -> frozenset[str]:
+    """Every terminal and agent CLI the application knows how to start, read off its own
+    tables — so a new terminal row or a fourth harness is guarded with no edit here."""
+    from dplanner.modules import agent_harnesses
+    from dplanner.modules.agent_launch.launcher import TERMINALS, stages
+
+    words = [
+        stage[0]
+        for preset in TERMINALS
+        for stage in stages(shlex.split(preset.command, posix=True))
+    ]
+    for harness in agent_harnesses():
+        words += [shlex.split(harness.command)[0], shlex.split(harness.open_command)[0]]
+    return frozenset(_program(word) for word in words)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_spawns(monkeypatch):
+    """No test starts a terminal, an agent CLI or anything detached.
+
+    Once a stub that stopped matching made the suite open real terminal windows running
+    ``claude`` against its temp repositories (2026-10-04, ``bugs.md`` #3). Every launch —
+    ``launcher.spawn``, ``spawn_detached`` imported by name in three modules, a
+    multiplexer's ``subprocess.run`` stages — ends in ``subprocess.Popen`` looked up on the
+    module, so that is guarded: a program from :func:`_launchable_programs`, or a detached
+    start other than git's cancellable clone, fails the test. The refusal is also checked
+    at teardown, since one raised on a worker thread never reaches the test.
+
+    A test that means to run a fake agent CLI asks for ``allow_spawn`` and hands it the
+    file: ``allow_spawn(tmp_path / "claude")`` lets exactly that file through, by its
+    resolved path, never a real ``claude`` on PATH. A test that patches ``subprocess.Popen``
+    or ``subprocess.run`` itself has already replaced what this guards.
+    """
+    guard = SpawnGuard(_launchable_programs())
+    real = subprocess.Popen
+
+    class GuardedPopen(real):  # type: ignore[valid-type, misc]
+        def __init__(self, args: Any, *rest: Any, **kwargs: Any) -> None:
+            argv = [args] if isinstance(args, (str, bytes, os.PathLike)) else list(args)
+            guard.check([os.fsdecode(word) for word in argv], kwargs)
+            super().__init__(args, *rest, **kwargs)
+
+    monkeypatch.setattr(subprocess, "Popen", GuardedPopen)
+    yield guard
+    if guard.refused:
+        pytest.fail(f"a test started {guard.refused!r} for real", pytrace=False)
+
+
+@pytest.fixture
+def allow_spawn(_no_real_spawns):
+    """``allow_spawn(path)``: run this fake executable for real — see ``_no_real_spawns``."""
+    return _no_real_spawns.allow
 
 
 # -- the headless CLI, over a real library -----------------------------------------------------
