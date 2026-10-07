@@ -583,6 +583,14 @@ project. The machine-local at-work claim was weighed for absorbing into the comm
 and kept: its three-minute clock cannot be committed. Now: `agents.md`'s *Runs, questions
 and claims are three records in the plan*.
 
+## 2026-10-07 — A key resolves in the current project, or not at all
+
+`find_step` resolved a key or title in the current project when it could, and otherwise fell
+back to the whole library — so in the 10-04 run `DPLANNER_PROJECT=A dplanner review set R26`
+rewrote project B's S26. Now only an id of at least eight characters reaches past the current
+project (S7 of *Playbooks and autonomous work*). Now: `graph-model.md`'s *A key is the
+current project's, an id the library's*.
+
 ## 2026-10-07 — Auto-progress and the window's auto-launch were removed
 
 An auto-progress link let a step start once a step it waited on read ready for review, so a

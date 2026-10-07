@@ -158,7 +158,8 @@ paths:
   `sparse.valid_ref` before it reaches a script. A landing is briefed like a review is —
   its instructions generated from the stretch it closes (`agent_briefing/instructions.py`, *Work you
   land*): merge the mainline in as a merge commit, never a squash, and open the branch's
-  own PR. **A PR merged into the branch of an open stretch accepts its step** from
+  own PR — and **without the project's standing instruction**, which is written for the
+  stretch's work (`compose.brief`). **A PR merged into the branch of an open stretch accepts its step** from
   ready-for-review (`record_merged(accepted_by_merge=)`, the root's `finish_merged` on both
   surfaces), since the branch's review comes after its landing; the GitHub aspect records
   the base a PR merges into (`pr_base`, format 2). `docs/architecture/graph-model.md`'s *A branch

@@ -784,7 +784,7 @@ the split needed — a read-time shim would have let a format-4 build write the 
 over it on the next refresh.
 `step_agent_instruction` does the same with prose: the
 step's own instruction beside the step, the project's standing instruction (prepended to
-every briefing) as `modules/step_agent_instruction.md` beside the project, images in the
+every briefing but a landing's) as `modules/step_agent_instruction.md` beside the project, images in the
 file area at either level. `module_data` is on every node and `set_module_data` is flat
 over ids, so nothing in the model has to know. The cost is on whoever writes the next
 migration for that format: it sees both shapes and owes both a thought.

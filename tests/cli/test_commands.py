@@ -487,6 +487,47 @@ def test_redirect_needs_one_end_named(cli):
         cli("step", "redirect", "A")
 
 
+# -- a step named inside the current project -----------------------------------------------------
+
+
+@pytest.fixture
+def two_projects(cli):
+    """Discovery has one step; Delivery has two, so only Delivery has an S2."""
+    cli("project", "create", "Discovery")
+    cli("project", "create", "Delivery")
+    cli("step", "add", "Discovery", "Alpha")
+    cli("step", "add", "Delivery", "Beta one")
+    cli("step", "add", "Delivery", "Beta two")
+    return data(cli("step", "show", "Beta two", "--json"))["id"]
+
+
+def test_a_key_the_current_project_lacks_is_refused_not_found_elsewhere(cli, two_projects):
+    """`DPLANNER_PROJECT=A dplanner review set R26` once rewrote project B's S26."""
+    message = cli("status", "set", "S2", "done", "--project", "Discovery", expect=1)
+    assert "no step matching 'S2' in 'Discovery'" in message
+    assert data(cli("status", "show", two_projects, "--json"))["status"] != "done"
+
+
+def test_the_environment_scopes_a_key_as_the_flag_does(cli, two_projects, monkeypatch):
+    monkeypatch.setenv("DPLANNER_PROJECT", "Discovery")
+    assert "in 'Discovery'" in cli("step", "show", "S2", expect=1)
+    assert "in 'Discovery'" in cli("step", "show", "Beta", expect=1)
+
+
+def test_an_id_names_a_step_in_any_project(cli, two_projects):
+    for needle in (two_projects, two_projects[:8]):
+        shown = data(cli("step", "show", needle, "--project", "Discovery", "--json"))
+        assert shown["id"] == two_projects
+
+
+def test_less_of_an_id_than_a_listing_prints_stays_in_the_current_project(cli, two_projects):
+    cli("step", "show", two_projects[:4], "--project", "Discovery", expect=1)
+
+
+def test_with_no_current_project_a_key_is_looked_up_across_the_library(cli, two_projects):
+    assert data(cli("step", "show", "S2", "--json"))["id"] == two_projects
+
+
 # -- the agent instruction at both levels ------------------------------------------------------
 
 
