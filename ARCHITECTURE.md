@@ -118,6 +118,7 @@ exists, so a renamed section is caught where it is cited.
 - A review is a conversation kept on the step that asks
 - Auto-progress is launched by the window
 - Running an agent launches a peer, not a task
+- Runs, questions and claims are three records in the plan
 
 ## [Specs — the spec editor and its document sources](docs/architecture/specs.md)
 

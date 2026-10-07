@@ -27,6 +27,7 @@ Four places, and the choice is not stylistic:
 | Per user, per machine (Qt-free) | what the CLI must also read: the project library | `core/config_dir.py` + `domain/library_file.py` | no — it is a list of *this machine's* paths |
 | Per user, per machine (Qt-free) | what happened and how long it took: the telemetry journal, and a native crash's stack | `core/telemetry.py` under `config_dir()/telemetry/` — see *The telemetry journal* | no — it is this machine's diagnostics |
 | Per user, per machine (Qt-free) | who is working on a plan right now: an agent's *at work* claim | `domain/at_work.py` under `config_dir()/at-work/` — see *An agent's at-work claim* | no — it is a process that is running here, now |
+| Per user, per machine (Qt-free) | a headless run's working files: its briefing, each turn's stream and stderr, DPlanner's copy of a plan the agent wrote — *designed, not yet written by any build* | `config_dir()/runs/<run id>/`, named by the run's ledger record and never stored on it; swept some days after the run is over | no — only the launching machine can resume the run, and it needs them across a reboot, which is why they are not in `/tmp` |
 | Per user, per machine (Qt-free) | a read-only location's managed clone, and a git spec source's: blobless, shallow, sparse to one folder | `core/storage/sparse.py` under `config_dir()/spec-git/<digest of remote, ref and folder>` | no — disposable: wipe it and the next read pays one tree fetch |
 | Per user, per machine (Qt-free) | a working clone DPlanner keeps for a verb that needed the repository here and nobody had checked out — Run Agent's code, a report's destination — under the default clone policy | `core/storage/kept.py` under `config_dir()/checkouts/<name>-<digest of remote>`, one per repository; recorded in the library file's `checkouts` map like any checkout | it is a checkout: commits an agent made there and never pushed are in it and nowhere else, so it is not wiped by the application |
 
@@ -163,6 +164,11 @@ The file name is only a name — a reader takes the project and step from inside
 and there is no migration: a file this build cannot read is skipped, and a claim nobody has
 renewed for a day is deleted by the next writer.
 
+It is not the **claim** in a project's `claims/` directory (below), and neither absorbs the
+other: this one says *a process here is editing the plan right now* and lapses in minutes;
+that one says *this work is taken by a squad*, is renewed every ten minutes, holds for an
+hour and a half, and is committed so other machines see it.
+
 ## The project format
 
 
@@ -174,7 +180,9 @@ nested exactly like the model:
 ├── .dplanner                  the index: one project directory per line, relative
 └── widget/                    the project directory — any folder in the repo
     ├── project.dproj          id, title, summary, repository, colocation, created, format, children
-    ├── ledger/                what its agent runs consumed, a file per run (below)
+    ├── ledger/                its agent runs: what each did and consumed, a file per run (below)
+    ├── questions/             what its agents asked and who answered, a file per question
+    ├── claims/                which squad has taken which steps, a file per claim
     ├── modules/               module data belonging to the project itself
     │   ├── notes.json         the notes the project made along the way
     │   └── notes/assets/      files those notes link
@@ -402,6 +410,154 @@ What every agent run on a project consumed, one file per run, beside `steps/`:
   migration — the format is in every record. Totals are summed on read.
 
 `docs/architecture/agents.md`'s *Usage is a ledger, harvested by anyone* has the reasoning.
+
+#### Format 2: the record is the run
+
+*Designed, not yet written by any build.* A headless run is turns of one session that park
+between them (`docs/research/2026-10-07-headless-agents/`), and the record above grows to
+hold them rather than a second record growing beside it. **It is the playbook ledger too**:
+a step's stage history is its runs, read in order — there is no other.
+
+```json
+{
+  "format": 2, "run": "20261007T101500Z-9c1e44ab", "project": "<id>", "step": "<id>",
+  "harness": "claude", "launched": "2026-10-07T10:15:00+00:00", "machine": "<machine id>",
+  "session": "…", "mode": "headless",
+  "playbook": "plan-execute-review", "stage": "execute", "attempt": 1,
+  "callsign": "kettle-three", "claim": "20261007T100212Z-5a0b7c3d",
+  "turns": [
+    {"n": 1, "prompt": "launch", "started": "…", "ended": "…", "end": "asked", "exit": 0,
+     "question": "20261007T103341Z-e1f2a3b4"},
+    {"n": 2, "prompt": "answer", "started": "…", "ended": "…", "end": "limit", "exit": 1,
+     "resets": "2026-10-07T15:00:00+00:00"},
+    {"n": 3, "prompt": "reset", "started": "…"}
+  ],
+  "measurement": "native", "agents": [ … ]
+}
+```
+
+- **One run is one stage attempt.** Resuming its session — with an answer, after a limit
+  reset, on *Retry now*, or to nudge it on — is another **turn** of the same run; a fresh
+  session is a new run with `attempt` one higher. `playbook`, `stage` and `attempt` are the
+  playbook's words, and `docs/architecture/playbooks.md` says what they mean.
+- **`prompt`** is why the turn began: `launch`, `answer`, `continue`, `reset` or `retry`.
+- **`end`** is how a turn ended, and it is read from the stream and the result, never from
+  the exit alone — a headless `success` can hide an open question:
+
+  | `end` | Means | The run |
+  |---|---|---|
+  | `done` | the agent finished its stage | is over |
+  | `asked` | it asked through `dplanner ask`, or ended on a question in prose; `question` names the record | parks until the question is answered |
+  | `denied` | a permission was denied or auto-rejected | parks on a `permission` question |
+  | `limit` | the account ran out; `resets` is when it comes back | parks on a `limit` question |
+  | `failed` | a crash, a hang, a runaway, a dead login; `why` says which | retries with backoff, then parks on a `blocked` question |
+  | `stopped` | a person or the coordinator ended it, or its step went away | is over, and is never retried |
+
+  A turn with no `end` is running, or was lost with its machine — which only that machine
+  can tell, from the run directory.
+- **Whether a run is running, parked or over is read, never stored.** `ended` and `exit` now
+  say the *run* is over — its last turn ended `done` or `stopped`, or a person gave up on
+  it — not that a process exited; every turn keeps its own.
+- **The launching machine is still the one writer.** Only it has the session's files and
+  the worktree, so only it can start the next turn; an answer given anywhere else reaches it
+  as the question's file, through git. `callsign` and `claim` say which squad's worker ran it.
+- **Why the format is 2:** a format-1 harvest rewrites the record whole from the keys it
+  knows and would drop `turns`. A format-1 build skips a format-2 record, as it skips any
+  newer one, so the cost of the bump is that such a build does not count these runs' usage.
+
+### The `questions` directory
+
+*Designed, not yet written by any build.* Everything a run needs a person — or the
+coordinator — for, one file per question, so two agents asking at once add two files and
+git never conflicts:
+
+```
+<project dir>/questions/
+└── 2026-10/                                  the month it was asked
+    └── 20261007T103341Z-e1f2a3b4.json        minted as a run id is; shown as Q-e1f2
+```
+
+```json
+{
+  "format": 1, "id": "20261007T103341Z-e1f2a3b4", "project": "<id>", "step": "<id>",
+  "run": "20261007T101500Z-9c1e44ab", "asked": "2026-10-07T10:33:41+00:00",
+  "by": {"callsign": "kettle-three", "harness": "claude", "machine": "<machine id>", "host": "knut-arch"},
+  "kind": "decision",
+  "questions": [
+    {"question": "Keep both records, or let the claim absorb at-work?", "header": "At-work",
+     "multiSelect": false,
+     "options": [{"label": "Keep both", "description": "Two clocks, two jobs"},
+                 {"label": "Absorb", "description": "One record, committed"}]}
+  ],
+  "state": "answered",
+  "answer": {"answers": {"Keep both records, or let the claim absorb at-work?": "Keep both"},
+             "by": {"kind": "person", "name": "Knut"}, "at": "2026-10-07T10:41:02+00:00"}
+}
+```
+
+- **`kind`** is `decision`, `plan-approval` (the plan is the `body`), `permission` (what was
+  denied is the `body`), `blocked` (the run cannot go on alone: a dead login, retries spent,
+  a terminal run its multiplexer says is waiting) or `limit` (`resets` is when the account
+  comes back). **A usage hold is a question** answered by *Retry now* or by the clock, so
+  every card in the inbox is one of these files and nothing else.
+- **`questions` is Claude's `AskUserQuestion` shape exactly** — question, header, options
+  with descriptions, `multiSelect` — so a hosted Claude's own question is written through
+  unchanged, and `dplanner ask` writes a list of one. `answer.answers` is the shape Claude
+  takes back (`updatedInput.answers`): each question's text to the chosen label, or to free
+  text.
+- **`state`** is `open`, `escalated` (the coordinator passed it to a person: `escalated`
+  holds `at`, `by` and `why`), `answered`, or `withdrawn` (the run ended or asked again:
+  `withdrawn` holds `at` and `why`). `answer.by.kind` is `person`, `coordinator` or
+  `clock` — the last only for `limit`.
+- **Several writers, one after another.** The asker creates the file; the coordinator may
+  escalate it; anybody answers it, and the verb refuses a second answer. If a merge meets
+  two writers anyway, answered beats escalated beats open, and of two answers the earlier
+  `answer.at` stands. An open question never times out into an answer.
+- Outside `PLAN_ENTRIES` like `ledger/`, so a window never adopts it as an outside change
+  and reads it by polling a fingerprint; Save commits it; Move Plan carries it. Absence
+  encodes the default, a file this build cannot read is skipped, and there is no migration.
+
+### The `claims` directory
+
+*Designed, not yet written by any build.* Which work is taken by which squad — a lease in
+git, so a person or a worker on another machine sees it at their next pull:
+
+```
+<project dir>/claims/
+└── 2026-10/
+    └── 20261007T100212Z-5a0b7c3d.json
+```
+
+```json
+{
+  "format": 1, "id": "20261007T100212Z-5a0b7c3d", "project": "<id>",
+  "callsign": "kettle", "worker": {"machine": "<machine id>", "host": "knut-arch"},
+  "steps": ["<id>", "<id>"],
+  "started": "2026-10-07T10:02:12+00:00", "heartbeat": "2026-10-07T11:20:40+00:00",
+  "lease_minutes": 90,
+  "ended": {"at": "…", "by": {"kind": "coordinator", "name": "kettle-actual"}, "why": "released"}
+}
+```
+
+- **One claim per squad**, written by its coordinator; `callsign` is the squad word. Which
+  member works which step is on the *run* (`callsign`), not here.
+- **`heartbeat`** is renewed by the coordinator's own `dplanner` runs, and only when it is
+  ten minutes old, so every other call writes nothing. The coordinator commits and pushes
+  its claim when it claims, after each merge and when it releases, and a commit carrying
+  only a heartbeat at most every thirty minutes.
+- **A claim whose heartbeat is older than `lease_minutes` (default 90) is abandoned**, by the
+  reader's clock — the lease is three pushes long so one failed push, or a little clock
+  skew, does not read as death. It is shown as abandoned and deleted by nobody; a new claim
+  may take its steps and names it in `supersedes`, and the old coordinator stands down at
+  its next write when it finds a newer claim on its steps. While a claim stands, a second
+  claim on any of its steps is refused, naming the holder.
+- **`ended`** is written once: by the coordinator (`released`, `done`), or by a person — a
+  *Clear*, or a status that stops one of its steps — who is the director and wins
+  (`by.kind: person`). That is a second writer on purpose; the coordinator re-reads the file
+  before every write, and if a merge meets the two, ended wins.
+- Outside `PLAN_ENTRIES`, polled, committed by Save, carried by Move Plan; absence encodes the
+  default, an unreadable file is skipped, no migration. It is the record a multiplayer
+  coordination service would broadcast, and git stays the authority.
 
 ### Changing it
 

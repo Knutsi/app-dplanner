@@ -1003,3 +1003,115 @@ briefing too big?" is now a question with a standing answer: one segment per blo
 carrying its own heading, and `segments` (origin, heading, chars) plus `chars` on the JSON.
 The join invariant is untouched — the segment texts still concatenate to exactly the text
 that is sent, which is what lets the Agent tab colour it without ever showing something else.
+
+## Runs, questions and claims are three records in the plan
+
+*Designed, not yet built: the headless engine, the question inbox and the coordinator are
+built to these records, and FORMAT.md's* The `ledger` directory *(format 2),* The
+`questions` directory *and* The `claims` directory *are the formats.* Every one of them
+rests on the finding of `docs/research/2026-10-07-headless-agents/`: **DPlanner never
+waits on a process for a person.** A headless run is one turn of a process that exits;
+whatever needs somebody is recorded and the process ends; the answer resumes the same
+session. A closed window, a reboot or an exhausted quota then costs time and nothing else —
+but only if what the run was waiting for is written down somewhere that outlives every
+process, and readable by whoever is to answer it. That is these three records.
+
+### A run is the ledger record, and the playbook ledger is its runs
+
+The ledger already had the shape a run needs: one file per launch, one writer — the
+launching machine, the only one that can read the vendor's records — committed with the
+plan, outside `PLAN_ENTRIES`. A second record for "the run" beside it would have meant two
+files per launch that must agree, written by the same process at the same moments. So the
+record grows to format 2 instead: who ran it (`callsign`, `claim`), which stage of which
+playbook it was (`playbook`, `stage`, `attempt` — `playbooks.md`'s words), and its
+**turns**. And for the same reason there is no separate playbook ledger: a step's stage
+history is its runs read in order, so the two cannot disagree.
+
+**A run is one stage attempt; a resume is a turn.** What resumes is a *session*, and a
+session is what the vendor keeps: `claude -p --resume`, `codex exec resume`, `opencode run
+-s` all continue the one that parked. Making every resume a run would have split one
+conversation's cost and story over several records that each had to name the others; a
+fresh session after a failure, on the other hand, really is a new attempt and gets a new run.
+
+**How a turn ended is the record's centre, and it has six words.** The research's five —
+`done`, `asked`, `denied`, `limit`, `failed` — exist because exit codes lie: Claude asks in
+prose and exits 0, opencode auto-rejects a permission and exits 0 having done nothing. The
+supervisor classifies the stream and the result, and writes the class. The sixth,
+`stopped`, is for a run a person or the coordinator fenced, or whose step went away:
+filing it under `failed` would have the supervisor retry exactly what somebody just stopped.
+The retry-or-abandon split of the 10-03 failure classes is the supervisor's count of
+`failed` turns, not another word. Running, parked and over are read from the turns, never
+stored, so nothing can say a run is parked while its last turn says done.
+
+**The run directory leaves `/tmp`.** A parked run must survive a reboot with its stream,
+its briefing and DPlanner's copy of the plan it wrote (Claude otherwise leaves only the one
+in `~/.claude/plans/`), and `/tmp` is a RAM disk on the machines this runs on — 76 % full in
+the 10-04 run. It moves to `config_dir()/runs/<run id>/`, derived from the id and never
+stored, because only the launching machine can use it.
+
+### A question is a file, and the inbox is the directory
+
+A question needs answering from anywhere — the window on another machine, a person who
+pulled the plan, the coordinator — so it is project data in git, never this machine's. **One
+file per question**, for the ledger's reason: two agents asking at once add two files, and
+nothing conflicts. Its body is Claude's `AskUserQuestion` shape, because that shape is
+already what a Control Centre card needs (a question, a header, options with descriptions)
+and because the warm path — a Claude process DPlanner hosts over stream-json — hands over
+exactly that and takes back exactly `answers`; any other shape would be a translation in
+both directions. `dplanner ask`, the door every harness can use because every harness can
+run a shell command, writes the same record with one question in it.
+
+**A usage hold is a question too.** It could have been only a fact on the run (`end:
+limit`, `resets`), with the cards reading parked runs beside questions. Then the inbox
+would have had two sources with two ways to be answered and two ways to go stale. As a
+`limit` question it is one more card, answered by *Retry now* or by the clock when the reset
+passes — and the run still carries `resets`, because the launcher holds the account's other
+launches on it.
+
+**Several writers touch one question, but one after another**: asked, perhaps escalated,
+answered. The verb refuses a second answer, and for the merge that meets two anyway the
+order is fixed in the format — answered beats escalated beats open, the earlier answer
+stands — so nobody has to invent it in a conflict. An open question never times out into an
+approval; it is the one thing in this design that waits, and it waits in a file.
+
+### A claim is a lease in git, and at-work stays beside it
+
+Knut's brief: what work is taken by which agent is project-level data, in git, with when and
+the last sign of life, pushed as the agent goes. The 4 October multiplayer note asked for
+the same thing as a lease — expiring unless renewed, so a crashed worker frees its area by
+itself — and the claim is that record: a squad's callsign, the worker's machine, the step
+ids, a heartbeat and a lease. **One claim per squad**: which callsign works which step is
+already on the run, and a second copy of it here would be a second thing to keep true.
+
+**It does not absorb `domain/at_work.py`, and at-work does not absorb it.** They look
+alike — a file per claim, a last sign of life — and answer different questions on different
+clocks. At-work is *a process on this machine is editing this plan right now*: renewed by
+every CLI call, lapsed after three minutes, and kept out of the plan because a heartbeat
+every few seconds in git would land in everybody's history and have every window adopting
+an edit. A claim is *this work is taken*: it must be seen from other machines, so it is in
+git, so its clock has to be slow. Merging them would either commit the fast clock or slow
+the banner that stops a developer editing what an agent is rewriting. Each points at the
+other, and the band can name the squad by matching its step to a run.
+
+**The cadence keeps git quiet.** The heartbeat is written only when it is ten minutes old —
+by the coordinator's own `dplanner` runs, as at-work is renewed by them, so it needs no
+timer. The claim is pushed when something happened anyway (claimed, merged, released), and a
+commit that carries nothing but a heartbeat goes at most every thirty minutes. The lease is
+ninety minutes, three pushes, so one rejected push or a little clock skew between machines
+does not read as death; the reader's clock judges it, which is good enough at that length
+and needs no service.
+
+**A stale lease is abandoned, and nothing is deleted.** The window says so; another squad
+may take the steps with a claim that names the old one in `supersedes`; the old coordinator,
+if it was only asleep, finds the newer claim on its next write and stands down. **The
+director wins**: a person who clears the claim, or sets one of its steps done or blocked,
+writes `ended` into the coordinator's file — the one deliberate second writer — and the
+coordinator, re-reading before every write, stops. If a merge meets the two, ended wins.
+
+### What the window reads, and the one-writer rule across all three
+
+The window polls each directory's fingerprint, as Expenditure polls the ledger's; nothing
+here is a plan entry, so none of it is adopted as an outside change or trips the stale check,
+and Save commits all three with the project. Across machines everything meets at git, and
+each record is written so that the meeting is boring: a run has one writer, a question has
+writers in sequence with the merge order written down, a claim has one writer and a director.
