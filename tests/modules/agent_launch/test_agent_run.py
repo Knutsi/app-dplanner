@@ -787,9 +787,14 @@ def test_the_harnesses_cover_the_known_agents():
         if "{run_dir}" in tokens:
             # `--add-dir` takes a list: what follows the directory is an option, not the prompt.
             assert tokens[tokens.index("{run_dir}") + 1].startswith("--")
-    assert HARNESSES[0].capabilities() == ("names its session", "resumes", "counts tokens")
-    assert HARNESSES[1].capabilities() == ("resumes", "counts tokens")
-    assert HARNESSES[2].capabilities() == ("resumes", "counts tokens")
+    assert HARNESSES[0].capabilities() == (
+        "names its session",
+        "resumes",
+        "counts tokens",
+        "runs headless",
+    )
+    assert HARNESSES[1].capabilities() == ("resumes", "counts tokens", "runs headless")
+    assert HARNESSES[2].capabilities() == ("resumes", "counts tokens", "runs headless")
     assert all(h.shell_markers for h in HARNESSES)
 
 
@@ -825,7 +830,7 @@ def test_picking_a_preset_prefills_the_command(app):
     edit = page.findChild(QLineEdit, "AgentCommandEdit")
     assert combo is not None and edit is not None
     codex = next(i for i in range(combo.count()) if combo.itemText(i).startswith("Codex"))
-    assert combo.itemText(codex) == "Codex — resumes, counts tokens"
+    assert combo.itemText(codex) == "Codex — resumes, counts tokens, runs headless"
     combo.setCurrentIndex(codex)
     combo.activated.emit(codex)
     assert edit.text() == HARNESSES[1].command

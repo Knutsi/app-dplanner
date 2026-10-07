@@ -1,0 +1,21 @@
+{
+ "cli": "opencode",
+ "exit": 0,
+ "probe": "opencode-ask-door",
+ "source": "docs/research/2026-10-07-headless-agents/ experiment E7: asked through the stub ask command, then ended its turn",
+ "signal_sent": null,
+ "timed_out_after_s": null,
+ "stdout_lines": 7,
+ "stdout_head": [
+  "{\"type\":\"step_start\",\"timestamp\":1791347432087,\"sessionID\":\"ses_eeb5f821fffedOEPQLWFOM13Mc\",\"part\":{\"id\":\"prt_114a09a95001Oyw39QJ3PZuAzW\",\"messageID\":\"msg_114a07f5d001N8a7t2P2u5aOTm\",\"sessionID\":\"ses_eeb5f821fffedOEPQLWFOM13Mc\",\"snapshot\":\"0b5146d69a7f3435916ca594d9f5fe68057ea59a\",\"type\":\"step-start\"}}",
+  "{\"type\":\"tool_use\",\"timestamp\":1791347432431,\"sessionID\":\"ses_eeb5f821fffedOEPQLWFOM13Mc\",\"part\":{\"type\":\"tool\",\"tool\":\"glob\",\"callID\":\"call_0bda137b6b054176bc9db9ba\",\"state\":{\"status\":\"completed\",\"input\":{\"pattern\":\"**/calc.py\"},\"output\":\"<scratch>/hx/w/e7a/calc.py\",\"metadata\":{\"count\":1,\"truncated\":false},\"title\":\"\",\"time\":{\"start\":1791347432345,\"end\":1791347432427}},\"id\":\"prt_114a09b6b001mU7jATj2rVHu6v\",\"sessionID\":\"ses_eeb5f821fffedOEPQLWFOM13Mc\",\"messageID\":\"msg_114a07f5d001N8a7t2P2u5aOTm\"}}",
+  "{\"type\":\"tool_use\",\"timestamp\":1791347433096,\"sessionID\":\"ses_eeb5f821fffedOEPQLWFOM13Mc\",\"part\":{\"type\":\"tool\",\"tool\":\"bash\",\"callID\":\"call_7e4046abc8be4755b360d281\",\"state\":{\"status\":\"completed\",\"input\":{\"command\":\"<scratch>/hx/bin/dplanner-ask \\\"How should divide(a, b) behave when b is zero?\\\" --choice \\\"Raise ZeroDivisionError\\\" --choice \\\"Return None\\\"\"},\"output\":\"Recorded as Q1. A person will answer it. End your turn now without doing anything else; you will be resumed with the answer.\\n\",\"metadata\":{\"output\":\"Recorded as Q1. A person will answer it. End your turn now without doing anything else; you will be resumed with the answer.\\n\",\"exit\":0,\"truncated\":false},\"title\":\"<scratch>/hx/bin/dplanner-ask \\\"How should divide(a, b) behave when b is zero?\\\" --choice \\\"Raise ZeroDivisionError\\\" --choice \\\"Return None\\\"\",\"time\":{\"start\":1791347433021,\"end\":1791347433092}},\"id\":\"prt_114a09bd6001P145pugZKXJqUC\",\"sessionID\":\"ses_eeb5f821fffedOEPQLWFOM13Mc\",\"messageID\":\"msg_114a07f5d001N8a7t2P2u5aOTm\"}}",
+  "{\"type\":\"step_finish\",\"timestamp\":1791347433114,\"sessionID\":\"ses_eeb5f821fffedOEPQLWFOM13Mc\",\"part\":{\"id\":\"prt_114a09e96001KCmBUZDmL1E7GH\",\"reason\":\"tool-calls\",\"snapshot\":\"0b5146d69a7f3435916ca594d9f5fe68057ea59a\",\"messageID\":\"msg_114a07f5d001N8a7t2P2u5aOTm\",\"sessionID\":\"ses_eeb5f821fffedOEPQLWFOM13Mc\",\"type\":\"step-finish\",\"tokens\":{\"total\":12056,\"input\":4489,\"output\":130,\"reasoning\":13,\"cache\":{\"write\":0,\"read\":7424}},\"cost\":0}}",
+  "{\"type\":\"step_start\",\"timestamp\":1791347440951,\"sessionID\":\"ses_eeb5f821fffedOEPQLWFOM13Mc\",\"part\":{\"id\":\"prt_114a0bd36001K8fH0m5toAGv6m\",\"messageID\":\"msg_114a09eaa001w3hfwRpQjG4Q4s\",\"sessionID\":\"ses_eeb5f821fffedOEPQLWFOM13Mc\",\"snapshot\":\"0b5146d69a7f3435916ca594d9f5fe68057ea59a\",\"type\":\"step-start\"}}",
+  "{\"type\":\"text\",\"timestamp\":1791347441551,\"sessionID\":\"ses_eeb5f821fffedOEPQLWFOM13Mc\",\"part\":{\"id\":\"prt_114a0bdf3001Pm5JM2gLWyvJ0e\",\"messageID\":\"msg_114a09eaa001w3hfwRpQjG4Q4s\",\"sessionID\":\"ses_eeb5f821fffedOEPQLWFOM13Mc\",\"type\":\"text\",\"text\":\"I've asked how `divide(a, b)` should behave when `b` is zero. Waiting for a person's answer before implementing.\",\"time\":{\"start\":1791347441139,\"end\":1791347441548}}}",
+  "{\"type\":\"step_finish\",\"timestamp\":1791347441564,\"sessionID\":\"ses_eeb5f821fffedOEPQLWFOM13Mc\",\"part\":{\"id\":\"prt_114a0bf99001IEO6VtCCVI8726\",\"reason\":\"stop\",\"snapshot\":\"0b5146d69a7f3435916ca594d9f5fe68057ea59a\",\"messageID\":\"msg_114a09eaa001w3hfwRpQjG4Q4s\",\"sessionID\":\"ses_eeb5f821fffedOEPQLWFOM13Mc\",\"type\":\"step-finish\",\"tokens\":{\"total\":12200,\"input\":258,\"output\":30,\"reasoning\":8,\"cache\":{\"write\":0,\"read\":11904}},\"cost\":0}}"
+ ],
+ "stdout_tail": [],
+ "stderr_tail": [],
+ "question": "How should divide(a, b) behave when b is zero?"
+}

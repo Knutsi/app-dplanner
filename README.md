@@ -540,8 +540,10 @@ src/dplanner/
 │   │                        (instructions.py), assembled once by compose.brief; and where
 │   │                        a run works (worktree.py: its run name, checkout and worktree)
 │   ├── agent_claude/        ── one module per agent CLI, each a Qt-free `harness.py`: the
-│   ├── agent_codex/            command, how it resumes, the marks it leaves in its shells, and
-│   ├── agent_opencode/         a reader of its own records (`domain/agents.py` is the contract)
+│   ├── agent_codex/            command, how it resumes, the marks it leaves in its shells, a
+│   ├── agent_opencode/         reader of its own records (`domain/agents.py` is the contract),
+│   │                        and its headless half — the argv per playbook stage and a reader
+│   │                        of its JSON stream (`domain/headless.py`: how a turn ended)
 │   ├── step_agent_run/      where a launched agent stands — stamped at launch, moved by
 │   │                        `dplanner agent-state`, cleared when the shell ends (`runs.py`
 │   │                        reads the wrapper's report; `terminal.py` finds the window or

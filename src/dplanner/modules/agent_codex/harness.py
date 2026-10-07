@@ -39,16 +39,46 @@ run's thread is the earliest rollout in its directory that no other run has clai
 straight to it by id. The account is the plan the rollout's rate limits name (``plus``).
 Codex's formats are its own and unversioned here, so every reader answers ``None`` or
 nothing for what it cannot read rather than raising.
+
+**Headless.** One turn is ``codex exec --json``, a resumed one ``codex exec resume --json …
+<thread> <prompt>``. **The stage's mode is spelt as ``-c`` config overrides, on a fresh turn and
+a resumed one alike**, because ``exec resume`` takes none of ``-s``, ``--approve-for-me`` or
+``--add-dir`` (0.160.0), and a resume does not keep the mode its session began in — a
+read-only thread resumed bare came back ``workspace-write``. Read off the rollout's
+``turn_context`` against the fake API on 2026-10-07: ``--approve-for-me --add-dir <d>`` is
+exactly ``sandbox_mode="workspace-write"``, ``approval_policy="on-request"``,
+``approvals_reviewer="auto_review"`` and ``sandbox_workspace_write.writable_roots=[<d>]``, and
+those overrides stick on ``exec resume``. A plan and a review are ``read-only`` with no
+approvals; an execute turn may write the run directory and the plan repository, which the
+10-04 run's 21 sandbox prompts were the lack of. Execute and review answer their stage's
+schema (``--output-schema``, a file in the run directory) as the last ``agent_message``.
+
+The ``--json`` stream names the thread (``thread.started``), each finished item
+(``item.completed``; the final text is the last ``agent_message``), the turn's usage
+(``turn.completed``) and a failure (``turn.failed``) — but **no limit telemetry**: the account's
+windows (``rate_limits.primary``/``secondary``, a percentage and a reset) are only in the
+rollout's ``token_count`` events, so :func:`read_limits` reads them there.
 """
 
 import json
 import os
 import re
 import sqlite3
+from collections.abc import Mapping
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from dplanner.domain.agents import AgentHarness, AgentUsage, RunFacts, RunReport, Tokens
+from dplanner.domain.headless import (
+    Headless,
+    LimitWindow,
+    StageKind,
+    TurnLog,
+    TurnSpec,
+    schema_file,
+    typed_message,
+    window,
+)
 
 ROLLOUT_NAME = re.compile(r"^rollout-.*-([0-9a-f-]{36})(?:_.*)?\.jsonl$")
 # How far before the launch stamp a rollout may start and still be this run's: the two
@@ -280,6 +310,111 @@ def report(facts: RunFacts, home: Path | None = None) -> RunReport | None:
     return RunReport(session=thread, agents=tuple(agents), account=account, partial=spawned is None)
 
 
+READ_ONLY = {"sandbox_mode": "read-only", "approval_policy": "never"}
+APPROVE_FOR_ME = {
+    "sandbox_mode": "workspace-write",
+    "approval_policy": "on-request",
+    "approvals_reviewer": "auto_review",
+}
+
+
+def headless_command(spec: TurnSpec) -> list[str]:
+    settings: dict[str, object] = dict(READ_ONLY)
+    if spec.stage is StageKind.EXECUTE:
+        roots = [spec.run_dir, *spec.writable]
+        settings = {**APPROVE_FOR_ME, "sandbox_workspace_write.writable_roots": roots}
+    argv = ["codex", "exec", *(["resume"] if spec.resume else []), "--json"]
+    for key, value in settings.items():
+        # A JSON string or list is TOML too — unescaped, since TOML refuses the surrogate
+        # pairs JSON escapes an astral character into.
+        argv += ["-c", f"{key}={json.dumps(value, ensure_ascii=False)}"]
+    schema = schema_file(spec)
+    if schema is not None:
+        argv += ["--output-schema", str(schema)]
+    # "--" ends the options, so an answer that reads like a flag ("--help") is still a prompt.
+    return [*argv, "--", *([spec.session] if spec.resume else []), spec.prompt]
+
+
+def read_event(log: TurnLog, event: Mapping[str, object]) -> None:
+    kind = event.get("type")
+    if kind == "thread.started":
+        log.session = str(event.get("thread_id") or log.session)
+    elif kind == "item.completed":
+        log.progressed()
+        item = event.get("item")
+        if isinstance(item, dict) and item.get("type") == "agent_message":
+            log.final = str(item.get("text") or "")
+            log.typed = typed_message(log.final)
+            # Prose only: a schema-valid answer says for itself whether it was denied.
+            log.denials = refusals(log.final) if log.typed is None else []
+    elif kind == "turn.completed":
+        usage = event.get("usage")
+        if isinstance(usage, dict):
+            log.tokens = _tokens(usage)
+    elif kind == "turn.failed":
+        error = event.get("error")
+        log.error = str(error.get("message", "")) if isinstance(error, dict) else str(error)
+        log.error = log.error or "the turn failed"
+
+
+# Codex in a read-only sandbox does not fail: it says it could not and hands the change back
+# as text. A sentence that both refuses an act and names the sandbox as why is a denial; one
+# that only mentions the sandbox ("reviewed read-only; no issues") is not.
+_REFUSED = re.compile(
+    r"\b(?:couldn(?:'|\u2019)?t|could not|can(?:'|\u2019)?t|cannot|was unable to|am unable to)"
+    r" (?:\w+ )?(?:edit|write|modify|change|create|commit|apply|run|delete|save)\b",
+    re.IGNORECASE,
+)
+_BECAUSE_SANDBOX = re.compile(
+    r"read-only|sandbox|not (?:allowed|permitted)|permission"
+    r"|writ(?:e|ing) is (?:not )?(?:enabled|blocked)",
+    re.IGNORECASE,
+)
+
+
+def refusals(text: str) -> list[str]:
+    """The sentences of a final message that refuse an act for want of permission."""
+    sentences = re.split(r"(?<=[.!?])\s+|\n+", text)
+    return [s.strip()[:160] for s in sentences if _REFUSED.search(s) and _BECAUSE_SANDBOX.search(s)]
+
+
+def read_limits(thread: str, home: Path | None = None) -> tuple[LimitWindow, ...]:
+    """The account's windows as the thread's rollout last recorded them; () when there is
+    no rollout or it names none."""
+    path = rollout_for(thread, home) if thread else None
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines() if path is not None else []
+    except OSError:
+        return ()
+    for line in reversed(lines):
+        if '"rate_limits"' not in line:
+            continue
+        try:
+            payload = json.loads(line).get("payload")
+        except (ValueError, AttributeError):
+            continue
+        limits = payload.get("rate_limits") if isinstance(payload, dict) else None
+        windows = tuple(
+            found
+            for name in ("primary", "secondary")
+            if isinstance(limits, dict)
+            and isinstance(given := limits.get(name), dict)
+            and (found := window(name, given.get("used_percent"), given.get("resets_at"), 100))
+        )
+        # A limit of another kind ("premium") is recorded with no windows at all, right
+        # after the account's own: it says nothing about when the account comes back.
+        if windows:
+            return windows
+    return ()
+
+
+HEADLESS = Headless(
+    command=headless_command,
+    read=read_event,
+    limits=lambda log: read_limits(log.session),
+)
+
+
 HARNESS = AgentHarness(
     id="codex",
     label="Codex",
@@ -289,4 +424,5 @@ HARNESS = AgentHarness(
     shell_markers=("CODEX_THREAD_ID", "CODEX_SESSION_ID"),
     report=report,
     binary="codex",
+    headless=HEADLESS,
 )
