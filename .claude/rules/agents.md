@@ -76,25 +76,32 @@ paths:
   suite never depends on being run by an agent. `docs/architecture/agents.md`'s *An agent finishes
   at Ready for review* has the reasoning.
 - **One launch under both surfaces: `dplanner agent run` is the window's Run Agent.** Both
-  run `agent_launch/launch.py` in one order — `worktree_of`/`place` (the step's worktree,
-  prepared by git in Python, on a task in the window), `launch` (the briefing in `prompt.md`,
-  then **the run's ledger record before anything spawns** — format 2 for a headless run in
-  `config_dir()/runs/<run>/`, format 1 for a terminal — then the start: `start_detached` or
-  the profile's terminal, the record taken back when it fails) — and apply one claim,
-  `workflows.py`'s `run_agent`, **only once the run started**. Effects never go in a
-  `workflows.py`; the claim is the workflow. **What the window asks, `agent run` refuses**:
-  prerequisites not done (until `--anyway`), a repository not checked out here, a step whose
-  headless run is not over (resume it with `agent supervise`), a profile whose agent has no
-  headless mode. It is headless by default (`--terminal` for a terminal), always claims, and
-  first revives this machine's lost turns in the step's project. **A supervisor is
-  `sys.executable -m dplanner`**, the build that launched the run, never the `dplanner` on
-  PATH. `docs/architecture/agents.md`'s *One launch under both surfaces* has the reasoning.
-- **A machine's start picks up its lost headless turns.** `supervisor.revive(project_dirs)`
-  starts a supervisor for each run of this machine whose last turn has no end and that no
-  supervisor holds (`supervised`, the OS lock); the supervisor ends the turn `failed`/`lost`
-  and retries. The window calls it once at start (`agent_usage`'s module, beside the sweep
-  that reads the same records); `agent run` over the step's project. A parked run and a run
-  with no turn yet are a person's, never touched.
+  run `agent_launch/launch.py` in one order, **under the step's launch lock**
+  (`supervisor.launching`, `config_dir()/launches/<project>-<step>.lock`, an OS lock) from the
+  first check to the start: the gate (`refusal`, which includes `BranchPlan.refusal`, and
+  `unfinished_run` — a headless run not over is resumed with `agent supervise`, never
+  launched again); `worktree_of`/`place` (prepared by git in Python, on a task in the window,
+  whose result is re-checked against the step's run name and branch plan before use);
+  `prepare_run` (the briefing, then **the run's ledger record** — format 2 headless in
+  `config_dir()/runs/<run>/`, format 1 for a terminal); then **the claim**, `workflows.py`'s
+  `run_agent`, **applied and saved before anything starts**; and only then `start_run`, the
+  follow-up. A save that fails starts nothing and takes the record back (the CLI's
+  `CliContext.unwritten`); a start that fails takes the record back and the claim
+  (`workflows.withdraw`, a second change), and says so. Effects never go in a `workflows.py`.
+  **What the window asks, `agent run` refuses**: prerequisites not done (until `--anyway`), a
+  repository not checked out here, a profile whose agent has no headless mode. It is
+  headless by default (`--terminal` for a terminal) and always claims. **A supervisor is
+  `sys.executable -m dplanner --library <the launch's>`**, and every turn's environment
+  carries `DPLANNER_LIBRARY`, `DPLANNER_PROJECT` and `DPLANNER_RUN`.
+  `docs/architecture/agents.md`'s *One launch under both surfaces* has the reasoning.
+- **A machine's start settles its headless runs.** `supervisor.revive(project_dirs,
+  claimed=, library=)` starts a supervisor for each run of this machine whose last turn has
+  no end and that no supervisor holds (`supervised`, the OS lock) — the supervisor ends the
+  turn `failed`/`lost` and retries — and for each run with **no turn** whose step is still
+  claimed (a launch interrupted between its record and its start); such a record whose step
+  is no longer claimed is deleted, and one whose launch lock is held is left to it. The
+  window calls it once at start (`agent_usage`'s module); `agent run` before its own lock.
+  A parked run is a person's, never touched.
 - **A step names the code location it works in.** With several code rows in a project,
   the agent-instruction entry's `workplace` holds a location id (`aspect.workplace`,
   `with_workplace`; `dplanner agent workplace <step> code:UI|primary`), absent meaning
@@ -136,7 +143,9 @@ paths:
   about the step, never a setting, because only a step that must act on the checkout the
   window shows (a release cut, a conflict) turns it off. `agent_briefing/worktree.py`'s
   `prepare` makes `.dplanner-worktrees/<run name>` on branch `agent/<run name>` before the
-  run — in Python, for a terminal and a headless run alike, so no script carries git — **and
+  run — in Python, for a terminal and a headless run alike, so no script carries git; the
+  checkout under `sparse.CHECKOUT_S`, and a worktree git left half made (still locked
+  `initializing`, or no commit checked out) removed and made again — **and
   refuses with git's reason if it cannot**: the first version swallowed the error and ran two
   "isolated" agents on one checkout, because `.dplanner/` is the pointer *file* a subfolder project
   leaves at the repo root. The run name is `agent_briefing.worktree.run_name`: the step's key, its ticket
@@ -292,7 +301,10 @@ paths:
   `agent_launch/profiles.py`: a `Profile` is an agent command and a terminal
   template under a name, kept per user in `config_dir()/agent-profiles.json` — never
   QSettings, because `agent run --profile` reads it with no Qt; the window `adopt`s what
-  QSettings held before, once, the two single settings profiles replaced included. `agent.run` runs
+  QSettings held before, once, the two single settings profiles replaced included. **A file
+  that is there and cannot be read is never written over** (`profiles.problem()`): the
+  default profile stands in, nothing seeds or saves, the window shows a notice and the page
+  is read-only, and `agent run` refuses. `agent.run` runs
   the first — the Agent tab's button and the palette — and its seat in the Step menu is
   *Step ▸ Run Agent*, a data child menu of every profile, the default marked, each
   greyed with its own reason (`launcher.template_refusal`: a row's probe, asked before

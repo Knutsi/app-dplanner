@@ -82,64 +82,71 @@ says it back* has why.
 Run Agent is the same launch with a person's questions put in front of it. The 10-04 run
 showed what two launches cost: the director rebuilt Run Agent by hand for every step, and
 "forgot to set in-progress" and "a landing on a new branch instead of the feature branch"
-were both a hand-built launch drifting from the real one. So there is one, and both
-surfaces call it, in one order:
+were both a hand-built launch drifting from the real one. So there is one
+(`agent_launch/launch.py`), and both surfaces run it in one order:
 
-1. **Where it works** (`agent_launch/launch.py`'s `worktree_of` and `place`). The step's
-   worktree is prepared by git *in Python* — `agent_briefing/worktree.py`'s `prepare` — no
-   longer by the terminal's wrapper script: a headless run has no script, and a second
-   implementation for it would be the drift this section exists to end. It is apart from
-   the rest because it is the slow part — a fetch — which the window runs on a task while
-   the CLI simply waits; `worktree_of` reads the plan on the caller's thread and `place`
-   takes plain values, so a worker never touches the model.
-2. **Its files and its record** (`launch`). The briefing goes into `prompt.md` with its
-   assets beside it — `config_dir()/runs/<run>/` for a headless run, a temp directory for
-   a terminal — and the run's ledger record is written **before anything spawns**: format
-   2 for a headless run (`stage`, `attempt`, the session minted for a harness that names
-   one), format 1 for a terminal. The record *is* the launch's intent. A launcher that
-   died after the spawn left a run on record rather than a process nobody knows of, and
-   `agent run` refuses a step whose headless run is not over — so a run is never launched
-   twice, and a parked one is resumed through `agent supervise`, never relaunched.
-3. **The start.** A headless run's supervisor (`supervisor.start_detached`), or the
-   profile's terminal. A start that fails takes its record back: a record of a run that
-   never existed would be harvested and swept forever.
-4. **The claim** (`workflows.py`'s `run_agent`, a `Change`). Applied only once the run has
-   started — so a step is never claimed for a run that did not start, which is the window's
-   standing rule (the prompt fallback claims nothing) kept for both surfaces. The CLI
-   applies it like any command; the window applies it off the undo stack, since the agent
-   it records cannot be undone (*A launch says the work has started*).
+1. **The step's launch lock**, taken first and held until the run started or nothing was
+   written — an OS lock, `supervisor.launching`, so a dead launcher's is free at once. Two
+   `agent run`s of one step, or a window and a terminal, both passed the "no run yet" check
+   before either wrote a record, and two agents ran; under the lock the second is refused.
+2. **The gate**: the step's own facts, the branch plan's refusal (two stretches that do not
+   nest leave a plan with nothing *but* a refusal, which would otherwise launch from the
+   default branch), where it works, and a headless run not over — resumed through `agent
+   supervise`, never launched a second time.
+3. **Where it works** (`worktree_of`, `place`). The worktree is prepared by git *in Python*
+   — `agent_briefing/worktree.py`'s `prepare` — not by the terminal's wrapper script: a
+   headless run has no script. It is the slow part, a fetch, so the window runs it on a task
+   from plain values, and **re-checks them when it returns**: a step renamed meanwhile would
+   be briefed to stop unless it stands in the new worktree while it stands in the old one,
+   so it is refused with the reason. The checkout gets the checkout timeout, and a worktree
+   git left half made — still under the `initializing` lock `worktree add` holds until its
+   checkout finished, or with no commit checked out — is removed and made again, never
+   reused.
+4. **Its files and its record** (`prepare_run`): `prompt.md` and its assets —
+   `config_dir()/runs/<run>/` for a headless run — and the run's ledger record, format 2 for
+   headless (`stage`, `attempt`, a session minted for a harness that names one), format 1 for
+   a terminal. The record is the launch's intent.
+5. **The claim, saved** (`workflows.py`'s `run_agent`), and **then the start**
+   (`start_run`) as its follow-up — `core.md`'s *A workflow is one function under both
+   surfaces*: the change is persisted, then the effect is performed. Starting first lost
+   the claim whenever another writer made the flush refuse, with the agent already running.
+   A save that is refused starts nothing and takes the record back (the CLI's
+   `CliContext.unwritten`, the window's `flush` answer). A start that fails takes the record
+   back and **withdraws the claim** — a second change (`workflows.withdraw`), which restores
+   the entry the step had unless somebody has changed it since — and says what happened.
+   The window applies both off the undo stack, since what they record cannot be undone.
+
+**A launch interrupted between its record and its start is settled by `revive`.** Its record
+has no turn and no supervisor holds it; once nobody holds the step's launch lock either, the
+run is started when its step still reads in progress, and its record deleted when it does
+not. The window does that at its start, and `agent run` before it takes its own lock.
 
 **The plan's half is the workflow, and the rest is not.** A `workflows.py` returns a
-`Change` and never persists anything (`core.md`'s *A workflow is one function under both
-surfaces*); a launch writes files, runs git and spawns processes, so those live in the
-Qt-free `launch.py` and the workflow is the claim alone. What drifts between two launches
-is everything outside the claim, and that is what `launch.py` makes one.
+`Change` and never persists anything; a launch writes files, runs git and spawns processes,
+so those live in the Qt-free `launch.py`, and the workflow is the claim and its withdrawal.
 
 **It replaced the intent file.** `launch_unattended` wrote an intent (`intents.py`) before
 its shell and forgot it once its claim was on disk; nothing ever called it. The run record
-written before the spawn carries the same fact in the place every reader already looks, so
-the intent and the unattended twin are gone (`decisions.md`, 2026-10-07).
+written before the start carries the same fact where every reader already looks
+(`decisions.md`, 2026-10-07).
 
 **What the window asks, the CLI refuses.** The window keeps a person's questions: the graph
-gate (a confirmation), the clone of a repository not checked out here, the limit on a
-selection, and the prompt fallback when no terminal opens. `agent run` has nobody to ask,
-so each is a sentence and an exit 1: prerequisites not done are refused until `--anyway`,
-a repository not checked out here names Run Agent, which clones. It is headless by default
-— the verb is for whoever is not watching — and `--terminal` opens the profile's terminal
-as the window does. `--profile` picks the profile, whose agent command names the harness a
-headless run uses; a custom command runs no headless turn, and says so.
+gate, the clone, the limit on a selection, and the prompt fallback when no terminal opens.
+`agent run` has nobody to ask, so each is a sentence and an exit 1 — prerequisites not done
+until `--anyway`, a repository not checked out here naming Run Agent, which clones. It is
+headless by default, and `--profile` picks the profile whose agent command names the harness.
 
-**A supervisor is the build that launched its run.** `start_detached` runs
-`sys.executable -m dplanner`, never whatever `dplanner` is on PATH: a run launched from a
-branch's build must be supervised by that build, which knows the record's words.
+**A supervisor is the build and the library that launched its run.** `start_detached` runs
+`sys.executable -m dplanner --library <path>`, never whatever `dplanner` is on PATH, and every
+turn's environment carries `DPLANNER_LIBRARY`, `DPLANNER_PROJECT` and `DPLANNER_RUN`: with two
+projects planning one repository, an agent's `dplanner` calls are otherwise ambiguous — or
+reach whatever project the caller's shell named — and a launch from `--library` elsewhere
+loses its library altogether.
 
 **A machine's start picks up its lost turns.** A reboot or a killed supervisor leaves a run
-whose last turn never ended. `supervisor.revive` starts a supervisor for each such run of
-this machine that no supervisor holds; the new one ends the turn `failed`/`lost` and
-retries it. The window does it once as it starts (the ledger sweep's module, which reads the
-same records), and `agent run` over the step's project before it looks for a run not over.
-A parked run — its last turn ended — waits for a person and is never touched, and a run
-whose record has no turn at all is left too: nothing says whether it ever started.
+whose last turn never ended; `revive` starts a supervisor for each such run of this machine
+that no supervisor holds, which ends the turn `failed`/`lost` and retries it. A parked run —
+its last turn ended — waits for a person and is never touched.
 
 **Plan mode is waiting on a person, and says so.** The Claude preset starts in plan mode, so
 a launched Claude writes a plan and waits for somebody to approve it — and a session in plan
@@ -657,7 +664,10 @@ shipped earlier. Profiles are per user, per machine, never the plan — and kept
 `config_dir()/agent-profiles.json`, not QSettings, because `dplanner agent run --profile`
 reads them from a terminal that loads no Qt. The window adopts what QSettings held before
 the move once (`profiles.adopt`), the list and the seed flag with it, so nothing is seeded
-twice.
+twice. **A file that is there and cannot be read is three states apart from one that is
+missing**: read leniently it looked empty, and the next seed wrote the defaults over a
+person's list. So `profiles.problem()` names it, the default profile stands in, nothing
+writes the file, the window shows a notice and a read-only page, and `agent run` refuses.
 
 **The verb has one seat, and it is the child menu.** A flat *Run Agent…* beside a *Run Agent
 With ▸* is two entries for one act, and the flat one hides the choice the other offers. So

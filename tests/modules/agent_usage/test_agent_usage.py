@@ -398,7 +398,7 @@ def test_the_window_picks_up_this_machines_lost_turns_when_it_starts(app, reques
 
     asked: list[list[object]] = []
 
-    def revive(dirs):
+    def revive(dirs, **_kw):
         asked.append(list(dirs))
         return []
 

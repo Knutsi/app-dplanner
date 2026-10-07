@@ -657,3 +657,13 @@ the claim is the workflow's `Change`. The launch profiles moved from QSettings t
 `config_dir()/agent-profiles.json`, adopted once by the window, so the CLI can read
 `--profile`. A supervisor is started as `sys.executable -m dplanner`, not the `dplanner` on
 PATH. Now: `agents.md`'s *One launch under both surfaces*.
+
+## 2026-10-07 — A launch saves its claim before it starts, under the step's lock
+
+S11 first started the run and claimed the step afterwards, keeping the window's rule that a
+failed launch claims nothing. Kettle Watch's review showed the cost: a flush another writer
+refused left an agent running on a step that read pending, and two launches of one step
+could both pass the "no run yet" check. Now a launch holds the step's OS launch lock from
+its first check to its start, saves its record and its claim first and starts the run as
+the follow-up, withdrawing the claim when the start fails; `revive` settles a launch cut off
+in between. Now: `agents.md`'s *One launch under both surfaces*.

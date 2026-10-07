@@ -658,6 +658,8 @@ def _agents(
             # A run's record is written before its terminal opens; worktrees on a task.
             project_dir=ledger_of,
             tasks=services.tasks,
+            notices=services.window,
+            flush=services.autosave.saved,
         )
     )
     instruction = StepAgentInstructionModule(

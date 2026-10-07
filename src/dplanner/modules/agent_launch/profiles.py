@@ -85,26 +85,56 @@ def profiles_file() -> Path:
     return config_dir() / PROFILES_FILE
 
 
-def _stored() -> dict[str, Any] | None:
-    """The file's contents, or None when there is none. A file this build cannot read
-    reads as an empty one, never a crash: the window then shows the default."""
+class UnreadableProfilesError(Exception):
+    """The profiles file is there and cannot be read: nothing may write over it."""
+
+
+def _read() -> dict[str, Any] | None:
+    """The file's contents; None when there is no file. Raises :class:`UnreadableProfilesError`
+    for one that is there and cannot be read — a file a newer build wrote, a hand edit gone
+    wrong — because reading it as empty would let the next seed write over it."""
+    path = profiles_file()
     try:
-        raw = json.loads(profiles_file().read_text(encoding="utf-8"))
+        raw = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return None
-    except (OSError, ValueError):
+    except (OSError, ValueError) as error:
+        raise UnreadableProfilesError(f"{path} cannot be read ({error})") from None
+    if not isinstance(raw, dict) or not isinstance(raw.get("profiles", []), list):
+        raise UnreadableProfilesError(f"{path} is not a profiles file")
+    if isinstance(raw.get("format"), int) and raw["format"] > FORMAT:
+        raise UnreadableProfilesError(f"{path} was written by a newer DPlanner")
+    return raw
+
+
+def problem() -> str:
+    """Why the profiles cannot be read — "" when they can, or there are none yet. While it
+    is not "", the default profile stands in and nothing writes the file."""
+    try:
+        _read()
+    except UnreadableProfilesError as error:
+        return f"{error} — fix or remove it; until then nothing is saved to it"
+    return ""
+
+
+def _stored() -> dict[str, Any]:
+    """What the file holds, read leniently for a reader: {} when there is none or it cannot
+    be read — a writer asks :func:`_read` and refuses instead."""
+    try:
+        return _read() or {}
+    except UnreadableProfilesError:
         return {}
-    return raw if isinstance(raw, dict) else {}
 
 
 def _stored_profiles() -> list[Profile]:
-    listed = (_stored() or {}).get("profiles")
+    listed = _stored().get("profiles")
     if not isinstance(listed, list):
         return []
     return [profile for profile in map(Profile.from_json, listed) if profile is not None]
 
 
 def _write(profiles: list[Profile], seeded: bool) -> None:
+    _read()  # Raises when the file is there and unreadable: never write over it.
     data = {
         "format": FORMAT,
         "profiles": [profile.to_json() for profile in profiles],
@@ -117,7 +147,7 @@ def _write(profiles: list[Profile], seeded: bool) -> None:
 
 def seeded() -> bool:
     """Whether the known pairings have been added once — a person's later removals stand."""
-    return (_stored() or {}).get("seeded") is True
+    return _stored().get("seeded") is True
 
 
 def read_profiles() -> list[Profile]:
@@ -135,8 +165,9 @@ def adopt(
 ) -> bool:
     """Once, when there is no file yet: take over what QSettings kept before it — the list
     (``stored``), the seed flag, and the two single settings profiles replaced, which read as
-    the default profile when no list was kept. True when it wrote the file."""
-    if _stored() is not None:
+    the default profile when no list was kept. True when it wrote the file; nothing when
+    there is a file, readable or not."""
+    if problem() or _read() is not None:
         return False
     listed = stored if isinstance(stored, list) else []
     profiles = [profile for profile in map(Profile.from_json, listed) if profile is not None]
@@ -260,8 +291,9 @@ def seed_profiles(
     """Once per user and machine: every harness in every terminal of
     :data:`SEEDED_TERMINALS`, through :func:`add_profiles`. The flag is written with the
     list, so a seeded profile the person removes stays removed. With no harnesses there
-    is nothing to seed and nothing is recorded. Returns what was added."""
-    if not harnesses or seeded():
+    is nothing to seed and nothing is recorded, nor over a file that cannot be read.
+    Returns what was added."""
+    if not harnesses or problem() or seeded():
         return []
     rows = terminals_for(platform)
     templates = [

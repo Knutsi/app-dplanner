@@ -96,9 +96,16 @@ class Rig:
     def play(self, *turns: dict[str, object]) -> None:
         self.script.write_text(json.dumps(list(turns)), encoding="utf-8")
 
-    def supervise(self, **options: str) -> str:
+    def supervise(self, prompt: str = "", text: str = "", library: Path | None = None) -> str:
         return supervise(
-            self.plan, RUN, self.harnesses, guards=GUARDS, config=self.config, **options
+            self.plan,
+            RUN,
+            self.harnesses,
+            guards=GUARDS,
+            config=self.config,
+            prompt=prompt,
+            text=text,
+            library=library,
         )
 
     @property

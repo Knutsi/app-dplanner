@@ -161,3 +161,33 @@ def test_a_run_name_is_the_key_the_ticket_and_the_slug_made_ref_safe():
     assert ref_safe("a..b//c ~^:?*[\\") == "a-b-c"
     assert ref_safe("-.lead and trail.-") == "lead-and-trail"
     assert len(run_name("S1", "", "x" * 200)) <= 60
+
+
+def test_a_worktree_git_never_finished_is_made_again(pointed_repo):
+    """A checkout cut short keeps the ``initializing`` lock ``worktree add`` takes until it is
+    done: the next launch removes that worktree and makes it again rather than reuse it."""
+    tree = prepare(pointed_repo, "s1-discovery")
+    _git(pointed_repo, "worktree", "lock", "--reason", "initializing", str(tree))
+    (tree / "half-written").write_text("a checkout cut short")
+    assert prepare(pointed_repo, "s1-discovery") == tree
+    assert "locked" not in _git(pointed_repo, "worktree", "list", "--porcelain")
+    assert not (tree / "half-written").exists()
+    assert _git(tree, "branch", "--show-current") == "agent/s1-discovery"
+
+
+def test_a_worktree_is_checked_out_with_the_checkout_timeout(pointed_repo, monkeypatch):
+    """A large repository, or an antivirus scanning every file, takes longer than a local
+    command's twenty seconds to check out."""
+    from dplanner.core.storage import sparse
+    from dplanner.modules.agent_briefing import worktree
+
+    timeouts: dict[str, float] = {}
+
+    def timed(args, *, cwd=None, timeout=sparse.LOCAL_S, **kw):
+        if list(args[:2]) == ["worktree", "add"]:
+            timeouts["add"] = timeout
+        return sparse.run_git(args, cwd=cwd, timeout=timeout, **kw)
+
+    monkeypatch.setattr(worktree, "run_git", timed)
+    prepare(pointed_repo, "s1-discovery")
+    assert timeouts == {"add": sparse.CHECKOUT_S}

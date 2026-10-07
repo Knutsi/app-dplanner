@@ -102,7 +102,9 @@ def test_a_step_with_a_headless_run_not_over_is_never_launched_twice(cli, plan, 
     run = json.loads(cli("agent", "run", "Build it", "--json"))["run"]
     said = cli("agent", "run", "Build it", expect=1)
     assert f"already has a headless run, {run}" in said and "agent supervise" in said
-    assert len(started) == 1
+    # The supervisor here is a stub, so the run never got a turn: the second launch picks
+    # that one up again — its step is still claimed — and starts no other.
+    assert started == [(plan, run), (plan, run)]
 
 
 def test_a_terminal_launch_opens_the_profiles_terminal_in_the_worktree(
@@ -278,3 +280,228 @@ def step_of(services, make_project):
         return step
 
     return make
+
+
+# -- Kettle Watch round 1 -------------------------------------------------------------------
+
+
+def test_two_launches_of_one_step_at_once_start_one_run(cli, plan, monkeypatch):
+    """The first launch holds the step's launch lock from its first check to its start; the
+    second, arriving while the first is starting, is refused rather than racing it."""
+    import threading
+
+    starting, release = threading.Event(), threading.Event()
+    started: list[str] = []
+
+    def slow_start(_project_dir, run, **_kw):
+        starting.set()
+        release.wait(10)
+        started.append(run)
+
+    monkeypatch.setattr(supervisor, "start_detached", slow_start)
+    first: list[str] = []
+    racing = threading.Thread(target=lambda: first.append(cli("agent", "run", "Build it")))
+    racing.start()
+    try:
+        assert starting.wait(10)
+        said = cli("agent", "run", "Build it", expect=1)
+    finally:
+        release.set()
+        racing.join(10)
+    assert "is being launched right now" in said
+    assert len(started) == 1 and first and len(ledger.records(plan)) == 1
+
+
+def test_a_refused_flush_starts_nothing_and_takes_the_record_back(cli, plan, started, monkeypatch):
+    """The claim is written before the run starts: a flush another writer refused leaves no
+    run started and no record behind."""
+    from dplanner.domain.store import LibraryStore, StaleWorkspaceError
+
+    def stale(self, marks):
+        raise StaleWorkspaceError("the plan changed underneath")
+
+    monkeypatch.setattr(LibraryStore, "flush", stale)
+    said = cli("agent", "run", "Build it", expect=1)
+    assert "nothing was written" in said
+    assert not started and ledger.records(plan) == []
+    monkeypatch.undo()
+    assert _status(cli, "Build it") == "pending"
+
+
+def test_a_failed_start_withdraws_the_claim_it_wrote(cli, plan, monkeypatch):
+    def refuse(_project_dir, _run, **_kw):
+        raise OSError(2, "No such file or directory")
+
+    monkeypatch.setattr(supervisor, "start_detached", refuse)
+    said = cli("agent", "run", "Build it", expect=1)
+    assert "no run started" in said and "back where it was" in said
+    assert ledger.records(plan) == [] and _status(cli, "Build it") == "pending"
+
+
+def test_a_launch_interrupted_before_its_start_is_started_or_dropped(tmp_path, started):
+    """A record with no turn and no supervisor: started while its step is still claimed,
+    deleted once nobody claims it — and left alone while its launch still holds the lock."""
+    plan = tmp_path / "plan"
+    kept, dropped, busy = (f"20261007T101500Z-0000000{n}" for n in (1, 2, 3))
+    for run, step in ((kept, "s-claimed"), (dropped, "s-free"), (busy, "s-launching")):
+        ledger.write(plan, replace(_headless(run), step=step))
+    with supervisor.launching("p1", "s-launching"):
+        found = supervisor.revive([plan], claimed=lambda record: record.step != "s-free")
+    assert found == [kept] and started == [(plan, kept)]
+    assert {record.run for record in ledger.records(plan)} == {kept, busy}
+
+
+def test_every_turn_reaches_the_library_project_and_run_it_was_launched_with(
+    tmp_path, allow_spawn, monkeypatch
+):
+    from tests.modules.agent_supervisor.test_supervisor import INIT, Rig, result
+
+    from dplanner.domain.library_file import LIBRARY_ENV
+
+    allow_spawn(Path(sys.executable))
+    rig = Rig(tmp_path)
+    rig.play({"lines": [INIT, result()]})
+    seen: list[dict[str, str]] = []
+    spawn = supervisor._spawn
+
+    def watched(argv, cwd, env, err):
+        seen.append(dict(env))
+        return spawn(argv, cwd, env, err)
+
+    monkeypatch.setattr(supervisor, "_spawn", watched)
+    library = tmp_path / "chosen-library.json"
+    rig.supervise(library=library)
+    ((env,),) = [seen]
+    assert env[LIBRARY_ENV] == str(library)
+    assert (env["DPLANNER_PROJECT"], env["DPLANNER_RUN"]) == ("p1", rig.record.run)
+
+
+def test_the_supervisor_is_started_on_the_library_of_its_launch(
+    cli, plan, monkeypatch, cli_library
+):
+    argv: list[list[str]] = []
+    monkeypatch.setattr(supervisor, "spawn_detached", lambda command: argv.append(command))
+    cli("agent", "run", "Build it")
+    ((command,),) = [argv]
+    assert command[command.index("--library") + 1] == str(cli_library)
+    assert command.index("--library") < command.index("agent")
+
+
+def _launch_module(services):
+    from dplanner.modules.agent_launch.module import AgentLaunchModule
+
+    return next(m for m in services.modules if isinstance(m, AgentLaunchModule))
+
+
+def _said(services, monkeypatch) -> list[str]:
+    words: list[str] = []
+    monkeypatch.setattr(services.window, "show_status", lambda text, _ms=0: words.append(text))
+    return words
+
+
+def test_a_branch_plan_that_refuses_refuses_the_launch(services, step_of, monkeypatch):
+    """Two stretches that do not nest give a plan with a refusal and nothing else: the
+    shared gate refuses it, rather than launching from the default branch."""
+    from dplanner.planning.branches import BranchPlan
+
+    module = _launch_module(services)
+    plan = BranchPlan(refusal="it sits on two stretches that do not nest")
+    monkeypatch.setattr(module, "_deps", replace(module._deps, branch_plan=lambda *_a: plan))
+    step_of("Deploy")
+    state = services.actions.spec("agent.run").state(services.context.current())
+    assert not state.enabled and state.label == f"Run Agent — {plan.refusal}"
+
+
+def test_the_window_refuses_a_step_another_launch_holds(services, step_of, monkeypatch):
+    step = step_of("Deploy")
+    words = _said(services, monkeypatch)
+    project = services.document.project_of(step.id).id
+    with supervisor.launching(project, step.id):
+        services.actions.run("agent.run", services.context.current())
+    assert words == ["No agent launched — “Deploy”: it is being launched right now"]
+
+
+def test_the_window_refuses_a_step_whose_headless_run_is_not_over(services, step_of, monkeypatch):
+    step = step_of("Deploy")
+    module = _launch_module(services)
+    project_dir = module._deps.project_dir(step.id)
+    run = "20261007T101500Z-0000000a"
+    ledger.write(project_dir, replace(_headless(run), step=step.id))
+    words = _said(services, monkeypatch)
+    services.actions.run("agent.run", services.context.current())
+    assert words == [
+        f"No agent launched — “Deploy”: its headless run {run} is not over — resume it instead"
+    ]
+
+
+def test_a_claim_the_window_cannot_save_starts_nothing(services, step_of, monkeypatch):
+    module = _launch_module(services)
+    monkeypatch.setattr(module, "_deps", replace(module._deps, flush=lambda: False))
+    spawned: list[Path] = []
+    monkeypatch.setattr(launcher, "resolve_command", lambda *_a, **_k: ["fake-term"])
+    monkeypatch.setattr(launcher, "spawn", lambda _cmd, cwd, **_kw: _noted(spawned, cwd))
+    step = step_of("Deploy")
+    words = _said(services, monkeypatch)
+    services.actions.run("agent.run", services.context.current())
+    assert not spawned and stored(step) is Status.PENDING
+    assert ledger.records(module._deps.project_dir(step.id)) == []
+    assert words == [
+        "No agent launched on “Deploy” — its claim could not be saved — save the plan,"
+        " then run it again"
+    ]
+
+
+def test_a_step_renamed_while_its_worktree_is_prepared_is_not_launched(
+    services, step_of, monkeypatch, qtbot
+):
+    """The briefing would name the new worktree while the agent stood in the old one."""
+    from dplanner.domain.commands import SetFieldCommand
+
+    module = _launch_module(services)
+    monkeypatch.setattr(module, "_deps", replace(module._deps, tasks=services.tasks))
+    spawned: list[Path] = []
+    monkeypatch.setattr(launcher, "resolve_command", lambda *_a, **_k: ["fake-term"])
+    monkeypatch.setattr(launcher, "spawn", lambda _cmd, cwd, **_kw: _noted(spawned, cwd))
+    step = step_of("Deploy")
+    words = _said(services, monkeypatch)
+    services.actions.run("agent.run", services.context.current())
+    services.undo.push(SetFieldCommand(step.id, "title", "Deploy it"))  # While git works.
+    qtbot.waitUntil(lambda: any("renamed" in said for said in words), timeout=10_000)
+    assert not spawned and stored(step) is Status.PENDING
+
+
+def test_an_unreadable_profiles_file_is_never_written_over(cli, plan, started):
+    from dplanner.modules import agent_harnesses
+    from dplanner.modules.agent_launch.profiles import (
+        Profile,
+        UnreadableProfilesError,
+        adopt,
+        problem,
+        profiles_file,
+        seed_profiles,
+        write_profiles,
+    )
+
+    path = profiles_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("{ not json", encoding="utf-8")
+    assert "cannot be read" in problem()
+    assert seed_profiles(agent_harnesses()) == [] and not adopt([], True, "claude", "")
+    with pytest.raises(UnreadableProfilesError):
+        write_profiles([Profile("Mine")])
+    assert path.read_text(encoding="utf-8") == "{ not json"
+    assert "the agent profiles cannot be read" in cli("agent", "run", "Build it", expect=1)
+    assert not started
+
+
+def test_the_window_says_the_profiles_cannot_be_read(app, request):
+    from dplanner.modules.agent_launch.module import PROFILES_NOTICE
+    from dplanner.modules.agent_launch.profiles import profiles_file
+
+    path = profiles_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("[]", encoding="utf-8")
+    services = request.getfixturevalue("services")
+    (notice,) = [n for n in services.window.notices.notices() if n.id == PROFILES_NOTICE]
+    assert "is not a profiles file" in notice.words
+    assert path.read_text(encoding="utf-8") == "[]"  # Not seeded over.

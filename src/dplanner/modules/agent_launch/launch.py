@@ -1,25 +1,25 @@
 """Launching an agent on a step: everything ``dplanner agent run`` and the window's Run
 Agent do outside the plan, in one order, so neither can launch a run the other would not.
-The plan's half — the claim — is ``workflows.py``'s, applied once the run has started.
+The plan's half — the claim, and taking it back — is ``workflows.py``'s.
 `docs/architecture/agents.md`'s *One launch under both surfaces* has the reasoning.
 
-A launch is, in order:
+A launch is, in order, all of it under the step's launch lock (``supervisor.launching``),
+so two launches of one step can never both find it free:
 
-1. **where it works** — :func:`worktree_of` and :func:`place`: the step's worktree, prepared
+1. **the gate** — :func:`refusal` (the step, where it works, the branch plan) and
+   :func:`unfinished_run` (a headless run not over is resumed, never launched again);
+2. **where it works** — :func:`worktree_of` and :func:`place`: the step's worktree, prepared
    by git (``agent_briefing.worktree.prepare``), or the checkout for a step that works in
-   place. It is apart because it is the slow part — a fetch — which the window runs on a
-   task;
-2. **its files and its record** — :func:`launch`: the briefing in ``prompt.md`` with its
-   assets beside it, and the run's ledger record, **written before anything spawns**: the
-   record is the launch's intent, so a launcher that died after the spawn left a run on
-   record, never a process nobody knows of;
-3. **the start** — a supervisor for a headless run (``agent_supervisor``), a terminal for
-   one a person watches. A start that fails takes its record back, since no run exists;
-4. **the claim** — ``workflows.run_agent``, applied by the surface only when the run
-   started: a step is never claimed for a run that did not.
+   place. It is the slow part — a fetch — which the window runs on a task;
+3. **its files and its record** — :func:`prepare_run`: the briefing in ``prompt.md`` with
+   its assets beside it, and the run's ledger record, which is the launch's intent;
+4. **the claim, persisted** — ``workflows.run_agent``, applied and saved by the surface;
+5. **the start** — :func:`start_run`, the follow-up once all of that is on disk: a
+   supervisor for a headless run, a terminal for one a person watches. A start that fails
+   takes its record back, and the surface takes the claim back (``workflows.withdraw``).
 
-The refusals are here too, as plain functions of the plan and the repository facts: the
-window's greyed Run Agent and the CLI's error are the same sentence.
+A launch interrupted between its record and its start is reconciled by
+``supervisor.revive``: started while its step is still claimed, deleted once it is not.
 """
 
 from collections.abc import Callable
@@ -105,15 +105,18 @@ def refusal(
     step: Step,
     files: FilesFor,
     facts: RepositoryFacts,
+    branches: BranchPlan,
     today: date,
     by_project: dict[str, str] | None = None,
 ) -> str:
-    """Why no agent can run on ``step`` here, "" when one can: the step's own facts, then
-    where it would work. A repository not checked out here is no refusal — Run Agent clones
-    it, and a verb that cannot asks :func:`unplaced`; ``by_project`` caches the answer per
-    project, which costs git."""
+    """Why no agent can run on ``step`` here, "" when one can: the step's own facts, the
+    branches its run would work between, then where it would work. A repository not checked
+    out here is no refusal — Run Agent clones it, and a verb that cannot asks
+    :func:`unplaced`; ``by_project`` caches the answer per project, which costs git."""
     if reason := step_refusal(library, step, files, today):
         return reason
+    if branches.refusal:
+        return branches.refusal
     if unplaced(facts, step):
         return ""
     # A step naming a workplace of its own is asked about on its own.
@@ -127,6 +130,21 @@ def waiting_on(library: Library, step: Step, today: date) -> list[Step]:
     """The step's prerequisites it still waits on: what the window asks about before it
     launches, and what ``agent run`` refuses over unless told ``--anyway``."""
     return outstanding(library, step, readiness_of(status_on(library, today)))
+
+
+def unfinished_run(project_dir: Path | None, step_id: str) -> str:
+    """The step's headless run that is not over yet — running or parked — or "": a run to
+    resume through ``agent supervise``, never to launch a second time."""
+    if project_dir is None:
+        return ""
+    return next(
+        (
+            record.run
+            for record in ledger.records(project_dir)
+            if record.step == step_id and record.headless and not record.over
+        ),
+        "",
+    )
 
 
 def headless_refusal(profile: Profile, harnesses: tuple[AgentHarness, ...]) -> str:
@@ -195,17 +213,25 @@ def place(checkout: Path, name: str, branches: BranchPlan) -> Path:
 
 
 @dataclass(frozen=True)
-class Launched:
-    """What :func:`launch` did: ``refused`` is why nothing started, "" when it did."""
+class Prepared:
+    """A run on disk and not yet started: its record — already in ``project_dir``'s ledger
+    when there is one — its briefing, and what :func:`start_run` needs."""
 
     record: LedgerRecord
     text: str  # The briefing, for a surface that hands it over when nothing started.
     prompt_file: Path
     files: launcher.LaunchFiles | None  # A terminal run's wrapper; None for a headless one.
-    refused: str
+    project_dir: Path | None
+    profile: Profile
+    workdir: Path
+
+    def discard(self) -> None:
+        """Take the record back: no run started under it."""
+        if self.project_dir is not None:
+            ledger.path_for(self.project_dir, self.record).unlink(missing_ok=True)
 
 
-def launch(
+def prepare_run(
     library: Library,
     step: Step,
     briefed: Briefed,
@@ -218,9 +244,9 @@ def launch(
     harnesses: tuple[AgentHarness, ...],
     mode: str,
     stage: StageKind = StageKind.EXECUTE,
-) -> Launched:
-    """Launch the agent on ``step`` in ``workdir`` (from :func:`place`): write its files and
-    its record, then start it. ``project_dir`` is where the run's ledger is; a terminal run
+) -> Prepared:
+    """Write the run on ``step`` in ``workdir`` (from :func:`place`): its files and its
+    record, nothing started. ``project_dir`` is where the run's ledger is; a terminal run
     with none is launched unrecorded. Raises ``ValueError`` for a profile that cannot run
     headless — ask :func:`headless_refusal` first — and for a headless run with no ledger."""
     if mode == HEADLESS and (why := headless_refusal(profile, harnesses)):
@@ -280,25 +306,26 @@ def launch(
         )
     if project_dir is not None:
         ledger.write(project_dir, record)
-    refused = _start(record, project_dir, files, profile, workdir, harnesses)
-    if refused and project_dir is not None:
-        ledger.path_for(project_dir, record).unlink(missing_ok=True)
-    return Launched(record, text, prompt_file, files, refused)
+    return Prepared(record, text, prompt_file, files, project_dir, profile, workdir)
 
 
-def _start(
-    record: LedgerRecord,
-    project_dir: Path | None,
-    files: launcher.LaunchFiles | None,
-    profile: Profile,
-    workdir: Path,
-    harnesses: tuple[AgentHarness, ...],
+def start_run(
+    prepared: Prepared, harnesses: tuple[AgentHarness, ...], library: Path | None = None
 ) -> str:
-    """Start the run; "" when it started, else why not."""
+    """Start the prepared run — "" when it started, else why not, its record taken back.
+    ``library`` is the library a headless run's turns must reach."""
+    why = _start(prepared, harnesses, library)
+    if why:
+        prepared.discard()
+    return why
+
+
+def _start(prepared: Prepared, harnesses: tuple[AgentHarness, ...], library: Path | None) -> str:
+    files, workdir, profile = prepared.files, prepared.workdir, prepared.profile
     if files is None:
-        assert project_dir is not None  # A headless launch has a ledger: `launch` asks.
+        assert prepared.project_dir is not None  # A headless run has a ledger: it was asked.
         try:
-            supervisor.start_detached(project_dir, record.run)
+            supervisor.start_detached(prepared.project_dir, prepared.record.run, library=library)
         except OSError as error:
             return f"the supervisor did not start — {error.strerror or error}"
         return ""

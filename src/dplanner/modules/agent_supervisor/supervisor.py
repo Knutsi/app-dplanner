@@ -64,6 +64,7 @@ from pathlib import Path
 from typing import IO
 
 from dplanner.cli.discovery import PROJECT_ENV, RUN_ENV
+from dplanner.core.config_dir import config_dir
 from dplanner.core.fsio import os_lock
 from dplanner.core.process import (
     CREATE_NEW_PROCESS_GROUP,
@@ -90,6 +91,7 @@ from dplanner.domain.headless import (
     write_schema,
 )
 from dplanner.domain.ledger import LedgerRecord, Turn
+from dplanner.domain.library_file import LIBRARY_ENV
 from dplanner.domain.model import now_stamp
 from dplanner.domain.questions import Question
 from dplanner.modules.agent_briefing.protocol import opening_prompt
@@ -149,18 +151,21 @@ def supervise(
     text: str = "",
     guards: Guards | None = None,
     config: Path | None = None,
+    library: Path | None = None,
 ) -> str:
     """Drive the run until it is over or parked; the sentence that says which.
 
     ``prompt`` is why a parked run resumes — ``answer``, ``continue``, ``reset`` or
     ``retry`` — and ``text`` the words it resumes with (the answer). ``config`` is the
     directory the run directories are under, ``config_dir()`` unless a test says otherwise.
+    ``library`` is the library the run was launched from, which every turn's ``dplanner``
+    calls must reach.
     """
     guards = guards or Guards()
     said, again = "", False
     while True:
         try:
-            said = _drive(project_dir, run, harnesses, prompt, text, guards, config)
+            said = _drive(project_dir, run, harnesses, prompt, text, guards, config, library)
         except RefusedError:
             if again:  # Another supervisor holds the run, and delivers the answer itself.
                 return said
@@ -181,13 +186,16 @@ def _drive(
     text: str,
     guards: Guards,
     config: Path | None,
+    library: Path | None,
 ) -> str:
     with supervising(ledger.run_dir(run, config)), _stoppable() as stop:
         record = _record(project_dir, run)
         harness = harness_by_id(harnesses, record.harness)
         if harness is None or harness.headless is None:
             raise RefusedError(f"run {run}: no harness here runs {record.harness!r} headless")
-        session = Session(project_dir, config, record, harness, harness.headless, guards)
+        session = Session(
+            project_dir, config, record, harness, harness.headless, guards, library=library
+        )
         kind, words = session.opening(prompt, text, stop)
         while kind:
             ending = session.turn(kind, words, stop)
@@ -246,6 +254,8 @@ class Session:
     guards: Guards
     # The turn a claimed answer resumes with, written before it is spawned.
     claimed: Turn | None = None
+    # The library the run was launched from; None leaves the inherited one.
+    library: Path | None = None
 
     @property
     def directory(self) -> Path:
@@ -345,8 +355,11 @@ class Session:
         n = claimed.n if claimed is not None else len(self.record.turns) + 1
         spec = self._spec(kind, words)
         env = scrubbed_environment(os.environ, (self.harness,))
-        # What `dplanner question ask` reads to find the run it parks.
+        # Every `dplanner` call the turn makes reaches the plan its run was launched from:
+        # the run (what `question ask` parks), the project and the library.
         env[RUN_ENV], env[PROJECT_ENV] = self.record.run, self.record.project
+        if self.library is not None:
+            env[LIBRARY_ENV] = str(self.library)
         argv = self.headless.command(spec)
         argv[0] = shutil.which(argv[0], path=env.get("PATH")) or argv[0]
         stream = self.directory / f"turn-{n}.jsonl"
@@ -678,14 +691,23 @@ def usage_of(log: TurnLog) -> tuple[AgentUsage, ...]:
     return (AgentUsage("main", {log.model or ledger.UNKNOWN_MODEL: log.tokens}),)
 
 
-def start_detached(project_dir: Path, run: str, prompt: str = "", text: str = "") -> None:
+def start_detached(
+    project_dir: Path,
+    run: str,
+    prompt: str = "",
+    text: str = "",
+    *,
+    library: Path | None = None,
+) -> None:
     """Start a supervisor for the run that outlives whoever started it — ``agent run``'s
     launch, an answer, a reset, *Retry now*.
 
     It is this interpreter running this build (``python -m dplanner``), never whatever
     ``dplanner`` is on PATH: a run launched from a branch's build is supervised by that
-    build, not by the installed one, which may not know the record's words."""
-    argv = [sys.executable, "-m", "dplanner", "agent", "supervise", run]
+    build, not by the installed one, which may not know the record's words. ``library`` is
+    the library it was launched from, which its turns are told."""
+    named = ["--library", str(library)] if library is not None else []
+    argv = [sys.executable, "-m", "dplanner", *named, "agent", "supervise", run]
     argv += ["--project-dir", str(project_dir)]
     if prompt:
         argv += ["--prompt", prompt]
@@ -694,26 +716,62 @@ def start_detached(project_dir: Path, run: str, prompt: str = "", text: str = ""
     spawn_detached(argv)
 
 
-def revive(project_dirs: Iterable[Path], config: Path | None = None) -> list[str]:
-    """Start a supervisor for every run of this machine that lost its turn — the last turn
-    has no end and no supervisor holds the run — so the new one ends that turn
-    ``failed``/``lost`` and retries it. What a machine's start does: a reboot or a killed
-    supervisor leaves exactly such runs. The runs it started, by id.
+def revive(
+    project_dirs: Iterable[Path],
+    config: Path | None = None,
+    *,
+    claimed: Callable[[LedgerRecord], bool] | None = None,
+    library: Path | None = None,
+) -> list[str]:
+    """Start a supervisor for every run of this machine a supervisor should hold and none
+    does; the runs it started, by id. What a machine's start does:
 
-    A run whose turn is still alive under nobody is left to the supervisor, which refuses
-    it; a parked run (its last turn ended) waits for a person and is never touched here."""
+    - a run whose last turn has no end — a reboot or a killed supervisor lost it — is
+      supervised again, and the new supervisor ends that turn ``failed``/``lost`` and
+      retries it;
+    - a run with no turn at all is a launch interrupted between writing its record and
+      starting its supervisor. With ``claimed`` to ask, it is started when its step is still
+      claimed in progress, and its record deleted when it is not — nobody wants that run any
+      more. A launch still under way holds the step's launch lock and is left to finish.
+
+    A parked run (its last turn ended) waits for a person and is never touched here."""
     here = ledger.machine_id(config)
     started: list[str] = []
     for project_dir in project_dirs:
         for record in ledger.records(project_dir):
             last = record.last_turn
-            if not record.headless or record.over or last is None or last.end:
+            if not record.headless or record.over or (last is not None and last.end):
                 continue
             if record.machine != here or supervised(ledger.run_dir(record.run, config)):
                 continue
-            start_detached(project_dir, record.run)
+            if last is None:
+                if claimed is None:
+                    continue
+                with ExitStack() as held:
+                    try:
+                        held.enter_context(launching(record.project, record.step, config))
+                    except BlockingIOError:
+                        continue  # Its launch is still under way.
+                    if not claimed(record):
+                        ledger.path_for(project_dir, record).unlink(missing_ok=True)
+                        continue
+            start_detached(project_dir, record.run, library=library)
             started.append(record.run)
     return started
+
+
+LAUNCHES_DIR = "launches"
+
+
+@contextmanager
+def launching(project: str, step: str, config: Path | None = None) -> Iterator[None]:
+    """Hold the step's launch lock — ``config_dir()/launches/<project>-<step>.lock``, the
+    operating system's — or raise ``BlockingIOError`` when another launch holds it. Every
+    launch of a step takes it from its first check to its start, on both surfaces, so two
+    launches of one step can never both find it free and both start an agent."""
+    path = (config or config_dir()) / LAUNCHES_DIR / f"{project}-{step}.lock"
+    with os_lock(path, wait=False):
+        yield
 
 
 def supervised(directory: Path) -> bool:

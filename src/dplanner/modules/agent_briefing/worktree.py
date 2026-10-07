@@ -28,7 +28,14 @@ from dplanner.core.fsio import slugify
 # index file, never inside it. Declared beside that file, since the plan repository scan
 # has to know to skip it.
 from dplanner.core.storage.pointer import WORKTREES_DIR
-from dplanner.core.storage.sparse import LOCAL_S, REMOTE_S, GitError, run_git, valid_ref
+from dplanner.core.storage.sparse import (
+    CHECKOUT_S,
+    LOCAL_S,
+    REMOTE_S,
+    GitError,
+    run_git,
+    valid_ref,
+)
 from dplanner.domain.locations import Placement
 from dplanner.domain.model import Step
 from dplanner.domain.repositories import RepositoryFacts
@@ -130,6 +137,12 @@ def prepare(workdir: Path, name: str, branches: BranchPlan = DEFAULT_BRANCHES) -
         with suppress(GitError):
             git("worktree", "prune")
         _exclude(Path(git("rev-parse", "--git-common-dir")), workdir)
+        if (tree / ".git").is_file() and _unfinished(repo, tree):
+            # A checkout cut short — a timeout, a killed process — leaves the `.git` file of a
+            # worktree git never finished: removed, so it is made again rather than reused.
+            git("worktree", "remove", "--force", "--force", str(tree))
+            with suppress(GitError):
+                git("worktree", "prune")
         if not tree.exists():
             if holds("remote", "get-url", "origin"):
                 with suppress(GitError):
@@ -138,7 +151,7 @@ def prepare(workdir: Path, name: str, branches: BranchPlan = DEFAULT_BRANCHES) -
                 _cut(repo, branches)
             start = branches.start or _remote_default(repo)
             if holds("show-ref", "--verify", "--quiet", f"refs/heads/{branch}"):
-                git("worktree", "add", str(tree), branch)
+                git("worktree", "add", str(tree), branch, timeout=CHECKOUT_S)
             elif holds("rev-parse", "--verify", "--quiet", f"{start}^{{commit}}"):
                 git(
                     "worktree",
@@ -148,6 +161,7 @@ def prepare(workdir: Path, name: str, branches: BranchPlan = DEFAULT_BRANCHES) -
                     branch,
                     str(tree),
                     start,
+                    timeout=CHECKOUT_S,
                 )
             else:
                 raise WorktreeError(
@@ -180,6 +194,27 @@ class _Repo:
         except GitError:
             return False
         return True
+
+
+def _unfinished(repo: _Repo, tree: Path) -> bool:
+    """Whether git left the worktree at ``tree`` half made: still under the ``initializing``
+    lock ``worktree add`` holds until its checkout is done, or with no commit checked out."""
+    listed = repo.git("worktree", "list", "--porcelain").split("\n\n")
+    mine = next(
+        (
+            entry
+            for entry in listed
+            if Path(entry.splitlines()[0][len("worktree ") :]).resolve() == tree.resolve()
+        ),
+        "",
+    )
+    if "\nlocked initializing" in mine:
+        return True
+    try:
+        run_git(["rev-parse", "--verify", "--quiet", "HEAD"], cwd=tree)
+    except GitError:
+        return True
+    return False
 
 
 def _exclude(common: Path, workdir: Path) -> None:
