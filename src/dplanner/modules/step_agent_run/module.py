@@ -235,11 +235,17 @@ class StepAgentRunModule:
         workdir: Path | None = None,
     ) -> None:
         """A shell was just spawned on the step: stamp it, write its record into the
-        ledger, remember it, start watching."""
+        ledger unless the launch already did (Run Agent writes it before the spawn),
+        remember it, start watching."""
         deps = self._deps
         record_launch(deps.library, step_id, plans_first)
         project_dir = deps.project_dir(step_id)
-        if run and workdir is not None and project_dir is not None:
+        if (
+            run
+            and workdir is not None
+            and project_dir is not None
+            and ledger.find(project_dir, run) is None
+        ):
             ledger.write(
                 project_dir,
                 launch_record(

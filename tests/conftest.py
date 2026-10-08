@@ -301,6 +301,13 @@ def _no_greeting(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _own_config_dir(monkeypatch, tmp_path_factory):
+    """``config_dir()`` is a throwaway directory per test, as QSettings is: the agent
+    profiles live there now, and a test that saves one must not write the developer's."""
+    monkeypatch.setenv("DPLANNER_CONFIG_DIR", str(tmp_path_factory.mktemp("config")))
+
+
+@pytest.fixture(autouse=True)
 def _fresh_session_settings():
     """Per-user state must not leak between tests.
 

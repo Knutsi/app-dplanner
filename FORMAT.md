@@ -30,9 +30,10 @@ Four places, and the choice is not stylistic:
 | Per user, per machine (Qt-free) | a headless run's working files: its briefing, each turn's stream (`turn-<n>.jsonl`) and stderr, DPlanner's copy of a plan the agent wrote (`plan.md`), the supervisor's and the record's locks (`supervisor.lock`, `record.lock`: OS locks on files never deleted) | `config_dir()/runs/<run id>/` (`ledger.run_dir`), named by the run's ledger record and never stored on it; not swept yet | no — only the launching machine can resume the run, and it needs them across a reboot, which is why they are not in `/tmp` |
 | Per user, per machine (Qt-free) | what each agent account last said about its usage — its windows, whether it ran out and until when — and the share a new headless launch waits at | `modules/agent_supervisor/limits.py` in `config_dir()/usage-limits.json` — see *An agent account's usage* | no — an account is a login on this machine |
 | Per user, per machine (Qt-free) | a read-only location's managed clone, and a git spec source's: blobless, shallow, sparse to one folder | `core/storage/sparse.py` under `config_dir()/spec-git/<digest of remote, ref and folder>` | no — disposable: wipe it and the next read pays one tree fetch |
+| Per user, per machine (Qt-free) | the agent launch profiles: `{"format": 1, "profiles": [{"name", "agent", "terminal"}…], "seeded": bool}`, the first the default | `agent_launch/profiles.py` at `config_dir()/agent-profiles.json`, because `dplanner agent run --profile` reads them with no Qt; the window adopts what QSettings held before, once | no — which terminal a person prefers is not the project's business |
 | Per user, per machine (Qt-free) | a working clone DPlanner keeps for a verb that needed the repository here and nobody had checked out — Run Agent's code, a report's destination — under the default clone policy | `core/storage/kept.py` under `config_dir()/checkouts/<name>-<digest of remote>`, one per repository; recorded in the library file's `checkouts` map like any checkout | it is a checkout: commits an agent made there and never pushed are in it and nowhere else, so it is not wiped by the application |
 
-| Per user, per machine (GUI only) | preferences: panel layout, model choices, the agent launch profiles | `framework/user_config.py`'s `get_global` (QSettings) | no |
+| Per user, per machine (GUI only) | preferences: panel layout, model choices, the agent launch settings | `framework/user_config.py`'s `get_global` (QSettings) | no |
 | Per user, per machine, per library | where the user left off: open index folders, open tabs | `framework/user_config.py`'s `get_scoped`, under `library_scope(path)` | no |
 | The OS keychain | credentials, API keys — the LLM keys, a Confluence token per site (`spec_confluence.token:<host>`) | `core/secrets.py` | no, and never on disk |
 
@@ -78,8 +79,9 @@ and where this machine has the repositories those projects name.
 ```
 
 - The default lives at `$XDG_CONFIG_HOME/dplanner/library.json` (platform equivalents on
-  Windows/macOS — see `core/config_dir.py`); `--library PATH` or `$DPLANNER_LIBRARY` names
-  another. It is per user and per machine, and never belongs in version control.
+  Windows/macOS — see `core/config_dir.py`; `$DPLANNER_CONFIG_DIR` moves the whole of that
+  directory); `--library PATH` or `$DPLANNER_LIBRARY` names another. It is per user and per
+  machine, and never belongs in version control.
 - Paths are absolute (`~` is allowed) and the array order is the order the Projects panel
   shows.
 - `checkouts` is optional: where this machine has each repository, keyed by the
@@ -297,9 +299,10 @@ file.
 
 ### The `.dplanner-worktrees` directory
 
-Run Agent keeps a step's worktree at `<repository>/.dplanner-worktrees/<run name>` on the
-branch `agent/<run name>`, where the run name is the step's key, its ticket key and its
-title slug (`f7-PROJ-12-build-the-modal`). Local and never versioned: the wrapper adds
+Run Agent and `dplanner agent run` keep a step's worktree at
+`<repository>/.dplanner-worktrees/<run name>` on the branch `agent/<run name>`, where the run
+name is the step's key, its ticket key and its title slug (`f7-PROJ-12-build-the-modal`).
+Local and never versioned: `agent_briefing/worktree.py`'s `prepare` adds
 `/.dplanner-worktrees/` to `.git/info/exclude`, and the store's stale-write check never
 looks there. It is a sibling of the `.dplanner` pointer below rather than a directory
 under it, because the pointer is a *file* — which is exactly where the earlier

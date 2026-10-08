@@ -113,7 +113,7 @@ exists, so a renamed section is caught where it is cited.
 
 - The description is the instructions
 - An agent finishes at Ready for review
-- A launch writes its intent before its shell
+- One launch under both surfaces
 - Running an agent launches a peer, not a task
 - Runs, questions and claims are three records in the plan
 

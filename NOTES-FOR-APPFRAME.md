@@ -1054,7 +1054,11 @@ midnight and on reactivation (`framework/day_watch.py`). Qt-free, so the CLI hol
 
 The Qt-free per-user configuration directory, for what the CLI must also read — QSettings is out
 of reach for a surface that loads no graphics stack. The project library file is the first
-resident.
+resident; the agent launch profiles moved here so `dplanner agent run --profile` can read them.
+
+`$DPLANNER_CONFIG_DIR` names the directory outright. The test suite points it at a directory per
+test, as it does QSettings: redirecting `$XDG_CONFIG_HOME` instead also hid git's own
+configuration (`~/.config/git/config`), and every test that committed lost its identity.
 
 **Upstream?** yes — small, and needed the first time a headless surface reads a preference.
 

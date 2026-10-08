@@ -12,7 +12,7 @@ from dplanner.cli.command import CliCommand, CliContext, CliError
 from dplanner.cli.discovery import find_library
 from dplanner.domain import ledger
 from dplanner.domain.agents import AgentHarness
-from dplanner.domain.library_file import read_library_file
+from dplanner.domain.library_file import read_library_file, resolve_library_path
 from dplanner.modules.agent_supervisor import limits
 from dplanner.modules.agent_supervisor.supervisor import PROMPTS, RefusedError, supervise
 
@@ -30,7 +30,14 @@ def commands(*, harnesses: tuple[AgentHarness, ...]) -> list[CliCommand]:
     def run(context: CliContext, args: Namespace) -> int:
         project_dir = _project_dir(args)
         try:
-            said = supervise(project_dir, args.run, harnesses, prompt=args.prompt, text=args.text)
+            said = supervise(
+                project_dir,
+                args.run,
+                harnesses,
+                prompt=args.prompt,
+                text=args.text,
+                library=resolve_library_path(args.library),
+            )
         except RefusedError as error:
             raise CliError(str(error)) from error
         context.report({"run": args.run, "said": said}, said)

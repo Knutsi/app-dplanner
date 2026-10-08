@@ -6,11 +6,12 @@ profile is the **default**, what *Run Agent…* itself runs; all of them are the
 *Step ▸ Run Agent*. Both texts keep the meaning they had as single settings: a blank
 agent command is the first harness, a blank terminal template is *Automatic*.
 
-Stored per user, per machine (``user_config``), never in the plan: which terminal a
-person prefers is not the project's business. **The two settings they replace are read
-as the default profile** when no list has been stored yet, so a machine configured before
-profiles existed keeps its choices without anybody retyping them — the same idea as a
-harness carrying the command texts it shipped earlier.
+Stored per user, per machine, never in the plan: which terminal a person prefers is not
+the project's business. **The file is ``config_dir()/agent-profiles.json``, not QSettings**,
+because ``dplanner agent run --profile`` reads it from a terminal that loads no Qt. A window
+that finds no file adopts what QSettings kept before it (:func:`adopt`) — the list, the seed
+flag, and the two single settings profiles replaced, read as the default profile — so a
+machine configured earlier keeps its choices without anybody retyping them.
 
 **The list is seeded once, and the seed is every known pairing.** A person should not
 have to build *Codex in herdr* by hand to find out it exists: :func:`seed_profiles` adds
@@ -32,32 +33,30 @@ reads as anything else is a person's and is kept. Names are unique among the pro
 either way, numbered rather than refused.
 """
 
+import json
 import os
 import re
 import shutil
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Any
 
+from dplanner.core.config_dir import config_dir
+from dplanner.core.fsio import write_atomic
 from dplanner.domain.agents import AgentHarness
-from dplanner.framework.user_config import get_global, set_global
 from dplanner.modules.agent_launch.launcher import (
     current_command,
     harness_of,
     is_installed,
     terminals_for,
 )
-from dplanner.planning.agent import MODULE_ID
 
-PROFILES_KEY = "profiles"
-# Whether the known pairings have been added once — a person's later removals stand.
-SEEDED_KEY = "profiles_seeded"
+PROFILES_FILE = "agent-profiles.json"
+FORMAT = 1
 # The terminal rows the seed pairs every harness with, by label; "" is Automatic.
 SEEDED_TERMINALS = ("Ghostty", "herdr", "")
-# The two settings profiles replaced; read only when no profile list is stored.
-AGENT_COMMAND_KEY = "agent_command"
-LAUNCH_COMMAND_KEY = "launch_command"
 
 DEFAULT_NAME = "Default"
 
@@ -82,32 +81,118 @@ class Profile:
         )
 
 
+def profiles_file() -> Path:
+    return config_dir() / PROFILES_FILE
+
+
+class UnreadableProfilesError(Exception):
+    """The profiles file is there and cannot be read: nothing may write over it."""
+
+
+def _read() -> dict[str, Any] | None:
+    """The file's contents; None when there is no file. Raises :class:`UnreadableProfilesError`
+    for one that is there and cannot be read — a file a newer build wrote, a hand edit gone
+    wrong — because reading it as empty would let the next seed write over it."""
+    path = profiles_file()
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as error:
+        raise UnreadableProfilesError(f"{path} cannot be read ({error})") from None
+    if not isinstance(raw, dict) or not isinstance(raw.get("profiles", []), list):
+        raise UnreadableProfilesError(f"{path} is not a profiles file")
+    if isinstance(raw.get("format"), int) and raw["format"] > FORMAT:
+        raise UnreadableProfilesError(f"{path} was written by a newer DPlanner")
+    return raw
+
+
+def problem() -> str:
+    """Why the profiles cannot be read — "" when they can, or there are none yet. While it
+    is not "", the default profile stands in and nothing writes the file."""
+    try:
+        _read()
+    except UnreadableProfilesError as error:
+        return f"{error} — fix or remove it; until then nothing is saved to it"
+    return ""
+
+
+def _stored() -> dict[str, Any]:
+    """What the file holds, read leniently for a reader: {} when there is none or it cannot
+    be read — a writer asks :func:`_read` and refuses instead."""
+    try:
+        return _read() or {}
+    except UnreadableProfilesError:
+        return {}
+
+
+def _stored_profiles() -> list[Profile]:
+    listed = _stored().get("profiles")
+    if not isinstance(listed, list):
+        return []
+    return [profile for profile in map(Profile.from_json, listed) if profile is not None]
+
+
+def _write(profiles: list[Profile], seeded: bool) -> None:
+    _read()  # Raises when the file is there and unreadable: never write over it.
+    data = {
+        "format": FORMAT,
+        "profiles": [profile.to_json() for profile in profiles],
+        "seeded": seeded,
+    }
+    path = profiles_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_atomic(path, json.dumps(data, indent=2) + "\n")
+
+
+def seeded() -> bool:
+    """Whether the known pairings have been added once — a person's later removals stand."""
+    return _stored().get("seeded") is True
+
+
 def read_profiles() -> list[Profile]:
-    """Every profile, the default first. Never empty: with nothing stored, the two
-    single settings profiles replaced are the one profile."""
-    stored = get_global(MODULE_ID, PROFILES_KEY)
-    profiles = (
-        [p for p in map(Profile.from_json, stored) if p is not None]
-        if isinstance(stored, list)
-        else []
-    )
-    if profiles:
-        return profiles
-    return [
-        Profile(
-            DEFAULT_NAME,
-            agent_command=str(get_global(MODULE_ID, AGENT_COMMAND_KEY, "")),
-            launch_command=str(get_global(MODULE_ID, LAUNCH_COMMAND_KEY, "")),
-        )
-    ]
+    """Every profile, the default first. Never empty: with nothing stored, one unnamed
+    profile of the first harness in the Automatic terminal."""
+    return _stored_profiles() or [Profile(DEFAULT_NAME)]
 
 
 def write_profiles(profiles: list[Profile]) -> None:
-    set_global(MODULE_ID, PROFILES_KEY, [profile.to_json() for profile in profiles])
+    _write(profiles, seeded())
+
+
+def adopt(
+    stored: object, was_seeded: bool, agent_command: str = "", launch_command: str = ""
+) -> bool:
+    """Once, when there is no file yet: take over what QSettings kept before it — the list
+    (``stored``), the seed flag, and the two single settings profiles replaced, which read as
+    the default profile when no list was kept. True when it wrote the file; nothing when
+    there is a file, readable or not."""
+    if problem() or _read() is not None:
+        return False
+    listed = stored if isinstance(stored, list) else []
+    profiles = [profile for profile in map(Profile.from_json, listed) if profile is not None]
+    if not profiles and (agent_command or launch_command):
+        profiles = [Profile(DEFAULT_NAME, agent_command, launch_command)]
+    if not profiles and not was_seeded:
+        return False
+    _write(profiles, was_seeded)
+    return True
 
 
 def default_profile() -> Profile:
     return read_profiles()[0]
+
+
+def agent_command(harnesses: tuple[AgentHarness, ...], profile: Profile | None = None) -> str:
+    """The profile's agent command, read through the harnesses: a text an earlier version
+    shipped for a harness is that harness, so the dropdown shows it and the wrapper runs
+    its current command. The default profile's when none is given."""
+    return current_command((profile or default_profile()).agent_command, harnesses)
+
+
+def launch_command(profile: Profile | None = None) -> str:
+    """The profile's terminal template; "" means Automatic — the first installed preset."""
+    return (profile or default_profile()).launch_command
 
 
 def profile_named(name: str) -> Profile | None:
@@ -186,7 +271,7 @@ def add_profiles(
     it is named by its choices rather than left as a *Default* row.
     """
     profiles = read_profiles()
-    if get_global(MODULE_ID, PROFILES_KEY) is None and profiles[0].name == DEFAULT_NAME:
+    if not seeded() and profiles[0].name == DEFAULT_NAME:
         profiles[0] = replace(profiles[0], name=suggested_name(profiles[0], harnesses, platform))
     known = {_choices(profile, harnesses) for profile in profiles}
     added: list[Profile] = []
@@ -206,15 +291,16 @@ def seed_profiles(
     """Once per user and machine: every harness in every terminal of
     :data:`SEEDED_TERMINALS`, through :func:`add_profiles`. The flag is written with the
     list, so a seeded profile the person removes stays removed. With no harnesses there
-    is nothing to seed and nothing is recorded. Returns what was added."""
-    if not harnesses or get_global(MODULE_ID, SEEDED_KEY):
+    is nothing to seed and nothing is recorded, nor over a file that cannot be read.
+    Returns what was added."""
+    if not harnesses or problem() or seeded():
         return []
     rows = terminals_for(platform)
     templates = [
         next((row.command for row in rows if row.label == label), "") for label in SEEDED_TERMINALS
     ]
     added = add_profiles(pairings(harnesses, templates, platform), harnesses, platform)
-    set_global(MODULE_ID, SEEDED_KEY, True)
+    _write(read_profiles(), True)
     return added
 
 

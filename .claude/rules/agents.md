@@ -32,16 +32,15 @@ paths:
   default, per user and per machine like the terminal beside it) the count itself is the
   refusal — a lasso is one flick of the wrist, and a deskful of terminals is not what it
   meant.
-  **A launch that opened a shell claims the step is in progress** — `mark_started`, the
-  writer half of that same seam, applied off the undo stack the way the launch stamp is
-  (`planning/status.py`'s `record_started`), because Ctrl+Z must not file a step as pending while
-  an agent works in it. Over a selection it is claimed per step as each shell opens, so a
+  **A launch that opened a shell claims the step is in progress** — `agent_launch/workflows.py`'s
+  `run_agent`, a `Change` the window applies off the undo stack the way the launch stamp is,
+  because Ctrl+Z must not file a step as pending while an agent works in it. Over a selection it is claimed per step as each shell opens, so a
   run that stopped at its third step has claimed two. It is the *Agent profiles ▸ On launch* switch
   beside *Max agents launched at once*, on by default: the agent's own first report is
   minutes away and a step somebody is working on that still reads pending is a lie the
-  plan was never asked to tell. Only Run Agent and its unattended twin `launch_unattended`
-  make the claim — in the step loop, never in the shared `_launch` — so a conflict handed to an
-  agent, a merge of two writers' plan files and not the step's work, claims nothing.
+  plan was never asked to tell. Only Run Agent and `dplanner agent run` make the claim — in
+  the step loop, never in the shared `_launch` — so a conflict handed to an agent, a merge of
+  two writers' plan files and not the step's work, claims nothing.
   **The briefing never rides in argv, and the peer is a top-level session.** The
   agent's opening line is `agent_briefing.protocol.opening_prompt` — a pointer at `prompt.md`, carrying
   nothing the project is about — because the whole briefing as one argument was every
@@ -76,18 +75,39 @@ paths:
   reads the same), and `tests/conftest.py`'s `_no_agent_shell` scrubs the markers so the
   suite never depends on being run by an agent. `docs/architecture/agents.md`'s *An agent finishes
   at Ready for review* has the reasoning.
-- **An unattended launch asks nobody, and writes its intent before its shell.**
-  `AgentLaunchModule.launch_unattended(step_id, harness=)` is Run Agent for one step with
-  every question a person answers taken out — no graph gate, no clone, no prompt fallback; a
-  refusal is a sentence — through the first profile running `harness` (a playbook role's
-  agent; `_profile_for`), else the default, **refused rather than swapped for the default**
-  when no profile runs it. **It records its intent before the spawn**
-  (`intents.py`, under `AgentLaunchDeps.intents`), drops it when no shell opened, claims the
-  step in progress whatever *On launch* says, flushes, and forgets the intent once the claim
-  is on disk. Nothing calls it yet and no intents directory is wired: `dplanner agent run`
-  (S11) is the launch it is kept for, and puts intents beside its run records.
-  `docs/architecture/agents.md`'s *A launch writes its intent before its shell* has the
-  reasoning.
+- **One launch under both surfaces: `dplanner agent run` is the window's Run Agent.** Both
+  run `agent_launch/launch.py` in one order, **under the step's launch lock**
+  (`supervisor.launching`, `config_dir()/launches/<project>-<step>.lock`, an OS lock) from the
+  first check to the start: the gate (`refusal`, which includes `BranchPlan.refusal`, and
+  `unfinished_run` — a headless run not over is resumed with `agent supervise`, never
+  launched again); `worktree_of`/`place` (prepared by git in Python, on a task in the window,
+  whose result is re-checked against the step's run name and branch plan before use);
+  `prepare_run` (the briefing, then **the run's ledger record** — format 2 headless in
+  `config_dir()/runs/<run>/`, format 1 for a terminal); then **the claim**, `workflows.py`'s
+  `run_agent`, **applied and saved before anything starts**; and only then `start_run`, the
+  follow-up. A save that fails starts nothing and takes the record back (the CLI's
+  `CliContext.unwritten`); a start that fails takes the record back and the claim
+  (`workflows.withdraw`, a second change), and says so. Effects never go in a `workflows.py`.
+  **What the window asks, `agent run` refuses**: prerequisites not done (until `--anyway`), a
+  repository not checked out here, a profile whose agent has no headless mode. It is
+  headless by default (`--terminal` for a terminal) and always claims. **A supervisor is
+  `sys.executable -m dplanner --library <the launch's>`**, and every turn's environment
+  carries `DPLANNER_LIBRARY`, `DPLANNER_PROJECT` and `DPLANNER_RUN`.
+  `docs/architecture/agents.md`'s *One launch under both surfaces* has the reasoning.
+- **A machine's start settles its headless runs.** `supervisor.revive(project_dirs,
+  claimed=, library=)` starts a supervisor for each run of this machine whose last turn has
+  no end and that no supervisor holds (`supervised`, the OS lock) — the supervisor ends the
+  turn `failed`/`lost` and retries — and for each run with **no turn** whose step is still
+  claimed (a launch interrupted between its record and its start). A turnless run is
+  settled **inside the step's launch lock, re-reading the record and the step's status from
+  disk** (`claimed_on_disk(library)`, never a model loaded earlier), and its record is
+  deleted only when no supervisor holds the run, its step reads unclaimed and it is older than
+  `LAUNCH_GRACE` (two minutes) — a supervisor just started may not hold its lock yet. The
+  window calls it once at start (`agent_usage`'s module); `agent run` before its own lock.
+  A parked run is a person's, never touched — except one parked on a limit whose reset is
+  known (`waits_for_reset`), whose supervisor is started again to wait for the clock. A failed start's rollback — the record deleted,
+  the withdrawal written — happens under the launch lock too, and the window saves before
+  every start, a claim it did not make included.
 - **A step names the code location it works in.** With several code rows in a project,
   the agent-instruction entry's `workplace` holds a location id (`aspect.workplace`,
   `with_workplace`; `dplanner agent workplace <step> code:UI|primary`), absent meaning
@@ -119,18 +139,21 @@ paths:
   `$DPLANNER_PROJECT`, then the person's `$SHELL` (on Windows a `cmd` of its own, since a
   row that runs the script and closes would close on the prompt) — and nothing else: no
   briefing, no shell facts, no exit file, no run recorded, nothing claimed in progress, a
-  `notice()` when no terminal opens. Its directory is found by the wrapper script's own
-  name for it (`worktree_path(workdir, run_name_of(step))`), so it is greyed with *Run Agent
+  `notice()` when no terminal opens. Its directory is found by the name `worktree.prepare`
+  gives it (`worktree_path(workdir, run_name_of(step))`), so it is greyed with *Run Agent
   prepares one* until that directory exists. It is in Step ▸ `agent` beside *Show Agent
   Terminal* and *Open Pull Request*, so a status row's ⋮ offers all three.
 - **A worktree is the step's decision, and the run is named after the step.** Whether the
   agent gets a fresh git worktree is the agent aspect's `worktree` (absent = on; the Agent
   tab's checkbox, `dplanner agent worktree <step> off`, `step add --no-worktree`) — a fact
   about the step, never a setting, because only a step that must act on the checkout the
-  window shows (a release cut, a conflict) turns it off. The wrapper script prepares
-  `.dplanner-worktrees/<run name>` on branch `agent/<run name>` **and stops with git's
-  reason if it cannot** — the first version swallowed the error and ran two "isolated"
-  agents on one checkout, because `.dplanner/` is the pointer *file* a subfolder project
+  window shows (a release cut, a conflict) turns it off. `agent_briefing/worktree.py`'s
+  `prepare` makes `.dplanner-worktrees/<run name>` on branch `agent/<run name>` before the
+  run — in Python, for a terminal and a headless run alike, so no script carries git; the
+  checkout under `sparse.CHECKOUT_S`, and a worktree git left half made (still locked
+  `initializing`, or no commit checked out) removed and made again — **and
+  refuses with git's reason if it cannot**: the first version swallowed the error and ran two
+  "isolated" agents on one checkout, because `.dplanner/` is the pointer *file* a subfolder project
   leaves at the repo root. The run name is `agent_briefing.worktree.run_name`: the step's key, its ticket
   key and its title slug, ref-safe (`f7-PROJ-12-build-the-modal`), composed by
   `run_name_of` from the step's key and ticket, which the launcher never reads. The briefing's preamble names that very worktree
@@ -144,8 +167,8 @@ paths:
   decided once by `branches/plan.py`'s `branch_plan`, handed to Run Agent as `branch_plan` and to
   `brief()` as a plain value — is the branch a worktree is
   on (its own `agent/<run name>`, or the feature branch for a landing), where a new one
-  starts, what the first run in a stretch may cut on the remote, and the PR's base. The
-  wrapper script **fetches and starts the branch from the plan's start** — a stretch's
+  starts, what the first run in a stretch may cut on the remote, and the PR's base.
+  `worktree.prepare` **fetches and starts the branch from the plan's start** — a stretch's
   branch, else the code row's `Location.ref` as the mainline, else the remote's default,
   looked up — **never from whatever the checkout has checked out**, with `--no-track` (a
   landing on the feature branch tracks it); it cuts a missing branch only when told to
@@ -153,7 +176,7 @@ paths:
   ref, never checking one out, and **refuses a branch gone from the remote** rather than
   re-cut it from the mainline. It sets `gh-merge-base` as a backstop for the `--base` the
   epilogue names; the preamble checks the plan's branch. Every name is checked with
-  `sparse.valid_ref` before it reaches a script. A landing is briefed by what it is —
+  `sparse.valid_ref` before it reaches git. A landing is briefed by what it is —
   its instructions generated from the stretch it closes (`agent_briefing/instructions.py`, *Work you
   land*): merge the mainline in as a merge commit, never a squash, and open the branch's
   own PR — and **without the project's standing instruction**, which is written for the
@@ -282,8 +305,12 @@ paths:
   hands the prompt over, exactly as when no terminal exists.
 - **A launch profile is a name over the two choices, and the first is the default.**
   `agent_launch/profiles.py`: a `Profile` is an agent command and a terminal
-  template under a name, kept per user (`user_config`; the two single settings they
-  replaced are read as the default profile when no list is stored). `agent.run` runs
+  template under a name, kept per user in `config_dir()/agent-profiles.json` — never
+  QSettings, because `agent run --profile` reads it with no Qt; the window `adopt`s what
+  QSettings held before, once, the two single settings profiles replaced included. **A file
+  that is there and cannot be read is never written over** (`profiles.problem()`): the
+  default profile stands in, nothing seeds or saves, the window shows a notice and the page
+  is read-only, and `agent run` refuses. `agent.run` runs
   the first — the Agent tab's button and the palette — and its seat in the Step menu is
   *Step ▸ Run Agent*, a data child menu of every profile, the default marked, each
   greyed with its own reason (`launcher.template_refusal`: a row's probe, asked before
@@ -364,7 +391,8 @@ paths:
   the account's last-known one (`limits.py`, `config_dir()/usage-limits.json`); with neither,
   the run parks for a person. **Nothing else starts on an account that ran out** — a turn
   carrying no answer parks `limit`/`held` unstarted — and **a new headless launch waits** while
-  a window is at or above `limits.hold_at()` (95 %): `limits.hold` is the one answer, in words. **Its locks
+  a window is at or above `limits.hold_at()` (95 %): `limits.hold`, which `launch.headless_refusal`
+  returns, so `agent run` and every headless launch refuse with its words. **Its locks
   are the OS's** (`supervisor.lock` for its life, `record.lock` across every read-modify-write
   of the record — `fence()` takes it too), never a file judged stale and deleted. **A kill
   ends the whole process group**, and every way out of a turn ends it, so nothing runs

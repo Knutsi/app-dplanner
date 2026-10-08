@@ -529,17 +529,19 @@ src/dplanner/
 │   ├── step_agent_instruction/   … this one also holds the project's standing instruction
 │   │                             and the step's worktree choice
 │   ├── agent_launch/        Run Agent: the verbs and *Open Agent in Code* (module.py),
-│   │                        `launcher.py` the terminal and multiplexer table and the wrapper
-│   │                        script that prepares the worktree and reports back, `profiles.py`
+│   │                        `launch.py` the one launch both surfaces run (worktree, briefing,
+│   │                        run record, start) and `workflows.py` its claim, `cli.py`
+│   │                        `dplanner agent run`, `launcher.py` the terminal and multiplexer
+│   │                        table and the wrapper script that reports back, `profiles.py`
 │   │                        the named agent-and-terminal pairs, seeded once, `settings_page.py`
-│   │                        and `detect_dialog.py` their page, `intents.py` an unattended
-│   │                        launch's intent, written before its shell, `availability.py`
+│   │                        and `detect_dialog.py` their page, `availability.py`
 │   │                        whether each agent CLI can run here (on PATH, version, signed in)
 │   ├── agent_briefing/      what an agent is told — no module.py, headless all through:
 │   │                        the preflight and the report-back protocol (protocol.py), the
 │   │                        step's and project's facts (blocks.py), the instructions
 │   │                        (instructions.py), assembled once by compose.brief; and where
-│   │                        a run works (worktree.py: its run name, checkout and worktree)
+│   │                        a run works (worktree.py: its run name, checkout, and the
+│   │                        worktree git prepares)
 │   ├── agent_claude/        ── one module per agent CLI, each a Qt-free `harness.py`: the
 │   ├── agent_codex/            command, how it resumes, the marks it leaves in its shells, a
 │   ├── agent_opencode/         reader of its own records (`domain/agents.py` is the contract),

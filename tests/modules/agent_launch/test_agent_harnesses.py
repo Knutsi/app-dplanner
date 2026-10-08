@@ -146,21 +146,18 @@ def test_the_wrapper_records_the_multiplexers_own_names_for_the_pane(tmp_path):
 # -- profiles ---------------------------------------------------------------------------------
 
 
-def test_the_two_old_settings_read_as_the_default_profile(app):
-    from dplanner.framework.user_config import set_global
+def test_the_two_old_settings_are_adopted_once_as_the_default_profile(app):
     from dplanner.modules.agent_launch.profiles import (
-        AGENT_COMMAND_KEY,
-        LAUNCH_COMMAND_KEY,
         Profile,
+        adopt,
         default_profile,
         read_profiles,
         write_profiles,
     )
-    from dplanner.planning.agent import MODULE_ID
 
-    set_global(MODULE_ID, AGENT_COMMAND_KEY, "codex {prompt}")
-    set_global(MODULE_ID, LAUNCH_COMMAND_KEY, "kitty {script}")
+    assert adopt(None, False, "codex {prompt}", "kitty {script}")
     assert read_profiles() == [Profile("Default", "codex {prompt}", "kitty {script}")]
+    assert not adopt(None, False, "claude", "")  # Once: the file is there now.
     write_profiles([Profile("Mine", "", ""), Profile("Codex in herdr", "codex {prompt}", "h")])
     assert default_profile() == Profile("Mine", "", "")
     assert [p.name for p in read_profiles()] == ["Mine", "Codex in herdr"]
@@ -170,16 +167,14 @@ def test_the_known_pairings_are_seeded_once_and_never_doubled(app):
     """Every harness in Ghostty, herdr and Automatic, added after what is stored — a
     pairing already there by its choices is skipped whatever it is named, the stored
     default stays first, and a second seed (or a removal) is honoured by the flag."""
-    from dplanner.framework.user_config import get_global
     from dplanner.modules.agent_launch.launcher import HERDR_COMMAND
     from dplanner.modules.agent_launch.profiles import (
-        SEEDED_KEY,
         Profile,
         read_profiles,
         seed_profiles,
+        seeded,
         write_profiles,
     )
-    from dplanner.planning.agent import MODULE_ID
 
     write_profiles([Profile("Mine", "", "ghostty -e {script}"), Profile("Codex", "codex {prompt}")])
     added = seed_profiles(HARNESSES, platform="linux")
@@ -200,7 +195,7 @@ def test_the_known_pairings_are_seeded_once_and_never_doubled(app):
     )
     herdr = next(p for p in added if p.name == "Codex in herdr")
     assert (herdr.agent_command, herdr.launch_command) == ("codex {prompt}", HERDR_COMMAND)
-    assert get_global(MODULE_ID, SEEDED_KEY) is True
+    assert seeded()
     # Seeded: a removal stands, and nothing is added twice.
     write_profiles(read_profiles()[:3])
     assert seed_profiles(HARNESSES, platform="linux") == []
@@ -208,15 +203,9 @@ def test_the_known_pairings_are_seeded_once_and_never_doubled(app):
 
 
 def test_a_fresh_machine_is_seeded_around_its_default_and_no_harness_seeds_nothing(app):
-    from dplanner.framework.user_config import get_global
-    from dplanner.modules.agent_launch.profiles import (
-        SEEDED_KEY,
-        read_profiles,
-        seed_profiles,
-    )
-    from dplanner.planning.agent import MODULE_ID
+    from dplanner.modules.agent_launch.profiles import read_profiles, seed_profiles, seeded
 
-    assert seed_profiles((), platform="linux") == [] and get_global(MODULE_ID, SEEDED_KEY) is None
+    assert seed_profiles((), platform="linux") == [] and not seeded()
     seed_profiles(HARNESSES, platform="darwin")
     names = [p.name for p in read_profiles()]
     # The unnamed old-settings profile — Claude Code in Automatic — is named by its
@@ -640,15 +629,32 @@ def test_plan_mode_is_read_off_the_command_a_profile_runs():
     assert not launcher.plans_first(codex.HARNESS.command, harnesses)
 
 
-def test_the_launch_hold_is_a_preset_over_an_editable_percentage(app, tmp_path, monkeypatch):
+def test_the_window_adopts_the_profiles_qsettings_kept_into_the_config_file(app, request):
+    """A machine set up before the profiles moved keeps its list and its seed flag: the
+    window takes both over once, so nothing is seeded a second time."""
+    from dplanner.framework.user_config import set_global
+    from dplanner.modules.agent_launch.profiles import (
+        Profile,
+        profiles_file,
+        read_profiles,
+        seeded,
+    )
+    from dplanner.planning.agent import MODULE_ID
+
+    mine = Profile("Mine", "codex {prompt}", "kitty {script}")
+    set_global(MODULE_ID, "profiles", [mine.to_json()])
+    set_global(MODULE_ID, "profiles_seeded", True)
+    assert not profiles_file().exists()
+    request.getfixturevalue("services")
+    assert read_profiles() == [mine] and seeded()
+
+
+def test_the_launch_hold_is_a_preset_over_an_editable_percentage(app):
     """95 % works untouched; the presets are laid out; a typed share is kept and a slip is
     shown back as what is stored."""
-    from tests.platforms import set_home
-
     from dplanner.modules.agent_launch.settings_page import build_page
     from dplanner.modules.agent_supervisor import limits
 
-    set_home(monkeypatch, tmp_path / "home")
     page = build_page(None, platform="linux", harnesses=HARNESSES)
     combo = page.findChild(QComboBox, "AgentHoldAtCombo")
     edit = page.findChild(QLineEdit, "AgentHoldAtEdit")

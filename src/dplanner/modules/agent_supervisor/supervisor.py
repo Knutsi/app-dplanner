@@ -61,7 +61,7 @@ import sys
 import threading
 import time
 import uuid
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import ExitStack, contextmanager, suppress
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
@@ -69,6 +69,7 @@ from pathlib import Path
 from typing import IO
 
 from dplanner.cli.discovery import PROJECT_ENV, RUN_ENV
+from dplanner.core.config_dir import config_dir
 from dplanner.core.fsio import os_lock
 from dplanner.core.process import (
     CREATE_NEW_PROCESS_GROUP,
@@ -95,10 +96,13 @@ from dplanner.domain.headless import (
     write_schema,
 )
 from dplanner.domain.ledger import LedgerRecord, Turn
+from dplanner.domain.library_file import LIBRARY_ENV
 from dplanner.domain.model import now_stamp
 from dplanner.domain.questions import Question
+from dplanner.domain.store import LibraryStore
 from dplanner.modules.agent_briefing.protocol import opening_prompt
 from dplanner.modules.agent_supervisor import limits
+from dplanner.planning.status import Status, stored
 
 # Why a turn after the first began, and what it is told when nobody wrote the words.
 PROMPTS = {
@@ -109,6 +113,10 @@ PROMPTS = {
 }
 LOCK_FILE = "supervisor.lock"
 RECORD_LOCK = "record.lock"
+LAUNCHES_DIR = "launches"
+# How old a run with no turn must be before it may be taken for a launch nobody finished: a
+# supervisor started a moment ago may not hold its lock yet.
+LAUNCH_GRACE = 120.0
 PLAN_FILE = "plan.md"
 # How long the stream is still read once its process group has ended: a CLI's SIGTERM
 # handler may print the turn's last totals on the way out.
@@ -162,18 +170,23 @@ def supervise(
     text: str = "",
     guards: Guards | None = None,
     config: Path | None = None,
+    library: Path | None = None,
 ) -> str:
     """Drive the run until it is over or parked; the sentence that says which.
 
     ``prompt`` is why a parked run resumes — ``answer``, ``continue``, ``reset`` or
     ``retry`` — and ``text`` the words it resumes with (the answer). ``config`` is the
     directory the run directories are under, ``config_dir()`` unless a test says otherwise.
+    ``library`` is the library the run was launched from, which every turn's ``dplanner``
+    calls must reach.
     """
     guards = guards or Guards()
+    # Absolute: a turn runs in its worktree, where a relative path names nothing.
+    library = library.expanduser().resolve() if library is not None else None
     said, again = "", False
     while True:
         try:
-            said = _drive(project_dir, run, harnesses, prompt, text, guards, config)
+            said = _drive(project_dir, run, harnesses, prompt, text, guards, config, library)
         except RefusedError:
             if again:  # Another supervisor holds the run, and delivers the answer itself.
                 return said
@@ -194,13 +207,16 @@ def _drive(
     text: str,
     guards: Guards,
     config: Path | None,
+    library: Path | None,
 ) -> str:
     with supervising(ledger.run_dir(run, config)), _stoppable() as stop:
         record = _record(project_dir, run)
         harness = harness_by_id(harnesses, record.harness)
         if harness is None or harness.headless is None:
             raise RefusedError(f"run {run}: no harness here runs {record.harness!r} headless")
-        session = Session(project_dir, config, record, harness, harness.headless, guards)
+        session = Session(
+            project_dir, config, record, harness, harness.headless, guards, library=library
+        )
         kind, words = session.opening(prompt, text, stop)
         while kind:
             ending = session.turn(kind, words, stop)
@@ -259,6 +275,8 @@ class Session:
     guards: Guards
     # The turn a claimed answer resumes with, written before it is spawned.
     claimed: Turn | None = None
+    # The library the run was launched from; None leaves the inherited one.
+    library: Path | None = None
 
     @property
     def directory(self) -> Path:
@@ -370,8 +388,11 @@ class Session:
             return self._finish(held, TurnLog(), None, Ending(TurnEnd.LIMIT, HELD, said, out))
         spec = self._spec(kind, words)
         env = scrubbed_environment(os.environ, (self.harness,))
-        # What `dplanner question ask` reads to find the run it parks.
+        # Every `dplanner` call the turn makes reaches the plan its run was launched from:
+        # the run (what `question ask` parks), the project and the library.
         env[RUN_ENV], env[PROJECT_ENV] = self.record.run, self.record.project
+        if self.library is not None:
+            env[LIBRARY_ENV] = str(self.library)
         argv = self.headless.command(spec)
         argv[0] = shutil.which(argv[0], path=env.get("PATH")) or argv[0]
         stream = self.directory / f"turn-{n}.jsonl"
@@ -691,12 +712,7 @@ class Session:
         return claimed.prompt, words
 
     def _waits_for_reset(self, last: Turn) -> bool:
-        """Whether the run stands parked on a limit whose reset is known, its question still
-        unanswered: the clock resumes such a run, and only Retry now comes sooner."""
-        if last.end != TurnEnd.LIMIT or not last.resets or not last.question:
-            return False
-        question = questions.find(self.project_dir, last.question)
-        return question is not None and question.state in (questions.OPEN, questions.ESCALATED)
+        return waits_for_reset(self.project_dir, last)
 
     def _await_reset(self, last: Turn, stop: threading.Event) -> tuple[str, str]:
         """Wait for the limit's reset, then answer its question for the clock and resume —
@@ -775,6 +791,16 @@ def usage_of(log: TurnLog) -> tuple[AgentUsage, ...]:
     return (AgentUsage("main", {log.model or ledger.UNKNOWN_MODEL: log.tokens}),)
 
 
+def waits_for_reset(project_dir: Path, last: Turn) -> bool:
+    """Whether a run whose last turn is ``last`` stands parked on a limit whose reset is
+    known, its question still unanswered: its supervisor waits for the clock to resume it,
+    and only Retry now comes sooner."""
+    if last.end != TurnEnd.LIMIT or not last.resets or not last.question:
+        return False
+    question = questions.find(project_dir, last.question)
+    return question is not None and question.state in (questions.OPEN, questions.ESCALATED)
+
+
 def resumed_by(question: Question) -> tuple[str, str]:
     """Why a turn resumes on the answer, and the words it resumes with: the clock's answer is a
     reset and Retry now a retry — each the session's own short prompt — and anything else
@@ -786,15 +812,161 @@ def resumed_by(question: Question) -> tuple[str, str]:
     return "answer", questions.answer_text(question)
 
 
-def start_detached(project_dir: Path, run: str, prompt: str = "", text: str = "") -> None:
+def start_detached(
+    project_dir: Path,
+    run: str,
+    prompt: str = "",
+    text: str = "",
+    *,
+    library: Path | None = None,
+) -> None:
     """Start a supervisor for the run that outlives whoever started it — ``agent run``'s
-    launch, an answer, a reset, *Retry now*."""
-    argv = ["dplanner", "agent", "supervise", run, "--project-dir", str(project_dir)]
+    launch, an answer, a reset, *Retry now*.
+
+    It is this interpreter running this build (``python -m dplanner``), never whatever
+    ``dplanner`` is on PATH: a run launched from a branch's build is supervised by that
+    build, not by the installed one, which may not know the record's words. ``library`` is
+    the library it was launched from, which its turns are told."""
+    named = ["--library", str(library.expanduser().resolve())] if library is not None else []
+    argv = [sys.executable, "-m", "dplanner", *named, "agent", "supervise", run]
+    argv += ["--project-dir", str(project_dir)]
     if prompt:
         argv += ["--prompt", prompt]
     if text:
         argv += ["--text", text]
     spawn_detached(argv)
+
+
+def revive(
+    project_dirs: Iterable[Path],
+    config: Path | None = None,
+    *,
+    claimed: Callable[[LedgerRecord], bool] | None = None,
+    library: Path | None = None,
+    grace: float = LAUNCH_GRACE,
+) -> list[str]:
+    """Start a supervisor for every run of this machine a supervisor should hold and none
+    does; the runs it started, by id. What a machine's start does:
+
+    - a run whose last turn has no end — a reboot or a killed supervisor lost it — is
+      supervised again, and the new supervisor ends that turn ``failed``/``lost`` and
+      retries it;
+    - a run with no turn at all is a launch interrupted between writing its record and
+      starting its supervisor. With ``claimed`` to ask — what the step's status says *on
+      disk*: :func:`claimed_on_disk` over ``library`` unless a caller says otherwise — it is
+      started when its step is still claimed in progress, and its record
+      deleted when it is not and the run is past ``grace``; :func:`_settle` has the rest.
+
+    - a run parked on a limit whose reset is known (:func:`waits_for_reset`) is supervised
+      again, and the new supervisor waits for the reset — or resumes at once when it has
+      passed.
+
+    Any other parked run waits for a person and is never touched here."""
+    here = ledger.machine_id(config)
+    if claimed is None and library is not None:
+        claimed = claimed_on_disk(library)
+    started: list[str] = []
+    for project_dir in project_dirs:
+        for record in ledger.records(project_dir):
+            last = record.last_turn
+            if not record.headless or record.over:
+                continue
+            if last is not None and last.end and not waits_for_reset(project_dir, last):
+                continue
+            if record.machine != here or supervised(ledger.run_dir(record.run, config)):
+                continue
+            if last is None:
+                if claimed is not None and _settle(
+                    project_dir, record, claimed, config, library, grace
+                ):
+                    started.append(record.run)
+                continue
+            start_detached(project_dir, record.run, library=library)
+            started.append(record.run)
+    return started
+
+
+def _settle(
+    project_dir: Path,
+    record: LedgerRecord,
+    claimed: Callable[[LedgerRecord], bool],
+    config: Path | None,
+    library: Path | None,
+    grace: float,
+) -> bool:
+    """Settle a run with no turn, under its step's launch lock; True when it was started.
+
+    Everything is read again inside the lock — the record from the ledger, the step's status
+    through ``claimed``, which reads what is on disk — because what was read before it may
+    be older than the launch that has since saved its claim and started. A launch's record
+    is only ever deleted when nothing could still be starting it: no supervisor holds the
+    run, its step reads unclaimed, and it is older than ``grace`` seconds — a supervisor
+    started a moment ago may not have taken its lock yet."""
+    with ExitStack() as held:
+        try:
+            held.enter_context(launching(record.project, record.step, config))
+        except BlockingIOError:
+            return False  # Its launch is still under way.
+        fresh = ledger.find(project_dir, record.run)
+        if fresh is None or fresh.turns or fresh.over:
+            return False
+        if supervised(ledger.run_dir(fresh.run, config)):
+            return False
+        if claimed(fresh):
+            start_detached(project_dir, fresh.run, library=library)
+            return True
+        if _age(fresh) > grace:
+            ledger.path_for(project_dir, fresh).unlink(missing_ok=True)
+        return False
+
+
+def claimed_on_disk(library: Path) -> Callable[[LedgerRecord], bool]:
+    """Whether a run's step reads in progress in the plan as it is on disk, read afresh each
+    time it is asked — a model loaded earlier may be older than the launch that has since
+    saved its claim. Only :func:`revive` asks, and only of a run with no turn."""
+
+    def claimed(record: LedgerRecord) -> bool:
+        store = LibraryStore(library)
+        try:
+            plan = store.load()
+            return plan.has(record.step) and stored(plan.step(record.step)) is Status.IN_PROGRESS
+        finally:
+            store.close()
+
+    return claimed
+
+
+def _age(record: LedgerRecord) -> float:
+    """Seconds since the run was launched; none at all for a stamp this build cannot read."""
+    try:
+        launched = datetime.fromisoformat(record.launched)
+    except ValueError:
+        return 0.0
+    if launched.tzinfo is None:
+        launched = launched.replace(tzinfo=UTC)
+    return (datetime.now(UTC) - launched).total_seconds()
+
+
+@contextmanager
+def launching(project: str, step: str, config: Path | None = None) -> Iterator[None]:
+    """Hold the step's launch lock — ``config_dir()/launches/<project>-<step>.lock``, the
+    operating system's — or raise ``BlockingIOError`` when another launch holds it. Every
+    launch of a step takes it from its first check to its start, on both surfaces, so two
+    launches of one step can never both find it free and both start an agent."""
+    path = (config or config_dir()) / LAUNCHES_DIR / f"{project}-{step}.lock"
+    with os_lock(path, wait=False):
+        yield
+
+
+def supervised(directory: Path) -> bool:
+    """Whether a live supervisor holds the run in ``directory``."""
+    if not (directory / LOCK_FILE).exists():
+        return False
+    try:
+        with os_lock(directory / LOCK_FILE, wait=False):
+            return False
+    except BlockingIOError:
+        return True
 
 
 @contextmanager

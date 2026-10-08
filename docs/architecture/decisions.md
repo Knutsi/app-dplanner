@@ -555,8 +555,7 @@ Undoing a rename restored the old title over the agent's newer one, and nothing 
 commands now remember what their redo left and refuse otherwise. The first auto-launch
 spawned, claimed in memory and flushed afterwards, so a window that died in between launched
 the step again; `launch_due` now writes an intent before it spawns. Now: `persistence.md`'s
-*Adopting the other writer's changes in place*; `agents.md`'s *A launch writes its intent
-before its shell*.
+*Adopting the other writer's changes in place*; `agents.md`'s *One launch under both surfaces*.
 
 ## 2026-10-04 — Effects wait for the save in the window too; intents outlive a refusal
 
@@ -568,8 +567,7 @@ been refused in memory, so a new window launched the step again; an intent now g
 its step no longer reads due. Coalescing merged a value command across another writer's edit,
 so undo restored the older value over theirs; a merge now requires continuity. Now:
 `core.md`'s *A workflow is one function under both surfaces*; `persistence.md`'s *Adopting
-the other writer's changes in place*; `agents.md`'s *A launch writes its intent before its
-shell*.
+the other writer's changes in place*; `agents.md`'s *One launch under both surfaces*.
 
 ## 2026-10-07 — The ledger record becomes the run; at-work is kept beside claims
 
@@ -607,7 +605,7 @@ removes them. Kept: the unattended launch's intent and claim, as `launch_unatten
 `dplanner agent run`. The stored `auto_progress.json` is retired with no successor: it is
 left as data nobody declares, and the id is in `RETIRED_IDS`, which no module may declare
 again. A machine's old `config_dir()/auto-launch/` and the `auto_launch` setting are left
-behind, read by nothing. Now: `agents.md`'s *A launch writes its intent before its shell*;
+behind, read by nothing. Now: `agents.md`'s *One launch under both surfaces*;
 FORMAT.md's *Retiring a module*.
 
 ## 2026-10-07 — Review steps were removed
@@ -641,6 +639,34 @@ only their own turns. Building the supervisor showed the stream it already tees 
 one turn's window: the counts are read from it as the turn ends, the harvest leaves a
 headless record to its supervisor, and no cursor API was built. The cost is subagents the
 stream does not report. Now: `agents.md`'s *A headless run is driven by its supervisor*.
+
+## 2026-10-07 — One launch under both surfaces; the intent file and the unattended launch left
+
+The window's Run Agent built the briefing, prepared the worktree inside the terminal's
+wrapper script, spawned the terminal and claimed the step; `launch_unattended`, kept from the
+auto-launch for `agent run`, did the same with an intent file (`intents.py`) written before
+its shell, and had no caller. `dplanner agent run` (S11) needed the launch without a terminal,
+and so without a script to make the worktree in. Now both surfaces run one launch
+(`agent_launch/launch.py`) and apply one claim (`workflows.py`'s `run_agent`): the worktree
+is prepared by git in Python (`agent_briefing/worktree.py`'s `prepare`, the scripts' ~90
+lines of sh and of cmd gone), the run's ledger record is written before anything spawns and
+is the intent, and the claim is applied only once the run started. `launch_unattended`, its
+profile-by-harness lookup and `intents.py` were removed; a playbook role's agent is a
+`Profile` built from its harness. `planning/status.py`'s `record_started` went with them —
+the claim is the workflow's `Change`. The launch profiles moved from QSettings to
+`config_dir()/agent-profiles.json`, adopted once by the window, so the CLI can read
+`--profile`. A supervisor is started as `sys.executable -m dplanner`, not the `dplanner` on
+PATH. Now: `agents.md`'s *One launch under both surfaces*.
+
+## 2026-10-07 — A launch saves its claim before it starts, under the step's lock
+
+S11 first started the run and claimed the step afterwards, keeping the window's rule that a
+failed launch claims nothing. Kettle Watch's review showed the cost: a flush another writer
+refused left an agent running on a step that read pending, and two launches of one step
+could both pass the "no run yet" check. Now a launch holds the step's OS launch lock from
+its first check to its start, saves its record and its claim first and starts the run as
+the follow-up, withdrawing the claim when the start fails; `revive` settles a launch cut off
+in between. Now: `agents.md`'s *One launch under both surfaces*.
 
 ## 2026-10-07 — A limit waits in its supervisor instead of exiting
 
