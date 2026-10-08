@@ -151,20 +151,25 @@ def _written(
         ),
         None,
     )
-    if mine is None:
-        claim = claims.claimed(
-            project,
-            squad,
-            wanted,
-            now,
-            worker={"machine": ledger.machine_id(), "host": ledger.host_name()},
-            supersedes=superseded,
-            lease_minutes=args.lease,
-            max_park_hours=args.max_park,
-        )
-        claims.write(project_dir, claim)
-        return claim
-    return claims.update(project_dir, mine.id, lambda c: claims.grown(c, wanted, now, superseded))
+    if mine is not None:
+        try:
+            return claims.update(
+                project_dir, mine.id, lambda c: claims.grown(c, wanted, now, superseded)
+            )
+        except ValueError:
+            pass  # Ended since it was read: this take starts a claim of its own.
+    claim = claims.claimed(
+        project,
+        squad,
+        wanted,
+        now,
+        worker={"machine": ledger.machine_id(), "host": ledger.host_name()},
+        supersedes=superseded,
+        lease_minutes=args.lease,
+        max_park_hours=args.max_park,
+    )
+    claims.write(project_dir, claim)
+    return claim
 
 
 def _configure_take(parser: ArgumentParser) -> None:

@@ -224,9 +224,9 @@ class NodeAccent:
     chip_text: str = ""  # "" → no chip.
     chip_tone: str = ""  # "" neutral | "info" | "attention".
     # The squad whose claim holds the step, in a chip on the bottom edge's right end — still,
-    # not marching: a claim is ownership, and the ring is a run at work.
-    squad: str = ""  # "" → unclaimed.
-    squad_tone: str = ""  # "" neutral | "attention": the claim was abandoned.
+    # not marching: a claim is ownership, and the ring is a run at work. Its words and its
+    # tone: "" neutral, "attention" once the claim was abandoned. ("", "") → unclaimed.
+    squad: tuple[str, str] = ("", "")
     body_tone: str = ""  # "" plain | "highlight" | "good" | "feature": the node is a kind.
     # A milestone's own shade of the project's colour map, as "#rrggbb" — it recolours the
     # body tone, the badge and the tag medallion together, so the card says *which*
@@ -353,8 +353,8 @@ def paint_node(
         )
     if accent.chip_text:
         paint_chip(painter, palette, card, accent.chip_text, accent.chip_tone)
-    if accent.squad:
-        paint_chip(painter, palette, card, accent.squad, accent.squad_tone, right=True)
+    if accent.squad[0]:
+        paint_chip(painter, palette, card, *accent.squad, right=True)
     paint_handle(painter, palette, body, state)
     painter.restore()
 

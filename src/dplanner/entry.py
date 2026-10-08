@@ -43,7 +43,6 @@ from dplanner.modules import (
     default_cli_commands,
     default_link_rules,
     default_module_formats,
-    renew_claims,
 )
 
 # Options that take a value, so the value is not mistaken for a command word. Both surfaces
@@ -140,7 +139,6 @@ def main(argv: list[str] | None = None) -> int:
         arguments,
         board=signing,
         link_rules=default_link_rules(),
-        renew=renew_claims,
     )
 
 

@@ -342,7 +342,7 @@ class StatusBoard(EntityActivity):
             glyph_of=deps.glyph_of,
             milestone_badge=deps.milestone_badge,
             project_of=lambda step: library.project_of(step.id).title or UNTITLED,
-            held_by=deps.held_by,
+            held_by=deps.holders.held_by if deps.holders is not None else lambda _step: "",
             parent=page,
         )
         self.table.itemSelectionChanged.connect(self._on_selection)
@@ -362,8 +362,8 @@ class StatusBoard(EntityActivity):
         self._unsubscribes = [
             deps.clock.day_changed.connect(lambda _day: self._refresh_soon.trigger()),
             *(
-                [deps.held_changed.connect(lambda _project: self._refresh_soon.trigger())]
-                if deps.held_changed is not None
+                [deps.holders.changed.connect(lambda _project: self._refresh_soon.trigger())]
+                if deps.holders is not None
                 else []
             ),
         ]

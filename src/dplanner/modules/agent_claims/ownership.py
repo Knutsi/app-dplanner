@@ -9,10 +9,11 @@ is fenced, and its supervisor here is signalled, ending the turn ``stopped``; a 
 also reads its fence within a second. A supervisor on another machine finds the fence when
 the ledger reaches it — the second machine is not built yet.
 
-A release or an end takes the step's launch lock when it is free, so a launch of the step
-cannot start between the change and the fence. When a launch holds it, the launch re-reads
-ownership just before it starts (``launch.start_run``) and its record already exists to be
-fenced, so the release never waits on it — the window's own launch may be the holder.
+A release or an end takes the steps' launch locks when they are free, around the fencing.
+Either way a launch of the step cannot slip through: one that re-reads ownership just before
+it starts (``launch.start_run``) after the change is refused, and one that started before it
+already has a record to fence — so the release never waits on a launch, which may be the
+window's own.
 """
 
 import getpass
@@ -56,16 +57,20 @@ def release(
 
 
 def end(project_dir: Path, claim_id: str, by: Mapping[str, str], why: str) -> Claim:
-    """End the whole claim and stop every one of its workers. ``ValueError`` when it has
-    already ended, ``LookupError`` when there is no such claim."""
-    found = claims.find(project_dir, claim_id)
-    if found is None:
-        raise LookupError(f"no claim {claim_id} in this project")
-    with _launches(found.project, found.steps):
-        claim = claims.update(
-            project_dir, claim_id, lambda c: claims.ended(c, by, why, now_stamp())
-        )
-        stop_runs(project_dir, claim_id, found.steps, by.get("name", ""), why)
+    """End the whole claim and stop every one of its workers — on exactly the steps it held
+    when it ended, read under the claim's lock, so a step another take added a moment before
+    is stopped too, and a take a moment after cannot grow the ended claim (``claims.grown``
+    refuses it). ``ValueError`` when it has already ended, ``LookupError`` when there is no
+    such claim."""
+    held: list[str] = []
+
+    def ending(claim: Claim) -> Claim:
+        held[:] = claim.steps
+        return claims.ended(claim, by, why, now_stamp())
+
+    claim = claims.update(project_dir, claim_id, ending)
+    with _launches(claim.project, held):
+        stop_runs(project_dir, claim_id, held, by.get("name", ""), why)
     return claim
 
 

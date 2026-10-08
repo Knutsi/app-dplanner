@@ -8,11 +8,18 @@ takes the two fixtures into its ``conftest.py`` (``from tests.launching import �
 task path itself is tested once, in ``agent_launch/test_launch.py``.
 """
 
+import os
+import signal
 import subprocess
+import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
+
+from dplanner.core.process import ProcessStamp, is_live, stamp_of
 
 
 def committed(repo: Path) -> Path:
@@ -41,3 +48,26 @@ def services(services, monkeypatch):
     module = next(m for m in services.modules if isinstance(m, AgentLaunchModule))
     monkeypatch.setattr(module, "_deps", replace(module._deps, tasks=None))
     return services
+
+
+@contextmanager
+def orphaned_turn() -> Iterator[ProcessStamp]:
+    """A turn's process that outlived its supervisor: started by a parent that has already
+    exited, so — as a real one is — it is nobody's child here and is reaped by the system once
+    it ends. Yields its stamp; whatever is left of it is killed afterwards. The caller allows
+    ``sys.executable`` to spawn."""
+    sleeper = "import time; time.sleep(120)"
+    starter = (
+        "import subprocess, sys; "
+        f"print(subprocess.Popen([sys.executable, '-c', {sleeper!r}], start_new_session=True, "
+        "stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).pid)"
+    )
+    pid = int(subprocess.run([sys.executable, "-c", starter], capture_output=True, text=True,
+                             check=True).stdout)  # fmt: skip
+    stamp = stamp_of(pid)
+    assert stamp is not None
+    try:
+        yield stamp
+    finally:
+        if is_live(stamp):
+            os.kill(pid, signal.SIGTERM)

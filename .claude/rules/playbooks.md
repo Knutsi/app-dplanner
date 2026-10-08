@@ -10,6 +10,7 @@ paths:
   - "docs/research/2026-10-03-playbooks/**"
   - "docs/research/2026-10-07-headless-agents/**"
   - "src/dplanner/modules/step_playbook/**"
+  - "src/dplanner/modules/agent_briefing/stages.py"
   - "tests/modules/step_playbook/**"
   - "tests/cli/test_playbook.py"
 ---
@@ -51,6 +52,31 @@ paths:
   run's `declined`. The coordinator may answer a `coordinator` gate and must escalate a `person`
   gate. `docs/architecture/playbooks.md`'s *The run record is the ledger* maps every
   review-round fact to its new home.
+- **The engine advances a pass once, and nothing waits for it.** A run of a pass that ends
+  `done` and an answer to a pass's question each start `dplanner playbook advance <step>`
+  detached (`supervisor.advance_detached`); `step_playbook/engine.py` takes the step's launch
+  lock, reads the pass's records oldest first, asks `passes.due` — the one derivation, pure —
+  and does one thing, writing its record before the answer it acted on is consumed. **A pass
+  starts only as `agent run --playbook`**, Run Agent's own gates and claim (none on a step at
+  Ready for review, which starts at its first gate). **A launch resumes a session exactly when
+  an earlier run of its pass names it** — no flag; every stage's `prompt.md` is the whole
+  briefing plus the stage's parts (`agent_briefing/stages.py`), so a fresh fallback knows what
+  a resume knew. **A verdict is one only when it validates against `VERDICT_SCHEMA`**
+  (`headless.verdict_of`); a review done without one gets one `verdict` turn, then escalates.
+  **An answer is a label exactly** (case and a closing stop aside) — other words are *changes*,
+  the words the finding. A fix declines findings by their number, recorded through
+  `findings.json`. **A pass that cannot act writes a card on itself** — `limit` with the reset
+  for a held account (`playbook wake` answers it for the clock), else `blocked` — and *Retry
+  now* re-runs what was due; never an advance that exits with nothing written. **`progress`
+  checks before it merges** — the plan's feature branch now (`merge_target`), the PR's base
+  and head, the step under review — merges (`--merge`) only into a non-default branch, makes
+  the mainline a person-only gate (`questions.PERSON_ONLY`) and anything else a `blocked`
+  card. **One pass at a time**: until the latest pass reaches its end (`passes.due` says
+  complete or halted) — between stages too — another `--playbook` is refused; `revive` runs
+  first, and a first run that never began on an unclaimed step is a dead launch a retry
+  replaces. The first record is written before the claim is
+  saved, and started after it.
+  `docs/architecture/playbooks.md`'s *How the engine drives a pass* has the reasoning.
 - **A role names a harness, never a profile or a path**, and maps at launch to the first
   profile running it; an unrunnable role is refused, never swapped for the default. Whether
   its agent can run *here* is `Availability.why_not` (`agents.md`'s *Installed is not usable*).

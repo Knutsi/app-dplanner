@@ -12,6 +12,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Mapping
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -20,7 +21,7 @@ import pytest
 
 from dplanner.core.process import process_alive, stamp_of
 from dplanner.domain import ledger, questions
-from dplanner.domain.headless import LimitWindow, TurnEnd, TurnSpec
+from dplanner.domain.headless import LimitWindow, StageKind, TurnEnd, TurnSpec, stage_kind
 from dplanner.domain.ledger import LedgerRecord, Turn
 from dplanner.domain.questions import Question
 from dplanner.modules.agent_claude import harness as claude
@@ -53,16 +54,20 @@ def recorded(name: str) -> list[str]:
     return [*record["stdout_head"], *record["stdout_tail"]]
 
 
-def result(text: str = "Done.", session: str = SESSION) -> str:
-    return json.dumps(
-        {
-            "type": "result",
-            "subtype": "success",
-            "session_id": session,
-            "result": text,
-            "usage": {"input_tokens": 3, "cache_read_input_tokens": 40, "output_tokens": 5},
-        }
-    )
+def result(
+    text: str = "Done.", session: str = SESSION, typed: Mapping[str, object] | None = None
+) -> str:
+    """A Claude ``result`` event; ``typed`` is its ``structured_output``, the schema's answer."""
+    event: dict[str, object] = {
+        "type": "result",
+        "subtype": "success",
+        "session_id": session,
+        "result": text,
+        "usage": {"input_tokens": 3, "cache_read_input_tokens": 40, "output_tokens": 5},
+    }
+    if typed is not None:
+        event["structured_output"] = typed
+    return json.dumps(event)
 
 
 INIT = json.dumps({"type": "system", "subtype": "init", "session_id": SESSION, "model": "m-1"})
@@ -100,7 +105,9 @@ class Rig:
     def play(self, *turns: dict[str, object]) -> None:
         self.script.write_text(json.dumps(list(turns)), encoding="utf-8")
 
-    def supervise(self, prompt: str = "", text: str = "", library: Path | None = None) -> str:
+    def supervise(
+        self, prompt: str = "", text: str = "", library: Path | None = None, advance=None
+    ) -> str:
         return supervise(
             self.plan,
             RUN,
@@ -110,6 +117,7 @@ class Rig:
             prompt=prompt,
             text=text,
             library=library,
+            advance=advance,
         )
 
     @property
@@ -526,6 +534,23 @@ def test_a_fence_read_while_the_turn_runs_stops_that_turn_at_once(rig):
     assert rig.ends() == [("stopped", "")] and rig.record.over
 
 
+def test_a_fenced_run_whose_turn_outlived_its_supervisor_ends_that_turn_first(rig):
+    """``revive`` hands a fenced run a supervisor; the turn its killed supervisor left running
+    is ended — its group, by its recorded stamp — before the run reads over."""
+    from tests.launching import orphaned_turn
+
+    from dplanner.core.process import is_live
+
+    with orphaned_turn() as stamp:
+        turn = Turn(n=1, prompt="launch", started="…", pid=stamp.pid, boot=stamp.boot,
+                    pid_started=stamp.started)  # fmt: skip
+        supervisor.update(rig.plan, RUN, lambda r: replace(r, turns=(turn,)), rig.config)
+        supervisor.fence(rig.plan, RUN, "kettle", "taken over", rig.config)
+        with pytest.raises(RefusedError, match="fenced"):
+            rig.supervise()
+        assert not is_live(stamp) and rig.record.over
+
+
 def test_being_told_to_stop_ends_the_turn_and_the_run_stopped(rig):
     rig.play({"lines": [INIT], "hold": 30})
     record = rig.record
@@ -592,6 +617,104 @@ def test_a_plan_keeps_dplanners_own_copy_and_a_review_its_verdict(tmp_path, allo
     review.supervise()
     verdict = review.record.verdict
     assert verdict is not None and verdict["outcome"] in ("pass", "changes")
+
+
+def test_a_review_without_its_verdict_is_asked_once_more_in_its_own_session(tmp_path, allow_spawn):
+    allow_spawn(Path(sys.executable))
+    review = Rig(tmp_path, stage="review-2")
+    verdict = {"outcome": "pass", "summary": "Good", "findings": []}
+    review.play({"lines": [INIT, result("Looks fine.")]}, {"lines": [result(typed=verdict)]})
+    assert review.supervise() == f"run {RUN} is done"
+    assert review.ends() == [("failed", "no-verdict"), ("done", "")]
+    assert [turn.prompt for turn in review.record.turns] == ["launch", "verdict"]
+    assert review.specs[1].resume and review.record.verdict == verdict
+
+
+def test_a_review_still_without_a_verdict_ends_without_one(tmp_path, allow_spawn):
+    allow_spawn(Path(sys.executable))
+    review = Rig(tmp_path, stage="review")
+    review.play({"lines": [INIT, result("Looks fine.")]})
+    assert review.supervise() == f"run {RUN} is done"
+    assert review.ends() == [("failed", "no-verdict"), ("done", "")]
+    assert review.record.verdict is None  # The pass escalates it: never a pass.
+
+
+def test_a_bare_outcome_is_no_verdict_as_opencode_ends_a_review(tmp_path, allow_spawn):
+    """opencode has no schema flag; its reader takes a JSON final text as typed, and a bare
+    ``{"outcome": "pass"}`` validates against nothing: nudged once, then no verdict at all."""
+    from dplanner.domain.headless import verdict_of
+    from dplanner.modules.agent_opencode import harness as opencode
+
+    bare = {"outcome": "pass"}
+    event = {"type": "text", "sessionID": "o-1", "part": {"text": json.dumps(bare)}}
+    log = opencode.HEADLESS.read_lines([json.dumps(event)])
+    assert log.typed == bare and verdict_of(log.typed) is None
+    allow_spawn(Path(sys.executable))
+    review = Rig(tmp_path, stage="review")
+    review.play({"lines": [INIT, result(typed=bare)]})
+    assert review.supervise() == f"run {RUN} is done"
+    assert review.ends() == [("failed", "no-verdict"), ("done", "")]
+    assert review.record.verdict is None
+
+
+def test_a_loop_back_resumes_the_session_an_earlier_run_of_its_pass_worked_in(rig):
+    earlier = replace(rig.record, run="20261007T100000Z-00000000", pass_="P", session=SESSION)
+    ledger.write(rig.plan, earlier)
+    ledger.write(rig.plan, replace(rig.record, pass_="P", session=SESSION, stage="fix"))
+    rig.play({"lines": [INIT, result()]})
+    rig.supervise()
+    (spec,) = rig.specs
+    assert spec.resume and spec.session == SESSION
+    assert spec.prompt.startswith("Read your briefing in") and "prompt.md" in spec.prompt
+
+
+def test_a_fresh_launch_names_a_session_no_other_run_of_its_pass_has(rig):
+    ledger.write(rig.plan, replace(rig.record, pass_="P", session="minted-at-launch"))
+    rig.play({"lines": [INIT, result()]})
+    rig.supervise()
+    (spec,) = rig.specs
+    assert not spec.resume and spec.session == "minted-at-launch"
+
+
+def test_a_fix_records_the_findings_it_declined_by_what_it_was_handed(rig):
+    handed = [{"run": "R-review", "index": 0}, {"run": "R-review", "index": 1}]
+    rig.run_dir.mkdir(parents=True, exist_ok=True)
+    (rig.run_dir / supervisor.FINDINGS_FILE).write_text(json.dumps(handed), encoding="utf-8")
+    typed = {
+        "outcome": "done",
+        "summary": "Fixed one",
+        "question": "",
+        "declined": [{"finding": 2, "reason": "Not a race"}, {"finding": 9, "reason": "?"}],
+    }
+    rig.play({"lines": [INIT, result(typed=typed)]})
+    rig.supervise()
+    assert rig.record.declined == ({"finding": handed[1], "reason": "Not a race"},)
+
+
+def test_a_playbooks_finished_stage_hands_its_pass_on_and_nothing_else_does(rig):
+    told: list[str] = []
+    rig.play({"lines": [INIT, result()]})
+    assert rig.supervise(advance=lambda _dir, record: told.append(record.run)) == (
+        f"run {RUN} is done"
+    )
+    assert told == []  # No pass: a plain headless run.
+    ledger.write(rig.plan, replace(rig.record, pass_="P", ended="", exit=None, turns=()))
+    said = rig.supervise(advance=lambda _dir, record: told.append(record.run))
+    assert told == [RUN] and said.endswith("its pass advances")
+
+
+def test_a_parked_stage_does_not_hand_its_pass_on(rig):
+    ledger.write(rig.plan, replace(rig.record, pass_="P"))
+    told: list[str] = []
+    rig.play({"lines": [recorded("claude-limit")[0]], "exit": 1, "stderr": "rate limit"})
+    rig.supervise(advance=lambda _dir, record: told.append(record.run))
+    assert not rig.record.over and told == []
+
+
+def test_a_stage_id_names_the_turn_it_runs():
+    assert stage_kind("review-2") is StageKind.REVIEW and stage_kind("fix") is StageKind.EXECUTE
+    assert stage_kind("plan") is StageKind.PLAN
+    assert stage_kind("person") is None and stage_kind("") is None
 
 
 # -- one supervisor, and nothing left running --------------------------------------------------

@@ -153,16 +153,45 @@ def hold(
     if known.out_until is not None and known.out_until > now:
         at = clock(known.out_until, now)
         return f"{label} ran out of usage; new headless launches wait for its reset at {at}"
-    full = [w for w in known.windows if w.used >= threshold and w.resets and w.resets > now]
-    if not full:
+    fullest = _fullest(known, threshold, now)
+    if fullest is None:
         return ""
-    fullest = max(full, key=lambda w: w.used)
     assert fullest.resets is not None
     return (
         f"{label} is at {fullest.used:.0%} of its {fullest.name.replace('_', '-')} window;"
         f" new headless launches wait for its reset at {clock(fullest.resets, now)}"
         f" (Settings ▸ Agent profiles holds them at {threshold:.0%})"
     )
+
+
+def held_until(
+    key: str,
+    threshold: float | None = None,
+    now: datetime | None = None,
+    config: Path | None = None,
+) -> datetime | None:
+    """When :func:`hold`'s wait on the account ends; None when nothing holds it."""
+    now = now or _now()
+    known = account(key, config)
+    if known.out_until is not None and known.out_until > now:
+        return known.out_until
+    fullest = _fullest(known, hold_at(config) if threshold is None else threshold, now)
+    return fullest.resets if fullest is not None else None
+
+
+class HeldError(Exception):
+    """A launch refused because its account is held (:func:`hold`): the reason, and when the
+    hold lifts — what a playbook's card waits for."""
+
+    def __init__(self, why: str, until: datetime | None) -> None:
+        super().__init__(why)
+        self.until = until
+
+
+def _fullest(known: Account, threshold: float, now: datetime) -> LimitWindow | None:
+    """The fullest window at or past ``threshold`` whose reset is still to come."""
+    full = [w for w in known.windows if w.used >= threshold and w.resets and w.resets > now]
+    return max(full, key=lambda w: w.used) if full else None
 
 
 def clock(moment: datetime, now: datetime | None = None) -> str:

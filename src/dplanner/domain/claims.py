@@ -176,7 +176,10 @@ def grown(
     claim: Claim, steps: Sequence[str], at: str, supersedes: Sequence[Mapping[str, str]] = ()
 ) -> Claim:
     """The claim holding ``steps`` too, each new one acquired ``at`` — a step it already
-    holds keeps its first acquisition — and renewed."""
+    holds keeps its first acquisition — and renewed. ``ValueError`` once it has ended: an
+    ended claim never grows again, so a take racing an end starts a claim of its own."""
+    if claim.ended:
+        raise ValueError(f"{claim.short} has ended")
     added = [step for step in dict.fromkeys(steps) if step not in claim.steps]
     return replace(
         claim,

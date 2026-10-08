@@ -51,14 +51,14 @@ def test_a_claimed_step_wears_its_squad_and_an_abandoned_claim_is_amber(
     claims.write(project_dir, _claim(project, step))
     module(services).refresh()
     accent = tab._scene._nodes[step.id]._accent
-    assert (accent.squad, accent.squad_tone, accent.chip_text) == ("kettle", "", "")
-    assert tab._scene._nodes[project.steps[1].id]._accent.squad == ""
+    assert (accent.squad, accent.chip_text) == (("kettle", ""), "")
+    assert tab._scene._nodes[project.steps[1].id]._accent.squad == ("", "")
 
     (held,) = claims.records(project_dir)
     claims.write(project_dir, replace(held, heartbeat=OLD))
     module(services).refresh()
     accent = tab._scene._nodes[step.id]._accent
-    assert (accent.squad, accent.squad_tone) == ("kettle · abandoned", "attention")
+    assert accent.squad == ("kettle · abandoned", "attention")
 
 
 def test_the_control_centre_names_the_squad_only_while_one_holds_a_step(

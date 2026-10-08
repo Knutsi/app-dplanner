@@ -52,6 +52,7 @@ between leaves a turn to start, never an answer to consume twice.
 Qt-free: it is a CLI verb, and the run it drives must outlive every window.
 """
 
+import json
 import os
 import queue
 import shutil
@@ -93,6 +94,8 @@ from dplanner.domain.headless import (
     TurnEnd,
     TurnLog,
     TurnSpec,
+    stage_kind,
+    verdict_of,
     write_schema,
 )
 from dplanner.domain.ledger import LedgerRecord, Turn
@@ -110,16 +113,27 @@ PROMPTS = {
     "continue": "Continue the step where you left off.",
     "reset": "Your usage limit has reset. Continue the step where you left off.",
     "retry": "Your last turn was cut off. Continue the step where you left off.",
+    "verdict": "Your review ended without its verdict. Give the verdict only, as your final"
+    " message, in the schema you were given.",
 }
+# A failure that is answered at once, in the same session, rather than waited out: a turn that
+# ended waiting on its own background work, and a review that ended without its verdict.
+NO_VERDICT = "no-verdict"
+NUDGES = {"abandoned-wait": "continue", NO_VERDICT: "verdict"}
 LOCK_FILE = "supervisor.lock"
 RECORD_LOCK = "record.lock"
 # How often a live turn renews its squad's claim; the claim itself writes only when due.
 CLAIM_BEAT = 60.0
+# How long an orphaned turn's killed process is given to disappear.
+ORPHAN_REAP_S = 2.0
 LAUNCHES_DIR = "launches"
 # How old a run with no turn must be before it may be taken for a launch nobody finished: a
 # supervisor started a moment ago may not hold its lock yet.
 LAUNCH_GRACE = 120.0
 PLAN_FILE = "plan.md"
+# The findings a fix run was handed, in its briefing's order: [{run|question, index}], written
+# by the playbook engine, so the fix's typed `declined` numbers can be recorded as references.
+FINDINGS_FILE = "findings.json"
 # How long the stream is still read once its process group has ended: a CLI's SIGTERM
 # handler may print the turn's last totals on the way out.
 DRAIN_SECONDS = 2.0
@@ -176,6 +190,7 @@ def supervise(
     guards: Guards | None = None,
     config: Path | None = None,
     library: Path | None = None,
+    advance: Callable[[Path, LedgerRecord], None] | None = None,
 ) -> str:
     """Drive the run until it is over or parked; the sentence that says which.
 
@@ -183,7 +198,8 @@ def supervise(
     ``retry`` — and ``text`` the words it resumes with (the answer). ``config`` is the
     directory the run directories are under, ``config_dir()`` unless a test says otherwise.
     ``library`` is the library the run was launched from, which every turn's ``dplanner``
-    calls must reach.
+    calls must reach. ``advance`` is told about a playbook's run that ended ``done`` — the
+    pass's next stage is then due — and never waited on (:func:`advance_detached`).
     """
     guards = guards or Guards()
     # Absolute: a turn runs in its worktree, where a relative path names nothing.
@@ -200,7 +216,7 @@ def supervise(
         # supervisor that either holds the lock now — and delivers it — or found it held and
         # gave up, which this check, made after letting go, makes up for.
         if not answer_waiting(project_dir, run):
-            return said
+            return said + _advanced(project_dir, run, advance)
         prompt, text, again = "", "", True
 
 
@@ -227,6 +243,23 @@ def _drive(
             ending = session.turn(kind, words, stop)
             kind, words = session.next(ending, stop)
         return words
+
+
+def _advanced(
+    project_dir: Path, run: str, advance: Callable[[Path, LedgerRecord], None] | None
+) -> str:
+    """Hand a playbook's finished stage on to its pass; what to add to the sentence."""
+    record = ledger.find(project_dir, run)
+    last = record.last_turn if record is not None else None
+    if advance is None or record is None or last is None or not record.pass_:
+        return ""
+    if not record.over or last.end != TurnEnd.DONE:
+        return ""
+    try:
+        advance(project_dir, record)
+    except OSError as error:
+        return f"; its pass did not advance: {error}"
+    return "; its pass advances"
 
 
 def answer_waiting(project_dir: Path, run: str) -> bool:
@@ -265,6 +298,50 @@ def stop(project_dir: Path, run: str, by: str, why: str, config: Path | None = N
             os.kill(int((directory / LOCK_FILE).read_text(encoding="utf-8")), signal.SIGTERM)
 
 
+def end_orphaned_turn(record: LedgerRecord, grace: float) -> bool:
+    """End the run's last turn when its process outlived its supervisor — the turn's whole
+    group, asked with SIGTERM and killed after ``grace`` — and answer whether nothing of it
+    still runs. Only the process the turn recorded counts (pid, boot id and start time, so a
+    reused pid is left alone); a turn that ended, or never started, has nothing to end."""
+    last = record.last_turn
+    if last is None or last.end or not last.pid:
+        return True
+    stamp = ProcessStamp(last.pid, last.boot, last.pid_started)
+    if not is_live(stamp):
+        return True
+    if sys.platform == "win32":
+        subprocess.run(
+            ["taskkill", "/T", "/F", "/PID", str(last.pid)], capture_output=True, check=False
+        )
+    else:
+        group = last.pid  # The turn's CLI led its own session: its pid is the group's id.
+        with suppress(ProcessLookupError, PermissionError):
+            os.killpg(group, signal.SIGTERM)
+        deadline = time.monotonic() + grace
+        while _orphans_alive(group) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        if _orphans_alive(group):
+            with suppress(ProcessLookupError, PermissionError):
+                os.killpg(group, signal.SIGKILL)
+    deadline = time.monotonic() + ORPHAN_REAP_S
+    while is_live(stamp) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    return not is_live(stamp)
+
+
+def _orphans_alive(group: int) -> bool:
+    if sys.platform == "win32":
+        return False
+    else:
+        try:
+            os.killpg(group, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+
+
 def update(
     project_dir: Path,
     run: str,
@@ -299,6 +376,12 @@ class Session:
         return ledger.run_dir(self.record.run, self.config)
 
     @property
+    def kind(self) -> StageKind:
+        kind = stage_kind(self.record.stage)
+        assert kind is not None  # _record refuses a run whose stage is no agent stage.
+        return kind
+
+    @property
     def account(self) -> str:
         return limits.account_of(self.harness)
 
@@ -312,6 +395,10 @@ class Session:
         if record.over:
             raise RefusedError(f"run {record.run} is over")
         if record.fence:
+            # A turn that outlived its supervisor is ended first: until it is gone, the run
+            # is not over, whatever the fence says.
+            if not end_orphaned_turn(record, self.guards.grace):
+                raise RefusedError(f"run {record.run} is fenced, and its last turn will not end")
             self._end(TurnEnd.STOPPED)
             raise RefusedError(f"run {record.run} was fenced: {record.fence.get('why', '')}")
         last = record.last_turn
@@ -385,15 +472,16 @@ class Session:
         questions.withdraw_unsettled(
             self.project_dir, self.record.run, "the run went on by itself", config=self.config
         )
-        if ending.why != "abandoned-wait" and stop.wait(self.guards.backoff[failures - 1]):
+        nudge = NUDGES.get(ending.why, "")
+        if not nudge and stop.wait(self.guards.backoff[failures - 1]):
             self._end(TurnEnd.STOPPED)
             return "", _over(self.record.run, TurnEnd.STOPPED)
         self.record = _record(self.project_dir, self.record.run)
         if self.record.fence:
             self._end(TurnEnd.STOPPED)
             return "", f"run {self.record.run} was fenced"
-        if ending.why == "abandoned-wait":
-            return "continue", PROMPTS["continue"]
+        if nudge:
+            return nudge, PROMPTS[nudge]
         return "retry", PROMPTS["retry"]
 
     # -- one turn ---------------------------------------------------------------------------
@@ -460,7 +548,22 @@ class Session:
                 turn = replace(turn, question=recorded.id)
             if ending.end is TurnEnd.LIMIT:
                 ending = self._with_reset(ending, turn.n)
+            if self._owes_verdict(kind, ending, log):
+                ending = Ending(TurnEnd.FAILED, NO_VERDICT, "the review ended without its verdict")
         return self._finish(turn, log, code, ending)
+
+    def _owes_verdict(self, kind: str, ending: Ending, log: TurnLog) -> bool:
+        """A review that ended done with no verdict — none typed, or one that does not validate
+        against the schema — not nudged for one yet: it gets one
+        more turn in its session. Nudged once already, it ends the run without one — which
+        is a failure the pass escalates, never a pass."""
+        nudged = kind == "verdict" or any(t.prompt == "verdict" for t in self.record.turns)
+        return (
+            self.kind is StageKind.REVIEW
+            and ending.end is TurnEnd.DONE
+            and verdict_of(log.typed) is None
+            and not nudged
+        )
 
     def _with_reset(self, ending: Ending, n: int) -> Ending:
         """When a limit lifts: as its own turn said, else as the account last said — a CLI
@@ -477,22 +580,38 @@ class Session:
         return replace(ending, resets=reset, why=PAST_RESET)
 
     def _spec(self, kind: str, words: str) -> TurnSpec:
-        stage = StageKind(self.record.stage)
+        stage = self.kind
         # The plan is written through `dplanner`, inside the project directory: the 10-04
         # run's 21 Codex sandbox prompts were that directory outside the writable roots.
         spec = TurnSpec(stage, words, str(self.directory), writable=(str(self.project_dir),))
-        resumable = kind != "launch" and self._streamed_session()
-        if resumable:
+        opening = opening_prompt(self.directory / "prompt.md")
+        if kind == "launch" and self._continues():
+            # A loop-back, or an execute after its plan: the work stage's own session goes on.
+            spec = spec.resumed(self.record.session, opening)
+        elif kind != "launch" and self._streamed_session():
             spec = spec.resumed(self.record.session, words)
         else:
             # A fresh session: the launch, or a retry of a turn that never got one going.
-            spec = replace(spec, prompt=opening_prompt(self.directory / "prompt.md"))
+            spec = replace(spec, prompt=opening)
             if self.harness.names_session:
                 session = (self.record.session if kind == "launch" else "") or str(uuid.uuid4())
                 self._update(lambda record: replace(record, session=session))
                 spec = replace(spec, session=session)
         write_schema(spec)
         return spec
+
+    def _continues(self) -> bool:
+        """Whether this run's launch resumes a session an earlier run of its pass worked in —
+        derived, never stored: a fresh session is one no other run names."""
+        record = self.record
+        if not record.session or not record.pass_:
+            return False
+        return any(
+            other.run != record.run
+            and other.pass_ == record.pass_
+            and other.session == record.session
+            for other in ledger.records(self.project_dir)
+        )
 
     def _streamed_session(self) -> bool:
         """Whether some turn's stream has shown the session exists, so it can be resumed."""
@@ -629,18 +748,21 @@ class Session:
             questions.write(self.project_dir, question)
             turn = replace(turn, question=question.id)
         done = ending.end is TurnEnd.DONE
-        verdict = (
-            dict(log.typed)
-            if done and log.typed and self.record.stage == StageKind.REVIEW
-            else None
-        )
-        if done and self.record.stage == StageKind.PLAN and log.final:
+        verdict = verdict_of(log.typed) if done and self.kind is StageKind.REVIEW else None
+        if done and self.kind is StageKind.PLAN and log.final:
             (self.directory / PLAN_FILE).write_text(log.final, encoding="utf-8")
+        declined = (
+            self._declined(log.typed)
+            if done and log.typed and self.kind is StageKind.EXECUTE
+            else ()
+        )
 
         def finished(record: LedgerRecord) -> LedgerRecord:
             record = _with_turn(record, turn)
             if verdict is not None:
-                record = replace(record, verdict=verdict)
+                record = replace(record, verdict=dict(verdict))
+            if declined:
+                record = replace(record, declined=declined)
             if ending.end in OVER:
                 record = record.ended_at(turn.ended, code if done else None)
             return record
@@ -649,6 +771,24 @@ class Session:
         if ending.end in OVER:
             self._settle(f"the run is {ending.end}")
         return ending
+
+    def _declined(self, typed: Mapping[str, object]) -> tuple[dict[str, object], ...]:
+        """A fix's typed declines, each finding's number in its briefing turned into the
+        reference the engine handed it under (:data:`FINDINGS_FILE`); a number it was not
+        handed is dropped."""
+        try:
+            handed = json.loads((self.directory / FINDINGS_FILE).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return ()
+        given = typed.get("declined")
+        if not isinstance(handed, list) or not isinstance(given, list):
+            return ()
+        found = []
+        for each in given:
+            number = each.get("finding") if isinstance(each, dict) else None
+            if isinstance(number, int) and 1 <= number <= len(handed):
+                found.append({"finding": handed[number - 1], "reason": str(each.get("reason", ""))})
+        return tuple(found)
 
     def _end(self, end: TurnEnd) -> None:
         last = self.record.last_turn
@@ -893,6 +1033,22 @@ def start_detached(
     spawn_detached(argv)
 
 
+def advance_detached(step: str, *, library: Path | None = None) -> None:
+    """Start ``dplanner playbook advance <step>`` that outlives whoever started it: a pass's
+    stage ended, or its gate was answered, and the engine decides what is due next. This
+    interpreter, as :func:`start_detached` is."""
+    named = ["--library", str(library.expanduser().resolve())] if library is not None else []
+    spawn_detached([sys.executable, "-m", "dplanner", *named, "playbook", "advance", step])
+
+
+def wake_detached(project_dir: Path, question: str, *, library: Path | None = None) -> None:
+    """Start ``dplanner playbook wake <question>``: a pass held on its account's usage waits
+    for the reset in a process of its own, then answers the card for the clock and advances."""
+    named = ["--library", str(library.expanduser().resolve())] if library is not None else []
+    argv = [sys.executable, "-m", "dplanner", *named, "playbook", "wake", question]
+    spawn_detached([*argv, "--project-dir", str(project_dir)])
+
+
 def revive(
     project_dirs: Iterable[Path],
     config: Path | None = None,
@@ -973,7 +1129,10 @@ def _settle(
             return False
         if supervised(ledger.run_dir(fresh.run, config)):
             return False
-        if claimed(fresh):
+        # A pass's later stage is claimed by its pass, whatever the step's status says (a
+        # review runs on a step at Ready for review); only a pass's first record stands on
+        # the claim its launch saves after it.
+        if claimed(fresh) or (fresh.pass_ and fresh.settings is None):
             start_detached(project_dir, fresh.run, library=library)
             return True
         if _age(fresh) > grace:
@@ -1009,13 +1168,17 @@ def _age(record: LedgerRecord) -> float:
 
 
 @contextmanager
-def launching(project: str, step: str, config: Path | None = None) -> Iterator[None]:
+def launching(
+    project: str, step: str, config: Path | None = None, *, wait: bool = False
+) -> Iterator[None]:
     """Hold the step's launch lock — ``config_dir()/launches/<project>-<step>.lock``, the
     operating system's — or raise ``BlockingIOError`` when another launch holds it. Every
     launch of a step takes it from its first check to its start, on both surfaces, so two
-    launches of one step can never both find it free and both start an agent."""
+    launches of one step can never both find it free and both start an agent. A playbook's
+    advance ``wait``s for it instead — the holder is a launch moments from done, and the
+    advance that gave up could be the one that reads the stage that just ended."""
     path = (config or config_dir()) / LAUNCHES_DIR / f"{project}-{step}.lock"
-    with os_lock(path, wait=False):
+    with os_lock(path, wait=wait):
         yield
 
 
@@ -1111,7 +1274,7 @@ def _record(project_dir: Path, run: str) -> LedgerRecord:
     record = ledger.find(project_dir, run)
     if record is None:
         raise RefusedError(f"no run {run} in {project_dir}")
-    if not record.headless or not record.stage:
+    if not record.headless or stage_kind(record.stage) is None:
         raise RefusedError(f"run {run} is not a headless stage run")
     return record
 

@@ -25,49 +25,11 @@ from dplanner.modules.agent_supervisor import limits, supervisor
 from dplanner.planning.status import MODULE_ID as STATUS_ID
 from dplanner.planning.status import Status, stored, write
 
-URL = "https://github.com/acme/widget"
-
 
 def _git(repo: Path, *args: str) -> str:
     return subprocess.run(
         ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
     ).stdout.strip()
-
-
-@pytest.fixture
-def code(tmp_path):
-    """The project's code: a repository of its own with one commit, no remote."""
-    from dplanner.core.storage.locations import init_repo
-
-    repo = init_repo(tmp_path / "code")
-    _git(repo, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-q",
-         "--allow-empty", "-m", "start")  # fmt: skip
-    return repo
-
-
-@pytest.fixture
-def plan(cli, code, tmp_path, workspace):
-    """A project whose code is ``code``, with one briefed agent step, "Build it"."""
-    cli("project", "create", "Widget")
-    cli("location", "add", "widget", "--role", "code", "--repository", URL,
-        "--checkout", str(code))  # fmt: skip
-    brief = tmp_path / "brief.md"
-    brief.write_text("Build the widget.\n", encoding="utf-8")
-    cli("step", "add", "widget", "Build it", "--agent")
-    cli("describe", "set", "Build it", "--file", str(brief))
-    return workspace / "widget"
-
-
-@pytest.fixture
-def started(monkeypatch):
-    """Every supervisor a launch would have started, as (project dir, run)."""
-    calls: list[tuple[Path, str]] = []
-    monkeypatch.setattr(
-        supervisor,
-        "start_detached",
-        lambda project_dir, run, **_kw: calls.append((project_dir, run)),
-    )
-    return calls
 
 
 def _noted(spawned: list[Path], cwd: Path) -> str:
@@ -736,7 +698,10 @@ def test_a_fenced_run_does_not_hold_the_step_from_its_new_owner(cli, plan, start
     cli("claim", "take", "Build it", "--callsign", "osprey", "--project", "widget")
     first = json.loads(cli("agent", "run", "Build it", "--callsign", "osprey-1", "--json"))
     (old,) = claims.records(plan)
-    claims.write(plan, replace(old, heartbeat="2026-10-01T00:00:00+00:00"))  # Gone quiet.
+    # Gone quiet, on another machine: every agent-shell call here renews this machine's.
+    claims.write(
+        plan, replace(old, heartbeat="2026-10-01T00:00:00+00:00", worker={"machine": "elsewhere"})
+    )
     started.clear()
     cli("claim", "take", "Build it", "--callsign", "kettle", "--project", "widget")
     old_run = ledger.find(plan, first["run"])
@@ -771,3 +736,56 @@ def test_a_fenced_run_still_live_here_is_stopped_before_the_step_launches(plan, 
 
 def _step_id(cli) -> str:
     return str(json.loads(cli("step", "show", "Build it", "--json", "--project", "widget"))["id"])
+
+
+# -- Kettle Watch round 2 on S18: a turn that outlived its supervisor -----------------------
+
+
+@pytest.fixture
+def orphan(allow_spawn):
+    """A turn's process that outlived its supervisor (``tests/launching.py``)."""
+    from tests.launching import orphaned_turn
+
+    allow_spawn(Path(sys.executable))
+    with orphaned_turn() as stamp:
+        yield stamp
+
+
+def test_a_takeover_ends_the_turn_its_killed_supervisor_left_running(cli, plan, started, orphan):
+    """The supervisor was killed and its turn survived; another squad takes the step over and
+    launches. The surviving turn's group is ended before the new run starts."""
+    from dplanner.core.process import is_live
+    from dplanner.domain import claims
+
+    stamp = orphan
+    cli("claim", "take", "Build it", "--callsign", "osprey", "--project", "widget")
+    first = json.loads(cli("agent", "run", "Build it", "--callsign", "osprey-1", "--json"))
+    turn = Turn(n=1, prompt="launch", started="…", pid=stamp.pid, boot=stamp.boot,
+                pid_started=stamp.started)  # fmt: skip
+    supervisor.update(plan, first["run"], lambda record: replace(record, turns=(turn,)))
+    (old,) = claims.records(plan)
+    # Gone quiet, on another machine: every agent-shell call here renews this machine's.
+    claims.write(
+        plan, replace(old, heartbeat="2026-10-01T00:00:00+00:00", worker={"machine": "elsewhere"})
+    )
+    cli("claim", "take", "Build it", "--callsign", "kettle", "--project", "widget")
+    assert is_live(stamp)  # A fence alone reaches no process with no supervisor.
+    started.clear()
+    again = json.loads(cli("agent", "run", "Build it", "--callsign", "kettle-two", "--json"))
+    assert not is_live(stamp)  # Ended before the new run started.
+    assert started[-1] == (plan, again["run"])
+
+
+def test_a_turn_that_will_not_end_holds_the_step_with_the_reason(plan, orphan, monkeypatch):
+    from dplanner.core.process import is_live
+    from dplanner.modules.agent_launch import launch
+
+    stamp = orphan
+    run = "20261007T101500Z-0000eeee"
+    turn = Turn(n=1, prompt="launch", started="…", pid=stamp.pid, boot=stamp.boot,
+                pid_started=stamp.started)  # fmt: skip
+    ledger.write(plan, _headless(run, turn))
+    supervisor.fence(plan, run, "kettle", "taken over")
+    monkeypatch.setattr(supervisor, "end_orphaned_turn", lambda _record, _grace: False)
+    assert "still stopping" in launch.stop_fenced(plan, "s1", wait=0.1)
+    assert is_live(stamp)

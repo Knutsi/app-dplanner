@@ -1274,7 +1274,14 @@ first version's release and Clear, which changed the claim and left the worker r
 the same act as the override. A release takes the step's launch lock when it is free; when a
 launch holds it — the window's own, possibly, on its GUI thread — waiting would deadlock, and
 the launch's own re-read covers the gap, since its record already exists to be fenced. A
-fenced run counts as over for the next launch, and one still running here is stopped first.
+fenced run counts as over for the next launch only once nothing of it runs here — and a
+supervisor can be killed while its turn's detached process group survives it, which a
+supervisor lock alone cannot see. So the launch, and the supervisor `revive` hands a fenced
+run, end any such turn by its recorded process stamp first (TERM, grace, KILL), and a turn
+that will not end refuses the launch with the reason. Ending a claim fences exactly the steps
+it held when its locked write ended it, and `claims.grown` refuses an ended claim, so a take
+racing an end can neither escape the fence nor grow a closed claim. A playbook stage's run
+launches under whichever claim holds its step at the time.
 **Only a person's status releases a step** (the status workflow's `Release` follow-up): a
 worker setting its own ready-for-review must not hand the step back before its coordinator
 has verified and merged; the release is written, and Save carries it. The window polls

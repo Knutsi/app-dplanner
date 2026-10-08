@@ -141,7 +141,8 @@ HEADLESS_FILES: dict[str, tuple[str, ...]] = {
     "spec_git": ("source.py",),
     "step_agent_run": ("runs.py", "terminal.py"),
     "step_order": ("export.py",),
-    "step_playbook": ("presets.py",),
+    # The playbook engine: `agent run --playbook` and `playbook advance` drive it.
+    "step_playbook": ("engine.py", "passes.py", "presets.py"),
     "testing": ("export.py", "filing.py", "format.py", "references.py", "runs.py"),
 }
 

@@ -91,7 +91,8 @@ paths:
   (`workflows.withdraw`, a second change), and says so. Effects never go in a `workflows.py`.
   **What the window asks, `agent run` refuses**: prerequisites not done (until `--anyway`), a
   repository not checked out here, a profile whose agent has no headless mode. It is
-  headless by default (`--terminal` for a terminal) and always claims. **A supervisor is
+  headless by default (`--terminal` for a terminal) and always claims — `--playbook` starts a
+  playbook's pass instead, through the same gate, lock and claim (`playbooks.md`). **A supervisor is
   `sys.executable -m dplanner --library <the launch's>`**, and every turn's environment
   carries `DPLANNER_LIBRARY`, `DPLANNER_PROJECT` and `DPLANNER_RUN`.
   `docs/architecture/agents.md`'s *One launch under both surfaces* has the reasoning.
@@ -104,7 +105,9 @@ paths:
   disk** (`claimed_on_disk(library)`, never a model loaded earlier), and its record is
   deleted only when no supervisor holds the run, its step reads unclaimed and it is older than
   `LAUNCH_GRACE` (two minutes) — a supervisor just started may not hold its lock yet. The
-  window calls it once at start (`agent_usage`'s module); `agent run` before its own lock.
+  window calls it once at start (`agent_usage`'s module); `agent run` before its own lock. A
+  turnless run of a playbook's pass that is not its first record is started whatever the
+  step's status: its pass is its claim.
   A parked run is a person's, never touched — except one waiting for its reset
   (`waits_for_reset`) or holding an answer nobody delivered (`answer_waiting`), whose
   supervisor is started again. A failed start's rollback — the record deleted,
@@ -356,10 +359,13 @@ paths:
   rebase or stash; a refused push waits for the window's sync. **Ownership is checked in the
   one launch** (`launch.claim_for`, both surfaces) and again under the launch lock in
   `start_run`. **Every way a step leaves a squad goes through `ownership.py`**, which fences
-  and stops its runs; a live turn reads its fence each poll, and a fenced run is over for the
-  next launch. The heartbeat is every agent-shell `dplanner` run (this machine's claims) and
-  a **live** turn's supervisor, never a wait; only a *person's* stopped status releases a
-  step (the `Release` follow-up).
+  and stops its runs (an end, exactly the steps its locked write held; an ended claim never
+  grows); a live turn reads its fence each poll, and a fenced run is over for the next launch
+  only once its turn is gone — one that outlived its supervisor is ended by its recorded
+  stamp (`supervisor.end_orphaned_turn`) by the launch and by `revive`'s supervisor. The
+  heartbeat is every agent-shell `dplanner` run (this machine's claims) and a **live** turn's
+  supervisor, never a wait; only a *person's* stopped status releases a step (the `Release`
+  follow-up).
   It never absorbs the at-work claim, nor the at-work claim it: two clocks, two jobs.
   **An answer counts only once its run's machine has consumed it.**
   `docs/architecture/agents.md`'s *Runs, questions and claims are three records in the plan*
@@ -400,7 +406,9 @@ paths:
   `Headless.command`, tees the stream to `turn-<n>.jsonl`, kills a stall (no output while no
   tool runs, `Headless.stall`), a runaway (`Guards.runaway` events producing nothing) or an
   overrun (the stage's wall clock), writes the turn's end and its usage — counted from that
-  stream — and then ends, parks or retries: `done`/`stopped` end it; `asked`, `denied`,
+  stream — and then ends, parks or retries (a review done without its verdict is asked once
+  more, prompt `verdict`; a playbook's run that ends `done` starts its pass's
+  `playbook advance`, detached): `done`/`stopped` end it; `asked`, `denied`,
   `limit`, a runaway and a failure no retry mends park it and the process exits (but for a
   limit whose reset is known); other
   failures retry after 30 s, 2 min and 10 min, and a fourth in a row parks. A parked run

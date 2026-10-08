@@ -23,7 +23,7 @@ A launch interrupted between its record and its start is reconciled by
 """
 
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
 from pathlib import Path
@@ -39,9 +39,9 @@ from dplanner.domain.store import FilesFor
 from dplanner.modules.agent_briefing import worktree as where
 from dplanner.modules.agent_briefing.compose import brief
 from dplanner.modules.agent_briefing.instructions import instruction
-from dplanner.modules.agent_briefing.prompt import AssembledPrompt
+from dplanner.modules.agent_briefing.prompt import AssembledPrompt, PromptPart
 from dplanner.modules.agent_launch import launcher
-from dplanner.modules.agent_launch.profiles import Profile, agent_command
+from dplanner.modules.agent_launch.profiles import Profile, agent_command, read_profiles
 from dplanner.modules.agent_supervisor import limits, supervisor
 from dplanner.modules.agent_usage.aspect import launch_record
 from dplanner.planning.agent import enabled, no_agent, read_project, uses_worktree, workplace
@@ -133,17 +133,24 @@ def waiting_on(library: Library, step: Step, today: date) -> list[Step]:
     return outstanding(library, step, readiness_of(status_on(library, today)))
 
 
-def unfinished_run(project_dir: Path | None, step_id: str) -> str:
+def unfinished_run(project_dir: Path | None, step_id: str, *, of_passes: bool = True) -> str:
     """The step's headless run that is not over yet — running or parked — or "": a run to
-    resume through ``agent supervise``, never to launch a second time. A fenced run counts as
-    over: its owner lost the step, and the new one may launch (:func:`stop_fenced` first)."""
+    resume through ``agent supervise``, never to launch a second time. A playbook's launch
+    leaves out its passes' runs (``of_passes=False``): whether a pass is under way, or a crash
+    left its first record behind, is the engine's to judge, under the same lock. A fenced run
+    counts as over: its owner lost the step, and the new one may launch once
+    :func:`stop_fenced` has ended what is left of it."""
     if project_dir is None:
         return ""
     return next(
         (
             record.run
             for record in ledger.records(project_dir)
-            if record.step == step_id and record.headless and not record.over and not record.fence
+            if record.step == step_id
+            and record.headless
+            and not record.over
+            and not record.fence
+            and (of_passes or not record.pass_)
         ),
         "",
     )
@@ -155,23 +162,28 @@ STOPPING_S = 15.0
 
 
 def stop_fenced(project_dir: Path | None, step_id: str, wait: float = 0.0) -> str:
-    """Stop every fenced run of the step whose supervisor still lives on this machine, and wait
-    up to ``wait`` seconds for each to let go — "", or why the step cannot launch yet. A fence
-    on a run elsewhere is that machine's to obey."""
+    """Stop what is left of every fenced, unfinished run of the step on this machine — "", or
+    why the step cannot launch yet. A run whose supervisor lives is signalled and waited for
+    up to ``wait`` seconds; a turn that outlived its supervisor has its process group ended
+    (SIGTERM, ``wait`` as the grace, then SIGKILL). Only then does the fenced run count as over
+    for :func:`unfinished_run`. A fence on a run elsewhere is that machine's to obey."""
     if project_dir is None:
         return ""
-    live = [
+    fenced = [
         record
         for record in ledger.records(project_dir)
-        if record.step == step_id
-        and record.headless
-        and record.fence
-        and supervisor.supervised(ledger.run_dir(record.run))
+        if record.step == step_id and record.headless and record.fence and not record.over
     ]
-    for record in live:
+    supervised = [r for r in fenced if supervisor.supervised(ledger.run_dir(r.run))]
+    for record in supervised:
         supervisor.stop(project_dir, record.run, "launch", "a new owner launches the step")
+    orphaned = [
+        record.run
+        for record in fenced
+        if record not in supervised and not supervisor.end_orphaned_turn(record, wait)
+    ]
     deadline = time.monotonic() + wait
-    still = [record.run for record in live if _still_supervised(record.run, deadline)]
+    still = orphaned + [r.run for r in supervised if _still_supervised(r.run, deadline)]
     if still:
         return f"its fenced run {still[0]} is still stopping — run it again in a moment"
     return ""
@@ -183,6 +195,15 @@ def _still_supervised(run: str, deadline: float) -> bool:
             return True
         time.sleep(0.2)
     return False
+
+
+def held_claim(project_dir: Path | None, step_id: str) -> tuple[str, str]:
+    """The squad word and claim id holding the step now, or ("", ""): what a playbook stage's
+    run launches under, since a pass goes on for whichever squad holds its step."""
+    holding = claims.read_holdings(project_dir, now_stamp()).get(step_id) if project_dir else None
+    if holding is None or holding.state not in claims.HOLDING:
+        return "", ""
+    return holding.claim.callsign, holding.claim.id
 
 
 def claim_for(project_dir: Path | None, step_id: str, callsign: str = "") -> str:
@@ -217,6 +238,32 @@ def headless_refusal(profile: Profile, harnesses: tuple[AgentHarness, ...]) -> s
     return limits.hold(limits.account_of(harness), harness.label)
 
 
+def profile_for(harness_id: str, harnesses: tuple[AgentHarness, ...]) -> Profile | None:
+    """The first launch profile whose agent is ``harness_id`` and runs headless — what a
+    playbook's role maps to at launch. None when no profile runs it: the role is refused,
+    never swapped for the default, which may be the very agent whose work is reviewed."""
+    return next(
+        (
+            profile
+            for profile in read_profiles()
+            if (harness := launcher.harness_of(agent_command(harnesses, profile), harnesses))
+            is not None
+            and harness.id == harness_id
+            and harness.headless is not None
+        ),
+        None,
+    )
+
+
+def headless_harnesses(harnesses: tuple[AgentHarness, ...]) -> tuple[str, ...]:
+    """The harnesses some profile runs headless, in the profiles' order: who a role may name."""
+    found = (
+        launcher.harness_of(agent_command(harnesses, profile), harnesses)
+        for profile in read_profiles()
+    )
+    return tuple(dict.fromkeys(h.id for h in found if h is not None and h.headless is not None))
+
+
 # -- the launch ------------------------------------------------------------------------------
 
 
@@ -242,8 +289,11 @@ def briefing(
     facts: RepositoryFacts,
     branches: BranchPlan,
     staged: dict[str, str] | None = None,
+    stage: StageKind = StageKind.EXECUTE,
+    extra: Sequence[PromptPart] = (),
 ) -> AssembledPrompt:
-    """The step's briefing, with every referenced file path mapped through ``staged``."""
+    """The step's briefing for ``stage``, with every referenced file path mapped through
+    ``staged`` and a playbook stage's ``extra`` parts read last."""
     remap = staged or {}
     return brief(
         library,
@@ -253,6 +303,8 @@ def briefing(
         branches,
         briefed.roles,
         place=lambda path: remap.get(path, path),
+        stage=stage,
+        extra=extra,
     )
 
 
@@ -302,14 +354,18 @@ def prepare_run(
     harnesses: tuple[AgentHarness, ...],
     mode: str,
     stage: StageKind = StageKind.EXECUTE,
+    extra: Sequence[PromptPart] = (),
+    dress: Callable[[LedgerRecord], LedgerRecord] = lambda record: record,
     callsign: str = "",
     claim: str = "",
 ) -> Prepared:
     """Write the run on ``step`` in ``workdir`` (from :func:`place`): its files and its
     record, nothing started. ``project_dir`` is where the run's ledger is; a terminal run
-    with none is launched unrecorded. Raises ``ValueError`` for a profile that cannot run
-    headless — ask :func:`headless_refusal` first — and for a headless run with no ledger.
-    ``callsign`` and ``claim`` say which squad's member runs it, under which claim."""
+    with none is launched unrecorded. A playbook's stage hands its ``extra`` briefing parts
+    and ``dress``es the headless record with its pass; ``callsign`` and ``claim`` say which
+    squad's member runs it, under which claim. Raises ``ValueError`` for a profile that
+    cannot run headless — ask :func:`headless_refusal` first — and for a headless run with
+    no ledger."""
     if mode == HEADLESS and (why := headless_refusal(profile, harnesses)):
         raise ValueError(why)
     if mode == HEADLESS and project_dir is None:
@@ -319,10 +375,9 @@ def prepare_run(
     run = ledger.new_run_id()
     directory = ledger.run_dir(run) if mode == HEADLESS else launcher.new_run_dir()
     directory.mkdir(parents=True, exist_ok=True)
-    staged = launcher.stage_assets(
-        directory, briefing(library, step, briefed, facts, branches).files, briefed.read_asset
-    )
-    text = briefing(library, step, briefed, facts, branches, staged).text
+    listed = briefing(library, step, briefed, facts, branches, stage=stage, extra=extra).files
+    staged = launcher.stage_assets(directory, listed, briefed.read_asset)
+    text = briefing(library, step, briefed, facts, branches, staged, stage, extra).text
     project = library.project_of(step.id)
     files = None
     if mode == HEADLESS:
@@ -330,19 +385,21 @@ def prepare_run(
         prompt_file = directory / "prompt.md"
         prompt_file.write_text(text, encoding="utf-8", newline="\n")
         session = launcher.new_session() if harness.names_session else ""
-        record = replace(
-            launch_record(
-                run=run,
-                project=project.id,
-                step=step.id,
-                harness=harness.id,
-                directory=workdir,
-                session=session,
-                prompt_chars=len(text),
-            ),
-            mode=ledger.HEADLESS,
-            stage=stage,
-            attempt=1,
+        record = dress(
+            replace(
+                launch_record(
+                    run=run,
+                    project=project.id,
+                    step=step.id,
+                    harness=harness.id,
+                    directory=workdir,
+                    session=session,
+                    prompt_chars=len(text),
+                ),
+                mode=ledger.HEADLESS,
+                stage=stage,
+                attempt=1,
+            )
         )
     else:
         files = launcher.prepare(

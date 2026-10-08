@@ -625,7 +625,6 @@ def _agents(
     claims = AgentClaimsModule(
         AgentClaimsDeps(library, store.project_dir, services.actions, parent=services.window)
     )
-
     # A repository on this machine for a verb that needs one, cloned where the clone
     # policy says: the projects module's service, built here because Run Agent is handed
     # it too. Owned by the window, so its task runner outlives every dialog.
@@ -782,7 +781,6 @@ def _graph(root: _Root, *, branches: "BranchesModule", agents: _Agents) -> _Grap
                 # Finished work waits on a person: to review it, or to merge it.
                 pulse=status_for(step) in REVIEW_AND_MERGE,
                 strip=strips.get(step.id, ("", "")),
-                squad=agents.claims.chip(project_id, step.id),
             )
             for step in project.steps
         }
@@ -804,7 +802,6 @@ def _graph(root: _Root, *, branches: "BranchesModule", agents: _Agents) -> _Grap
         flagged: bool = False,
         pulse: bool = False,
         strip: tuple[str, str] = ("", ""),
-        squad: tuple[str, str] = ("", ""),
     ) -> "NodeAccent":
         """How a step looks on the canvas, translated from aspects the canvas never learns.
 
@@ -852,8 +849,7 @@ def _graph(root: _Root, *, branches: "BranchesModule", agents: _Agents) -> _Grap
             key_glyph_tone=key_glyph_tone,
             chip_text=chip_text,
             chip_tone=chip_tone,
-            squad=squad[0],
-            squad_tone=squad[1],
+            squad=agents.claims.chip(library.project_of(step.id).id, step.id),
             # Done outranks a kind; otherwise the kind tints the body, and the medallion
             # still says what the node also is.
             body_tone=(
@@ -1198,8 +1194,7 @@ def _project_tabs(root: _Root, agents: _Agents) -> _Tabs:
             counts_as_work=_counts_as_work,
             # An agent that waits on a person is a row of its own: Waits for you.
             asks_person=asks_person,
-            held_by=lambda step: agents.claims.held_by(library.project_of(step.id).id, step.id),
-            held_changed=agents.claims.changed,
+            holders=agents.claims,
             verbs=(
                 StripVerb("agent.run", data_menu=RUN_MENU_ID, face="Run Agents"),
                 StripVerb("status.ready-to-merge"),
@@ -2752,13 +2747,6 @@ def _asset_sources() -> tuple["AssetSource", ...]:
     )
 
 
-def renew_claims(project_dir: "Path") -> None:
-    """This machine's squad claims on the project, renewed when due: ``claim_sync.renew``."""
-    from dplanner.domain.claim_sync import renew
-
-    renew(project_dir)
-
-
 def at_work_board() -> "AtWorkBoard":
     """Where an agent's *at work* claims live on this machine — ``domain/at_work.py``.
 
@@ -2864,6 +2852,7 @@ def default_cli_commands(
     from dplanner.modules.step_milestone import cli as milestone_cli
     from dplanner.modules.step_order import cli as order_cli
     from dplanner.modules.step_playbook import cli as playbook_cli
+    from dplanner.modules.step_playbook.engine import Engine as PlaybookEngine
     from dplanner.modules.step_start import cli as start_cli
     from dplanner.modules.step_status import cli as status_cli
     from dplanner.modules.step_ticket import cli as ticket_cli
@@ -2919,6 +2908,15 @@ def default_cli_commands(
         set_status(context, step, Status.DONE)
         return True
 
+    # A playbook's stages launch as `agent run` launches, and `progress` merges into the
+    # feature branch and accepts the step by the merge, as `github refresh` does.
+    harnesses = agent_harnesses()
+    engine = PlaybookEngine(
+        launch=launch_cli.StageLauncher(default_location_roles(), plan_branches, harnesses),
+        accept=lambda context, step, base, head: github_cli.accept_by_merge(
+            context, step, base=base, head=head, finish_merged=finish_merged
+        ),
+    )
     commands = [
         *library_cli.commands(),
         # The step authors let `step add` author the step in the same call; the list
@@ -2967,7 +2965,10 @@ def default_cli_commands(
         *agent_cli.commands(roles=default_location_roles(), branch_plan=plan_branches),
         # Run Agent from a terminal: the window's launch workflow, headless or in a terminal.
         *launch_cli.commands(
-            roles=default_location_roles(), branch_plan=plan_branches, harnesses=agent_harnesses()
+            roles=default_location_roles(),
+            branch_plan=plan_branches,
+            harnesses=harnesses,
+            start_pass=engine.start,
         ),
         *agent_state_cli.commands(),
         # A run's usage and its supervisor read the harness that ran it: the window's tuple.
@@ -2991,7 +2992,7 @@ def default_cli_commands(
         ),
         *milestone_cli.commands(),
         *wait_cli.commands(),
-        *playbook_cli.commands(harnesses=agent_harnesses()),
+        *playbook_cli.commands(harnesses=harnesses, advance=engine.advance),
         # A branch's two ends are born dressed as the window's Put on a Branch makes them.
         *branches_cli.commands(
             stacked_apart=stack_split,

@@ -11,6 +11,7 @@ import pytest
 
 from dplanner.domain import claims, ledger
 from dplanner.domain.ledger import LedgerRecord
+from dplanner.domain.model import now_stamp
 
 OLD = "2026-10-01T09:00:00+00:00"
 
@@ -100,8 +101,9 @@ def test_the_claim_is_committed_and_nothing_else_is(cli, project, workspace):
 
 
 def test_an_abandoned_claim_is_taken_over_and_its_workers_stopped(cli, project, stopped):
+    # Another machine's squad, gone quiet: every agent-shell call here renews this machine's.
     stale = claims.claimed(
-        "p", "osprey", [_id(cli, "Read the spec")], OLD, worker={"machine": ledger.machine_id()}
+        "p", "osprey", [_id(cli, "Read the spec")], OLD, worker={"machine": "elsewhere"}
     )
     claims.write(project, stale)
     run = _run(project, cli, "Read the spec", stale.id, "20261001T091500Z-0a0b0c0d")
@@ -121,11 +123,11 @@ def test_the_squad_that_lost_a_step_stands_down_when_it_comes_back(cli, project)
     from dplanner.domain import claim_sync
 
     stale = claims.claimed(
-        "p", "osprey", [_id(cli, "Read the spec")], OLD, worker={"machine": ledger.machine_id()}
+        "p", "osprey", [_id(cli, "Read the spec")], OLD, worker={"machine": "elsewhere"}
     )
     claims.write(project, stale)
     cli("claim", "take", "S1", "--callsign", "kettle")
-    claim_sync.renew(project)
+    claim_sync.renew(project, stale.id)  # Its coordinator's first call on waking.
     back = next(c for c in claims.records(project) if c.callsign == "osprey")
     assert back.ended and back.heartbeat == OLD
     assert "kettle" in cli("claim", "list") and "osprey" not in cli("claim", "list")
@@ -171,16 +173,17 @@ def test_a_worker_reaching_review_releases_nothing(cli, project, monkeypatch):
 
 
 def test_an_agent_shells_dplanner_run_renews_its_projects_claims(
-    registry, cli, project, cli_library, at_work_board
+    registry, cli, project, cli_library, at_work_board, monkeypatch
 ):
     from dplanner.cli.main import run
+    from dplanner.domain import claim_sync
     from dplanner.modules import default_module_formats
 
     heard: list[Path] = []
+    monkeypatch.setattr(claim_sync, "renew", heard.append)
     argv = ["--library", str(cli_library), "status", "list", "Discovery"]
     for board in (None, at_work_board):  # Only an agent's shell signs: entry.py's rule.
-        run(registry, default_module_formats(), argv, StringIO(), StringIO(), board=board,
-            renew=heard.append)  # fmt: skip
+        run(registry, default_module_formats(), argv, StringIO(), StringIO(), board=board)
     assert [path.resolve() for path in heard] == [project.resolve()]
 
 
@@ -198,3 +201,55 @@ def test_a_claim_whose_push_is_refused_still_holds_and_says_it_waits_for_a_sync(
     assert "not published yet" in said
     (claim,) = claims.records(project)
     assert claim.steps == (_id(cli, "Read the spec"),) and not claim.ended
+
+
+def test_ending_a_claim_stops_a_step_grown_onto_it_a_moment_before(
+    cli, project, stopped, monkeypatch
+):
+    """Another take adds S2 and launches it between End's read and its locked write: the end
+    stops S2's worker too, because it fences the steps it read under the claim's lock."""
+    # Another machine's claim, so no renewal of this machine's touches it mid-test.
+    claim = claims.claimed(
+        "p", "kettle", [_id(cli, "Read the spec")], now_stamp(), worker={"machine": "elsewhere"}
+    )
+    claims.write(project, claim)
+    first = _run(project, cli, "Read the spec", claim.id, "20261007T101500Z-0000f001")
+    s2 = _id(cli, "Cut the graph")
+    real = claims.update
+    raced: list[str] = []
+
+    def growth_lands_first(project_dir, id_, change, config=None):
+        if not raced:
+            raced.append(id_)
+            real(project_dir, id_, lambda c: claims.grown(c, [s2], c.heartbeat), config)
+            _run(project, cli, "Cut the graph", id_, "20261007T101500Z-0000f002")
+        return real(project_dir, id_, change, config)
+
+    monkeypatch.setattr(claims, "update", growth_lands_first)
+    cli("claim", "end", claim.short)
+    assert sorted(stopped) == sorted([first.run, "20261007T101500Z-0000f002"])
+    assert claims.records(project)[0].ended
+
+
+def test_a_take_racing_an_end_starts_its_own_claim_and_never_grows_the_ended_one(
+    cli, project, monkeypatch
+):
+    from dplanner.modules.agent_claims import ownership
+
+    cli("claim", "take", "S1", "--callsign", "kettle")
+    (claim,) = claims.records(project)
+    real = claims.update
+    raced: list[str] = []
+
+    def end_lands_first(project_dir, id_, change, config=None):
+        if not raced:
+            raced.append(id_)
+            monkeypatch.setattr(claims, "update", real)
+            ownership.end(project_dir, id_, {"kind": "person", "name": "Knut"}, "cleared")
+        return real(project_dir, id_, change, config)
+
+    monkeypatch.setattr(claims, "update", end_lands_first)
+    cli("claim", "take", "S2", "--callsign", "kettle")
+    old, new = sorted(claims.records(project), key=lambda c: c.id != claim.id)
+    assert old.id == claim.id and old.ended and old.steps == (_id(cli, "Read the spec"),)
+    assert new.steps == (_id(cli, "Cut the graph"),) and not new.ended

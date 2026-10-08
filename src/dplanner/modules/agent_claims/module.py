@@ -28,7 +28,7 @@ from PySide6.QtWidgets import QWidget
 from dplanner.core.signals import Signal
 from dplanner.domain import claims, questions
 from dplanner.domain.claims import Holding
-from dplanner.domain.model import Library, ProjectId, StepId, now_stamp
+from dplanner.domain.model import Library, ProjectId, Step, StepId, now_stamp
 from dplanner.framework.action_registry import ENABLED, ActionRegistry, ActionSpec, ActionState
 from dplanner.framework.context import Context
 from dplanner.modules.agent_claims import ownership
@@ -84,9 +84,9 @@ class AgentClaimsModule:
     def holding(self, project_id: ProjectId) -> Mapping[StepId, Holding]:
         return self._held.get(project_id, {})
 
-    def held_by(self, project_id: ProjectId, step_id: StepId) -> str:
+    def held_by(self, step: Step) -> str:
         """Who holds the step, in words — ``kettle``, ``kettle · parked`` — or ""."""
-        held = self.holding(project_id).get(step_id)
+        held = self.holding(self._deps.library.project_of(step.id).id).get(step.id)
         return "" if held is None else claims.holder_words(held)
 
     def chip(self, project_id: ProjectId, step_id: StepId) -> tuple[str, str]:
