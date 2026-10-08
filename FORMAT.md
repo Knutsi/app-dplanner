@@ -174,19 +174,21 @@ hour and a half, and is committed so other machines see it.
 ## An agent account's usage
 
 `config_dir()/usage-limits.json` is what every supervised turn writes and every headless
-launch reads (`modules/agent_supervisor/limits.py`). **An account is a harness on this
-machine**: one Claude login, one Codex login, per user.
+launch reads (`modules/agent_supervisor/limits.py`). **An account is a harness and the home
+its login is in** — `<harness id>:<home>`, the home `$CLAUDE_CONFIG_DIR` or `~/.claude`,
+`$CODEX_HOME` or `~/.codex`, OpenCode's data directory (`AgentHarness.home`) — resolved alike
+by a launch and the supervisor it starts, so two logins are two accounts.
 
 ```json
 {
   "format": 1,
   "hold_at": 0.95,
   "accounts": {
-    "claude": {
-      "at": "2026-10-07T17:42:10+00:00", "run": "20261007T150000Z-1a2b3c4d",
+    "claude:/home/knut/.claude": {
+      "seen": "2026-10-07T17:42:10+00:00", "run": "20261007T150000Z-1a2b3c4d",
       "windows": [{"name": "five_hour", "used": 1.0, "resets": "2026-10-07T18:10:00+00:00"},
                   {"name": "seven_day", "used": 0.34, "resets": "2026-10-09T09:00:00+00:00"}],
-      "out_until": "2026-10-07T18:10:00+00:00"
+      "out_until": "2026-10-07T18:10:00+00:00", "out_at": "2026-10-07T17:42:10+00:00"
     }
   }
 }
@@ -195,11 +197,14 @@ machine**: one Claude login, one Codex login, per user.
 - **`hold_at`** is the setting (*Settings ▸ Agent profiles ▸ Hold new headless launches at*,
   95 % when absent): a new headless launch waits while any window is at or above it, until
   that window resets.
-- **`windows`** are the vendor's own, as the last turn that reported any said them — Claude's
-  `rate_limit_event`, Codex's rollout `rate_limits` — `used` a share from 0 to 1.
-- **`out_until`** is set when a turn ended `limit` with a known reset, and removed when a
-  later turn on the account produced something. While it stands, no turn starts on the
-  account except one carrying an answer — the supervisor parks it `limit`/`held` instead.
+- **`windows`** are the vendor's own — Claude's `rate_limit_event`, Codex's rollout
+  `rate_limits` — `used` a share from 0 to 1, as reported by the turn that ended at `seen`;
+  a turn that ended earlier never replaces them, whatever order the supervisors write in.
+- **`out_until`** is set when a turn ended `limit` with a known reset, the turn's end in
+  `out_at`, and removed only by a turn that ended `done`, `asked` or `denied` after `out_at` —
+  a failure, or an answer older than the exhaustion, says nothing. While it stands, no turn
+  starts on the account except one carrying an answer — the supervisor parks it
+  `limit`/`held` instead.
 
 It is read-modify-written under an OS lock on `usage-limits.lock` beside it, because every
 supervisor writes it. It is advice, so a file this build cannot read reads as nothing known,
@@ -529,7 +534,7 @@ A review run carries its `verdict`, and the fix run after it what it `declined`:
   | `done` | the agent finished its stage | is over |
   | `asked` | it asked through `dplanner question ask`, or ended on a question in prose; `question` names the record | parks until the question is answered |
   | `denied` | a permission was denied or auto-rejected | parks on a `permission` question |
-  | `limit` | the account ran out; `resets` is when it comes back, `why: held` when the supervisor parked the turn without starting it, its account being out | parks on a `limit` question: with a `resets`, its supervisor waits, and the clock answers it then; with none, a person does |
+  | `limit` | the account ran out; `resets` is when it comes back, `why: held` when the supervisor parked the turn without starting it, its account being out, `why: past-reset` when the reset had already passed as the turn ended (waited for once, the grace only; a second in a row has no `resets`) | parks on a `limit` question: with a `resets`, its supervisor waits, and the clock answers it then; with none, a person does |
   | `failed` | a crash, a hang, a runaway, a dead login; `why` says which — `headless.Ending.why`'s words, or the supervisor's own `hang`, `runaway`, `timeout`, `lost` and `lost-at-spawn` | retries with backoff, then parks on a `blocked` question; a runaway, a `lost-at-spawn` and a failure no retry mends park at once |
   | `stopped` | a person or the coordinator ended it, or its step went away | is over, and is never retried |
 

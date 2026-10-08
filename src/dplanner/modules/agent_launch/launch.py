@@ -157,7 +157,7 @@ def headless_refusal(profile: Profile, harnesses: tuple[AgentHarness, ...]) -> s
         )
     if harness.headless is None:
         return f"{harness.label} has no headless mode here"
-    return limits.hold(harness.id, harness.label)
+    return limits.hold(limits.account_of(harness), harness.label)
 
 
 # -- the launch ------------------------------------------------------------------------------

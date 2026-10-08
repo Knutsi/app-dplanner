@@ -379,4 +379,5 @@ HARNESS = AgentHarness(
     plan_mode="--permission-mode plan",
     headless=HEADLESS,
     sign_in=SignIn(probe=signed_in, command="claude auth login"),
+    home=config_dir,
 )

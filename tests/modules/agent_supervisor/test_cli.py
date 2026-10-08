@@ -10,6 +10,7 @@ from tests.platforms import set_home
 from dplanner.domain import ledger
 from dplanner.domain.headless import LimitWindow, TurnEnd
 from dplanner.domain.ledger import LedgerRecord, Turn
+from dplanner.modules.agent_claude import harness as claude
 from dplanner.modules.agent_supervisor import limits
 
 RUN = "20261007T101500Z-9c1e44ab"
@@ -51,7 +52,9 @@ def test_agent_limits_shows_each_accounts_windows_and_its_hold(cli, tmp_path, mo
     assert "Claude Code: nothing reported yet" in cli("agent", "limits")
     soon = datetime.now(UTC) + timedelta(hours=2)
     windows = [LimitWindow("five_hour", 0.97, soon)]
-    limits.record_turn("claude", RUN, windows, TurnEnd.DONE, None, True)
+    limits.record_turn(
+        limits.account_of(claude.HARNESS), RUN, windows, TurnEnd.DONE, None, datetime.now(UTC)
+    )
     said = cli("agent", "limits")
     assert "new headless launches wait at 95% of a window" in said
     assert f"Claude Code: five-hour 97% until {limits.clock(soon)}" in said

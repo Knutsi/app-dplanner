@@ -18,11 +18,10 @@ from pathlib import Path
 from dplanner.domain import ledger, questions
 from dplanner.domain.model import now_stamp
 from dplanner.domain.questions import Question
+from dplanner.modules.agent_supervisor import supervisor
 from dplanner.modules.agent_supervisor.supervisor import start_detached
 
 Resume = Callable[..., None]
-# What Retry now resumes: a run held for its account, or one that cannot go on alone.
-RETRYABLE = (questions.LIMIT, questions.BLOCKED)
 
 
 @dataclass(frozen=True)
@@ -106,7 +105,7 @@ def retry_question(project_dir: Path, run: str) -> Question:
     question = questions.find(project_dir, last.question) if last.question else None
     if question is None or question.state not in (questions.OPEN, questions.ESCALATED):
         raise ValueError(f"run {run} is parked on no open question")
-    if question.kind not in RETRYABLE:
+    if question.kind not in supervisor.RETRYABLE:
         raise ValueError(f"run {run} waits on {question.short}, a {question.kind}: answer it")
     return question
 

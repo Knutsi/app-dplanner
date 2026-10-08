@@ -7,6 +7,7 @@ and the classifier are the real Claude harness's."""
 
 import json
 import os
+import signal
 import subprocess
 import sys
 import threading
@@ -772,6 +773,7 @@ def stored(project_dir: Path, question_id: str) -> Question:
 # -- usage limits: the wait, the clock, Retry now and the held account -----------------------
 
 PERSON = {"kind": "person", "name": "knut"}
+EARLIER = datetime.now(UTC) - timedelta(minutes=5)
 
 
 def limit_at(reset: float) -> list[str]:
@@ -809,7 +811,7 @@ def test_a_limit_waits_for_its_reset_and_the_clock_resumes_the_session(rig):
     (question,) = questions.records(rig.plan)
     assert question.state == "consumed" and question.answer["by"]["kind"] == "clock"
     # The account ran out, and the turn that produced something said it was back.
-    assert limits.account("claude", rig.config).out_until is None
+    assert limits.account(limits.account_of(claude.HARNESS), rig.config).out_until is None
 
 
 def test_the_limit_card_offers_retry_now_and_says_when_the_run_resumes(rig, tmp_path):
@@ -842,7 +844,15 @@ def test_a_limit_with_no_reset_anywhere_parks_for_a_person(rig):
 def test_a_limit_that_names_no_reset_takes_the_accounts_last_word(rig):
     soon = datetime.now(UTC) + timedelta(seconds=2)
     window = LimitWindow("five_hour", 0.99, soon)
-    limits.record_turn("claude", "another", [window], TurnEnd.DONE, None, True, rig.config)
+    limits.record_turn(
+        limits.account_of(claude.HARNESS),
+        "another",
+        [window],
+        TurnEnd.DONE,
+        None,
+        EARLIER,
+        rig.config,
+    )
     rig.play({"lines": recorded("claude-limit"), "exit": 1}, {"lines": [INIT, result()]})
     assert rig.supervise() == f"run {RUN} is done"
     assert rig.record.turns[0].resets == soon.isoformat()
@@ -864,7 +874,9 @@ def test_a_supervisor_started_after_the_reset_resumes_the_run_at_once(rig):
 
 def test_nothing_else_starts_on_an_account_that_ran_out(rig):
     out = datetime.now(UTC) + timedelta(hours=1)
-    limits.record_turn("claude", "another", [], TurnEnd.LIMIT, out, False, rig.config)
+    limits.record_turn(
+        limits.account_of(claude.HARNESS), "another", [], TurnEnd.LIMIT, out, EARLIER, rig.config
+    )
     rig.play({"lines": [INIT, result()]})
     retrying = retry_soon(rig)
     assert rig.supervise() == f"run {RUN} is done"
@@ -901,3 +913,71 @@ def test_retry_now_resumes_only_a_run_held_or_blocked(rig, tmp_path):
     done.supervise()
     with pytest.raises(ValueError, match="over"):
         inbox.retry_now(done.plan, RUN, PERSON, config=done.config, resume=no_nudge)
+
+
+def test_a_shutdown_while_waiting_leaves_the_run_parked_for_revive(rig, monkeypatch):
+    """A reboot's SIGTERM is no decision: the run stays parked on its open limit question,
+    and the machine's next start supervises it again."""
+    supervisor.update(
+        rig.plan, RUN, lambda r: replace(r, machine=ledger.machine_id(rig.config)), rig.config
+    )
+    rig.play({"lines": limit_at(time.time() + 3600), "exit": 1}, {"lines": [INIT, result()]})
+
+    def shut_down() -> None:
+        while not rig.record.parked:
+            time.sleep(0.02)
+        time.sleep(0.2)  # Into the wait.
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    threading.Thread(target=shut_down).start()
+    assert "its supervisor was stopped" in rig.supervise()
+    record = rig.record
+    assert not record.over and record.parked
+    (question,) = questions.records(rig.plan)
+    assert question.state == "open"
+    started: list[str] = []
+    monkeypatch.setattr(supervisor, "start_detached", lambda _plan, run, **_kw: started.append(run))
+    assert supervisor.revive([rig.plan], rig.config) == [RUN] and started == [RUN]
+    retrying = retry_soon(rig)  # The revived supervisor waits again, and goes on.
+    assert rig.supervise() == f"run {RUN} is done"
+    retrying.join()
+
+
+def test_a_reset_crossed_during_cleanup_resumes_once_and_never_loops(rig, tmp_path):
+    rig.play({"lines": limit_at(time.time() - 5), "exit": 1}, {"lines": [INIT, result()]})
+    assert rig.supervise() == f"run {RUN} is done"
+    first, second = rig.record.turns
+    assert (first.end, first.why, second.prompt) == ("limit", "past-reset", "reset")
+    assert first.resets
+
+    again = Rig(tmp_path / "again")
+    past = limit_at(time.time() - 5)
+    again.play({"lines": past, "exit": 1}, {"lines": past, "exit": 1})
+    assert "is parked" in again.supervise()
+    first, second = again.record.turns
+    assert (first.why, second.prompt, second.end, second.resets) == (
+        "past-reset",
+        "reset",
+        "limit",
+        "",
+    )
+    parked = questions.find(again.plan, second.question)
+    assert parked is not None and "unknown" in parked.text
+
+
+def test_retry_now_is_a_retry_only_for_a_limit_or_a_block():
+    def answered(kind: str) -> Question:
+        asked = questions.asked(
+            "p1", "s1", "2026-10-07T10:00:00+00:00", [questions.one("Label?")], kind=kind
+        )
+        return questions.answered(
+            asked, {"Label?": questions.RETRY_NOW}, PERSON, "2026-10-07T10:01:00+00:00"
+        )
+
+    assert supervisor.resumed_by(answered(questions.LIMIT)) == (
+        "retry",
+        supervisor.PROMPTS["retry"],
+    )
+    assert supervisor.resumed_by(answered(questions.BLOCKED))[0] == "retry"
+    kind, words = supervisor.resumed_by(answered(questions.DECISION))
+    assert kind == "answer" and "Retry now" in words and "Label?" in words

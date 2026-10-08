@@ -454,4 +454,5 @@ HARNESS = AgentHarness(
     binary="codex",
     headless=HEADLESS,
     sign_in=SignIn(probe=signed_in, command="codex login"),
+    home=codex_home,
 )

@@ -153,8 +153,9 @@ loses its library altogether.
 **A machine's start picks up its lost turns.** A reboot or a killed supervisor leaves a run
 whose last turn never ended; `revive` starts a supervisor for each such run of this machine
 that no supervisor holds, which ends the turn `failed`/`lost` and retries it. A parked run —
-its last turn ended — waits for a person and is never touched, unless it is parked on a limit
-whose reset is known: that one's supervisor waits for the clock, so `revive` starts it again.
+its last turn ended — waits for a person and is never touched, unless it is waiting for its
+reset, or holds an answer — the clock's, a person's on another machine — that no supervisor
+delivered before it died: each of those has a supervisor's work to do, so `revive` starts one.
 
 **Plan mode is waiting on a person, and says so.** The Claude preset starts in plan mode, so
 a launched Claude writes a plan and waits for somebody to approve it — and a session in plan
@@ -1022,24 +1023,34 @@ person, so this is not waiting on one: *Retry now* needs no process at all — i
 same question as a person, and the waiting supervisor finds the answer as it finds every
 other. A supervisor lost to a reboot is picked up the same way: `revive` starts it bare on a
 run parked on a limit with a known reset, it waits, and a reset already past resumes it at once.
+**So a SIGTERM during the wait is not a stop**: a reboot sends one to every process, and
+ending the run then would cancel every limit wait on the machine. The supervisor exits and
+leaves the run parked on its open question; only a fence ends a waiting run.
 
 **The reset is the turn's, else the account's.** A real Claude limit carries it in the
 stream (`rate_limit_event` rejected, with `resetsAt` — 2026-10-07's run hit it mid-step), but
 a 429 the CLI stops on before any event carries none (E8), so every turn's telemetry is kept
 per account (`config_dir()/usage-limits.json`) and a limit with no reset of its own takes the
-fullest window's. A reset already past is unknown, so stale telemetry never resumes a run
-straight back into the wall; with no reset at all the run parks for a person, rather than
-probing the account on a timer.
+fullest window's. A reset the turn reported that has already passed — its cleanup crossed
+it, or this clock runs ahead — is still the deadline: the run resumes once after the grace,
+and the turn says `past-reset`. A second such turn in a row has no reset, so stale telemetry
+never loops a run against the wall; with no reset at all the run parks for a person, rather
+than probing the account on a timer.
 
-**An account is a harness on this machine.** One login each is how the CLIs are used here,
-and the ledger record names no account for a headless run, so the harness id is the key. Two
-holds read the file. A **new headless launch waits** while a window is at or above the
+**An account is a harness and the home its login is in.** The ledger record names no
+account for a headless run, and a CLI's login lives in its config home — `$CLAUDE_CONFIG_DIR`,
+`$CODEX_HOME` — so two homes are two accounts, and switching homes is how a person reaches
+another login. The launch and the supervisor it starts resolve the key alike, from the same
+environment. **Each observation is stamped with its turn's end**: supervisors of overlapping
+turns write in any order, so a turn that ended earlier never replaces newer windows, and an
+exhaustion is lifted only by a turn the model answered after it — never by a failure, and
+never by older tokens. Two holds read the file. A **new headless launch waits** while a window is at or above the
 threshold (95 % by default: the real limits struck at 98 and 99 %, and a launch past 95 %
 would start hours of work into the wall), with the reason shown. And **nothing else starts on
 an account that ran out**: a turn carrying no answer is written `limit`/`held` without a
 process and parks on the same question as any limit. A turn carrying an answer always starts,
-since the answer was consumed for it; a hold's only other way out is a turn that produced
-tokens, which says the account is back. Terminal runs are not held — the person at the
+since the answer was consumed for it; a hold's only other way out is a later answered turn,
+which says the account is back. Terminal runs are not held — the person at the
 terminal sees the limit and may mean another login.
 
 ### A question is a file, and the inbox is the directory

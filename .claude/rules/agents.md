@@ -104,8 +104,9 @@ paths:
   deleted only when no supervisor holds the run, its step reads unclaimed and it is older than
   `LAUNCH_GRACE` (two minutes) — a supervisor just started may not hold its lock yet. The
   window calls it once at start (`agent_usage`'s module); `agent run` before its own lock.
-  A parked run is a person's, never touched — except one parked on a limit whose reset is
-  known (`waits_for_reset`), whose supervisor is started again to wait for the clock. A failed start's rollback — the record deleted,
+  A parked run is a person's, never touched — except one waiting for its reset
+  (`waits_for_reset`) or holding an answer nobody delivered (`answer_waiting`), whose
+  supervisor is started again. A failed start's rollback — the record deleted,
   the withdrawal written — happens under the launch lock too, and the window saves before
   every start, a claim it did not make included.
 - **A step names the code location it works in.** With several code rows in a project,
@@ -389,7 +390,13 @@ paths:
   `reset`; **Retry now** is a person's answer to the same question (`inbox.retry_now`, `dplanner
   agent retry`, *Step ▸ Retry Now*), resumed with `retry`. A reset the turn did not report is
   the account's last-known one (`limits.py`, `config_dir()/usage-limits.json`); with neither,
-  the run parks for a person. **Nothing else starts on an account that ran out** — a turn
+  the run parks for a person; one already past is waited for once (`past-reset`), never
+  twice in a row. **A SIGTERM during the wait leaves the run parked** for `revive`; only a
+  fence ends a waiting run. *Retry now* is a retry only on a `limit` or `blocked` question
+  (`supervisor.RETRYABLE`) — on any other, the words are the answer. An account is the
+  harness and its config home (`limits.account_of`), and every observation carries its
+  turn's end: older windows never replace newer, and only a turn answered after the
+  exhaustion lifts it. **Nothing else starts on an account that ran out** — a turn
   carrying no answer parks `limit`/`held` unstarted — and **a new headless launch waits** while
   a window is at or above `limits.hold_at()` (95 %): `limits.hold`, which `launch.headless_refusal`
   returns, so `agent run` and every headless launch refuse with its words. **Its locks

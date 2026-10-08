@@ -48,8 +48,9 @@ def commands(*, harnesses: tuple[AgentHarness, ...]) -> list[CliCommand]:
         known = limits.accounts()
         rows, lines = [], [f"new headless launches wait at {threshold:.0%} of a window"]
         for harness in harnesses:
-            account = known.get(harness.id, limits.Account(harness.id))
-            held = limits.hold(harness.id, harness.label, threshold)
+            key = limits.account_of(harness)
+            account = known.get(key, limits.Account(key))
+            held = limits.hold(key, harness.label, threshold)
             windows = ", ".join(
                 f"{w.name.replace('_', '-')} {w.used:.0%}"
                 + (f" until {limits.clock(w.resets)}" if w.resets else "")

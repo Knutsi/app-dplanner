@@ -1,10 +1,15 @@
 """What each agent account last said about its usage, and whether a launch waits for it.
 
-**An account is a harness on this machine** — one Claude login, one Codex login, per user —
-so the file is ``config_dir()/usage-limits.json``, per user and machine, never the plan.
-Every supervised turn records what its stream (Claude's ``rate_limit_event``) or its CLI's
-own files (Codex's rollout ``rate_limits``) said about the account's windows, and whether
-the turn ran into the wall. Two readings follow from it:
+**An account is a harness and the home it keeps its login in** (:func:`account_of`:
+``$CLAUDE_CONFIG_DIR`` or ``~/.claude``, ``$CODEX_HOME`` or ``~/.codex``, OpenCode's data
+directory), resolved alike by a launch and by the supervisor it starts, so two logins of one
+CLI are two accounts. The file is ``config_dir()/usage-limits.json``, per user and machine,
+never the plan. Every supervised turn records what its stream (Claude's
+``rate_limit_event``) or its CLI's own files (Codex's rollout ``rate_limits``) said about the
+account's windows, and whether the turn ran into the wall — **each observation stamped with
+when its turn ended**, so a turn that overlapped another and finished later never replaces
+newer windows, and only a turn that ended answered after the account ran out says it is
+back. Two readings follow from it:
 
 - :func:`hold` — **a new headless launch waits** while a window is at or above the
   threshold (:func:`hold_at`, 95 % unless the person chose otherwise) until that window
@@ -27,6 +32,7 @@ from typing import Any
 
 from dplanner.core.config_dir import config_dir
 from dplanner.core.fsio import os_lock, write_atomic
+from dplanner.domain.agents import AgentHarness
 from dplanner.domain.headless import LimitWindow, TurnEnd, resets
 
 LIMITS_FILE = "usage-limits.json"
@@ -36,18 +42,27 @@ FORMAT = 1
 HOLD_AT = 0.95
 # The settings page's choices; 100 % holds only an account that has run out.
 HOLD_PRESETS = (0.8, 0.9, 0.95, 1.0)
+# The endings that had the model answer: evidence the account was usable when they ended.
+ANSWERED = (TurnEnd.DONE, TurnEnd.ASKED, TurnEnd.DENIED)
 
 
 @dataclass(frozen=True)
 class Account:
     """One account's last-known usage."""
 
-    harness: str
-    at: str = ""  # When its windows were last reported.
+    key: str  # :func:`account_of`.
+    seen: datetime | None = None  # When the turn that reported its windows ended.
     run: str = ""  # The run whose turn reported them.
     windows: tuple[LimitWindow, ...] = ()
     # When the account comes back, since a turn ran out on it; None while it has not.
     out_until: datetime | None = None
+    out_at: datetime | None = None  # When the turn that ran out ended.
+
+
+def account_of(harness: AgentHarness) -> str:
+    """The account a turn of ``harness`` runs on here: its id, and the home its login is in
+    under this process's environment."""
+    return f"{harness.id}:{harness.home()}" if harness.home is not None else harness.id
 
 
 def hold_at(config: Path | None = None) -> float:
@@ -68,69 +83,63 @@ def accounts(config: Path | None = None) -> dict[str, Account]:
     raw = _read(config).get("accounts")
     if not isinstance(raw, dict):
         return {}
-    return {
-        harness: _account(harness, given)
-        for harness, given in raw.items()
-        if isinstance(given, dict)
-    }
+    return {key: _account(key, given) for key, given in raw.items() if isinstance(given, dict)}
 
 
-def account(harness: str, config: Path | None = None) -> Account:
-    return accounts(config).get(harness, Account(harness))
+def account(key: str, config: Path | None = None) -> Account:
+    return accounts(config).get(key, Account(key))
 
 
 def record_turn(
-    harness: str,
+    key: str,
     run: str,
     windows: Sequence[LimitWindow],
     end: TurnEnd,
     until: datetime | None,
-    produced: bool,
+    at: datetime,
     config: Path | None = None,
 ) -> None:
-    """What one turn said about its account: the windows it reported, if any, and whether
-    it ran out (``until`` being when the account comes back) — or produced something, which
-    says the account is back. Never raises: the account's telemetry is advice, and a turn
-    must not fail for want of somewhere to write it."""
+    """What one turn, ended ``at``, said about its account: the windows it reported, if
+    newer than the ones known; that it ran out, ``until`` being when the account comes back;
+    or, ended answered after the account ran out, that it is back. Never raises: the
+    account's telemetry is advice, and a turn must not fail for want of writing it."""
 
     def changed(data: dict[str, Any]) -> dict[str, Any]:
-        known = _account(harness, _raw(data, harness))
-        if windows:
-            known = replace(known, windows=tuple(windows), at=_now().isoformat(), run=run)
-        if end is TurnEnd.LIMIT:
-            if until is not None:
-                known = replace(known, out_until=until)
-        elif produced:
-            known = replace(known, out_until=None)
+        known = _account(key, _raw(data, key))
+        if windows and (known.seen is None or at > known.seen):
+            known = replace(known, windows=tuple(windows), seen=at, run=run)
+        if end is TurnEnd.LIMIT and until is not None:
+            if known.out_at is None or at >= known.out_at:
+                known = replace(known, out_until=until, out_at=at)
+        elif end in ANSWERED and (known.out_at is None or at > known.out_at):
+            known = replace(known, out_until=None, out_at=None)
         listed = data.get("accounts")
         return {
             **data,
-            "accounts": {**(listed if isinstance(listed, dict) else {}), harness: _to_json(known)},
+            "accounts": {**(listed if isinstance(listed, dict) else {}), key: _to_json(known)},
         }
 
     with suppress(OSError):
         _change(changed, config)
 
 
-def exhausted(
-    harness: str, now: datetime | None = None, config: Path | None = None
-) -> datetime | None:
+def exhausted(key: str, now: datetime | None = None, config: Path | None = None) -> datetime | None:
     """When the account that ran out comes back; None when it has not run out, or is back."""
-    until = account(harness, config).out_until
+    until = account(key, config).out_until
     return until if until is not None and until > (now or _now()) else None
 
 
 def last_reset(
-    harness: str, now: datetime | None = None, config: Path | None = None
+    key: str, now: datetime | None = None, config: Path | None = None
 ) -> datetime | None:
     """When the account's fullest window last said it resets, if that is still to come: the
     reset of a limit whose own turn reported none."""
-    reset = resets(account(harness, config).windows)
+    reset = resets(account(key, config).windows)
     return reset if reset is not None and reset > (now or _now()) else None
 
 
 def hold(
-    harness: str,
+    key: str,
     label: str,
     threshold: float | None = None,
     now: datetime | None = None,
@@ -140,7 +149,7 @@ def hold(
     the agent's name, as the reason says it."""
     now = now or _now()
     threshold = hold_at(config) if threshold is None else threshold
-    known = account(harness, config)
+    known = account(key, config)
     if known.out_until is not None and known.out_until > now:
         at = clock(known.out_until, now)
         return f"{label} ran out of usage; new headless launches wait for its reset at {at}"
@@ -198,7 +207,7 @@ def _raw(data: Mapping[str, Any], harness: str) -> Mapping[str, Any]:
     return given if isinstance(given, dict) else {}
 
 
-def _account(harness: str, raw: Mapping[str, Any]) -> Account:
+def _account(key: str, raw: Mapping[str, Any]) -> Account:
     listed = raw.get("windows")
     windows = tuple(
         LimitWindow(str(w["name"]), float(w["used"]), parse(str(w.get("resets") or "")))
@@ -209,25 +218,26 @@ def _account(harness: str, raw: Mapping[str, Any]) -> Account:
         and not isinstance(w.get("used"), bool)
     )
     return Account(
-        harness,
-        at=str(raw.get("at") or ""),
+        key,
+        seen=parse(str(raw.get("seen") or "")),
         run=str(raw.get("run") or ""),
         windows=windows,
         out_until=parse(str(raw.get("out_until") or "")),
+        out_at=parse(str(raw.get("out_at") or "")),
     )
 
 
 def _to_json(known: Account) -> dict[str, Any]:
     data: dict[str, Any] = {
-        "at": known.at,
         "run": known.run,
         "windows": [
             {"name": w.name, "used": w.used, "resets": w.resets.isoformat() if w.resets else ""}
             for w in known.windows
         ],
     }
-    if known.out_until is not None:
-        data["out_until"] = known.out_until.isoformat()
+    for name in ("seen", "out_until", "out_at"):
+        if (moment := getattr(known, name)) is not None:
+            data[name] = moment.isoformat()
     return data
 
 
