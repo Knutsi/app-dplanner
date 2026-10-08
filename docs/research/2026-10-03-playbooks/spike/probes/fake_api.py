@@ -4,20 +4,27 @@ Point a CLI's base URL at it and every request gets the failure the mode names. 
 both the Anthropic error shape (/v1/messages) and the OpenAI one (anything else), so one
 server serves `claude`, `codex` and `opencode` alike.
 
-    python fake_api.py <port> <mode>
+    python fake_api.py <port> <mode> [--release FLAG]
 
 Modes: 401 403 404model credit 429 usage 529 500 garbage hang
 
 `usage` is a subscription's limit: a 429 with the unified rate-limit headers (five-hour
 window rejected, reset in three hours) and `x-should-retry: false`, so the CLI stops at once.
+
+`--release FLAG` ends the failure without moving the CLI: once the file FLAG exists, every
+request goes through to the real Anthropic API instead, the caller's own credentials and all.
+That is a usage hold a person can lift — the dogfood run (2026-10-08) pressed *Retry now* on
+it — since a run keeps the base URL it was started with for as long as it lives.
 """
 
 from __future__ import annotations
 
+import http.client
 import json
 import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 ANTHROPIC = {
     "401": (401, "authentication_error", "invalid x-api-key"),
@@ -45,7 +52,11 @@ OPENAI = {
 }
 
 
-def handler_for(mode: str) -> type[BaseHTTPRequestHandler]:
+REAL_API = "api.anthropic.com"
+HOP_BY_HOP = {"host", "connection", "content-length", "transfer-encoding", "accept-encoding"}
+
+
+def handler_for(mode: str, release: Path | None = None) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, format: str, *args: object) -> None:
             sys.stderr.write(f"{time.strftime('%H:%M:%S')} {self.command} {self.path}\n")
@@ -68,10 +79,29 @@ def handler_for(mode: str) -> type[BaseHTTPRequestHandler]:
             self.end_headers()
             self.wfile.write(body)
 
+        def _forward(self, body: bytes) -> None:
+            """The request, passed to the real API, and its answer streamed back as it comes."""
+            upstream = http.client.HTTPSConnection(REAL_API, timeout=600)
+            headers = {k: v for k, v in self.headers.items() if k.lower() not in HOP_BY_HOP}
+            upstream.request(self.command, self.path, body=body or None, headers=headers)
+            answer = upstream.getresponse()
+            self.send_response(answer.status)
+            for key, value in answer.getheaders():
+                if key.lower() not in HOP_BY_HOP:
+                    self.send_header(key, value)
+            self.send_header("connection", "close")
+            self.end_headers()
+            while chunk := answer.read1(65536):
+                self.wfile.write(chunk)
+                self.wfile.flush()
+            self.close_connection = True
+
         def _serve(self) -> None:
             length = int(self.headers.get("content-length") or 0)
-            if length:
-                self.rfile.read(length)
+            body = self.rfile.read(length) if length else b""
+            if release is not None and release.exists():
+                self._forward(body)
+                return
             if mode == "hang":
                 time.sleep(3600)
                 return
@@ -94,7 +124,8 @@ def handler_for(mode: str) -> type[BaseHTTPRequestHandler]:
 
 def main() -> None:
     port, mode = int(sys.argv[1]), sys.argv[2]
-    server = ThreadingHTTPServer(("127.0.0.1", port), handler_for(mode))
+    release = Path(sys.argv[4]) if sys.argv[3:4] == ["--release"] else None
+    server = ThreadingHTTPServer(("127.0.0.1", port), handler_for(mode, release))
     server.daemon_threads = True
     server.serve_forever()
 
