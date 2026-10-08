@@ -22,12 +22,15 @@ A launch interrupted between its record and its start is reconciled by
 ``supervisor.revive``: started while its step is still claimed, deleted once it is not.
 """
 
+import subprocess
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
 from pathlib import Path
 
+from dplanner.cli.main import PROG
+from dplanner.core.process import detached_flags
 from dplanner.domain import claims, ledger
 from dplanner.domain.agents import AgentHarness
 from dplanner.domain.headless import StageKind
@@ -468,3 +471,42 @@ def _start(prepared: Prepared, harnesses: tuple[AgentHarness, ...], library: Pat
     if failed := launcher.spawn(command, workdir, harnesses=harnesses):
         return f"no terminal opened — {failed}"
     return ""
+
+
+# -- a playbook's pass, from the window -------------------------------------------------------
+
+START_TIMEOUT_S = 300.0  # A worktree is fetched first; past this, the launch is left to finish.
+
+
+def start_pass_argv(
+    library: Path | None, step_id: str, playbook_id: str, *, anyway: bool
+) -> list[str]:
+    """``dplanner agent run <step> --playbook <id>``: how the window starts a pass. A pass
+    starts only through that verb, so its gates, its lock and its claim are never written
+    twice; ``anyway`` is the person's answer to the graph gate the window asked."""
+    words = ["agent", "run", step_id, "--playbook", playbook_id]
+    return supervisor.dplanner_argv(library, *words, *(["--anyway"] if anyway else []))
+
+
+def run_dplanner(argv: Sequence[str]) -> tuple[int, str]:
+    """Run a ``dplanner`` verb to its end — its exit code and its last line, stdout on
+    success, stderr on a refusal. In a session of its own, so a window closed meanwhile does
+    not end a launch holding the step's launch lock; a task's body, never the GUI thread."""
+    try:
+        done = subprocess.run(
+            list(argv),
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=START_TIMEOUT_S,
+            check=False,
+            start_new_session=True,
+            creationflags=detached_flags(),
+        )
+    except subprocess.TimeoutExpired:
+        return 1, "still launching after five minutes — the Control Centre shows how it went"
+    except OSError as error:
+        return 1, f"dplanner did not start — {error.strerror or error}"
+    said = done.stdout if done.returncode == 0 else done.stderr or done.stdout
+    lines = [line.strip() for line in said.splitlines() if line.strip()]
+    return done.returncode, lines[-1].removeprefix(f"{PROG}: ") if lines else ""

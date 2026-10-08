@@ -58,7 +58,12 @@ paths:
   lock, reads the pass's records oldest first, asks `passes.due` — the one derivation, pure —
   and does one thing, writing its record before the answer it acted on is consumed. **A pass
   starts only as `agent run --playbook`**, Run Agent's own gates and claim (none on a step at
-  Ready for review, which starts at its first gate). **A launch resumes a session exactly when
+  Ready for review, which starts at its first gate) — *Step ▸ Run Playbook ▸* in the window
+  runs that very verb as a process (`AgentLaunchModule.start_playbook`, `launch.run_dplanner`)
+  after only the window's own asks: the graph gate (answered `--anyway`), the clone, the save.
+  Its entries — every preset, the step's own first and marked — are each greyed by Run Agent's
+  step gates, `passes.pinned` and `why_not` over `passes.agents_of`; one step at a time, and
+  no *Remote ▸* until workers exist. **A launch resumes a session exactly when
   an earlier run of its pass names it** — no flag; every stage's `prompt.md` is the whole
   briefing plus the stage's parts (`agent_briefing/stages.py`), so a fresh fallback knows what
   a resume knew. **A verdict is one only when it validates against `VERDICT_SCHEMA`**

@@ -1008,6 +1008,15 @@ def resumed_by(question: Question) -> tuple[str, str]:
     return "answer", questions.answer_text(question)
 
 
+def dplanner_argv(library: Path | None, *words: str) -> list[str]:
+    """``dplanner <words>`` as this interpreter runs this build (``python -m dplanner``), never
+    whatever ``dplanner`` is on PATH: a run launched from a branch's build is driven by that
+    build, not by the installed one, which may not know the record's words. ``library`` is the
+    library it acts on."""
+    named = ["--library", str(library.expanduser().resolve())] if library is not None else []
+    return [sys.executable, "-m", "dplanner", *named, *words]
+
+
 def start_detached(
     project_dir: Path,
     run: str,
@@ -1017,15 +1026,9 @@ def start_detached(
     library: Path | None = None,
 ) -> None:
     """Start a supervisor for the run that outlives whoever started it — ``agent run``'s
-    launch, an answer, a reset, *Retry now*.
-
-    It is this interpreter running this build (``python -m dplanner``), never whatever
-    ``dplanner`` is on PATH: a run launched from a branch's build is supervised by that
-    build, not by the installed one, which may not know the record's words. ``library`` is
-    the library it was launched from, which its turns are told."""
-    named = ["--library", str(library.expanduser().resolve())] if library is not None else []
-    argv = [sys.executable, "-m", "dplanner", *named, "agent", "supervise", run]
-    argv += ["--project-dir", str(project_dir)]
+    launch, an answer, a reset, *Retry now* — this build's (:func:`dplanner_argv`).
+    ``library`` is the library it was launched from, which its turns are told."""
+    argv = dplanner_argv(library, "agent", "supervise", run, "--project-dir", str(project_dir))
     if prompt:
         argv += ["--prompt", prompt]
     if text:
@@ -1037,16 +1040,15 @@ def advance_detached(step: str, *, library: Path | None = None) -> None:
     """Start ``dplanner playbook advance <step>`` that outlives whoever started it: a pass's
     stage ended, or its gate was answered, and the engine decides what is due next. This
     interpreter, as :func:`start_detached` is."""
-    named = ["--library", str(library.expanduser().resolve())] if library is not None else []
-    spawn_detached([sys.executable, "-m", "dplanner", *named, "playbook", "advance", step])
+    spawn_detached(dplanner_argv(library, "playbook", "advance", step))
 
 
 def wake_detached(project_dir: Path, question: str, *, library: Path | None = None) -> None:
     """Start ``dplanner playbook wake <question>``: a pass held on its account's usage waits
     for the reset in a process of its own, then answers the card for the clock and advances."""
-    named = ["--library", str(library.expanduser().resolve())] if library is not None else []
-    argv = [sys.executable, "-m", "dplanner", *named, "playbook", "wake", question]
-    spawn_detached([*argv, "--project-dir", str(project_dir)])
+    spawn_detached(
+        dplanner_argv(library, "playbook", "wake", question, "--project-dir", str(project_dir))
+    )
 
 
 def revive(

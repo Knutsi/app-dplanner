@@ -275,6 +275,10 @@ class AgentLaunchDeps:
     # Autosave's flush now, and whether everything is on disk: a launch's claim is saved
     # before its terminal is started.
     flush: Callable[[], bool] = field(default=lambda: True)
+    # The library a pass's `dplanner agent run --playbook` acts on, and how that verb is run
+    # to its end — its exit code and its one line. A task's body, never the GUI thread.
+    library_path: Path | None = None
+    run_cli: Callable[[Sequence[str]], tuple[int, str]] = launch.run_dplanner
 
 
 class AgentLaunchModule:
@@ -283,6 +287,7 @@ class AgentLaunchModule:
     def __init__(self, deps: AgentLaunchDeps) -> None:
         self._deps = deps
         self._preparing: TaskRunner | None = None
+        self._starting: TaskRunner | None = None
 
     def register(self) -> None:
         deps = self._deps
@@ -449,11 +454,7 @@ class AgentLaunchModule:
             unplaced = launch.unplaced(facts, step)
             if unplaced and unplaced not in clones:
                 clones.append(unplaced)
-            branches = deps.branch_plan(deps.library, step, facts)
-            reason = launch.refusal(
-                deps.library, step, deps.files, facts, branches, deps.clock.today(), by_project
-            )
-            if reason:
+            if reason := self._refusal(step, facts, by_project):
                 named = reason if count == 1 else f"“{_titled(step)}”: {reason}"
                 return ActionState(enabled=False, label=f"{verb} — {named}")
         if clones:
@@ -461,6 +462,16 @@ class AgentLaunchModule:
             amp = "Run &Agent…" if count == 1 else f"Run {count} &Agents…"
             return ActionState(label=f"{amp} — clones {named} first")
         return ENABLED if count == 1 else ActionState(label=f"Run {count} &Agents…")
+
+    def _refusal(
+        self, step: Step, facts: RepositoryFacts, by_project: dict[str, str] | None = None
+    ) -> str:
+        """Why no agent runs on ``step`` here — ``launch.refusal`` over the window's reading."""
+        deps = self._deps
+        branches = deps.branch_plan(deps.library, step, facts)
+        return launch.refusal(
+            deps.library, step, deps.files, facts, branches, deps.clock.today(), by_project
+        )
 
     def _can_preview(self, context: Context) -> ActionState:
         """A preview needs an agent step: with the aspect off there is no briefing to see."""
@@ -816,7 +827,7 @@ class AgentLaunchModule:
         deps.status.show_status(f"Terminal opened in {directory}", 4000)
 
     def _confirm_unfinished(
-        self, waiting: Sequence[tuple[Step, Sequence[Step]]], *, count: int
+        self, waiting: Sequence[tuple[Step, Sequence[Step]]], *, count: int, title: str = ""
     ) -> bool:
         """The graph gates launching: an agent briefed on a step whose prerequisites are
         not done works without what they were to produce. Say which, and ask — the
@@ -842,10 +853,102 @@ class AgentLaunchModule:
                 (f"{_titled(step)} waits on", listed(unfinished)) for step, unfinished in waiting
             ]
             closing = "The agents would start without what those steps produce. Run them anyway?"
-        dialog = RunAnywayDialog(count, lead, groups, closing, deps.parent)
+        dialog = RunAnywayDialog(count, lead, groups, closing, deps.parent, title)
         accepted = dialog.exec() == QDialog.DialogCode.Accepted
         dialog.deleteLater()
         return accepted
+
+    # -- a playbook's pass ---------------------------------------------------------------------
+
+    def playbook_refusal(self, step: Step) -> str:
+        """Why no playbook's pass can start on ``step`` here, "" when one can: Run Agent's
+        own questions of the step, then the default profile's agent — the implementer —
+        running headless. What each playbook's roles need is the playbook's to ask."""
+        deps = self._deps
+        if why := self._refusal(step, deps.facts_for(step.id)):
+            return why
+        if unreadable := problem():
+            return f"the agent profiles cannot be read: {unreadable}"
+        return launch.headless_refusal(default_profile(), deps.harnesses)
+
+    def runnable(self) -> tuple[str, ...]:
+        """The harnesses some launch profile runs headless: who a playbook's role may name."""
+        return launch.headless_harnesses(self._deps.harnesses)
+
+    def implementer(self) -> str:
+        """The harness a pass's work stages run: the default profile's, as `agent run`'s."""
+        deps = self._deps
+        harness = launcher.harness_of(
+            agent_command(deps.harnesses, default_profile()), deps.harnesses
+        )
+        return harness.id if harness is not None else ""
+
+    def start_playbook(self, step: Step, playbook_id: str) -> None:
+        """Start a pass of ``playbook_id`` on ``step`` — by running ``dplanner agent run
+        --playbook``, the one way a pass starts, so its gates, its lock and its claim are
+        never written twice. What is the window's own comes first, as for Run Agent: the
+        graph gate asked (and answered ``--anyway``), the code cloned, the plan saved. The
+        claim and the run arrive through the library watcher, as an agent's own calls do."""
+        deps = self._deps
+        waiting = self._unfinished(step)
+        if waiting and not self._confirm_unfinished(
+            [(step, waiting)], count=1, title="Run Playbook"
+        ):
+            return
+        if unplaced := launch.unplaced(deps.facts_for(step.id), step):
+            deps.status.show_status(f"Cloning {remote_label(unplaced)} before the playbook…", 0)
+
+            def cloned(_landed: dict[str, Path], error: str) -> None:
+                if error:
+                    deps.status.show_status(f"No playbook started — could not clone {error}", 8000)
+                    return
+                self._start_pass(step, playbook_id, anyway=bool(waiting))
+
+            deps.ensure_checkouts([unplaced], cloned)
+            return
+        self._start_pass(step, playbook_id, anyway=bool(waiting))
+
+    def _start_pass(self, step: Step, playbook_id: str, *, anyway: bool) -> None:
+        deps = self._deps
+        title = _titled(step)
+        if not deps.flush():
+            deps.status.show_status(
+                f"No playbook started on “{title}” — the plan could not be saved; save it, then"
+                " run it again",
+                8000,
+            )
+            return
+        argv = launch.start_pass_argv(deps.library_path, step.id, playbook_id, anyway=anyway)
+        result: list[tuple[int, str]] = []
+
+        def body() -> None:  # Worker thread: the verb runs to its end, the model untouched.
+            result.append(deps.run_cli(argv))
+
+        def done() -> None:
+            code, said = result[0] if result else (1, "the launch did not finish")
+            if code == 0:
+                deps.status.show_status(f"Playbook started on “{title}” — {said}", 6000)
+            else:
+                deps.status.show_status(f"No playbook started on “{title}” — {said}", 10000)
+
+        if deps.tasks is None:
+            body()
+            done()
+            return
+        runner = self._starting = self._starting or TaskRunner(deps.tasks, deps.parent)
+
+        def finished(busy: bool) -> None:
+            if not busy:
+                runner.busy_changed.disconnect(finished)
+                done()
+
+        runner.busy_changed.connect(finished)
+        label = f"Starting a playbook on “{title}”"
+        if not runner.run(label, body, key="agent.playbook"):
+            runner.busy_changed.disconnect(finished)
+            deps.status.show_status("No playbook started — still starting the last one", 6000)
+            return
+        deps.status.show_status(f"{label}…", 0)
 
     # -- opening an agent with nothing to do ---------------------------------------------------
 

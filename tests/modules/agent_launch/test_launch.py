@@ -789,3 +789,35 @@ def test_a_turn_that_will_not_end_holds_the_step_with_the_reason(plan, orphan, m
     monkeypatch.setattr(supervisor, "end_orphaned_turn", lambda _record, _grace: False)
     assert "still stopping" in launch.stop_fenced(plan, "s1", wait=0.1)
     assert is_live(stamp)
+
+
+def test_a_dplanner_verb_is_this_build_on_the_library_it_names(tmp_path):
+    from dplanner.modules.agent_supervisor.supervisor import dplanner_argv
+
+    assert dplanner_argv(None, "playbook", "advance", "S1") == [
+        sys.executable,
+        "-m",
+        "dplanner",
+        "playbook",
+        "advance",
+        "S1",
+    ]
+    library = tmp_path / "lib.dplanner"
+    assert dplanner_argv(library, "agent", "run")[3:] == [
+        "--library",
+        str(library.resolve()),
+        "agent",
+        "run",
+    ]
+
+
+def test_a_verb_run_to_its_end_says_its_last_line_and_a_refusal_without_the_prefix(
+    allow_spawn,
+):
+    from dplanner.modules.agent_launch.launch import run_dplanner
+
+    allow_spawn(Path(sys.executable))
+    said = "print('one'); print('started as run r1')"
+    assert run_dplanner([sys.executable, "-c", said]) == (0, "started as run r1")
+    refused = "import sys; print('dplanner: a pass is under way', file=sys.stderr); sys.exit(1)"
+    assert run_dplanner([sys.executable, "-c", refused]) == (1, "a pass is under way")
