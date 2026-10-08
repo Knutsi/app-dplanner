@@ -111,7 +111,7 @@ figcaption{font-size:14px;color:var(--muted);margin-top:6px}
 
 <section id="feel">
   <h2>How it feels</h2>
-  <div class="inshort"><b class="k">In short</b><p>Almost everything a person needs to know is on the Control Centre's cards, and only there. The canvas shows four states: pending, in progress, Ready for review and done. It cannot tell a step that waits for you from one that waits for nobody. The status bar speaks in run ids. A run that is dying, or already dead, shows nothing at all.</p></div>
+  <div class="inshort"><b class="k">In short</b><p>During the run, almost everything a person needed to know was on the Control Centre's cards, and only there. The canvas showed four states and could not tell a step that waits for you from one that waits for nobody. S27's strip, merged mid-run, now fills that gap, except that it reads <em>Done</em> on steps whose PR is still open. The status bar speaks in run ids. A run that is dying, or already dead, shows nothing at all.</p></div>
   <p>Each row is one moment of a pass, as the window showed it. The last column marks where I was left guessing.</p>
   <div class="scroll"><table>
     <tr><th>Moment</th><th>Canvas card</th><th>Control Centre</th><th>Status bar</th><th>Left guessing?</th></tr>
@@ -129,6 +129,9 @@ figcaption{font-size:14px;color:var(--muted);margin-top:6px}
   </table></div>
   <figure><img src="shots/s1-pass-before-graph.png" alt="The toy plan's canvas: S1 to S5 gold with PR chips, S8 done, S9 and S11 gold with teapot chips"><figcaption>The canvas while S1, S9 and S11 waited at gates. S2, S3 and S5 waited for nobody. You cannot tell which is which from here.</figcaption></figure>
   <figure><img src="shots/s1-pass-before-cc.png" alt="Three gate cards on the Control Centre, each saying An agent"><figcaption>The same moment on the Control Centre. S1's card is a person gate; S9's and S11's are the coordinator's. All three said <em>An agent</em>.</figcaption></figure>
+  <h3>Since S27: a strip under the card</h3>
+  <p>S27 merged into <code>feature/playbooks</code> while this run went on. Rendered over the same toy plan, its strip says what the canvas could not. A live spike gate read <em>Waits for you · plan approval</em> (also in <code>playbook show</code>), the stopped landing reads <em>Stopped</em>, and the finished passes read <em>Done</em>. The catch: S2, S3 and S5 are gold, Ready for review, with their PRs into <code>main</code> unmerged, and their strip says <em>Done</em>. The pass is done; the step is not (N186).</p>
+  <figure><img src="shots/s27-strip-graph.png" alt="The toy canvas with S27's strip: Done under most cards, Stopped under the landing"><figcaption>After S27. <em>Stopped</em> under S13 answers part of N181. <em>Done</em> under the gold S2–S5 is the new ambiguity.</figcaption></figure>
   <figure><img src="shots/fixed-gate-words-now-cc.png" alt="Two gate cards: Waits for you, and Waits for the coordinator — or you, when none drives the run"><figcaption>After the fix: the card says whose judgement it waits for.</figcaption></figure>
 </section>
 
@@ -236,7 +239,7 @@ figcaption{font-size:14px;color:var(--muted);margin-top:6px}
     <li><strong>N183.</strong> Transient failures show nothing for about 25 minutes.</li>
     <li><strong>N184.</strong> Retry now resumes inside the waiting supervisor, in its old environment.</li>
     <li><strong>N185.</strong> A headless coordinator needs a waker and an allow-list for <code>gh pr merge</code>.</li>
-    <li><strong>N186.</strong> The canvas card does not say a step waits for a person.</li>
+    <li><strong>N186.</strong> S27's strip says <em>Done</em> on a step whose PR nobody merged.</li>
     <li><strong>N187.</strong> Small things:
       <ul>
         <li>run ids in the status bar;</li>

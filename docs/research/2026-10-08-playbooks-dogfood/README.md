@@ -61,10 +61,12 @@ Nothing hung and no run was lost.
 everything a person needs to know lives on the Control Centre's cards and nowhere else. These
 are the places the run left me guessing:
 
-1. **The canvas does not say a step waits for you.** A step at a person gate, at a
-   coordinator gate, or merely Ready for review with nobody asked all look the same: gold,
-   with a PR chip. The card phrase the rule promises (*Review 1/2*, *Waits for you*) is not
-   built yet (N186).
+1. **During the run, the canvas did not say a step waits for you.** A step at a person gate,
+   at a coordinator gate, or merely Ready for review with nobody asked all looked the same:
+   gold, with a PR chip. S27's strip under the card, merged into `feature/playbooks` while
+   this run went on, now says it: *Waits for you · plan approval*, *Stopped*, *Done*. One
+   catch is left: *Done* on a gold card whose PR into `main` nobody has merged reads as
+   finished (N186).
 2. **Every gate card read "An agent".** You could not tell your own gate from the
    coordinator's. **Fixed here:** the card now says *Waits for you* or *Waits for the
    coordinator — or you, when none drives the run*.
