@@ -2193,12 +2193,15 @@ def test_stop_playbook_runs_on_a_task_of_its_own_beside_a_start_and_another_stop
     monkeypatch.setattr(
         module, "_deps", replace(module._deps, run_cli=run_cli, tasks=services.tasks)
     )
+    # Every message, not the bar's last: under load a stop's report can land after the start's.
+    said: list[str] = []
+    services.window.statusBar().messageChanged.connect(said.append)
     module.start_playbook(step, "execute")
     module.stop_playbook(step)
     module.stop_playbook(step)
     qtbot.waitUntil(lambda: sum("stop" in argv for argv in ran) == 2, timeout=10_000)
     starting.set()
-    qtbot.waitUntil(lambda: "Playbook started" in services.window.statusBar().currentMessage())
+    qtbot.waitUntil(lambda: any("Playbook started" in words for words in said), timeout=10_000)
 
 
 def test_run_playbook_runs_agent_run_with_the_playbook_and_says_how_it_went(

@@ -25,6 +25,7 @@ lines of each function instead of the first lines of the file, and
 
 import logging
 from collections.abc import Callable
+from functools import partial
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from dplanner.core.module_data import ModuleDataFormat
@@ -541,6 +542,7 @@ def _agents(
         StepAgentInstructionModule,
     )
     from dplanner.modules.step_agent_run.module import StepAgentRunDeps, StepAgentRunModule
+    from dplanner.modules.step_playbook.engine import halt_claimed
     from dplanner.modules.step_playbook.module import PassStandings
     from dplanner.planning.kinds import key_of
     from dplanner.planning.status import Status
@@ -628,7 +630,7 @@ def _agents(
     )
 
     claims = AgentClaimsModule(
-        AgentClaimsDeps(library, store.project_dir, services.actions, parent=services.window)
+        AgentClaimsDeps(library, store.project_dir, services.actions, services.window, halt_claimed)
     )
     # A repository on this machine for a verb that needs one, cloned where the clone
     # policy says: the projects module's service, built here because Run Agent is handed
@@ -1831,7 +1833,6 @@ def _aspects(
         SetModuleDataCommand,
     )
     from dplanner.domain.model import TextEdit
-    from dplanner.modules.agent_claims.ownership import released_by_person
     from dplanner.modules.branches.module import LandingModule
     from dplanner.modules.branches.plan import merged_into_its_branch
     from dplanner.modules.docs.module import DocsCompiledModule, DocsDeps, DocsModule
@@ -2088,7 +2089,7 @@ def _aspects(
                 clock=services.clock,
                 workflow=_status_workflow(),
                 end_claim=lambda claim: board.end(claim.project, claim.step),
-                release=lambda f: released_by_person(store.project_dir(f.project), f),
+                release=agents.claims.release,
                 notices=services.window,
                 flush=services.autosave.saved,
             )
@@ -2482,11 +2483,7 @@ def _report_sources() -> tuple["ReportSource", ...]:
         return [phrase for phrase in (summary(step) for summary in summaries) if phrase]
 
     return (
-        progression(
-            status_in=_ready_in,
-            counts_as_work=_counts_as_work,
-            key_of=key_of,
-        ),
+        progression(status_in=_ready_in, counts_as_work=_counts_as_work, key_of=key_of),
         time_estimates(TimeReaders()),
         graph(
             key_of=key_of,
@@ -2830,7 +2827,7 @@ def default_cli_commands(
     from dplanner.modules.agent_at_work import cli as at_work_cli
     from dplanner.modules.agent_briefing.worktree import mainline
     from dplanner.modules.agent_claims import cli as claims_cli
-    from dplanner.modules.agent_claims.ownership import released_by_person as release
+    from dplanner.modules.agent_claims.ownership import released_by_person
     from dplanner.modules.agent_launch import cli as launch_cli
     from dplanner.modules.agent_questions import cli as questions_cli
     from dplanner.modules.agent_supervisor import cli as supervisor_cli
@@ -2870,6 +2867,7 @@ def default_cli_commands(
     from dplanner.modules.step_order import cli as order_cli
     from dplanner.modules.step_playbook import cli as playbook_cli
     from dplanner.modules.step_playbook.engine import Engine as PlaybookEngine
+    from dplanner.modules.step_playbook.engine import halt_claimed
     from dplanner.modules.step_start import cli as start_cli
     from dplanner.modules.step_status import cli as status_cli
     from dplanner.modules.step_ticket import cli as ticket_cli
@@ -2904,6 +2902,7 @@ def default_cli_commands(
     harnesses = agent_harnesses()
     in_agent_shell: Callable[[], bool] = lambda: bool(shell_marker(harnesses))  # noqa: E731
     end_claim: Callable[[EndClaim], bool] = lambda c: board.end(c.project, c.step)  # noqa: E731
+    release = partial(released_by_person, halt=halt_claimed)
 
     def actor() -> "Actor":
         return AgentRun() if in_agent_shell() else Person()
@@ -2992,7 +2991,7 @@ def default_cli_commands(
         *usage_cli.commands(harnesses=harnesses),
         *supervisor_cli.commands(harnesses=harnesses),
         *questions_cli.commands(in_agent_shell=in_agent_shell),
-        *claims_cli.commands(in_agent_shell=in_agent_shell),
+        *claims_cli.commands(in_agent_shell=in_agent_shell, halt=halt_claimed),
         # The agent's own account of what it is doing while it does it: the window's
         # banner and the watcher's stood-down modal both read what these write.
         *at_work_cli.commands(board=board, key_of=key_of),

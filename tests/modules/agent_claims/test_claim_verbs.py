@@ -254,6 +254,7 @@ def test_a_take_racing_an_end_starts_its_own_claim_and_never_grows_the_ended_one
     cli, project, monkeypatch
 ):
     from dplanner.modules.agent_claims import ownership
+    from dplanner.modules.step_playbook.engine import halt_claimed
 
     cli("claim", "take", "S1", "--callsign", "kettle")
     (claim,) = claims.records(project)
@@ -264,7 +265,9 @@ def test_a_take_racing_an_end_starts_its_own_claim_and_never_grows_the_ended_one
         if not raced:
             raced.append(id_)
             monkeypatch.setattr(claims, "update", real)
-            ownership.end(project_dir, id_, {"kind": "person", "name": "Knut"}, "cleared")
+            ownership.end(
+                project_dir, id_, {"kind": "person", "name": "Knut"}, "cleared", halt_claimed
+            )
         return real(project_dir, id_, change, config)
 
     monkeypatch.setattr(claims, "update", end_lands_first)

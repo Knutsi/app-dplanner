@@ -88,7 +88,8 @@ paths:
   (`engine.stop`), which *Step ▸ Stop Playbook* — confirmed, naming what runs
   (`engine.stoppable`), greyed with the reason when nothing does — runs as a process, on a task
   of its own that nothing running refuses. **The step's launch lock first, then the reading**,
-  and the reading is raw — the pass's runs and questions by pass id, never its preset. It
+  and it is held until the plan's change is written and its follow-ups are done; the reading
+  is raw — the pass's runs and questions by pass id, never its preset. It
   withdraws the pass's unsettled questions (an answer not yet acted on too) and fences and
   stops its unfinished runs and its latest run (`supervisor.stop_and_wait`, which ends
   **everything carrying the run's `DPLANNER_RUN`** and its provable process group, never a
@@ -102,7 +103,8 @@ paths:
   (`engine.halted_pass`). Nothing of a stopped pass
   starts again — not an advance, `revive`, the clock or *Retry now*; nothing to stop exits 0
   and says so; the worktree and branch are kept, and the next `agent run --playbook` starts a
-  new pass.
+  new pass. **A step leaving its squad's claim halts the claim's pass the same way**
+  (`engine.halt_claimed`, under `ownership`), the plan left to whoever released it.
   `docs/architecture/playbooks.md`'s *Stopping a pass* has the reasoning.
 - **A role names a harness, never a profile or a path**, and maps at launch to the first
   profile running it; an unrunnable role is refused, never swapped for the default. Whether

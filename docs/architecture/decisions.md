@@ -730,6 +730,18 @@ reads done, and is not ended, so its strip outlives `ENDED_SHOWN`; a playbook wi
 merge (*Spike*) still reads *Done* on its approval. Now: `playbooks.md`'s *The mark on the one
 card*.
 
+## 2026-10-08 — A claim's leaving halts its pass; a stop holds the lock through its plan write
+
+Ending a squad claim, or releasing a step from it, fenced only the claim's unfinished runs, so
+a pass between stages or waiting at a gate went on: answering the gate launched the next stage
+as a run under no claim. And *Stop Playbook* let the step's launch lock go once the records
+were written, before the plan's change and the claim's release, so a launch in that moment
+could have its new pass reset and its claim released by the old stop. Kettle Watch found both
+in the S23 landing review. Now `ownership` halts the step's pass under the claim with the
+engine's stop (`engine.halt_claimed`), and `playbook stop` holds the lock until its follow-ups
+are done. Now: `agents.md`'s *Runs, questions and claims are three records in the plan* and
+`playbooks.md`'s *Stopping a pass*.
+
 ## 2026-10-08 — A Codex plan or review writes its run and DPlanner's records, not read-only
 
 A Codex plan and review ran `sandbox_mode="read-only"`, which kept the code safe and also

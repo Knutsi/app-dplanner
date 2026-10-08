@@ -444,14 +444,14 @@ def stoppable(project_dir: Path, step: Step) -> str:
     still reads in progress — a stop whose change to the plan did not land, or a pass
     something else halted."""
     entries = _latest_entries(project_dir, step.id)
-    if said := _left(project_dir, step, entries):
+    if said := _left(project_dir, step.id, _facts(step), entries):
         return said
     if halted_pass(project_dir, step) and stored(step) is Status.IN_PROGRESS:
         return "it has halted, but the step still reads in progress"
     return ""
 
 
-def _left(project_dir: Path, step: Step, entries: Sequence[passes.Entry]) -> str:
+def _left(project_dir: Path, step_id: str, facts: Facts, entries: Sequence[passes.Entry]) -> str:
     runs = [e for e in entries if isinstance(e, LedgerRecord)]
     if left := [r for r in runs if not r.over]:
         run = left[-1]
@@ -466,9 +466,9 @@ def _left(project_dir: Path, step: Step, entries: Sequence[passes.Entry]) -> str
         return ""
     if latest.last_turn is None or latest.last_turn.end != TurnEnd.DONE:
         return ""
-    pass_ = _latest_pass(project_dir, step.id)
+    pass_ = _latest_pass(project_dir, step_id)
     if not isinstance(pass_, str):
-        next_ = passes.due(pass_.playbook, pass_.settings, pass_.entries, _facts(step))
+        next_ = passes.due(pass_.playbook, pass_.settings, pass_.entries, facts)
         if isinstance(next_, Complete | Halted):
             return ""
     return f"its {latest.stage} stage is {_run_state(latest)}"
@@ -479,10 +479,10 @@ def halted_pass(project_dir: Path, step: Step) -> str:
     with nothing of it left to stop, and nothing of the step has run since: what a stop
     repeated still finishes in the plan. "" otherwise, a completed pass included."""
     entries = _latest_entries(project_dir, step.id)
-    if not entries or _left(project_dir, step, entries):
+    facts = _facts(step)
+    if not entries or _left(project_dir, step.id, facts, entries):
         return ""
     pass_ = _latest_pass(project_dir, step.id)
-    facts = _facts(step)
     if not isinstance(pass_, str) and isinstance(
         passes.due(pass_.playbook, pass_.settings, pass_.entries, facts), Complete
     ):
@@ -520,41 +520,71 @@ class Stopped:
 
 
 def stop(
-    project_dir: Path, project: str, step: Step, by: str, wait: float = supervisor.STOPPING_S
+    project_dir: Path, step: Step, by: str, wait: float = supervisor.STOPPING_S
 ) -> Stopped | None:
     """Stop the step's latest pass, whatever state it is in, so that nothing of it starts
     again by itself — or None when nothing of it is left to stop (:func:`_left`).
 
-    The step's launch lock first, then the reading: a launch holding it may be about to
-    write the pass's first record, and an advance waits for it. Under it, every question of
-    the pass not yet settled is withdrawn, and every unfinished run of the pass — and its
-    latest run when that ended between stages — is fenced and stopped
-    (``supervisor.stop_and_wait``: a live turn signalled, a parked, unstarted or orphaned
-    run ended here, whatever carries the run killed). Each of those makes
-    :func:`~.passes.due` read the pass ``Halted``. Its worktree and branch are kept."""
-    with supervisor.launching(project, step.id, wait=True):
-        entries = _latest_entries(project_dir, step.id)
-        if not _left(project_dir, step, entries):
-            return None
-        runs = [e for e in entries if isinstance(e, LedgerRecord)]
-        latest = entries[-1]
-        targets = [r for r in runs if not r.over or (r is latest and not r.fence)]
-        asked = [e for e in entries if isinstance(e, Question) and not e.settled]
-        for question in asked:
-            questions.update(
-                project_dir,
-                question.id,
-                lambda q: q if q.settled else questions.withdrawn(q, STOP_WHY, now_stamp()),
-            )
-        still = supervisor.stop_and_wait(project_dir, targets, by, STOP_WHY, wait)
-        here = ledger.machine_id()
-        return Stopped(
-            latest.pass_,
-            tuple(f"{r.stage} attempt {r.attempt} was {_run_state(r)}" for r in targets),
-            tuple(q.short for q in asked),
-            tuple(still),
-            any(r.machine != here for r in targets),
+    The caller holds the step's launch lock, waited for, from before this reading until what
+    it writes after — the plan's change, and its follow-ups — is done: a launch holding it
+    may be about to write the pass's first record, and a launch let in between would start a
+    pass the stop's plan change then resets and its release stops. Every question of the
+    pass not yet settled is withdrawn, and every unfinished run of the pass — and its latest
+    run when that ended between stages — is fenced and stopped (``supervisor.stop_and_wait``:
+    a live turn signalled, a parked, unstarted or orphaned run ended here, whatever carries
+    the run killed). Each of those makes :func:`~.passes.due` read the pass ``Halted``. Its
+    worktree and branch are kept."""
+    entries = _latest_entries(project_dir, step.id)
+    return _halt(project_dir, step.id, entries, _facts(step), by, STOP_WHY, wait)
+
+
+def halt_claimed(
+    project_dir: Path, step_id: str, claim_id: str, by: str, why: str
+) -> Stopped | None:
+    """Halt the step's latest pass as :func:`stop` does when it is ``claim_id``'s — a run of
+    it ran under the claim, or it has no run yet, a pass begun at its gate under the claim
+    holding the step: what the step leaving that claim owes the pass (``ownership``), since
+    a gate answered afterwards would otherwise launch the next stage as nobody's. The caller
+    holds the step's launch lock when it is free. The plan is not read: its facts only tell
+    a pass complete when the step reads done, and one halted then starts nothing either way.
+    Nothing is waited for — a supervisor here obeys its fence within a second."""
+    entries = _latest_entries(project_dir, step_id)
+    runs = [e for e in entries if isinstance(e, LedgerRecord)]
+    if runs and not any(r.claim == claim_id for r in runs):
+        return None
+    return _halt(project_dir, step_id, entries, Facts(), by, why, 0.0)
+
+
+def _halt(
+    project_dir: Path,
+    step_id: str,
+    entries: Sequence[passes.Entry],
+    facts: Facts,
+    by: str,
+    why: str,
+    wait: float,
+) -> Stopped | None:
+    if not _left(project_dir, step_id, facts, entries):
+        return None
+    runs = [e for e in entries if isinstance(e, LedgerRecord)]
+    latest = entries[-1]
+    targets = [r for r in runs if not r.over or (r is latest and not r.fence)]
+    asked = [e for e in entries if isinstance(e, Question) and not e.settled]
+    for question in asked:
+        questions.update(
+            project_dir,
+            question.id,
+            lambda q: q if q.settled else questions.withdrawn(q, why, now_stamp()),
         )
+    still = supervisor.stop_and_wait(project_dir, targets, by, why, wait)
+    here = ledger.machine_id()
+    return Stopped(
+        latest.pass_,
+        tuple(f"{r.stage} attempt {r.attempt} was {_run_state(r)}" for r in targets),
+        tuple(q.short for q in asked),
+        tuple(still),
+        any(r.machine != here for r in targets),
+    )
 
 
 def _run_state(run: LedgerRecord) -> str:

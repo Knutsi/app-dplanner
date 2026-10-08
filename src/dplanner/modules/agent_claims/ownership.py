@@ -8,6 +8,9 @@ one of them ends in :func:`stop_runs`: each unfinished headless run the squad ha
 claim on those steps is fenced, and its supervisor here is signalled, ending the turn
 ``stopped``; a live turn also reads its fence within a second. A supervisor on another
 machine finds the fence when the ledger reaches it — the second machine is not built yet.
+The step's playbook pass under the claim is halted with them (a :data:`Halt`, the engine's,
+handed in): a stage done or a gate waiting has no run to fence, and the gate answered
+afterwards would launch the next stage as nobody's.
 
 A release or an end takes the steps' launch locks when they are free, around the fencing.
 Either way a launch of the step cannot slip through: one that re-reads ownership just before
@@ -17,7 +20,7 @@ window's own.
 """
 
 import getpass
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
@@ -28,17 +31,30 @@ from dplanner.domain.questions import PERSON
 from dplanner.domain.workflow import Release
 from dplanner.modules.agent_supervisor import supervisor
 
+# Halt the step's playbook pass when it is the claim's: (project_dir, step, claim, by, why).
+Halt = Callable[[Path, str, str, str, str], object]
 
-def stop_runs(project_dir: Path, claim_id: str, steps: Sequence[str], by: str, why: str) -> None:
-    """Fence every unfinished headless run under ``claim_id`` on ``steps`` and signal its
-    supervisor on this machine: the one way a squad's worker is stopped."""
+
+def stop_runs(
+    project_dir: Path, claim_id: str, steps: Sequence[str], by: str, why: str, halt: Halt
+) -> None:
+    """Halt the playbook pass ``claim_id`` has on each of ``steps``, fence every unfinished
+    headless run under it there and signal its supervisor on this machine: the one way a
+    squad's worker is stopped."""
+    for step in steps:
+        halt(project_dir, step, claim_id, by, why)
     for run in ledger.records(project_dir):
         if run.claim == claim_id and run.step in steps and run.headless and not run.over:
             supervisor.stop(project_dir, run.run, by, why)
 
 
 def release(
-    project_dir: Path, step: str, by: Mapping[str, str], why: str, claim_id: str = ""
+    project_dir: Path,
+    step: str,
+    by: Mapping[str, str],
+    why: str,
+    halt: Halt,
+    claim_id: str = "",
 ) -> Claim | None:
     """Hand ``step`` back from ``claim_id`` — by default, from whichever claim holds it — and
     stop its worker. The claim as it now stands, or None when nothing held the step."""
@@ -52,11 +68,11 @@ def release(
         return None
     with _launches(found.project, [step]):
         claim = claims.release_step(project_dir, step, by, why, claim_id)
-        stop_runs(project_dir, claim_id, [step], by.get("name", ""), why)
+        stop_runs(project_dir, claim_id, [step], by.get("name", ""), why, halt)
     return claim
 
 
-def end(project_dir: Path, claim_id: str, by: Mapping[str, str], why: str) -> Claim:
+def end(project_dir: Path, claim_id: str, by: Mapping[str, str], why: str, halt: Halt) -> Claim:
     """End the whole claim and stop every one of its workers — on exactly the steps it held
     when it ended, read under the claim's lock, so a step another take added a moment before
     is stopped too, and a take a moment after cannot grow the ended claim (``claims.grown``
@@ -70,16 +86,16 @@ def end(project_dir: Path, claim_id: str, by: Mapping[str, str], why: str) -> Cl
 
     claim = claims.update(project_dir, claim_id, ending)
     with _launches(claim.project, held):
-        stop_runs(project_dir, claim_id, held, by.get("name", ""), why)
+        stop_runs(project_dir, claim_id, held, by.get("name", ""), why, halt)
     return claim
 
 
-def released_by_person(project_dir: Path, follow_up: Release) -> bool:
+def released_by_person(project_dir: Path, follow_up: Release, halt: Halt) -> bool:
     """A person's override, performed — a stopped status, a stopped playbook: the step leaves
     its squad's claim and its worker stops. False when no claim held it."""
     by = {"kind": PERSON, "name": getpass.getuser()}
     try:
-        claim = release(project_dir, follow_up.step, by, f"{follow_up.why} by a person")
+        claim = release(project_dir, follow_up.step, by, f"{follow_up.why} by a person", halt)
     except LookupError:
         return False
     return claim is not None

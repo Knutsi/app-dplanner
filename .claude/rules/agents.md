@@ -375,7 +375,9 @@ paths:
   one launch** (`launch.claim_for`, both surfaces) and again under the launch lock in
   `start_run`. **Every way a step leaves a squad goes through `ownership.py`**, which fences
   and stops its runs (an end, exactly the steps its locked write held; an ended claim never
-  grows); a live turn reads its fence each poll, and a fenced run is over for the next launch
+  grows) and halts the step's playbook pass under the claim — a stage done or a gate waiting
+  included — with the engine's stop (`engine.halt_claimed`, handed in as `ownership.Halt`);
+  a live turn reads its fence each poll, and a fenced run is over for the next launch
   only once its turn is gone — what outlived its supervisor is ended by identity, every
   process carrying the run's `DPLANNER_RUN` and its provable group
   (`supervisor.end_orphaned_turn`; Linux reads environments, elsewhere the recorded leader)

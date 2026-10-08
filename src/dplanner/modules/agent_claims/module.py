@@ -29,6 +29,7 @@ from dplanner.core.signals import Signal
 from dplanner.domain import claims, questions
 from dplanner.domain.claims import Holding
 from dplanner.domain.model import Library, ProjectId, Step, StepId, now_stamp
+from dplanner.domain.workflow import Release
 from dplanner.framework.action_registry import ENABLED, ActionRegistry, ActionSpec, ActionState
 from dplanner.framework.context import Context
 from dplanner.modules.agent_claims import ownership
@@ -47,6 +48,7 @@ class AgentClaimsDeps:
     project_dir: Callable[[ProjectId], Path]
     actions: ActionRegistry
     parent: QWidget  # Owns the timer: a discarded build stops polling.
+    halt: ownership.Halt  # The playbook engine's, for the pass an ended claim leaves.
 
 
 class AgentClaimsModule:
@@ -129,6 +131,11 @@ class AgentClaimsModule:
             return ActionState(enabled=False, label="End Squad Claim — no squad holds this step")
         return ENABLED
 
+    def release(self, follow_up: Release) -> bool:
+        """A person's override from this window — a stopped status: ``released_by_person``."""
+        directory = self._deps.project_dir(follow_up.project)
+        return ownership.released_by_person(directory, follow_up, self._deps.halt)
+
     def _end(self, context: Context) -> None:
         held = self._focused(context)
         if held is None:
@@ -136,5 +143,5 @@ class AgentClaimsModule:
         directory = self._deps.project_dir(held.claim.project)
         by = {"kind": questions.PERSON, "name": getpass.getuser()}
         with suppress(LookupError, ValueError):  # Ended meanwhile: the refresh shows it.
-            ownership.end(directory, held.claim.id, by, "cleared")
+            ownership.end(directory, held.claim.id, by, "cleared", self._deps.halt)
         self.refresh()
