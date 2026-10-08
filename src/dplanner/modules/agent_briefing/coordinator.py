@@ -132,7 +132,7 @@ def _choose(keys: Sequence[str], taken: Collection[str]) -> PromptPart:
         " nothing that reads like a step or review key. Lowercase letters only, never a"
         " suffix or a number — DPlanner adds `-actual`, `-two` and the rest.",
         f"It must be unique among the squads running now (`dplanner claim list`). {running}",
-        "Your first order, once `dplanner skill status` passes: take the selection's agent"
+        "Your first order, once you know you can drive DPlanner: take the selection's agent"
         f" steps under it — `dplanner claim take {' '.join(quoted(key) for key in keys)}"
         f" --callsign {UNCHOSEN}` with your word. If it refuses the word, another squad holds"
         " it: pick another and take again.",
@@ -150,8 +150,9 @@ def _before(
 ) -> PromptPart:
     lines = [
         "First, confirm you can drive DPlanner: run `dplanner skill status`. If the command is"
-        " missing or the skill is not installed, STOP and tell the developer this needs the"
-        " DPlanner skill (`dplanner skill install`).",
+        " missing or a line reads `missing`, STOP and tell the developer this needs the"
+        " DPlanner skill (`dplanner skill install`). `stale` is not a stop: that skill came"
+        " from another build of DPlanner — say so and carry on.",
         f"Then say you are on the net: `dplanner agent-work start '{spoken(member(squad))}:"
         f" coordinating {', '.join(keys)}' --of {len(keys)}`.",
         "This run outlives your attention: before a long stretch, make sure the machine will"
@@ -191,7 +192,7 @@ def _squad(
         if step.id in called
     ]
     unique = (
-        f"Squad {squad.capitalize()} is unique among the squads running now"
+        f"Squad {spoken(squad)} is unique among the squads running now"
         if chosen
         else "Your squad is the word you chose, unique among the squads running now"
     )
@@ -275,8 +276,10 @@ def _loop(project: str, actual: str, at_once: int) -> PromptPart:
             f" `dplanner claim list`, `dplanner progression show {project}`, and `dplanner usage"
             " show <key>` for a run you are unsure of; every check renews your claim. Wait"
             " between checks with your harness's own scheduled wake-up, never a background"
-            " watcher or a sleep loop. A quiet terminal or exit 0 is not done: the step's status"
-            " and its runs say what happened.",
+            " watcher or a sleep loop. Run headless (`claude -p`, `codex exec`) you have none:"
+            " your turn ends with your process, and only a person — or a timer they set up —"
+            " wakes you again, so end each turn saying what you wait for. A quiet terminal or"
+            " exit 0 is not done: the step's status and its runs say what happened.",
             "4. **Answer or escalate.** You may answer a coordinator gate, a round cap, and a"
             " worker's decision, plan approval or block: `dplanner question answer Q-…"
             f" '<label>' --by {actual}`, with a choice's exact label — any other words are read"
@@ -293,7 +296,9 @@ def _loop(project: str, actual: str, at_once: int) -> PromptPart:
             " base listed above — never the mainline, which a person merges. GitHub reads"
             " `mergeable` as UNKNOWN for a few seconds after any push or merge: poll `gh pr view"
             " <n> --json mergeable` until it settles, since UNKNOWN is not a conflict; then `gh"
-            " pr merge <n> --merge`. Run the project's checks on the integrated branch in your"
+            " pr merge <n> --merge`. Claude's auto mode refuses that merge unless the session"
+            ' was started with `--allowedTools "Bash(gh pr merge:*)"`: when it is refused, ask'
+            " a person to merge rather than working round the refusal. Run the project's checks on the integrated branch in your"
             f" own worktree (`{actual}/verify`), in the foreground under a timeout — the ratchet"
             " tests first (an architecture or rule-size ceiling): two PRs that each fit a"
             " ceiling can exceed it together. Rerun a lone failure alone before you believe it.",
@@ -301,7 +306,9 @@ def _loop(project: str, actual: str, at_once: int) -> PromptPart:
             " then `dplanner claim release <key> --why merged`, and back to 1 — what it"
             " unblocked may be ready now.",
             "",
-            "A run parked on a limit is its supervisor's; `dplanner agent retry <key>` is for a"
+            "A run parked on a limit is its supervisor's, and a run whose supervisor died is"
+            " picked up again by the next `dplanner agent run` on the project or a window"
+            " starting; `dplanner agent retry <key>` is for a"
             " block you understand; a pass going nowhere is `dplanner playbook stop <key>` —"
             " every run and question of it ends, its worktree stays; a step that cannot go on"
             " is `dplanner status set <key> blocked`, with a note saying why. Record each"
