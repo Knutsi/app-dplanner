@@ -298,7 +298,8 @@ def _loop(project: str, actual: str, at_once: int) -> PromptPart:
             " <n> --json mergeable` until it settles, since UNKNOWN is not a conflict; then `gh"
             " pr merge <n> --merge`. Claude's auto mode refuses that merge unless the session"
             ' was started with `--allowedTools "Bash(gh pr merge:*)"`: when it is refused, ask'
-            " a person to merge rather than working round the refusal. Run the project's checks on the integrated branch in your"
+            " a person to merge rather than working round the refusal. Run the project's checks"
+            " on the integrated branch in your"
             f" own worktree (`{actual}/verify`), in the foreground under a timeout — the ratchet"
             " tests first (an architecture or rule-size ceiling): two PRs that each fit a"
             " ceiling can exceed it together. Rerun a lone failure alone before you believe it.",
