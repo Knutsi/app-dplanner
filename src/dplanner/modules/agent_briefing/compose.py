@@ -35,13 +35,15 @@ def brief(
     place: Callable[[str], str] = _unmoved,
     stage: StageKind = StageKind.EXECUTE,
     extra: Sequence[PromptPart] = (),
+    callsign: str = "",
 ) -> AssembledPrompt:
     """The briefing for a run of ``step`` that carries it out, on ``branches``.
 
     ``place`` maps each file the step's own blocks reference to where the run will read it
     — Run Agent stages them beside the prompt — and leaves them on disk by default. A
     playbook's ``stage`` other than execute closes with its own ask rather than the work's
-    (:mod:`.stages`), and ``extra`` is what the stage hands over, read last.
+    (:mod:`.stages`), and ``extra`` is what the stage hands over, read last. ``callsign`` is
+    the squad member a coordinator launched the run as, told in the preamble.
     """
     project = library.project_of(step.id)
 
@@ -69,7 +71,7 @@ def brief(
             if stage is StageKind.EXECUTE
             else stage_epilogue(step, stage)
         ),
-        preamble=preamble(step, uses_worktree(step), facts, branches, roles),
+        preamble=preamble(step, uses_worktree(step), facts, branches, roles, callsign),
         project_instruction=standing,
         project_files=standing_files,
         instruction_files=tuple(place(path) for path in own.files),

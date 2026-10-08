@@ -176,3 +176,27 @@ def test_two_writers_at_once_lose_neither_update(tmp_path):
     for worker in workers:
         worker.join()
     assert _found(tmp_path, claim.id).steps == ("s3",)
+
+
+def test_a_member_is_the_squad_word_and_its_numbers_and_actual_is_the_coordinator():
+    assert claims.member("Kettle") == "kettle-actual"
+    assert claims.member("kettle-actual", 2) == "kettle-two"
+    assert claims.member("kettle", 2, 1) == "kettle-two-one"
+    assert claims.squad_of(claims.member("kettle", 19)) == "kettle"
+    with pytest.raises(ValueError):
+        claims.member("kettle", 21)
+
+
+def test_a_callsign_is_spoken_capitalised_with_its_hyphens_between_numbers():
+    assert claims.spoken("kettle-two-one") == "Kettle Two-One"
+    assert claims.spoken(claims.member("kettle")) == "Kettle Actual"
+    assert claims.spoken("kettle") == "Kettle"
+
+
+def test_the_words_held_are_those_of_live_or_parked_claims_only(tmp_path):
+    live, ended = _claim(callsign="kettle"), _claim(callsign="anvil-two")
+    claims.write(tmp_path, live)
+    claims.write(tmp_path, replace(ended, ended={"at": AT}))
+    claims.write(tmp_path / "other", _claim(callsign="lantern", heartbeat=_at(-200)))
+    held = claims.squads_holding([tmp_path, tmp_path / "other"], _at(5))
+    assert held == {"kettle": live}

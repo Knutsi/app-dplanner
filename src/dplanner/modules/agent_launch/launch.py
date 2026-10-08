@@ -294,9 +294,11 @@ def briefing(
     staged: dict[str, str] | None = None,
     stage: StageKind = StageKind.EXECUTE,
     extra: Sequence[PromptPart] = (),
+    callsign: str = "",
 ) -> AssembledPrompt:
     """The step's briefing for ``stage``, with every referenced file path mapped through
-    ``staged`` and a playbook stage's ``extra`` parts read last."""
+    ``staged``, a playbook stage's ``extra`` parts read last, and the squad member it runs
+    as, ``callsign``, told in its preamble."""
     remap = staged or {}
     return brief(
         library,
@@ -308,6 +310,7 @@ def briefing(
         place=lambda path: remap.get(path, path),
         stage=stage,
         extra=extra,
+        callsign=callsign,
     )
 
 
@@ -380,7 +383,9 @@ def prepare_run(
     directory.mkdir(parents=True, exist_ok=True)
     listed = briefing(library, step, briefed, facts, branches, stage=stage, extra=extra).files
     staged = launcher.stage_assets(directory, listed, briefed.read_asset)
-    text = briefing(library, step, briefed, facts, branches, staged, stage, extra).text
+    text = briefing(
+        library, step, briefed, facts, branches, staged, stage, extra, callsign=callsign
+    ).text
     project = library.project_of(step.id)
     files = None
     if mode == HEADLESS:

@@ -9,6 +9,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from dplanner.core.storage.pointer import WORKTREES_DIR
+from dplanner.domain.claims import member, spoken, squad_of
 from dplanner.domain.locations import CODE, LocationRole, roles_by_id
 from dplanner.domain.model import Library, Step
 from dplanner.domain.repositories import UNSET, RepositoryFacts
@@ -26,6 +27,7 @@ def preamble(
     facts: RepositoryFacts | None,
     branches: BranchPlan,
     roles: Sequence[LocationRole],
+    callsign: str = "",
 ) -> str:
     """The briefing's preflight: the agent proves it can report back, that it is where
     this run said it would be, and knows where the plan lives, before it starts.
@@ -41,6 +43,8 @@ def preamble(
     drifts, so the agent is warned to leave the plan files alone and let the verbs write.
     ``branches`` names the branch the worktree is on, the one the launcher prepared, and
     ``roles`` the kinds of place a project can name, which every module declares.
+    ``callsign`` is the squad member a coordinator launched this run as (``kettle-two``),
+    and empty for a person's launch.
     """
     lines = [
         "First, confirm you can drive DPlanner: run `dplanner skill status`. If the"
@@ -77,20 +81,36 @@ def preamble(
             " beside you, but this one shares the developer's working tree."
         )
     if facts is not None:
-        lines.append(_plan_whereabouts(facts))
-        told = _locations_told(facts, roles)
+        lines.append(plan_whereabouts(facts))
+        told = locations_told(facts, roles)
         if told:
             lines.append(told)
-    lines.append(
-        "Other agents may be working beside you in this repository, each in a worktree"
-        " of its own, and their processes carry the same names and paths as yours. Never"
-        " kill a process by name or pattern (`pkill -f`, `killall`, `kill $(pgrep …)`):"
-        " kill only by a pid your own shell started."
-    )
+    if callsign:
+        lines.append(_callsign_told(callsign))
+    lines.append(NEVER_KILL)
     return "\n\n".join(lines)
 
 
-def _locations_told(facts: RepositoryFacts, roles_known: Sequence[LocationRole]) -> str:
+NEVER_KILL = (
+    "Other agents may be working beside you in this repository, each in a worktree"
+    " of its own, and their processes carry the same names and paths as yours. Never"
+    " kill a process by name or pattern (`pkill -f`, `killall`, `kill $(pgrep …)`):"
+    " kill only by a pid your own shell started."
+)
+
+
+def _callsign_told(callsign: str) -> str:
+    """Who the worker is on its squad's net, for a run launched under a claim."""
+    coordinator = spoken(member(squad_of(callsign)))
+    return (
+        f"You are {spoken(callsign)}, of the squad {coordinator} coordinates. Sign every"
+        f" message you write with that callsign, and end every commit message with the"
+        f" trailer `Callsign: {callsign}`. A question goes to {coordinator} through the"
+        " question door below, never through your terminal."
+    )
+
+
+def locations_told(facts: RepositoryFacts, roles_known: Sequence[LocationRole]) -> str:
     """The project's locations, told to the agent: which repositories it is about and
     where each stands on this machine, so an agent never guesses a path."""
     if not facts.placements:
@@ -120,7 +140,7 @@ def _locations_told(facts: RepositoryFacts, roles_known: Sequence[LocationRole])
     )
 
 
-def _plan_whereabouts(facts: RepositoryFacts) -> str:
+def plan_whereabouts(facts: RepositoryFacts) -> str:
     """Where the plan lives, told to the agent: in a repository of its own, or — warned
     about unless the people on the project accepted it — inside the code it plans; or, before
     anybody named the code, in a repository of its own with nothing yet to work in."""
