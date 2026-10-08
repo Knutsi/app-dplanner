@@ -56,11 +56,12 @@ it, and one holds it:
   step not already under review or waiting on its merge, exits 1, naming
   `ready-for-review`. A reviewing agent is not stopped: from review or merge it may finish
   the step. It is a guard on *who is reporting*, not on the word, so it reads the same fact
-  the window word refuses on — an agent CLI's marker in the environment, read by the
-  composition root's `agent_shell_marker` over `domain/agents.py`'s `shell_marker`, which
-  the entry point imports (the root, which wires the verb, may not import the entry
-  point, so the reading lives there rather than in `entry.py`). **A person's own terminal and
-  the window are never asked**: the developer marking a step done is the acceptance.
+  the window word refuses on — an agent CLI's marker in the environment, read by
+  `domain/agents.py`'s `shell_marker` over the composition root's `agent_harnesses()`,
+  which the entry point and the root's `status set` wiring each read directly (`shell_marker`
+  defaults its `env` to this process's own, so neither caller passes it). **A person's own
+  terminal and the window are never asked**: the developer marking a step done is the
+  acceptance.
 - **The way out is a reason, and the reason is kept.** Some steps have nothing to review — a
   docs-only change, a step that only reports. `--because '<reason>'` sets done and writes a
   `decision` note on the step in the same run (*Done without review*, the reason as its

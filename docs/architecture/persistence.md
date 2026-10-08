@@ -236,7 +236,8 @@ working is already running verbs — a status, a note, a link — so `cli/main.p
 project's standing claims on every invocation and the agent never carries a heartbeat of
 its own. It never *makes* a claim: running a verb is evidence for a claim somebody made,
 not a claim of its own. And the renewal is handed to the run only from inside an agent's
-shell — `entry.py` passes the board when `agent_shell_marker()` says so, the same fact the
+shell — `entry.py` passes the board when `domain.agents.shell_marker(agent_harnesses())` says
+so, the same fact the
 window word is refused on, read from the other side — because a developer running
 `dplanner step list` in their own terminal would otherwise be vouching for an agent that
 died an hour ago.

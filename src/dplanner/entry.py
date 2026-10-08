@@ -37,8 +37,9 @@ from dplanner.cli.command import CliRegistry
 from dplanner.cli.main import WINDOW_WORD, run
 from dplanner.core import user_path
 from dplanner.core.telemetry import Telemetry, install, journal_path
+from dplanner.domain.agents import shell_marker
 from dplanner.modules import (
-    agent_shell_marker,
+    agent_harnesses,
     at_work_board,
     default_cli_commands,
     default_link_rules,
@@ -105,7 +106,7 @@ def window_arguments(argv: list[str]) -> list[str]:
 def main(argv: list[str] | None = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     window = opens_a_window(arguments)
-    marker = agent_shell_marker() if window else ""
+    marker = shell_marker(agent_harnesses()) if window else ""
     if marker:
         print(REFUSAL.format(marker=marker), file=sys.stderr)
         return 2
@@ -132,7 +133,7 @@ def main(argv: list[str] | None = None) -> int:
     # marker is the same fact the window word is refused on, read from the other side.
     board = at_work_board()
     registry.register_all(default_cli_commands(board=board))
-    signing = board if agent_shell_marker() else None
+    signing = board if shell_marker(agent_harnesses()) else None
     return run(
         registry,
         default_module_formats(),

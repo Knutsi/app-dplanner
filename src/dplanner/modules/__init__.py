@@ -521,6 +521,7 @@ def _agents(
     from pathlib import Path
 
     from dplanner.core.config_dir import config_dir
+    from dplanner.domain.agents import names_session
     from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
     from dplanner.modules.agent_at_work.module import AgentAtWorkDeps, AgentAtWorkModule
     from dplanner.modules.agent_briefing.worktree import mainline
@@ -670,7 +671,7 @@ def _agents(
                 harness,
                 # The session the command named, for a harness that names one; a harness
                 # that mints its own is found by its record once the run ends.
-                files.session if _names_session(harness) else "",
+                files.session if names_session(agent_harnesses(), harness) else "",
                 # What the briefing came to: measured where prompt.md was written.
                 files.prompt_chars,
                 # A session that starts in plan mode waits for a person from the first
@@ -2823,6 +2824,7 @@ def default_cli_commands(
     from dplanner.cli.telemetry import commands as telemetry_commands
     from dplanner.core.config_dir import config_dir
     from dplanner.core.telemetry import crash_log_path, journal_path
+    from dplanner.domain.agents import shell_marker
     from dplanner.domain.locations import roles_by_id
     from dplanner.domain.workflow import AgentRun, Person
     from dplanner.modules.agent_at_work import cli as at_work_cli
@@ -2898,12 +2900,15 @@ def default_cli_commands(
 
     workflow = _status_workflow()
     plan_branches = lambda lib, step, facts: branch_plan(lib, step, mainline(facts, step))  # noqa: E731
+    # Who answers is read like `status set`'s reporter: an agent's shell is the coordinator.
+    harnesses = agent_harnesses()
+    in_agent_shell: Callable[[], bool] = lambda: bool(shell_marker(harnesses))  # noqa: E731
 
     def end_claim(claim: "EndClaim") -> bool:
         return board.end(claim.project, claim.step)
 
     def actor() -> "Actor":
-        return AgentRun() if agent_shell_marker() else Person()
+        return AgentRun() if in_agent_shell() else Person()
 
     def set_status(context: "CliContext", step: "Step", status: "Status") -> None:
         """A status written as `status set` writes it — refused as one line, its claim
@@ -2925,7 +2930,6 @@ def default_cli_commands(
 
     # A playbook's stages launch as `agent run` launches, and `progress` merges into the
     # feature branch and accepts the step by the merge, as `github refresh` does.
-    harnesses = agent_harnesses()
     engine = PlaybookEngine(
         launch=launch_cli.StageLauncher(default_location_roles(), plan_branches, harnesses),
         accept=lambda context, step, base, head: github_cli.accept_by_merge(
@@ -2987,11 +2991,10 @@ def default_cli_commands(
         ),
         *agent_state_cli.commands(),
         # A run's usage and its supervisor read the harness that ran it: the window's tuple.
-        *usage_cli.commands(harnesses=agent_harnesses()),
-        *supervisor_cli.commands(harnesses=agent_harnesses()),
-        # Who answers is read like `status set`'s reporter: an agent's shell is the coordinator.
-        *questions_cli.commands(in_agent_shell=lambda: bool(agent_shell_marker())),
-        *claims_cli.commands(in_agent_shell=lambda: bool(agent_shell_marker())),
+        *usage_cli.commands(harnesses=harnesses),
+        *supervisor_cli.commands(harnesses=harnesses),
+        *questions_cli.commands(in_agent_shell=in_agent_shell),
+        *claims_cli.commands(in_agent_shell=in_agent_shell),
         # The agent's own account of what it is doing while it does it: the window's
         # banner and the watcher's stood-down modal both read what these write.
         *at_work_cli.commands(board=board, key_of=key_of),
@@ -3001,7 +3004,7 @@ def default_cli_commands(
         # is working the step ends the claim somebody made on it, on the board above.
         *status_cli.commands(
             workflow=workflow,
-            in_agent_shell=lambda: bool(agent_shell_marker()),
+            in_agent_shell=in_agent_shell,
             end_claim=end_claim,
             release=release,
         ),
@@ -3112,13 +3115,6 @@ def default_cli_commands(
     return [*commands, *skill, *installer, *checklist]
 
 
-def _names_session(harness_id: str) -> bool:
-    from dplanner.domain.agents import harness_by_id
-
-    harness = harness_by_id(agent_harnesses(), harness_id)
-    return harness is not None and harness.names_session
-
-
 def agent_harnesses() -> tuple["AgentHarness", ...]:
     """Every agent CLI this build can launch, first is the default.
 
@@ -3133,18 +3129,6 @@ def agent_harnesses() -> tuple["AgentHarness", ...]:
     from dplanner.modules.agent_opencode import harness as opencode
 
     return (claude.HARNESS, codex.HARNESS, opencode.HARNESS)
-
-
-def agent_shell_marker(env: "Mapping[str, str] | None" = None) -> str:
-    """The marker set in ``env`` (this process's environment by default), or "" when no
-    agent's shell is around us — ``domain/agents.py``'s reading over this build's
-    harnesses. Read by the entry point's window guard and by ``status set``, which holds an
-    agent's done at review."""
-    import os
-
-    from dplanner.domain.agents import shell_marker
-
-    return shell_marker(agent_harnesses(), os.environ if env is None else env)
 
 
 def dictation_providers() -> tuple["DictationProvider", ...]:
