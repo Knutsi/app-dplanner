@@ -12,6 +12,7 @@ and what a person may run to see a pass take its next step; it acts once however
 import getpass
 from argparse import ArgumentParser, Namespace
 from collections.abc import Callable
+from contextlib import ExitStack
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -24,6 +25,7 @@ from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.library_file import resolve_library_path
 from dplanner.domain.model import Step
 from dplanner.domain.workflow import EndClaim, Release
+from dplanner.modules.agent_supervisor import supervisor
 from dplanner.modules.step_playbook.aspect import (
     MODULE_ID,
     Choice,
@@ -68,11 +70,18 @@ def commands(
         runs: the other order would let a stage that ends in between launch the next one, or
         say nobody works a step a surviving process still works. A stop whose change to the
         plan did not land, or a pass something else halted, is finished by the next. Nothing to
-        stop is said, and is no error."""
+        stop is said, and is no error.
+
+        The step's launch lock is held from before the stop until the plan is written and its
+        follow-ups are done: a launch let in after the stop would start a pass whose step
+        this plan change sets back to pending, and whose claim its release stops."""
         step = find_step(context.library, args.step, context.current)
         project = context.library.project_of(step.id).id
         project_dir = context.store.project_dir(project)
-        done = stop(project_dir, project, step, getpass.getuser())
+        locked = ExitStack()
+        locked.enter_context(supervisor.launching(project, step.id, wait=True))
+        context.unwritten.append(locked.close)
+        done = stop(project_dir, step, getpass.getuser())
         if done is not None and done.still:
             raise CliError(f"{step.title}: {done.said()} — its status is left as it was")
         # The plan as it stands now, not as it was read before the step's lock came free: a
@@ -85,12 +94,19 @@ def commands(
         nothing = f"{step.title}: nothing to stop — no playbook pass runs or waits on it"
         if not pass_id:
             context.report({"step": step.id, "stopped": False}, nothing)
+            context.after_flush.append(locked.close)
             return 0
         change = stopped(context.library, step, today=context.clock.today())
         if change.command is not None:
             context.apply(change.command)
 
         def settle() -> None:
+            try:
+                settled()
+            finally:
+                locked.close()
+
+        def settled() -> None:
             performed = perform(
                 change.follow_ups,
                 end_claim,

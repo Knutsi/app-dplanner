@@ -678,12 +678,14 @@ def test_agent_run_rereads_ownership_under_the_lock_just_before_it_starts(
     from dplanner.modules.agent_claims import ownership
     from dplanner.modules.agent_launch import cli as launch_cli
     from dplanner.modules.agent_launch import launch
+    from dplanner.modules.step_playbook.engine import halt_claimed
 
     cli("claim", "take", "Build it", "--callsign", "kettle", "--project", "widget")
     real = launch.place
 
     def released_meanwhile(*args, **kwargs):
-        ownership.release(plan, _step_id(cli), {"kind": "person", "name": "Knut"}, "changed mind")
+        by = {"kind": "person", "name": "Knut"}
+        ownership.release(plan, _step_id(cli), by, "changed mind", halt_claimed)
         return real(*args, **kwargs)
 
     monkeypatch.setattr(launch_cli, "place", released_meanwhile)

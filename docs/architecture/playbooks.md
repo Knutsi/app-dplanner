@@ -562,7 +562,10 @@ plan, through `workflows.stopped`, re-reading the plan as it stands after the lo
 - the at-work claim is ended, and the step is released from its squad's claim (`Release`).
 
 The other order, the plan first, would leave a moment in which a stage that ends launches
-the next one. A run that outlives the grace is reported, and the status is left as it was:
+the next one. **The launch lock is held until the plan is written and its follow-ups are
+done** (`playbook stop` takes it itself, and lets go after the flush and the release): a
+launch let in once the pass had halted would start a new pass that the old stop's plan
+change then set back to *pending*, and whose squad claim its release then gave up. A run that outlives the grace is reported, and the status is left as it was:
 *pending* would say nobody works a step a process still works. Stopping again finishes it.
 
 **A stop is idempotent.** When the pass has halted with nothing of it left to stop, and no run

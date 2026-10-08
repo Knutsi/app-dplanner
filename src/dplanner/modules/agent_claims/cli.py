@@ -30,13 +30,16 @@ from dplanner.modules.agent_claims import ownership
 from dplanner.planning.kinds import key_of
 
 
-def commands(*, in_agent_shell: Callable[[], bool]) -> list[CliCommand]:
+def commands(*, in_agent_shell: Callable[[], bool], halt: ownership.Halt) -> list[CliCommand]:
+    def _taking(context: CliContext, args: Namespace) -> int:
+        return _take(context, args, halt)
+
     def _release(context: CliContext, args: Namespace) -> int:
         project_dir = context.store.project_dir(context.project.id)
         step = find_step(context.library, args.step, context.current)
         by = acting(args.by, in_agent_shell())
         try:
-            claim = ownership.release(project_dir, step.id, by, args.why)
+            claim = ownership.release(project_dir, step.id, by, args.why, halt)
         except (LookupError, ValueError) as error:
             raise CliError(str(error)) from error
         if claim is None:
@@ -50,7 +53,7 @@ def commands(*, in_agent_shell: Callable[[], bool]) -> list[CliCommand]:
         by = acting(args.by, in_agent_shell())
         try:
             claim = ownership.end(
-                project_dir, claims.resolve(project_dir, args.claim).id, by, args.why
+                project_dir, claims.resolve(project_dir, args.claim).id, by, args.why, halt
             )
         except (LookupError, ValueError) as error:
             raise CliError(str(error)) from error
@@ -64,7 +67,7 @@ def commands(*, in_agent_shell: Callable[[], bool]) -> list[CliCommand]:
             summary="Take steps for your squad before starting any of them: fetched,"
             " checked, committed and pushed.",
             configure=_configure_take,
-            run=_take,
+            run=_taking,
             examples=("dplanner claim take S3 S4 S7 --callsign kettle",),
         ),
         CliCommand(
@@ -92,7 +95,7 @@ def commands(*, in_agent_shell: Callable[[], bool]) -> list[CliCommand]:
     ]
 
 
-def _take(context: CliContext, args: Namespace) -> int:
+def _take(context: CliContext, args: Namespace, halt: ownership.Halt) -> int:
     project = context.project
     project_dir = context.store.project_dir(project.id)
     steps = [find_step(context.library, ref, context.current) for ref in args.steps]
@@ -127,7 +130,7 @@ def _take(context: CliContext, args: Namespace) -> int:
     why = f"taken over by {squad} ({claim.short})"
     for old in dict.fromkeys(entry["claim"] for entry in superseded):
         lost = [entry["step"] for entry in superseded if entry["claim"] == old]
-        ownership.stop_runs(project_dir, old, lost, squad, why)
+        ownership.stop_runs(project_dir, old, lost, squad, why, halt)
     context.report(
         claim.to_json(), f"{claim.short} {squad} holds {_listed(claim.steps, keys)}{said}"
     )

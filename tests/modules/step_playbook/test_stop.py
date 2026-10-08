@@ -481,3 +481,79 @@ def test_a_pass_something_else_fenced_is_finished_by_a_stop(drive):
     assert "finished stopping pass" in stop(drive)
     assert _status(drive.cli, STEP) == "pending"
     assert "nothing to stop" in stop(drive)
+
+
+# -- the landing review (S23) ----------------------------------------------------------------------
+
+
+def _squad_pass(drive, playbook: str) -> claims.Claim:
+    """A pass of ``playbook`` run by a squad member, its first stage — the plan — done."""
+    drive.cli("claim", "take", STEP, "--callsign", "osprey", "--project", "widget")
+    drive.cli("playbook", "set", STEP, playbook)
+    drive.play({"lines": [INIT, result("A plan", session="s")]})
+    drive.cli("agent", "run", STEP, "--playbook", "--callsign", "osprey-1")
+    drive.supervise()
+    (claim,) = claims.records(drive.plan)
+    return claim
+
+
+def _leave(drive, claim: claims.Claim, how: str) -> None:
+    if how == "end":
+        drive.cli("--project", "widget", "claim", "end", claim.id, "--why", "cleared")
+    else:
+        drive.cli("--project", "widget", "claim", "release", STEP, "--why", "cleared")
+
+
+@pytest.mark.parametrize("how", ["end", "release"])
+def test_a_claim_ended_while_its_pass_waits_at_a_gate_halts_the_pass(drive, how):
+    """The gate's answer would launch the execute stage as nobody's run: the claim's leaving
+    withdraws it, and an advance afterwards launches nothing."""
+    claim = _squad_pass(drive, "plan-person-execute")
+    drive.advance()
+    gate = drive.asked()
+    _leave(drive, claim, how)
+    withdrawn = questions.find(drive.plan, gate.id)
+    assert withdrawn is not None and withdrawn.state == questions.WITHDRAWN
+    launched = len(drive.started)
+    drive.cli("--project", "Widget", "question", "answer", gate.short, "Pass", expect=1)
+    assert "withdrawn" in drive.advance()
+    assert len(drive.started) == launched
+
+
+@pytest.mark.parametrize("how", ["end", "release"])
+def test_a_claim_ended_between_stages_halts_the_pass(drive, how):
+    claim = _squad_pass(drive, "plan-execute-person")  # The execute is due, not launched.
+    _leave(drive, claim, how)
+    launched = len(drive.started)
+    assert "was stopped: cleared" in drive.advance()
+    assert len(drive.started) == launched and questions.records(drive.plan) == []
+
+
+def test_a_launch_racing_a_stop_waits_for_its_plan_write_and_follow_ups(drive, monkeypatch):
+    """A launch let in once the pass has halted — before the stop has reset the step and
+    released its claim — would have its new pass's step set back to pending and its squad's
+    claim released: the stop keeps the step's launch lock until both are done."""
+    drive.cli("claim", "take", STEP, "--callsign", "osprey", "--project", "widget")
+    drive.cli("playbook", "set", STEP, "execute")
+    drive.cli("agent", "run", STEP, "--playbook", "--callsign", "osprey-1")
+    first = drive.latest()
+    halt, raced = engine.stop, []
+
+    def then_a_launch(*args, **kwargs):
+        done = halt(*args, **kwargs)
+        raced.append(
+            drive.cli("agent", "run", STEP, "--playbook", "--callsign", "osprey-1", expect=1)
+        )
+        return done
+
+    monkeypatch.setattr("dplanner.modules.step_playbook.cli.stop", then_a_launch)
+    report = json.loads(drive.cli("playbook", "stop", STEP, "--json"))
+    assert "being launched right now" in raced[0]
+    assert report["stopped"] and report["released"] and drive.latest().run == first.run
+    monkeypatch.setattr("dplanner.modules.step_playbook.cli.stop", halt)
+
+    drive.cli("claim", "take", STEP, "--callsign", "osprey", "--project", "widget")
+    drive.cli("agent", "run", STEP, "--playbook", "--callsign", "osprey-1")
+    assert drive.latest().pass_ != first.pass_ and not drive.latest().over
+    assert _status(drive.cli, STEP) == "in-progress"
+    assert drive.latest().step in claims.read_holdings(drive.plan, now_stamp())

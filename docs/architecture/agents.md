@@ -1282,7 +1282,11 @@ function** (`agent_claims/ownership.py`): a takeover, `claim release`, `claim en
 Squad Claim* and a person's stopped status each fence the squad's unfinished runs on the step
 and signal their supervisor here, and a live turn reads its fence on every poll — so the
 first version's release and Clear, which changed the claim and left the worker running, are
-the same act as the override. A release takes the step's launch lock when it is free; when a
+the same act as the override. The step's playbook pass under the claim is halted with them,
+by the engine's own stop (`engine.halt_claimed`, handed to `ownership` as a callback): a pass
+between stages or waiting at a gate has no unfinished run to fence, and the gate answered
+afterwards would launch the next stage under no claim at all — `start_run`'s re-read compares
+the claim the run was prepared under with the claim now, and both are none. A release takes the step's launch lock when it is free; when a
 launch holds it — the window's own, possibly, on its GUI thread — waiting would deadlock, and
 the launch's own re-read covers the gap, since its record already exists to be fenced. A
 fenced run counts as over for the next launch only once nothing of it runs here — and a
