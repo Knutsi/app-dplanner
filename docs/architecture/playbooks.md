@@ -438,9 +438,13 @@ revive starts that one whatever the step reads. The profile's agent is the imple
 the pass's settings are pinned (`passes.pinned`). A role that no launch profile runs headless
 is refused before anything is written. On a step at Ready for review, the pass starts at its
 first gate and claims nothing, because the work is not taken up again. **A step has one pass
-at a time**: while any run of a pass is not over, or any of its questions is unsettled,
-another `--playbook` is refused with the reason (`engine.active`). Replacing a pass is a verb
-for later. A separate `playbook run` would have been a second launch flow, with the gates
+at a time**: until its latest pass has reached its end — complete, stopped, or given up by a
+person — another `--playbook` is refused with the reason (`engine.active`, which asks
+`passes.due`), between stages too, while a finished stage waits for its advance. Replacing a
+pass is a verb for later. `revive` runs before that check, so a run it restarts reads as
+under way; and a pass whose first run never began — no turn, no supervisor, its step not
+claimed, since a start only ever follows the saved claim — is no pass: its launch died
+before the claim, and a retry deletes it and begins afresh rather than refusing. A separate `playbook run` would have been a second launch flow, with the gates
 written twice.
 
 **Not yet:**

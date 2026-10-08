@@ -71,8 +71,10 @@ paths:
   checks before it merges** — the plan's feature branch now (`merge_target`), the PR's base
   and head, the step under review — merges (`--merge`) only into a non-default branch, makes
   the mainline a person-only gate (`questions.PERSON_ONLY`) and anything else a `blocked`
-  card. **One pass at a time**: a step with a run of a pass not over or a question of it
-  unsettled refuses another `--playbook`. The first record is written before the claim is
+  card. **One pass at a time**: until the latest pass reaches its end (`passes.due` says
+  complete or halted) — between stages too — another `--playbook` is refused; `revive` runs
+  first, and a first run that never began on an unclaimed step is a dead launch a retry
+  replaces. The first record is written before the claim is
   saved, and started after it.
   `docs/architecture/playbooks.md`'s *How the engine drives a pass* has the reasoning.
 - **A role names a harness, never a profile or a path**, and maps at launch to the first

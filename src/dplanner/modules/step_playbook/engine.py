@@ -137,7 +137,7 @@ class Engine:
         """A new pass of ``chosen`` (or the step's own playbook) on ``step``, the work stages
         run by ``implementer``'s harness — or ``CliError`` saying why it cannot begin."""
         project = context.library.project_of(step.id)
-        if why := active(context.store.project_dir(project.id), step.id):
+        if why := active(context.store.project_dir(project.id), step):
             raise CliError(f"{step.title!r} {why}")
         playbook = preset(chosen) if chosen else resolve(step, project).playbook
         if playbook is None:
@@ -165,8 +165,11 @@ class Engine:
         start nothing: the caller saves its claim, then starts it (S11's launch order). The
         caller holds the step's launch lock. A refusal here refuses the launch."""
         project_dir = context.store.project_dir(context.library.project_of(step.id).id)
-        if why := active(project_dir, step.id):
+        if why := active(project_dir, step):
             raise CliError(f"{step.title!r} {why}")
+        latest = _latest_pass(project_dir, step.id)
+        if not isinstance(latest, str) and (orphan := _orphan(latest, step)) is not None:
+            ledger.path_for(project_dir, orphan).unlink(missing_ok=True)
         pass_ = _Pass(planned.pass_, planned.playbook, planned.settings, [], directory)
         next_ = passes.due(pass_.playbook, pass_.settings, [], _facts(step))
         try:
@@ -403,17 +406,39 @@ def _settle_answers(project_dir: Path, pass_: _Pass) -> None:
             )
 
 
-def active(project_dir: Path, step_id: str) -> str:
-    """Why a pass on the step is still under way — a run not over, or a question of its own
-    not yet settled — or "": a step has one pass at a time, and a new one never quietly
-    replaces it."""
-    for record in ledger.records(project_dir):
-        if record.step == step_id and record.pass_ and not record.over:
-            return f"has a playbook pass under way: run {record.run} is not over"
-    for question in questions.records(project_dir):
-        if question.step == step_id and question.pass_ and not question.settled:
-            return f"has a playbook pass under way: it waits on {question.short}"
-    return ""
+def active(project_dir: Path, step: Step) -> str:
+    """Why the step's latest pass has not reached its end, or "": a step has one pass at a
+    time, and a new one never quietly replaces it. A pass ends when what is due is that it is
+    complete or halted — done, stopped, or given up by a person; until then it is under way,
+    between stages too, while a finished stage waits for its advance. A launch that died
+    before its claim was saved (:func:`_orphan`) left no pass."""
+    pass_ = _latest_pass(project_dir, step.id)
+    if isinstance(pass_, str) or _orphan(pass_, step):
+        return ""
+    next_ = passes.due(pass_.playbook, pass_.settings, pass_.entries, _facts(step))
+    if isinstance(next_, Complete | Halted):
+        return ""
+    return f"has a playbook pass under way ({pass_.id}): {_under_way(next_)}"
+
+
+def _under_way(next_: Next) -> str:
+    if isinstance(next_, Wait):
+        return next_.why
+    stage = next_.stage if isinstance(next_, Launch | Ask | Progress) else ""
+    return f"its {stage} stage is due — `dplanner playbook advance` moves it on"
+
+
+def _orphan(pass_: _Pass, step: Step) -> LedgerRecord | None:
+    """The pass's first run, when that is all the pass is and it never began: no turn, no
+    supervisor, its step not claimed. Its launch died between writing it and saving its claim
+    — the start only ever follows the claim — so nothing will run it: what ``revive`` deletes
+    once it is old enough, and a new launch at once."""
+    (first, *rest) = pass_.entries
+    if rest or not isinstance(first, LedgerRecord) or first.turns or first.over:
+        return None
+    if stored(step) is Status.IN_PROGRESS or supervisor.supervised(ledger.run_dir(first.run)):
+        return None
+    return first
 
 
 def _lapsed(project_dir: Path, pass_: _Pass) -> bool:

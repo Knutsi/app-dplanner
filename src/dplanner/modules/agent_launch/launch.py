@@ -132,16 +132,21 @@ def waiting_on(library: Library, step: Step, today: date) -> list[Step]:
     return outstanding(library, step, readiness_of(status_on(library, today)))
 
 
-def unfinished_run(project_dir: Path | None, step_id: str) -> str:
+def unfinished_run(project_dir: Path | None, step_id: str, *, of_passes: bool = True) -> str:
     """The step's headless run that is not over yet — running or parked — or "": a run to
-    resume through ``agent supervise``, never to launch a second time."""
+    resume through ``agent supervise``, never to launch a second time. A playbook's launch
+    leaves out its passes' runs (``of_passes=False``): whether a pass is under way, or a crash
+    left its first record behind, is the engine's to judge, under the same lock."""
     if project_dir is None:
         return ""
     return next(
         (
             record.run
             for record in ledger.records(project_dir)
-            if record.step == step_id and record.headless and not record.over
+            if record.step == step_id
+            and record.headless
+            and not record.over
+            and (of_passes or not record.pass_)
         ),
         "",
     )

@@ -267,6 +267,10 @@ def commands(
             raise CliError(
                 f"{step.title!r} waits on work not done yet: {named} — --anyway to launch it"
             )
+        # What this machine lost or left half-launched is settled first — before anything asks
+        # whether the step is free — so a run it restarts reads as running below, and one a
+        # crash left behind is not mistaken for work under way.
+        supervisor.revive([project_dir], library=context.store.library_path)
         begin = None
         if args.playbook is not None:
             if start_pass is None:
@@ -274,9 +278,6 @@ def commands(
             implementer = launcher.harness_of(agent_command(harnesses, profile), harnesses)
             assert implementer is not None  # headless_refusal said it is a known harness.
             begin = start_pass(context, step, args.playbook, implementer.id)
-        # What this machine lost or left half-launched is settled first, so a run it
-        # restarts reads as running below.
-        supervisor.revive([project_dir], library=context.store.library_path)
         # HeldError from here until the run has started, or the run has written nothing.
         held = ExitStack()
         try:
@@ -284,7 +285,7 @@ def commands(
         except BlockingIOError:
             raise CliError(f"{step.title!r} is being launched right now — by another run") from None
         context.unwritten.append(held.close)
-        if live := unfinished_run(project_dir, step.id):
+        if live := unfinished_run(project_dir, step.id, of_passes=begin is None):
             raise CliError(
                 f"{step.title!r} already has a headless run, {live}, that is not over — resume"
                 f" a parked one with `dplanner agent supervise {live} --prompt …`"

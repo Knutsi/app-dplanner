@@ -9,6 +9,7 @@ agent CLI, never a model API: the fake plays recorded-shape streams through Clau
 
 import json
 import sys
+from contextlib import ExitStack
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -319,6 +320,7 @@ def test_a_role_no_profile_runs_any_more_blocks_until_retry_now(drive, monkeypat
     drive.cli("agent", "run", "Build it", "--playbook")
     drive.supervise()
     from dplanner.modules.agent_launch.launch import profile_for as real
+
     monkeypatch.setattr(launch_cli, "profile_for", lambda *_: None)
     assert "could not go on" in drive.advance()
     card = drive.asked()
@@ -335,12 +337,14 @@ def test_a_step_with_a_pass_under_way_refuses_another(drive):
     drive.play({"lines": [INIT, result("A plan", session="s")]})
     drive.cli("agent", "run", "Build it", "--playbook")
     said = drive.cli("agent", "run", "Build it", "--playbook", expect=1)
-    assert "has a playbook pass under way" in said and "is not over" in said
+    assert "has a playbook pass under way" in said and "is running" in said
     drive.supervise()
     drive.advance()  # The pass now waits on its person gate, with no run going.
     said = drive.cli("agent", "run", "Build it", "--playbook", expect=1)
-    assert f"waits on {drive.asked().short}" in said
-    assert len(drive.started) == 1
+    assert f"{drive.asked().short} waits for an answer" in said
+    # One pass, one run: the second launch's revive picked the first run up again (its stub
+    # supervisor never took it), and started nothing else.
+    assert {run for _dir, run in drive.started} == {drive.latest().run}
 
 
 def test_the_first_record_is_on_disk_before_the_claim_and_both_before_the_start(
@@ -398,6 +402,13 @@ def test_a_later_stages_record_with_no_turn_is_started_by_revive_whatever_the_st
     assert restarted == [fix.run] and ledger.find(drive.plan, fix.run) is not None
 
 
+def _died(owed) -> None:
+    """What a process that died leaves undone: everything but its OS locks."""
+    for undo in owed:
+        if isinstance(getattr(undo, "__self__", None), ExitStack):
+            undo()
+
+
 class _Later:
     """``datetime`` as the engine reads it, a moment past ``reset``."""
 
@@ -430,3 +441,46 @@ def test_work_already_under_review_starts_at_the_first_gate_and_is_not_claimed(d
     gate = drive.asked()
     assert (gate.stage, gate.purpose) == ("person", "gate") and gate.settings
     assert _status(drive.cli, "Build it") == "ready-for-review"
+
+
+def test_a_pass_is_under_way_between_stages_until_it_has_ended(drive):
+    """A finished stage waiting for its advance is still the pass's — and once a person
+    stops it, the step is free for another."""
+    drive.cli("playbook", "set", "Build it", "spike")
+    drive.play({"lines": [INIT, result("A plan", session="s")]})
+    drive.cli("agent", "run", "Build it", "--playbook")
+    drive.supervise()  # The plan is done; its advance has not run.
+    said = drive.cli("agent", "run", "Build it", "--playbook", expect=1)
+    assert "has a playbook pass under way" in said and "person stage is due" in said
+    drive.advance()
+    drive.answer(drive.asked(), "Stop")
+    assert "stopped the pass" in drive.advance()
+    drive.play({"lines": [INIT, result("Another plan", session="s2")]})
+    drive.cli("agent", "run", "Build it", "--playbook")
+    assert len(drive.started) == 2
+
+
+def test_a_retry_after_a_crash_before_the_claim_was_saved_recovers(drive, monkeypatch):
+    """The first record was written, then the process died before its claim was flushed:
+    nothing will ever start that run. Retrying launches the pass afresh instead of refusing it
+    as one under way, and the dead record goes."""
+    from dplanner.cli import discovery
+    from dplanner.domain.store import LibraryStore, StaleWorkspaceError
+
+    def crash(self, marks):
+        raise StaleWorkspaceError("the process died here")
+
+    drive.cli("playbook", "set", "Build it", "spike")
+    with monkeypatch.context() as crashing:
+        crashing.setattr(LibraryStore, "flush", crash)
+        # A crash rolls nothing back — but the operating system frees its locks as the process
+        # dies, which in this one process means closing the launch lock's ExitStack.
+        crashing.setattr(discovery, "_unwind", _died)
+        drive.cli("agent", "run", "Build it", "--playbook", expect=1)
+    (orphan,) = ledger.records(drive.plan)
+    assert orphan.pass_ and not orphan.turns and _status(drive.cli, "Build it") == "pending"
+    assert not drive.started
+    drive.cli("agent", "run", "Build it", "--playbook")
+    (record,) = ledger.records(drive.plan)
+    assert record.run != orphan.run and drive.started == [(drive.plan, record.run)]
+    assert _status(drive.cli, "Build it") == "in-progress"
