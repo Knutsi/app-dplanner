@@ -1078,6 +1078,10 @@ and `read_json` are gone (no callers).
 stale lock to judge. The run supervisor holds one for its life and one across each
 read-modify-write of a run record; the question store takes one across each change of a
 question, which is why it left `agent_supervisor/supervisor.py` for here.
+On Windows a waiting lock is `LK_NBLCK` retried every 50 ms until it is granted, not
+`LK_LOCK`: `LK_LOCK` gives up after ten one-second tries, and a fetch holding the sync lock
+longer than that made a Save in another window raise. `wait=False` refuses on the first
+contention (`EACCES`/`EDEADLK`) with `BlockingIOError`; any other error propagates as itself.
 
 **Upstream?** yes — the template's `write_atomic` has the same shared temporary; `os_lock` is
 worth carrying for any template app with more than one writing process.

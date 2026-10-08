@@ -741,3 +741,19 @@ in the S23 landing review. Now `ownership` halts the step's pass under the claim
 engine's stop (`engine.halt_claimed`), and `playbook stop` holds the lock until its follow-ups
 are done. Now: `agents.md`'s *Runs, questions and claims are three records in the plan* and
 `playbooks.md`'s *Stopping a pass*.
+
+## 2026-10-08 — A Codex plan or review writes its run and DPlanner's records, not read-only
+
+A Codex plan and review ran `sandbox_mode="read-only"`, which kept the code safe and also
+refused the `dplanner agent-work start` its briefing opens with and the `dplanner question ask`
+door: a reviewer could neither say it had begun nor ask. They now run from the run directory
+(`-C`) in `workspace-write`, the plan repository and the config directory their only other
+writable roots, the checkout named in the prompt to read. Now: `playbooks.md`'s *Each stage is
+one headless turn per harness*.
+
+## 2026-10-08 — A turn that outlived its supervisor is ended, not refused
+
+A supervisor started on a run whose recorded turn was still live refused it — "still
+running" — on the theory that its own supervisor had it. Holding the run's lock proves that
+supervisor gone, so nothing would ever finish the turn or advance its pass. It is now ended by
+identity and retried as a lost turn. Now: `agents.md`'s *One supervisor per run*.

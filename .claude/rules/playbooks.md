@@ -131,7 +131,10 @@ paths:
   Never `claude --bg`, and never a terminal. **A harness spells a turn as an argv**
   (`AgentHarness.headless`, `domain/headless.py`), and **Codex states its stage's mode as `-c`
   overrides on every turn**, fresh and resumed alike — `exec resume` takes no `-s`,
-  `--approve-for-me` or `--add-dir`, and does not keep the mode its thread began in.
+  `--approve-for-me` or `--add-dir`, and does not keep the mode its thread began in. **A Codex
+  plan or review is never `read-only`** — its `dplanner agent-work` and `question ask` write:
+  it works from the run directory (`-C`, before `resume`), the plan repository and the config
+  directory its only other writable roots, the checkout named in its prompt to read.
 - **How a turn ended is `Headless.classify`, one function over the `TurnLog` the harness's
   reader filled** — never the exit alone, never a per-harness copy of the rules. A CLI's quirk
   goes in its reader or one of its hooks (`limits`, `model`, `stderr_denials`); a new ending shape

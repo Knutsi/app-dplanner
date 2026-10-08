@@ -604,13 +604,14 @@ def _under_way(next_: Next) -> str:
 
 def _orphan(pass_: _Pass, step: Step) -> LedgerRecord | None:
     """The pass's first run, when that is all the pass is and it never began: no turn, no
-    supervisor, its step not claimed. Its launch died between writing it and saving its claim
-    — the start only ever follows the claim — so nothing will run it: what ``revive`` deletes
-    once it is old enough, and a new launch at once."""
+    supervisor, its step not as its launch leaves it (:func:`supervisor.launch_stands`). Its
+    launch died between writing it and saving its claim — the start only ever follows the
+    claim — so nothing will run it: what ``revive`` deletes once it is old enough, and a new
+    launch at once."""
     (first, *rest) = pass_.entries
     if rest or not isinstance(first, LedgerRecord) or first.turns or first.over:
         return None
-    if stored(step) is Status.IN_PROGRESS or supervisor.supervised(ledger.run_dir(first.run)):
+    if supervisor.launch_stands(first, step) or supervisor.supervised(ledger.run_dir(first.run)):
         return None
     return first
 
