@@ -77,7 +77,7 @@ def commands(
         parser.add_argument(
             "--landing-default",
             metavar="PLAYBOOK",
-            help="the playbook a branch landing that never chose runs (default review-only)",
+            help="the playbook a branch landing that never chose runs (default land)",
         )
 
     return [

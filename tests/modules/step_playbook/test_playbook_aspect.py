@@ -1,4 +1,4 @@
-"""The playbook model and the aspect naming a step's playbook: the nine presets, the stage ids
+"""The playbook model and the aspect naming a step's playbook: the ten presets, the stage ids
 a run names, and which playbook a step resolves to — its own, a landing's, the project's, or
 none. No ``qapp``: all of it is Qt-free by rule."""
 
@@ -35,7 +35,7 @@ def playbook(playbook_id: str) -> Playbook:
     return found
 
 
-def test_the_nine_presets_are_the_designs_list_in_its_order():
+def test_the_ten_presets_are_the_designs_list_in_its_order():
     assert [(p.id, p.stage_words()) for p in PRESETS] == [
         ("execute", "execute"),
         ("plan-execute-coordinator", "plan, execute, coordinator"),
@@ -44,10 +44,11 @@ def test_the_nine_presets_are_the_designs_list_in_its_order():
         ("plan-execute-review-self", "plan, execute, review (same agent)"),
         ("plan-execute-review-other", "plan, execute, review (other agent)"),
         ("plan-person-execute", "plan, person, execute"),
+        ("land", "execute, review (other agent), person"),
         ("review-only", "review (other agent), person"),
         ("spike", "plan, person"),
     ]
-    assert LANDING_DEFAULT is playbook("review-only")
+    assert LANDING_DEFAULT is playbook("land")
     assert preset("plan-execute-review") is None
 
 
@@ -138,7 +139,7 @@ def test_a_step_runs_its_own_then_a_landings_then_the_projects_then_none():
     assert resolve(work, project) == inherited(work, project)
     assert (resolve(work, project).playbook, resolve(work, project).source) == (None, "none")
     assert (resolve(land, project).playbook, resolve(land, project).source) == (
-        LANDING_DEFAULT,
+        playbook("land"),
         "landing",
     )
     project.module_data[MODULE_ID] = write_project(
@@ -151,3 +152,15 @@ def test_a_step_runs_its_own_then_a_landings_then_the_projects_then_none():
     assert resolve(work, project).playbook == playbook("spike")
     assert resolve(work, project).source == "step"
     assert inherited(work, project).playbook == playbook("execute")
+
+
+def test_a_landing_that_named_review_only_keeps_it():
+    project = Project(title="Discovery")
+    land = Step(title="Land it")
+    land.module_data[LAND_ID] = {"cut": "a-cut-id", "format": 1}
+    land.module_data[MODULE_ID] = write(Choice(playbook("review-only")))
+    assert land.module_data[MODULE_ID] == {"playbook": "review-only", "format": 1}
+    assert (resolve(land, project).playbook, resolve(land, project).source) == (
+        playbook("review-only"),
+        "step",
+    )

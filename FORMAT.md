@@ -1036,7 +1036,7 @@ two overrides, each written only when it differs from its default (two rounds; a
 vendor's agent), the cap as a float from 1 to 5. On the project: `{"default": "execute",
 "landing": "spike"}`, format 1 — what a step that never chose runs, and what a branch landing
 that never chose runs — each written only when it differs from its default (no playbook, so
-Run Agent; *Review only*). Absence is the default throughout, so a changed default reaches
+Run Agent; *Land*). Absence is the default throughout, so a changed default reaches
 every step that never chose; an id this build does not know reads as absent.
 `docs/architecture/playbooks.md`'s *A step names its playbook* has the resolution order.
 

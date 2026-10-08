@@ -709,3 +709,13 @@ branch strip's pattern, but kept out of the footprint — a pass lasts hours, an
 would have moved the ambient layout whenever one started. The card's foot grows to it on the
 motion clock, which now measures motion in time. Now: `canvas.md`'s *A card running a playbook
 says where its pass stands* and `playbooks.md`'s *The mark on the one card*.
+
+## 2026-10-08 — Landings default to *Land*, not *Review only*
+
+S4 had a branch landing default to *Review only*: a cross-vendor review of the branch, then a
+person. The S21 dogfood (note N180) found the gap — with no work stage, the landing's own work
+never ran: nothing merged the mainline in, ran the checks or opened the branch's PR, so the
+review read a branch with no landing PR. Knut chose a preset that does the work first: *Land*,
+execute ⇄ review (other agent) → human review, where the person merges because DPlanner never
+merges into the mainline. *Review only* stays, for a PR that already exists. Now:
+`playbooks.md`'s *The presets* and *A step names its playbook*.

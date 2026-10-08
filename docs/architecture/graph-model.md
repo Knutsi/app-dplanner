@@ -156,7 +156,7 @@ words.
 
 **The review moves to the landing.** A member's PR merged into the branch of an open stretch
 accepts the step, from ready-for-review too (`record_merged(accepted_by_merge=)`): the
-branch's quality review reads the landing's PR — a person, or the landing's *Review only*
+branch's quality review reads the landing's PR — a person, or the review in the landing's *Land*
 playbook (`playbooks.md`'s *The presets*). An agent still never merges its own work.
 A landing always opens a PR; landing directly would leave the review nothing to read, and a
 merge commit rather than a squash keeps a branch cut from this one on shared history. The

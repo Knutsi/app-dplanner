@@ -6,7 +6,7 @@ On the project, ``{"default": <preset id>, "landing": <preset id>}``. Absence en
 default throughout, so a later change of default reaches every step that never chose.
 
 Which playbook a step runs (:func:`resolve`): its own choice; else, on a branch landing, the
-project's landing default — *Review only* unless the project names another; else the
+project's landing default — *Land* unless the project names another; else the
 project's default; else none, and the step has Run Agent as it always had.
 """
 
