@@ -1097,10 +1097,11 @@ QPushButton[quiet="true"]:disabled {
     color: $TEXT_DISABLED;
 }
 
-/* A field in a dialog's body: the panel field's look (#InspectorTitle), with the accent
-   saying where the keyboard is. Line and text edits only — a bordered QComboBox has to draw
-   its own arrow, and a boxed QSpinBox shows two styles; Fusion paints both from the palette. */
-#DialogBody QLineEdit, #DialogBody QPlainTextEdit, #DialogBody QTextEdit {
+/* A field in a dialog's body — or on a card, a question's free answer — the panel field's
+   look (#InspectorTitle), with the accent saying where the keyboard is. Line and text edits
+   only — a bordered QComboBox has to draw its own arrow, and a boxed QSpinBox shows two
+   styles; Fusion paints both from the palette. */
+#DialogBody QLineEdit, #DialogBody QPlainTextEdit, #DialogBody QTextEdit, #ToolCard QLineEdit {
     background-color: $BG_BASE;
     color: $TEXT_PRIMARY;
     border: 1px solid $BORDER;
@@ -1108,7 +1109,8 @@ QPushButton[quiet="true"]:disabled {
     padding: 6px 8px;
 }
 
-#DialogBody QLineEdit:focus, #DialogBody QPlainTextEdit:focus, #DialogBody QTextEdit:focus {
+#DialogBody QLineEdit:focus, #DialogBody QPlainTextEdit:focus, #DialogBody QTextEdit:focus,
+#ToolCard QLineEdit:focus {
     border-color: $ACCENT;
 }
 
@@ -1126,7 +1128,7 @@ QPushButton[quiet="true"]:disabled {
    same 18 px of content, the same padding, the same hairline. A row whose controls
    disagree by a few pixels reads as several rows (DESIGN.md's *Forms*). A minimum and not
    a fixed height, because a field may carry a larger font — the Project dialog's name. */
-#DialogBody QLineEdit {
+#DialogBody QLineEdit, #ToolCard QLineEdit {
     min-height: 18px;
 }
 

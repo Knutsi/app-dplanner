@@ -7,14 +7,16 @@ All three are real tabs over a synthetic library of two projects. Step statuses 
 three ways into ``f6-step-statuses/``: every group, then with the reviews ticked — the
 strip's verbs lit for what the ticks can take — and filtered to one group, where the heading
 stands down because the filter says it. The Control Centre goes into ``f10-control-centre/``:
-both projects as one board, narrowed by the *Projects* filter, and one row's ⋮ menu.
+both projects as one board, narrowed by the *Projects* filter, and one row's ⋮ menu. The
+question cards on top of it go into ``s14-question-cards/``: a decision, a plan to approve,
+a blocked run a coordinator passed on and a usage hold, over the same board.
 """
 
 import argparse
 import os
 import sys
 import tempfile
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 # A shell that presets the platform would put every render on the desktop.
@@ -27,6 +29,7 @@ from PySide6.QtWidgets import QApplication, QWidget
 from scripts.synthetic_library import build_library
 
 from dplanner.app import configure_application, new_session, set_early_attributes
+from dplanner.domain import questions
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, Project, Step
 from dplanner.framework.services import AppServices
@@ -137,6 +140,7 @@ def render_boards(app: QApplication, theme: Theme, out: Path, root: Path) -> Non
             settle(app)
             save(activity.widget, statuses, f"{name}-review", theme, app)
     render_control_centre(app, services, elsewhere, centre, theme)
+    render_question_cards(app, services, project, elsewhere, out / "s14-question-cards", theme)
     session.close()
 
 
@@ -171,11 +175,117 @@ def render_control_centre(
     menu.deleteLater()
 
 
+PLAN = """## Plan
+
+1. Hold the key to dictate; release to stop.
+2. The transcript lands at the cursor, in every prose editor.
+3. A setting picks hold or toggle; hold is the default.
+4. Tests drive a fake recorder.
+"""
+
+
+def ask(
+    services: AppServices,
+    project: Project,
+    title: str,
+    text: str,
+    *,
+    kind: str = questions.DECISION,
+    options: tuple[tuple[str, str], ...] = (),
+    callsign: str = "",
+    harness: str = "claude",
+    body: str = "",
+    resets: str = "",
+) -> questions.Question:
+    step = next(s for s in project.steps if s.title == title)
+    question = questions.asked(
+        project.id,
+        step.id,
+        datetime.now(UTC).isoformat(),
+        [questions.one(text, "", options)],
+        kind=kind,
+        run="20261008T090000Z-render",
+        by={"callsign": callsign, "harness": harness},
+        body=body,
+        resets=resets,
+    )
+    questions.write(services.repo.project_dir(project.id), question)
+    return question
+
+
+def render_question_cards(
+    app: QApplication,
+    services: AppServices,
+    project: Project,
+    elsewhere: Project,
+    out: Path,
+    theme: Theme,
+) -> None:
+    """Four open questions on top of the Control Centre, oldest first, then the lane
+    narrowed to one project by the Projects filter."""
+    ask(
+        services,
+        project,
+        READY[0],
+        "Should dictation start while the key is held, or toggle on and off with a press?",
+        options=(("Hold", "Talk while the key is down"), ("Toggle", "Press once to start")),
+        callsign="Kettle Twelve",
+    )
+    ask(
+        services,
+        project,
+        READY[1],
+        "Approve this plan before I implement it?",
+        kind=questions.PLAN_APPROVAL,
+        options=(("Approve", "Go ahead"), ("Revise", "Change the plan first")),
+        callsign="Kettle Fifteen",
+        harness="codex",
+        body=PLAN,
+    )
+    blocked = ask(
+        services,
+        elsewhere,
+        ELSEWHERE_READY[0],
+        "The run cannot go on alone: the tests need a display this machine does not have.",
+        kind=questions.BLOCKED,
+        callsign="Kettle Nine",
+    )
+    path = questions.path_for(services.repo.project_dir(elsewhere.id), blocked)
+    escalated = questions.escalated(
+        blocked, {"kind": "coordinator"}, "only a person can say", blocked.asked
+    )
+    questions.write(services.repo.project_dir(elsewhere.id), escalated)
+    assert path.exists()
+    reset = (datetime.now(UTC) + timedelta(hours=2)).isoformat()
+    ask(
+        services,
+        elsewhere,
+        ELSEWHERE_READY[1],
+        "",
+        kind=questions.LIMIT,
+        options=((questions.RETRY_NOW, "Resume the run now"),),
+        callsign="Kettle Seven",
+        resets=reset,
+    )
+    board = services.tabs.open(CONTROL_CENTRE_KIND)
+    assert isinstance(board, ControlCentreActivity) and board.questions is not None
+    board.questions.refresh()
+    board.on_activated()
+    settle(app)
+    services.debounce.flush_all()
+    save(board.widget, out, "control-centre-questions", theme, app)
+    board.projects.set_active({elsewhere.id})
+    settle(app)
+    save(board.widget, out, "control-centre-questions-filtered", theme, app)
+    board.projects.clear()
+    settle(app)
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("--out", type=Path, default=Path("docs/screenshots"))
     args = parser.parse_args(argv)
-    for folder in ("f6-step-statuses", "f10-control-centre"):
+    for folder in ("f6-step-statuses", "f10-control-centre", "s14-question-cards"):
         (args.out / folder).mkdir(parents=True, exist_ok=True)
     set_early_attributes()
     app = QApplication.instance() or QApplication(sys.argv[:1])

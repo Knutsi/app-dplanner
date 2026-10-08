@@ -17,7 +17,7 @@ disagree.
 it computes. The module id, the activity kind and the action ids are the on-disk and
 in-registry contract and are untouched by the renaming.
 
-Five seams, all established elsewhere in this application:
+Six seams, all established elsewhere in this application:
 
 - **Statuses arrive as a function** (``status_for``), wired by the composition root from
   the status aspect's Qt-free reader — this module never learns what one is stored as. It
@@ -35,12 +35,17 @@ Five seams, all established elsewhere in this application:
   It picks that row alone first, because the verbs about one step read the first picked.
 - **Activating a row opens its details**, by running ``steps.details`` against a context
   naming exactly that row's step.
+- **The Control Centre hosts the question cards on top** (``question_cards``, a
+  :class:`QuestionLane` built by the questions module): an open question is a card there,
+  above the board, and counted in the tab's title with the rows.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from typing import Protocol
 
 from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import QWidget
 
 from dplanner.core.clock import Clock
 from dplanner.domain.model import Library, NodeId, Step, StepId
@@ -94,6 +99,26 @@ class StripVerb:
     face: str = ""
 
 
+class QuestionLane(Protocol):
+    """What the Control Centre hosts on top of its board: the open questions, as cards. It
+    only places the lane, narrows it with the Projects filter and counts it in its title —
+    what a card is and does is the questions module's."""
+
+    @property
+    def widget(self) -> QWidget: ...
+
+    @property
+    def count(self) -> int: ...
+
+    def set_changed(self, changed: Callable[[], None]) -> None: ...
+
+    def show_projects(self, project_ids: Sequence[NodeId]) -> None: ...
+
+    def refresh(self) -> None: ...
+
+    def close(self) -> None: ...
+
+
 @dataclass(frozen=True)
 class ProgressionDeps:
     library: Library
@@ -123,6 +148,9 @@ class ProgressionDeps:
     # The step's key, under its title, and the canvas medallion naming what it is.
     key_of: Callable[[Step], str] = field(default=lambda _step: "")
     glyph_of: Callable[[Step], str] = field(default=lambda _step: "step")
+    # The question cards the Control Centre puts on top of its board, built for its page;
+    # None is a build without them.
+    question_cards: Callable[[QWidget], QuestionLane] | None = None
 
 
 class ProgressionModule:

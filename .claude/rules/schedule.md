@@ -57,7 +57,9 @@ paths:
   each project is walked on its own and the board is `progression.merge` of the walks — `across()` in the
   terminal — re-ranked by `unlocks`, ties going library order then the project's own; rows
   name their project (the Project column stands down on one project's tab) and a
-  *Projects* `FilterButton` narrows by re-merging, never re-walking. The two tabs are
+  *Projects* `FilterButton` narrows by re-merging, never re-walking. **The open questions
+  are cards on top of it**, above a seam, narrowed by the same filter and counted with the
+  rows in its title (`agents.md`'s question door). The two tabs are
   siblings on `StatusBoard`, never one class with a scope, because `follow_project_tabs`
   closes a project's tab with its project; both re-run on `clock.day_changed`, so a step
   behind a dated wait joins Ready the morning it may start. `dplanner progression show

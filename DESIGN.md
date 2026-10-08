@@ -49,7 +49,7 @@ styling one surface by name.
 | a list of facts about this machine | one `StatusLine` per row, grouped | `modules/checklist/dialog.py` | `docs/screenshots/f13-checklist/` |
 | a page with nothing in it | `EmptyState(stands_in_for=…)` | `framework/widgets.py` | `table-empty-*` |
 | module-owned pages about one thing, in a modal | a tab per `InspectorSection`: a `QTabBar` named `InspectorTabs` over a `QStackedLayout` | `modules/step_properties/panel.py`, `modules/projects/project_dialog.py` | `s6-step-details/`, `s16-dialogs/project-agent-*` |
-| independent things listed on a page | `#ToolCard` wells on a `#CardLane`, `framework/cards.py`'s metrics and `card_rule()` | `framework/cards.py` | a check's Covers tab in Step Details |
+| independent things listed on a page | `#ToolCard` wells on a `#CardLane`, `framework/cards.py`'s metrics and `card_rule()` | `framework/cards.py` | a check's Covers tab in Step Details; the Control Centre's question cards: `s14-question-cards/` |
 | a panel a tab hosts beside its surface | `SidePanel`, `HostedSidePanel` | `framework/side_panel.py` | `s16-tests-view/test-panel-*` |
 | a caption over a block, a remark under it | `caption()`, `captioned()`, `note()`, `block()` | `framework/widgets.py` | the modal's form |
 | a line of facts that must never wrap | `note(one_line=True)`; `ElidedLabel` for another look | `framework/widgets.py` | the Coverage strip, the Specs source strip |
@@ -1015,6 +1015,9 @@ Tables and lists:
 - Index tree — unstyled or ink-only hover. *(The palette list is done — S15: it says when
   nothing matches, and speaks the strips' words.)* *(The Settings tree is done —
   S16: the picker list's wash and edge, folders as headings.)*
+- *(done — S14)* The Control Centre's question cards — a `#ToolCard` per open question on
+  a `#CardLane` above the board's seam: who asks over the rule, the ways to answer on one
+  line under it, quiet buttons only, and a field dressed as a dialog's.
 - *(done — S15)* Task and Agents browsers — one `RowWell` on the dialog frame; a task
   with no known fraction is a busy line. Milestones list — a `Table` with the day each
   milestone begins set in the cell, its colour and *Begin When the Previous Lands* on the

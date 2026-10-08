@@ -40,7 +40,7 @@ from typing import TYPE_CHECKING, Final
 
 from PySide6.QtCore import QEvent, QItemSelectionModel, QPoint, Qt
 from PySide6.QtGui import QAction, QColor, QIcon
-from PySide6.QtWidgets import QHBoxLayout, QMenu, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QMenu, QSplitter, QVBoxLayout, QWidget
 
 from dplanner.domain.model import NodeId, Project, Step, StepId
 from dplanner.domain.short_titles import UNTITLED
@@ -70,7 +70,7 @@ from dplanner.theme.icons import glyph_painter, step_icon
 from dplanner.theme.tokens import FIELD_GAP, PANEL_MARGIN, SECONDARY_ALPHA, SECTION_GAP
 
 if TYPE_CHECKING:  # module.py imports this file, so the Deps arrive as a forward name.
-    from dplanner.modules.status_board.module import ProgressionDeps
+    from dplanner.modules.status_board.module import ProgressionDeps, QuestionLane
 
 PROGRESSION_KIND = "progression"
 CONTROL_CENTRE_KIND = "control_centre"
@@ -327,22 +327,33 @@ class StatusBoard(EntityActivity):
         self.updating = UpdatingIndicator(page)
         strip.addWidget(self.updating)
 
+        # The board under a seam, so whatever a tab puts above it — the Control Centre's
+        # question cards — takes the share a person drags it to.
+        self.split = QSplitter(Qt.Orientation.Vertical, page)
+        self.split.setChildrenCollapsible(False)
+        layout.addWidget(self.split, 1)
+        board = QWidget()
+        self.split.addWidget(board)
+        rows = QVBoxLayout(board)
+        rows.setContentsMargins(0, 0, 0, 0)
+        rows.setSpacing(0)
+
         library = deps.library
         self.table = StatusTable(
             key_of=deps.key_of,
             glyph_of=deps.glyph_of,
             milestone_badge=deps.milestone_badge,
             project_of=lambda step: library.project_of(step.id).title or UNTITLED,
-            parent=page,
+            parent=board,
         )
         self.table.itemSelectionChanged.connect(self._on_selection)
         self.table.cellActivated.connect(self._on_row_activated)
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._on_context_menu)
         self.table.menu_requested.connect(self._drop_row_menu)
-        layout.addWidget(self.table, 1)
-        self.empty = EmptyState(parent=page, stands_in_for=self.table)
-        layout.addWidget(self.empty, 1)
+        rows.addWidget(self.table, 1)
+        self.empty = EmptyState(parent=board, stands_in_for=self.table)
+        rows.addWidget(self.empty, 1)
 
         self._widget = page
         # After a quiet spell, not per signal: every row is rebuilt.
@@ -514,6 +525,11 @@ class ControlCentreActivity(StatusBoard):
     the library has more than one: a project is added to it as it arrives, renamed with it,
     and hidden — and dropped from the pick — when it leaves, since a filter that stops
     listing what it is narrowing by hides rows for a reason nobody can see.
+
+    **The open questions sit on top**, a card each, above the board (``question_cards``):
+    narrowed by the same filter, and counted with the rows in the title. A headless run
+    parked on a question sets no agent state, so a card and a *Waits for you* row are
+    hardly ever the same step, and the plain sum is the honest count.
     """
 
     def __init__(self, deps: "ProgressionDeps") -> None:
@@ -533,6 +549,13 @@ class ControlCentreActivity(StatusBoard):
             )
         ]
         self._unsubscribes.append(self.projects.changed.connect(self._show))
+        self.questions: QuestionLane | None = None
+        if deps.question_cards is not None:
+            self.questions = deps.question_cards(self.split)
+            self.split.insertWidget(0, self.questions.widget)
+            self.split.setStretchFactor(0, 0)
+            self.split.setStretchFactor(1, 1)
+            self.questions.set_changed(self._cards_changed)
         self._refresh()
 
     @property
@@ -541,7 +564,24 @@ class ControlCentreActivity(StatusBoard):
 
     @property
     def title(self) -> str:
-        return f"{CONTROL_CENTRE} ({self._needing})" if self._needing else CONTROL_CENTRE
+        count = self._needing + (self.questions.count if self.questions is not None else 0)
+        return f"{CONTROL_CENTRE} ({count})" if count else CONTROL_CENTRE
+
+    def _cards_changed(self) -> None:
+        """A card came or went: the title counts it, and the seam goes back to the cards'
+        own height — a lane kept at the size of four cards when one is left is a hole."""
+        self._deps.tabs.set_tab_title(self, self.title)
+        if self.questions is None:
+            return
+        total = sum(self.split.sizes())
+        wanted = self.questions.widget.sizeHint().height()
+        if total > wanted:
+            self.split.setSizes([wanted, total - wanted])
+
+    def close(self) -> None:
+        if self.questions is not None:
+            self.questions.close()
+        super().close()
 
     def activity_nodes(self) -> tuple[ContextNode, ...]:
         """No project: the board is every project's, and a verb about one reads the picked
@@ -563,6 +603,13 @@ class ControlCentreActivity(StatusBoard):
         # board it re-shows must already be the one without that project.
         super()._refresh()
         self._sync_projects()
+        if self.questions is not None:
+            self.questions.refresh()  # A step renamed or a project gone says so on its card.
+
+    def _show(self) -> None:
+        super()._show()
+        if self.questions is not None:
+            self.questions.show_projects(self.projects.active())
 
     def _sync_projects(self) -> None:
         """The filter's entries against the library: one per project, in the words it has
