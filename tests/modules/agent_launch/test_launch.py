@@ -23,49 +23,11 @@ from dplanner.modules.agent_supervisor import supervisor
 from dplanner.planning.status import MODULE_ID as STATUS_ID
 from dplanner.planning.status import Status, stored, write
 
-URL = "https://github.com/acme/widget"
-
 
 def _git(repo: Path, *args: str) -> str:
     return subprocess.run(
         ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
     ).stdout.strip()
-
-
-@pytest.fixture
-def code(tmp_path):
-    """The project's code: a repository of its own with one commit, no remote."""
-    from dplanner.core.storage.locations import init_repo
-
-    repo = init_repo(tmp_path / "code")
-    _git(repo, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-q",
-         "--allow-empty", "-m", "start")  # fmt: skip
-    return repo
-
-
-@pytest.fixture
-def plan(cli, code, tmp_path, workspace):
-    """A project whose code is ``code``, with one briefed agent step, "Build it"."""
-    cli("project", "create", "Widget")
-    cli("location", "add", "widget", "--role", "code", "--repository", URL,
-        "--checkout", str(code))  # fmt: skip
-    brief = tmp_path / "brief.md"
-    brief.write_text("Build the widget.\n", encoding="utf-8")
-    cli("step", "add", "widget", "Build it", "--agent")
-    cli("describe", "set", "Build it", "--file", str(brief))
-    return workspace / "widget"
-
-
-@pytest.fixture
-def started(monkeypatch):
-    """Every supervisor a launch would have started, as (project dir, run)."""
-    calls: list[tuple[Path, str]] = []
-    monkeypatch.setattr(
-        supervisor,
-        "start_detached",
-        lambda project_dir, run, **_kw: calls.append((project_dir, run)),
-    )
-    return calls
 
 
 def _noted(spawned: list[Path], cwd: Path) -> str:

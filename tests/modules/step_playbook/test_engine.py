@@ -13,7 +13,6 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from tests.modules.agent_launch.test_launch import code, plan, started  # noqa: F401
 from tests.modules.agent_supervisor.test_supervisor import FAKE, GUARDS, INIT, result
 
 from dplanner.domain import ledger, questions
@@ -98,7 +97,7 @@ def advanced(monkeypatch):
 
 
 @pytest.fixture
-def drive(cli, plan, started, advanced, allow_spawn):  # noqa: F811
+def drive(cli, plan, started, advanced, allow_spawn):
     allow_spawn(Path(sys.executable))
     return Driver(cli, plan, started, advanced)
 
@@ -129,6 +128,7 @@ def test_a_pass_plans_executes_and_loops_back_to_its_session_until_review_passes
     pinned = Settings.from_json(plan.settings)
     assert pinned is not None and pinned.preset == "plan-execute-review-self"
     assert "This is the plan stage" in drive.prompt(plan)
+    assert "ready-for-review" not in drive.prompt(plan)  # The work's ending, not a plan's.
     assert drive.supervise().over and drive.advanced == [plan.step]
     assert (ledger.run_dir(plan.run) / supervisor.PLAN_FILE).read_text().startswith("## Plan")
 
