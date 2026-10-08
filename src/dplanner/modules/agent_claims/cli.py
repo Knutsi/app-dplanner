@@ -21,16 +21,11 @@ from dplanner.core.storage.provider import StorageError
 from dplanner.domain import claim_sync, claims, ledger, questions
 from dplanner.domain.claims import Claim
 from dplanner.domain.model import now_stamp
+from dplanner.modules.agent_supervisor import supervisor
 from dplanner.planning.kinds import key_of
 
-# Fences one run: (project dir, run, by, why) — the supervisor's, handed in by the root.
-type Fence = Callable[[Path, str, str, str], None]
 
-
-def commands(*, in_agent_shell: Callable[[], bool], fence: Fence) -> list[CliCommand]:
-    def _take(context: CliContext, args: Namespace) -> int:
-        return take(context, args, fence)
-
+def commands(*, in_agent_shell: Callable[[], bool]) -> list[CliCommand]:
     def _release(context: CliContext, args: Namespace) -> int:
         project_dir = context.store.project_dir(context.project.id)
         step = find_step(context.library, args.step, context.current)
@@ -93,7 +88,7 @@ def commands(*, in_agent_shell: Callable[[], bool], fence: Fence) -> list[CliCom
     ]
 
 
-def take(context: CliContext, args: Namespace, fence: Fence) -> int:
+def _take(context: CliContext, args: Namespace) -> int:
     project = context.project
     project_dir = context.store.project_dir(project.id)
     steps = [find_step(context.library, ref, context.current) for ref in args.steps]
@@ -142,7 +137,7 @@ def take(context: CliContext, args: Namespace, fence: Fence) -> int:
         claim = claims.find(project_dir, claim.id) or claim
     for run in ledger.records(project_dir):
         if run.claim in abandoned and run.step in wanted and not run.over and not run.fence:
-            fence(project_dir, run.run, squad, f"taken over by {squad} ({claim.short})")
+            supervisor.fence(project_dir, run.run, squad, f"taken over by {squad} ({claim.short})")
     lines = [f"{claim.short} {squad} holds {_listed(claim.steps, keys)}"]
     lines += [f"{keys.get(step, step)}: {why}" for step, why in lost.items()]
     context.report({**claim.to_json(), "lost": lost}, "\n".join(lines))

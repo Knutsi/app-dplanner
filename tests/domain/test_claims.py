@@ -17,6 +17,12 @@ WORKER = {"machine": "m1", "host": "knut-arch"}
 PERSON = {"kind": "person", "name": "Knut"}
 
 
+def _found(project, id_: str) -> claims.Claim:
+    claim = claims.find(project, id_)
+    assert claim is not None
+    return claim
+
+
 def _at(minutes: float) -> str:
     """A stamp ``minutes`` after :data:`AT`."""
     return (datetime.fromisoformat(AT) + timedelta(minutes=minutes)).isoformat()
@@ -34,7 +40,7 @@ def test_a_claim_round_trips_through_its_file_and_absence_is_the_default(tmp_pat
     assert raw["callsign"] == "kettle"  # The squad word, never a member's callsign.
     assert "lease_minutes" not in raw and "ended" not in raw and "supersedes" not in raw
     assert claims.records(tmp_path) == [claim]
-    assert claims.find(tmp_path, claim.id) == claim
+    assert _found(tmp_path, claim.id) == claim
     assert claims.resolve(tmp_path, claim.short) == claim
 
 
@@ -112,7 +118,7 @@ def test_release_step_releases_from_the_holder_or_the_claim_named(tmp_path):
     assert claims.release_step(tmp_path, "s9", PERSON, "done", config=config) is None
     released = claims.release_step(tmp_path, "s1", PERSON, "done", config=config)
     assert released is not None and released.steps == ("s2",)
-    assert claims.find(tmp_path, claim.id) == released
+    assert _found(tmp_path, claim.id) == released
 
 
 def test_two_writers_at_once_lose_neither_update(tmp_path):
@@ -130,4 +136,4 @@ def test_two_writers_at_once_lose_neither_update(tmp_path):
         worker.start()
     for worker in workers:
         worker.join()
-    assert claims.find(tmp_path, claim.id).steps == ("s3",)
+    assert _found(tmp_path, claim.id).steps == ("s3",)

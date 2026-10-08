@@ -3,6 +3,7 @@ and a person's status releasing one step — run in-process against a project in
 repository with no remote, so a claim is committed and the push is a no-op."""
 
 import json
+from collections.abc import Mapping
 from io import StringIO
 from pathlib import Path
 
@@ -22,7 +23,13 @@ def project(cli, workspace, monkeypatch) -> Path:
     monkeypatch.setenv("DPLANNER_PROJECT", "Discovery")
     for title in ("Read the spec", "Cut the graph", "Estimate it"):
         cli("step", "add", "Discovery", title)
-    return workspace / "discovery"
+    return Path(workspace) / "discovery"
+
+
+def _fence(project: Path, run: str) -> Mapping[str, str]:
+    record = ledger.find(project, run)
+    assert record is not None and record.fence is not None
+    return record.fence
 
 
 def _id(cli, title: str) -> str:
@@ -88,7 +95,7 @@ def test_an_abandoned_claim_is_taken_over_and_its_unfinished_runs_fenced(cli, pr
     cli("claim", "take", "S1", "--callsign", "kettle")
     mine = next(c for c in claims.records(project) if c.callsign == "kettle")
     assert mine.supersedes == (stale.id,)
-    fence = ledger.find(project, run.run).fence
+    fence = _fence(project, run.run)
     assert fence["by"] == "kettle" and mine.short in fence["why"]
 
 
@@ -114,7 +121,7 @@ def test_a_persons_stopped_status_releases_the_step_and_stops_its_worker(cli, pr
     (claim,) = claims.records(project)
     assert claim.steps == (_id(cli, "Cut the graph"),)
     assert claim.released[0]["why"] == "set blocked by a person"
-    assert ledger.find(project, run.run).fence["why"] == "set blocked by a person"
+    assert _fence(project, run.run)["why"] == "set blocked by a person"
 
 
 def test_a_worker_reaching_review_releases_nothing(cli, project, monkeypatch):

@@ -98,6 +98,8 @@ RECORDED = {
     "claude-limit": ("limit", ""),
     # A subscription's words name no rate and give no status; the error code says it.
     "claude-limit-subscription": ("limit", ""),
+    # A real subscription limit mid-run: warnings past 90 %, then rejected with its reset.
+    "claude-limit-session": ("limit", ""),
     # Answered FAQ headings, and a finished fix that mentions a wait.
     "claude-done-faq": ("done", ""),
     "claude-done-fixed-wait": ("done", ""),
@@ -258,6 +260,23 @@ def test_a_codex_limit_resets_when_the_rollout_says_its_fullest_window_does(tmp_
     got = reader.classify(1, reader.read_lines(stream))
     assert (got.end, got.resets) == (TurnEnd.LIMIT, datetime.fromtimestamp(1791159725, UTC))
     assert codex.read_limits("no-such-thread") == ()
+
+
+def test_a_codex_limit_is_read_by_its_code_before_its_words():
+    reader = headless("codex")
+    error = {
+        "message": "Try again at Oct 5th, 2026 2:22 AM.",
+        "codex_error_info": "usage_limit_exceeded",
+    }
+    log = reader.read_lines([json.dumps({"type": "turn.failed", "error": error})])
+    assert (log.code, reader.classify(1, log).end) == ("usage_limit_exceeded", TurnEnd.LIMIT)
+
+
+def test_a_real_claude_limit_resets_when_its_rejected_window_does():
+    reader, log, record = replay(FIXTURES / "claude-limit-session.json")
+    got = reader.classify(record["exit"], log)  # type: ignore[arg-type]
+    assert {w.name: w.used for w in log.limits} == {"five_hour": 1.0, "seven_day": 0.34}
+    assert (got.end, got.resets) == (TurnEnd.LIMIT, datetime.fromtimestamp(1791396600, UTC))
 
 
 # -- the argv per stage ----------------------------------------------------------------------

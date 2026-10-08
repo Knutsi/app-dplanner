@@ -298,4 +298,5 @@ HARNESS = AgentHarness(
     binary="opencode",
     headless=HEADLESS,
     sign_in=SignIn(probe=signed_in, command="opencode auth login"),
+    home=lambda: database_path().parent,
 )

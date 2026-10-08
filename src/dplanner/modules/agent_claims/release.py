@@ -5,18 +5,15 @@ stopped status carries; the window writes no push for it — Save carries it, as
 the status."""
 
 import getpass
-from collections.abc import Callable
 from pathlib import Path
 
 from dplanner.domain import claims, ledger
 from dplanner.domain.questions import PERSON
 from dplanner.domain.workflow import Release
-
-# Stops one run: (project dir, run, by, why) — the supervisor's, handed in by the root.
-type Stop = Callable[[Path, str, str, str], None]
+from dplanner.modules.agent_supervisor import supervisor
 
 
-def release(project_dir: Path, follow_up: Release, stop: Stop) -> bool:
+def release(project_dir: Path, follow_up: Release) -> bool:
     """Release ``follow_up``'s step and stop its unfinished runs under the claim; False when
     no claim held the step."""
     by = {"kind": PERSON, "name": getpass.getuser()}
@@ -29,5 +26,5 @@ def release(project_dir: Path, follow_up: Release, stop: Stop) -> bool:
         return False
     for run in ledger.records(project_dir):
         if run.claim == claim.id and run.step == follow_up.step and not run.over:
-            stop(project_dir, run.run, by["name"], why)
+            supervisor.stop(project_dir, run.run, by["name"], why)
     return True

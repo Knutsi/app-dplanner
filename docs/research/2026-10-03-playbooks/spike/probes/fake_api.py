@@ -6,7 +6,10 @@ server serves `claude`, `codex` and `opencode` alike.
 
     python fake_api.py <port> <mode>
 
-Modes: 401 403 404model credit 429 529 500 garbage hang
+Modes: 401 403 404model credit 429 usage 529 500 garbage hang
+
+`usage` is a subscription's limit: a 429 with the unified rate-limit headers (five-hour
+window rejected, reset in three hours) and `x-should-retry: false`, so the CLI stops at once.
 """
 
 from __future__ import annotations
@@ -22,6 +25,7 @@ ANTHROPIC = {
     "404model": (404, "not_found_error", "model: claude-retired-1"),
     "credit": (400, "invalid_request_error", "Your credit balance is too low to access the Anthropic API."),
     "429": (429, "rate_limit_error", "Number of request tokens has exceeded your rate limit."),
+    "usage": (429, "rate_limit_error", "This request would exceed your account's rate limit. Please try again later."),
     "529": (529, "overloaded_error", "Overloaded"),
     "500": (500, "api_error", "Internal server error"),
 }
@@ -52,6 +56,15 @@ def handler_for(mode: str) -> type[BaseHTTPRequestHandler]:
             self.send_header("content-length", str(len(body)))
             if status == 429:
                 self.send_header("retry-after", "20")
+                if mode == "usage":
+                    reset = str(int(time.time()) + 3 * 3600)
+                    self.send_header("anthropic-ratelimit-unified-status", "rejected")
+                    self.send_header("anthropic-ratelimit-unified-reset", reset)
+                    self.send_header("anthropic-ratelimit-unified-representative-claim", "five_hour")
+                    self.send_header("anthropic-ratelimit-unified-5h-status", "rejected")
+                    self.send_header("anthropic-ratelimit-unified-5h-reset", reset)
+                    self.send_header("anthropic-ratelimit-unified-5h-utilization", "1.0")
+                    self.send_header("x-should-retry", "false")
             self.end_headers()
             self.wfile.write(body)
 

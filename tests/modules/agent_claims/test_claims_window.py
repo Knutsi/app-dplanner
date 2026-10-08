@@ -72,7 +72,8 @@ def test_the_control_centre_names_the_squad_only_while_one_holds_a_step(
     module(services).refresh()
     tab._refresh()
     row = tab.table.row_of(step.id)
-    assert row is not None and tab.table.item(row, SQUAD_COLUMN).text() == "kettle"
+    item = tab.table.item(row, SQUAD_COLUMN) if row is not None else None
+    assert item is not None and item.text() == "kettle"
     assert not tab.table.isColumnHidden(SQUAD_COLUMN)
 
 

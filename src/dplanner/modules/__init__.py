@@ -56,7 +56,7 @@ if TYPE_CHECKING:
     from dplanner.domain.model import Edge, Library, LinkRule, Project, ProjectId, Step, StepId
     from dplanner.domain.repositories import RepositoryFacts
     from dplanner.domain.store import FilesFor
-    from dplanner.domain.workflow import Actor, EndClaim, PlanView, Release
+    from dplanner.domain.workflow import Actor, EndClaim, PlanView
     from dplanner.framework.context import ContextService
     from dplanner.framework.debounce import DebounceService
     from dplanner.framework.mime_files import Payload
@@ -510,6 +510,7 @@ def _agents(
     agent is at work. Built before the clusters that hand work to Run Agent: the Problems
     panel its findings, the docs module its compilations, the library watcher an entry two
     writers changed at once, sync its reconciling."""
+    from getpass import getuser
     from pathlib import Path
 
     from dplanner.core.config_dir import config_dir
@@ -519,6 +520,7 @@ def _agents(
     from dplanner.modules.agent_claims.module import AgentClaimsDeps, AgentClaimsModule
     from dplanner.modules.agent_launch.launch import read_absolute
     from dplanner.modules.agent_launch.module import AgentLaunchDeps, AgentLaunchModule
+    from dplanner.modules.agent_questions import inbox
     from dplanner.modules.agent_usage.aspect import ledger_dir, step_usage_words
     from dplanner.modules.agent_usage.module import AgentUsageDeps, AgentUsageModule
     from dplanner.modules.branches.plan import branch_plan
@@ -549,6 +551,14 @@ def _agents(
         nothing ends before the build is up."""
         usage.sweep()
 
+    def retry_now(step_id: str) -> str:
+        """Step ▸ Retry Now: the step's parked run answered ``Retry now`` by the person here."""
+        project_dir = ledger_of(step_id)
+        run = inbox.parked_run(project_dir, step_id) if project_dir is not None else ""
+        if project_dir is None or not run:
+            raise ValueError("no headless run is parked on this step")
+        return inbox.retry_now(project_dir, run, {"kind": "person", "name": getuser()}).said
+
     # Every launch is handed here, and this is the one place that keeps an eye on the shell
     # afterwards.
     runs = StepAgentRunModule(
@@ -568,6 +578,8 @@ def _agents(
             ended=ended,
             # Where each run's ledger record lives.
             project_dir=ledger_of,
+            retry_refusal=lambda step_id: inbox.retry_refusal(ledger_of(step_id), step_id),
+            retry_now=retry_now,
         )
     )
     # The ledger's sweep and the Expenditure tab, whose rows look as the Order tab's do.
@@ -1809,6 +1821,7 @@ def _aspects(
         SetModuleDataCommand,
     )
     from dplanner.domain.model import TextEdit
+    from dplanner.modules.agent_claims.release import release
     from dplanner.modules.branches.module import LandingModule
     from dplanner.modules.branches.plan import merged_into_its_branch
     from dplanner.modules.docs.module import DocsCompiledModule, DocsDeps, DocsModule
@@ -2057,9 +2070,7 @@ def _aspects(
                 clock=services.clock,
                 workflow=_status_workflow(),
                 end_claim=lambda claim: board.end(claim.project, claim.step),
-                release=lambda follow_up: release_claimed(
-                    store.project_dir(follow_up.project), follow_up
-                ),
+                release=lambda follow_up: release(store.project_dir(follow_up.project), follow_up),
                 notices=services.window,
                 flush=services.autosave.saved,
             )
@@ -2732,17 +2743,8 @@ def _asset_sources() -> tuple["AssetSource", ...]:
     )
 
 
-def release_claimed(project_dir: "Path", follow_up: "Release") -> bool:
-    """A person's override, performed on both surfaces — ``agent_claims/release.py``."""
-    from dplanner.modules.agent_claims.release import release
-    from dplanner.modules.agent_supervisor.supervisor import stop
-
-    return release(project_dir, follow_up, stop)
-
-
 def renew_claims(project_dir: "Path") -> None:
-    """The squad claims this machine holds in the project, renewed when due — what every
-    ``dplanner`` run from an agent's shell does, beside renewing its at-work claim."""
+    """This machine's squad claims on the project, renewed when due: ``claim_sync.renew``."""
     from dplanner.domain.claim_sync import renew
 
     renew(project_dir)
@@ -2814,10 +2816,10 @@ def default_cli_commands(
     from dplanner.modules.agent_at_work import cli as at_work_cli
     from dplanner.modules.agent_briefing.worktree import mainline
     from dplanner.modules.agent_claims import cli as claims_cli
+    from dplanner.modules.agent_claims.release import release
     from dplanner.modules.agent_launch import cli as launch_cli
     from dplanner.modules.agent_questions import cli as questions_cli
     from dplanner.modules.agent_supervisor import cli as supervisor_cli
-    from dplanner.modules.agent_supervisor import supervisor
     from dplanner.modules.agent_usage import cli as usage_cli
     from dplanner.modules.branches import cli as branches_cli
     from dplanner.modules.branches.plan import (
@@ -2893,9 +2895,7 @@ def default_cli_commands(
     def set_status(context: "CliContext", step: "Step", status: "Status") -> None:
         """A status written as `status set` writes it — refused as one line, its claim
         ended once the run is written."""
-        status_cli.write_status(
-            context, workflow, end_claim, release_claimed, step, status, actor=actor()
-        )
+        status_cli.write_status(context, workflow, end_claim, release, step, status, actor=actor())
 
     def finish_merged(context: "CliContext", step: "Step") -> bool:
         """A step waiting on its merge is done once its PR reads merged — written as
@@ -2966,11 +2966,8 @@ def default_cli_commands(
         *supervisor_cli.commands(harnesses=agent_harnesses()),
         # Who answers is read like `status set`'s reporter: an agent's shell is the coordinator.
         *questions_cli.commands(in_agent_shell=lambda: bool(agent_shell_marker())),
-        # A squad's lease on its steps; a takeover fences the old squad's runs as the
-        # supervisor fences, under the run's own record lock.
-        *claims_cli.commands(
-            in_agent_shell=lambda: bool(agent_shell_marker()), fence=supervisor.fence
-        ),
+        # A squad's lease on its steps: who takes, releases and ends it is read from the shell.
+        *claims_cli.commands(in_agent_shell=lambda: bool(agent_shell_marker())),
         # The agent's own account of what it is doing while it does it: the window's
         # banner and the watcher's stood-down modal both read what these write.
         *at_work_cli.commands(board=board, key_of=key_of),
@@ -2982,7 +2979,7 @@ def default_cli_commands(
             workflow=workflow,
             in_agent_shell=lambda: bool(agent_shell_marker()),
             end_claim=end_claim,
-            release=release_claimed,
+            release=release,
         ),
         *milestone_cli.commands(),
         *wait_cli.commands(),

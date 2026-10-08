@@ -13,6 +13,12 @@ from dplanner.domain.model import now_stamp
 WORKER = {"machine": "m1", "host": "knut-arch"}
 
 
+def _found(project, id_: str) -> claims.Claim:
+    claim = claims.find(project, id_)
+    assert claim is not None
+    return claim
+
+
 def _git(cwd: Path, *args: str) -> str:
     return subprocess.run(
         ["git", *args], cwd=cwd, check=True, capture_output=True, text=True
@@ -89,12 +95,12 @@ def test_renewing_writes_a_due_heartbeat_and_pushes_at_most_every_thirty_minutes
     mine = _taken(plan, "s1", worker=here, heartbeat=old)
     theirs = _taken(plan, "s2", heartbeat=old)  # Another machine's: not ours to renew.
     claim_sync.renew(plan, config=config)
-    assert claims.find(plan, mine.id).heartbeat != old
-    assert claims.find(plan, theirs.id).heartbeat == old
+    assert _found(plan, mine.id).heartbeat != old
+    assert _found(plan, theirs.id).heartbeat == old
     assert mine.id in _git(plan, "ls-tree", "-r", "--full-tree", "--name-only", "origin/main")
     # Pushed just now: the next due beat is written, and waits for the push that is due.
     pushed = _git(plan, "rev-parse", "origin/main")
     claims.update(plan, mine.id, lambda c: replace(c, heartbeat=old), config)
     claim_sync.renew(plan, config=config)
-    assert claims.find(plan, mine.id).heartbeat != old
+    assert _found(plan, mine.id).heartbeat != old
     assert _git(plan, "rev-parse", "HEAD") == pushed

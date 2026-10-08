@@ -150,3 +150,30 @@ def stored(project_dir: Path, question_id: str) -> Question:
     found = questions.find(project_dir, question_id)
     assert found is not None
     return found
+
+
+def test_agent_retry_answers_the_limit_a_run_is_held_on(cli, project):
+    record = ledger.find(project, RUN)
+    assert record is not None
+    question = questions.asked(
+        record.project,
+        record.step,
+        "2026-10-07T10:20:00+00:00",
+        [questions.one("Out of usage.", "Usage limit", [(questions.RETRY_NOW, "")])],
+        kind=questions.LIMIT,
+        run=RUN,
+    )
+    questions.write(project, question)
+    held = ledger.Turn(n=1, prompt="launch", started="…", end="limit", question=question.id)
+    # Launched elsewhere: the answer waits for that machine, and nothing is started here.
+    ledger.write(project, replace(record, machine="elsewhere", host="box").with_turns((held,)))
+
+    said = cli("agent", "retry", "Read the spec", "--by", "Knut")
+    assert "resumes when box, which launched it, sees the answer" in said
+    answered = stored(project, question.id)
+    assert answered.answer["answers"] == {"Out of usage.": questions.RETRY_NOW}
+    assert "parked on no open question" in cli("agent", "retry", RUN, expect=1)
+
+
+def test_agent_retry_refuses_a_step_with_no_parked_run(cli, project):
+    assert "has no parked headless run" in cli("agent", "retry", "Read the spec", expect=1)

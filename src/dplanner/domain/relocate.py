@@ -10,16 +10,15 @@ What moves is the plan, ``PLAN_ENTRIES``: ``project.dproj``, ``modules/`` and ``
 module file areas included, so specs, images and attachments travel — and the usage
 ``ledger/`` beside them (``domain/ledger.py``), which is the plan's history of what its
 agents consumed even though the store never flushes it, the ``questions/`` they asked
-(``domain/questions.py``) and the ``claims/`` their squads hold (``domain/claims.py``). What is written into
-the moved ``project.dproj`` is the one fact the plan needs from then on — the code
-repository it came out of, as git names it — for a plan of the older shape; a plan a plan
-repository held with no code named leaves a repository that was never its code, and moves
-on with nothing added. What stays behind, on purpose: the plan's
-history, which was the code's history (the target starts at *Add «title»*), and the
-worktrees under the code checkout, which are code. Both repositories are committed, scoped
-to exactly what changed in each; a commit that cannot be made — no git identity, say — is
-reported in :attr:`Moved.notes` rather than failing a move whose files are already where
-they should be.
+(``domain/questions.py``) and the ``claims/`` their squads hold (``domain/claims.py``). What
+is written into the moved ``project.dproj`` is the one fact the plan needs from then on —
+the code repository it came out of, as git names it — for a plan of the older shape; a plan
+a plan repository held with no code named leaves a repository that was never its code, and
+moves on with nothing added. What stays behind, on purpose: the plan's history, which was
+the code's history (the target starts at *Add «title»*), and the worktrees under the code
+checkout, which are code. Both repositories are committed, scoped to exactly what changed in
+each; a commit that cannot be made — no git identity, say — is reported in
+:attr:`Moved.notes` rather than failing a move whose files are already where they should be.
 """
 
 import json
