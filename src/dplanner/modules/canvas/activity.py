@@ -263,6 +263,7 @@ class ProjectActivity(EntityActivity):
         self._scene.set_marks(look.marks)
         self._scene.set_spotlight(look.spotlight)
         self._scene.set_snap(look.snap)
+        self._scene.motion_reduced = look.reduce_motion
         self._view.set_background(look.background)
         if self._side_panel is not None:
             self._side_panel.set_shown(look.side_panel)

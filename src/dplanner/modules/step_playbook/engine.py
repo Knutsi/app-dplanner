@@ -17,7 +17,7 @@ effects only that way.
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -45,6 +45,7 @@ from dplanner.modules.step_playbook.passes import (
     Next,
     Progress,
     Settings,
+    Standing,
     Wait,
 )
 from dplanner.modules.step_playbook.presets import Playbook, preset
@@ -501,8 +502,15 @@ def wake(
 
 def _latest_pass(project_dir: Path, step_id: str) -> "_Pass | str":
     """The step's latest pass as its records say, or why there is none to advance."""
-    runs = [r for r in ledger.records(project_dir) if r.step == step_id and r.pass_]
-    asked = [q for q in questions.records(project_dir) if q.step == step_id and q.pass_]
+    return _pass_of(step_id, ledger.records(project_dir), questions.records(project_dir))
+
+
+def _pass_of(
+    step_id: str, records: Sequence[LedgerRecord], asked_all: Sequence[Question]
+) -> "_Pass | str":
+    """:func:`_latest_pass` over records already read: a project's, for every step at once."""
+    runs = [r for r in records if r.step == step_id and r.pass_]
+    asked = [q for q in asked_all if q.step == step_id and q.pass_]
     entries = passes.in_order(runs, asked)
     if not entries:
         return "no playbook pass to advance"
@@ -529,3 +537,43 @@ def _latest_pass(project_dir: Path, step_id: str) -> "_Pass | str":
     directory = next((r.directory for r in runs_of if r.directory), "")
     member = runs_of[0].callsign if runs_of else ""
     return _Pass(pass_id, playbook, settings, entries, directory, machine, member)
+
+
+# -- where each pass stands -----------------------------------------------------------------------
+
+# How long a pass that ended keeps its strip: one that ended overnight is still there in the
+# morning, and the step's next pass replaces it sooner.
+ENDED_SHOWN = timedelta(hours=24)
+
+
+def standing_of(project_dir: Path, step: Step, now: datetime) -> Standing | None:
+    """Where the step's latest pass stands, however long ago it ended — ``playbook show``."""
+    return _standing(step, ledger.records(project_dir), questions.records(project_dir), now)
+
+
+def standings(project_dir: Path, steps: Sequence[Step], now: datetime) -> dict[str, Standing]:
+    """Where every pass under way among ``steps`` stands, and every pass that ended within
+    :data:`ENDED_SHOWN` — the card's strip. The project's records are read once."""
+    records, asked = ledger.records(project_dir), questions.records(project_dir)
+    found = {}
+    for step in steps:
+        stands = _standing(step, records, asked, now)
+        if stands is not None and not (stands.ended and _age(stands.at, now) > ENDED_SHOWN):
+            found[step.id] = stands
+    return found
+
+
+def _standing(
+    step: Step, records: Sequence[LedgerRecord], asked: Sequence[Question], now: datetime
+) -> Standing | None:
+    pass_ = _pass_of(step.id, records, asked)
+    if isinstance(pass_, str) or _orphan(pass_, step):
+        return None
+    runs = {e.run for e in pass_.entries if isinstance(e, LedgerRecord)}
+    parks = [q for q in asked if q.run and q.run in runs]
+    return passes.standing(pass_.playbook, pass_.settings, pass_.entries, parks, _facts(step), now)
+
+
+def _age(stamp: str, now: datetime) -> timedelta:
+    moment = limits.parse(stamp)
+    return now - moment if moment is not None else timedelta.max

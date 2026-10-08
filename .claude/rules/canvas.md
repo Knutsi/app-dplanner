@@ -212,7 +212,13 @@ paths:
   canvas sizes its cards by it and every arranger is handed it as `size_for` (the editor's
   `strips` seam, the CLI's `strips` on `layout sort`); the arrows, the handle and the marks
   meet the *body's* middle, and a resize stores the body. `docs/architecture/canvas.md`'s *A card on
-  a branch names it* has the reasoning.
+  a branch names it* has the reasoning. **The second is the playbook strip**
+  (`NodeAccent.playbook`: `passes.standing`'s phrase, tone and stages, through the root's
+  `PassStandings`), under the branch strip at the very foot, its stages the tooltip and a
+  click's tip — and **never in the footprint**: a pass is transient, so the card adds it to
+  what it draws, hits and hands its stack (`size()`), never to what the scene pushes
+  (`footprint()`), a resize stores or the arrows meet. `docs/architecture/canvas.md`'s *A card
+  running a playbook says where its pass stands* has the reasoning.
 - **The look is one per-user value, and snapping is the gesture's, never the write's.**
   `canvas/look.py`: the marks, the background under the graph (plain, dots, lines,
   crosses — painted by `ground.py`) and *Snap to Grid* are one `Look`, kept under one key,
@@ -388,7 +394,12 @@ paths:
   `advance_motion`) moves every ring and every pulse on one phase, and runs only while a
   card `moves()` — `_settle_motion_clock` after every sync, so an idle canvas ticks nothing. A new motion rides this clock, never a timer of its
   own; the one exception is a gesture's own `FrameClock` (the restack's make-way), which
-  lives and dies with the gesture. A test calls `advance_motion()` rather than waiting.
+  lives and dies with the gesture. A test calls `advance_motion(seconds)` rather than waiting.
+  **Motion is measured in time**: the clock ticks at `GROW_TICK_MS` while a card's playbook
+  strip grows and `MOTION_TICK_MS` otherwise, and the phase advances by elapsed seconds, so
+  the ring and the pulse keep their pace. **A motion that is not under the hand honours
+  `Look.reduce_motion`** (*Graph ▸ Reduce Motion*) and completes at once; a card new in a
+  sync is dressed before it joins the scene, so opening a tab moves nothing.
 - **A step a person moves next pulses.** `NodeAccent.pulse`, set by the root's
   `step_accents` for a step ready for review or ready to merge — the boards' *Ready for
   review* and *Ready to merge*, the same rule. `paint_pulse` breathes bands of the **key tone** round the body, painted before

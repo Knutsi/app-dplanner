@@ -230,6 +230,9 @@ class Canvas(Protocol):
     # The frame round a point says what Shift does; None quiets every one.
     def hint_at(self, scene_pos: QPointF | None) -> None: ...
 
+    # Words beside a point, as a tooltip: a press on a card's playbook strip names its stages.
+    def show_tip(self, scene_pos: QPointF, text: str) -> None: ...
+
     # A card in the hand: its arrows are not drawn until it lands, or None to draw them all.
     def lift_links(self, step_id: StepId | None) -> None: ...
 
@@ -758,8 +761,10 @@ class NodeResizeMode(GestureMode):
         self._parts = edge.split("-")
         self.cursor = RESIZE_CURSORS[edge]
         self._was_pos = node.pos()
-        self._was_size = node.size()
+        self._was_size = node.footprint()
         self._seat = QRectF(node.pos(), QSizeF(*node.size()))
+        # A playbook strip under the card is the card's own to add: the footprint is less it.
+        self._playbook_h = node.size()[1] - node.footprint()[1]
 
     def held(self) -> set[StepId]:
         # A card in a stack moves the cards under it as it grows: the column is held whole.
@@ -784,13 +789,13 @@ class NodeResizeMode(GestureMode):
             rect.setTop(min(y, rect.bottom() - MIN_NODE_H - strip))
         elif "bottom" in self._parts:
             rect.setBottom(max(y, rect.top() + MIN_NODE_H + strip))
-        self._node.set_size(rect.width(), rect.height())
+        self._node.set_size(rect.width(), rect.height() - self._playbook_h)
         self._node.setPos(rect.topLeft())
         return True
 
     def mouse_release(self, event: CanvasEvent) -> bool:
         at = self._node.pos()
-        if at != self._was_pos or self._node.size() != self._was_size:
+        if at != self._was_pos or self._node.footprint() != self._was_size:
             # The step stores its body: the strip is the branch's, never the card's own.
             w, h = self._node.body_size()
             self.deps.canvas.node_resized.emit(self._node.step_id, at.x(), at.y(), w, h)
@@ -1548,6 +1553,9 @@ class IdleMode(ModeBase):
             if edge:
                 self._push(NodeResizeMode(self.deps, node, edge))
                 return True
+            tip = node.playbook_tip_at(event.scene_pos)
+            if tip:
+                canvas.show_tip(event.scene_pos, tip)  # What hovering says; the press still picks.
             if event.modifiers & Qt.KeyboardModifier.ControlModifier:
                 return False  # Qt's toggle of one card in the pick.
             # The one card into, through or out of a stack: Shift on any card, and a loose

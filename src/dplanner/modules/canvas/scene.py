@@ -38,6 +38,7 @@ from PySide6.QtWidgets import (
     QGraphicsScene,
     QGraphicsSceneMouseEvent,
     QGraphicsView,
+    QToolTip,
     QWidget,
 )
 
@@ -83,6 +84,9 @@ from dplanner.modules.canvas.stacks.stack import Stack
 # enough to read as motion, slow enough that an agent working for an hour costs the canvas
 # nothing worth measuring.
 MOTION_TICK_MS = 80
+# How often it ticks while a card's playbook strip grows: a fifth of a second at the ring's
+# pace would be two frames, so for that short while it runs at the display's rate.
+GROW_TICK_MS = 16
 
 # An arrow the sync names no accent for.
 PLAIN_EDGE = EdgeAccent()
@@ -205,7 +209,11 @@ class GraphScene(QGraphicsScene):
         self._phase = 0.0
         self._motion_clock = QTimer(self)
         self._motion_clock.setInterval(MOTION_TICK_MS)
-        self._motion_clock.timeout.connect(self.advance_motion)
+        self._motion_clock.timeout.connect(
+            lambda: self.advance_motion(self._motion_clock.interval() / 1000)
+        )
+        # The user's Reduce Motion: a playbook strip appears and goes at once.
+        self.motion_reduced = False
 
     # -- what the activity puts in ---------------------------------------------------------
 
@@ -230,6 +238,9 @@ class GraphScene(QGraphicsScene):
                     item.set_render_hints(self._hints)  # A node born mid-mode dresses for it.
                     item.set_marks(self._marks)
                     item.set_pinned(self._pinned)
+                    # Dressed before it joins: a card a tab opens with wears its strips, and
+                    # nothing grows on a canvas just opened.
+                    item.set_accent(spec.accent)
                     self.addItem(item)
                 item.set_title(spec.title)
                 item.set_accent(spec.accent)
@@ -261,14 +272,25 @@ class GraphScene(QGraphicsScene):
         self._settle_motion_clock()
         self._light_selection()  # The graph changed under the selection; re-derive.
 
-    def advance_motion(self) -> None:
-        """One tick: every live ring's dashes and every pulse's breath move on together."""
-        self._phase = (self._phase + RING_STEP) % 1000.0
+    def advance_motion(self, seconds: float = MOTION_TICK_MS / 1000) -> None:
+        """One tick of ``seconds``: every live ring's dashes and every pulse's breath move on
+        together, at the same pace whatever the tick, and every growing strip grows."""
+        self._phase = (self._phase + RING_STEP * seconds * 1000 / MOTION_TICK_MS) % 1000.0
+        grew = False
         for item in self._nodes.values():
             item.set_phase(self._phase)
+            if item.growing():
+                item.advance(seconds)
+                grew = True
+        if grew:
+            self._settle_motion_clock()
 
     def _settle_motion_clock(self) -> None:
-        live = any(item.moves() for item in self._nodes.values())
+        nodes = self._nodes.values()
+        live = any(item.moves() for item in nodes)
+        tick = GROW_TICK_MS if any(item.growing() for item in nodes) else MOTION_TICK_MS
+        if live and self._motion_clock.interval() != tick:
+            self._motion_clock.setInterval(tick)
         if live and not self._motion_clock.isActive():
             self._motion_clock.start()
         elif not live and self._motion_clock.isActive():
@@ -419,6 +441,12 @@ class GraphScene(QGraphicsScene):
             if frame is not None:
                 frame.set_hinted(True)
             self._hinted = frame
+
+    def show_tip(self, scene_pos: QPointF, text: str) -> None:
+        for view in self.views():
+            at = view.viewport().mapToGlobal(view.mapFromScene(scene_pos))
+            QToolTip.showText(at, text, view)
+            return
 
     def lift_links(self, step_id: StepId | None) -> None:
         """Stop drawing this step's arrows until it lands — or, with None, draw them all."""
