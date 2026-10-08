@@ -1,4 +1,4 @@
-# Playbooks — stages, gates, loop-back, presets and headless invocations
+# Playbooks — stages, gates, loop-back, presets, the step's playbook and headless invocations
 
 The rules are in `.claude/rules/playbooks.md`; this is why they are what they are. The research
 behind them is `docs/research/2026-10-03-playbooks/` (the shape, failures, the floor) and
@@ -194,7 +194,7 @@ and an import of the wrong one cannot type-check.
 
 **The step aspect** holds the choice: `{"format": 1, "playbook": "<preset id>"}`, with
 optional overrides — `rounds` (every gate's cap) and `reviewer` (a harness id for the reviewer
-role) — and **absence encodes the default**, as the review aspect's settings do, so a later
+role) — and **absence encodes the default**, as every aspect's settings do, so a later
 change of default reaches every step that never chose. Its id is `step_playbook`, and the
 project's entry lives under the same id. `aspect.py`'s `resolve` is the order below and
 `inherited` is what *Default* means for one step — the row the panel's dropdown names.
@@ -219,14 +219,18 @@ for days, and the step panel says so.
 
 The card wears **one phrase** derived from the step's latest runs and questions: *Planning*,
 *Executing*, *Review 1/2*, *Fixing (round 1)*, *Waits for you · plan approval*, *Parked until
-21:30*, *Escalated*, *Stopped*, *Done*. It is never stored — a stored phrase could disagree with
+21:30*, *Escalated*, *Stopped*, *Waits for merge*, *Done*. It is never stored — a stored phrase could disagree with
 the runs it summarises — and it is `passes.standing`'s, beside `due` and reading the same
 records, so the card's strip and `playbook show` say the same words. It rides **a strip of its
 own under the card**, below the branch strip, with the stages behind it in the strip's tooltip
 — not the agent run's chip, as first written: the chip says a run is live and a pass spends
-most of its life parked, waiting or between stages, when no run is. A pass that ended shows
-for a day after its last record (`engine.ENDED_SHOWN`). Stages are read in the step panel's
-Playbook section and the run conversation, never as cards; `canvas.md`'s *A card running a
+most of its life parked, waiting or between stages, when no run is. **A pass through its
+stages is not *Done* until its step is**: one that produced work leaves a PR nobody has merged
+into the mainline yet, and DPlanner never merges there, so it reads *Waits for merge* (warn)
+until the step reads done — the dogfood run's card said *Done* on a Ready-for-review step a
+person still had to land. A pass that ended — done or stopped — shows for a day after its last
+record (`engine.ENDED_SHOWN`); one waiting for its merge has not ended and stays. Stages are
+read in the step panel's Playbook section, never as cards; `canvas.md`'s *A card running a
 playbook says where its pass stands* has the canvas's half.
 
 **Until a pass has records, the mark is a medallion.** Nothing derives a phrase before the
@@ -320,9 +324,10 @@ record that already owns it:
   stamp's job, now the run file's.
 - **A conversation still going is a section of the briefing**, built from the runs and the
   questions of the pass, so a fresh fix is briefed with every finding and every answer.
-- **One builder names each message** for the panel and the conversation dialog alike — the
-  `message_rows` / `where_it_stands` pair S6 removed (`step_review/conversation_dialog.py` at
-  `dfc0de0`) is the shape to rebuild over runs and questions.
+- **One builder names each message** for the panel and a conversation dialog alike, when a
+  view of a pass's conversation is built — none is yet. The `message_rows` /
+  `where_it_stands` pair S6 removed (`step_review/conversation_dialog.py` at `dfc0de0`) is the
+  shape to rebuild over runs and questions.
 
 **What left** (S6, *Remove review steps*): a review as a step (`Kind.REVIEW`, the `R` letter,
 its subject read off `requires`); lenses as a step setting — they become the review stage's
@@ -670,7 +675,7 @@ them in that review.
 | # | Question | Decided | Why |
 |---|---|---|---|
 | 1 | **Custom playbooks in the plan repository now, or later?** | **Later.** | The presets cover the brief. A file an agent can edit on its branch needs a rule of its own (read playbooks from the mainline only), and the first hand-authored config in a JSON codebase needs a FORMAT.md line on why. |
-| 2 | **When `progress` accepts a step, does DPlanner start the next ready step itself?** | **No: the coordinator or a person does.** | DPlanner starting what became ready is the window's auto-launch under another name, which S5 removes for its races and its terminals nobody clicked for. The coordinator already holds the selection and its claims. |
+| 2 | **When `progress` accepts a step, does DPlanner start the next ready step itself?** | **No: the coordinator or a person does.** | DPlanner starting what became ready is the window's auto-launch under another name, which S5 removed for its races and its terminals nobody clicked for. The coordinator already holds the selection and its claims. |
 | 3 | **What does a step with no playbook get?** | **Nothing: Run Agent, as today; a landing defaults to *Review only*.** Superseded for landings 2026-10-08 (S29): Knut chose *Land*. | A playbook spends tokens unattended. Making it the default for every agent step should be a project's choice, not a build's. |
 | 4 | **Should DPlanner run the tests itself as a gate, judging by exit codes?** | **Yes, in a later step.** | The evidence ranks a criteria gate first — a lying agent cannot fake an exit code — but no preset names one, and it needs the project's commands as data. |
 | 5 | **Two rounds, then escalation, as every gate's default?** | **Yes**, overridable per step up to five. | Two rounds then a person is what the orchestration research settled; a third round between two agents is the debate the evidence advises against. |

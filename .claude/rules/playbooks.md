@@ -15,7 +15,7 @@ paths:
   - "tests/cli/test_playbook.py"
 ---
 
-# Playbooks — stages, gates, loop-back, presets and headless invocations
+# Playbooks — stages, gates, loop-back, presets, the step's playbook and headless invocations
 
 - **A playbook is a list of stages on one step, and the step stays one card.** The kinds are
   `plan`, `execute`, the gates `review`, `person` and `coordinator`, and `progress`. Never a
@@ -27,7 +27,8 @@ paths:
   when the gate stands between plan and execute), and the stages after it run again; with no
   work stage before it, to a fix run of the implementer. No `on_changes` field. A pass stands
   after a later gate's fix. A playbook started on a step at Ready for review starts at its
-  first gate.
+  first gate. `docs/architecture/playbooks.md`'s *A playbook is a list of stages around one
+  step*.
 - **`progress` accepts the step on its feature branch and is refused on the mainline**, where
   it becomes a `person` gate — checked at run time, from the step's `BranchPlan`.
 - **Rounds: 2 by default, at most 5, counted in verdicts given, never attempts** — a failed or
@@ -42,6 +43,7 @@ paths:
   session that did the work*.
 - **A failure is never a verdict.** Only a gate's typed verdict (*pass*/*changes*) spends a
   round; a turn that ended asked, denied, limit, failed or stopped parks, retries or asks.
+  `docs/architecture/playbooks.md`'s *A failure is never a verdict*.
 - **The run record is the ledger; a playbook keeps no record of its own.** A **pass** (one run
   of a playbook on a step) has an id every run and gate question carries, and pins its resolved
   `settings` (preset and revision, rounds, roles, overrides) once, on its first record. Each
@@ -116,6 +118,10 @@ paths:
   Qt-free reading of its runs, its questions and the questions its runs parked on, said by
   the card's playbook strip and by `playbook show` alike (`engine.standings` for a project,
   an ended pass shown for `ENDED_SHOWN`). A new phrase goes there, never in a surface.
+  **A pass through its stages reads *Done* only once its step does**; until then a pass that
+  produced work reads *Waits for merge* and has not ended. `docs/architecture/playbooks.md`'s
+  *The presets*, *A step names its playbook; a project names its default* and *The mark on the
+  one card*.
 - **Every stage is one headless turn**, with the invocation per harness in
   `docs/architecture/playbooks.md`'s *Each stage is one headless turn per harness*: the JSON stream,
   Claude's `--strict-mcp-config`, the plan repository and the run directory writable,
@@ -129,3 +135,4 @@ paths:
   goes in its reader or one of its hooks (`limits`, `model`, `stderr_denials`); a new ending shape
   goes in as a recorded, scrubbed stream under `tests/fixtures/agent_turns/` with its expected
   end in `tests/modules/test_agent_turns.py`.
+  `docs/architecture/playbooks.md`'s *Each stage is one headless turn per harness*.

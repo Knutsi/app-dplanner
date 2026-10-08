@@ -309,13 +309,18 @@ When you *execute* a step, its briefing tells you which worktree to expect; if y
 not in it, stop and say so rather than working in the main checkout.
 
 **An agent finishes at Ready for review, never at done.** When your work on a step is
-finished, `dplanner status set S7 ready-for-review`: a person or a reviewing agent looks
-next, sets it `ready-to-merge` once it is accepted and `done` once it has landed — and
+finished, `dplanner status set S7 ready-for-review`: a person, or a gate of the step's
+playbook, looks next, sets it `ready-to-merge` once it is accepted and `done` once it has landed — and
 nothing that waits on the step starts before then. From inside an agent's shell, `status
 set <agent step> done` on a step nobody has reviewed is refused; when there is genuinely
 nothing to review, say why — `dplanner status set S7 done --because '<reason>'` — and the
 reason is kept as a decision note on the step. Ready for review is the *step's* work
 finished; the agent-run state `plan-for-review` is your *plan* waiting for a look, mid-run.
+
+**Under a playbook you are one stage of a pass**, and your briefing says which: a plan, the
+work, a fix, a review. A review answers with its verdict as its final message, never with
+`status set`; whatever the pass does next — another review round, a gate, the merge — is the
+engine's, not yours to start. `dplanner playbook show S7` says where the pass stands.
 
 **A question for the developer goes through one door: `dplanner question ask '<question>'
 --choice '<answer>' … --step S7`, then end your turn.** Run unattended, the question is
@@ -353,6 +358,9 @@ escalate the rest, verify and merge, release. Follow it. Callsigns are the squad
 member — `kettle-actual` (you), `kettle-two` and on for the workers, `kettle-two-one` for a
 worker's sub-agent, `kettle-watch` for your verifier — lowercase-kebab where a machine reads
 them, spoken *Kettle Two* in prose, and used in every message, note and commit trailer.
+Run headless (`claude -p`), a coordinator has no scheduled wake-up — somebody must wake it —
+and Claude's auto mode refuses its `gh pr merge` unless it was started with `--allowedTools
+"Bash(gh pr merge:*)"`.
 
 ## Recording your work on GitHub
 

@@ -387,7 +387,7 @@ paths:
   state; the dashed ring round the body moves, which is what says "somebody is on this one
   right now". The ring is derived from the chip (`NodeAccent.chip_text`), so one field says
   both. **The squad holding a step is the chip's still mirror** on the bottom edge's right
-  end (`NodeAccent.squad`, amber `squad_tone` once the claim is abandoned): a claim is
+  end (`NodeAccent.squad`, the `attention` tone once the claim is abandoned): a claim is
   ownership, not work, so it never marches; each chip takes at most its own half of the edge.
   `docs/architecture/agents.md`'s *A claim is a lease in git* has the reasoning.
 - **The canvas has one motion clock.** One `QTimer` on the scene (`_motion_clock`,

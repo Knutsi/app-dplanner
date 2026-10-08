@@ -72,9 +72,9 @@ def find_step(library: Library, needle: str, within: Project | None = None) -> S
     **An id is the library's; a key, a folder name and a title are the project's.** Several
     projects number from 1 and may share a title, so a key the current project does not
     have was never meant for another one: a verb run in project A on `R26` once turned
-    project B's S26 into a review step. Only an id reaches past ``within`` — at least
-    as long as the ids the CLI prints, so a bare `26` or a word that happens to be hex can
-    never land in somebody else's project.
+    project B's S26 into a review step (a kind of step since removed). Only an id reaches
+    past ``within`` — at least as long as the ids the CLI prints, so a bare `26` or a word
+    that happens to be hex can never land in somebody else's project.
     """
     steps = [step for project in library.projects for step in project.steps]
     if within is None:

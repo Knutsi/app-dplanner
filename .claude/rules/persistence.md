@@ -222,8 +222,8 @@ paths:
   made, never in a plan repository, a project directory or the repositories folder — or
   `FOLDER`, the repositories folder asked once. Run Agent and Open Agent in Code say
   *clones … first* and clone before launching (`StepAgentInstructionDeps.
-  ensure_checkouts`); Save clones an unplaced reporting repository first
-  (`SyncDeps.prepare_save`), the quit-time save never; the wizard's Repositories page
+  ensure_checkouts`); Save writes the plan alone and clones nothing — a report site
+  reaches a reporting row only where it is placed here (`reporting_site`); the wizard's Repositories page
   shows under `FOLDER` alone. `Placement.kept` is wording only (*kept by DPlanner at …*);
   a repository stored as a path is placed there only when a working tree is there. `domain/repositories.py` is
   the one derivation (`RepositoryFacts` over placements, with `code`/`repository`/

@@ -1,4 +1,4 @@
-# Agents — Run Agent, worktrees, run directories, usage, harnesses and profiles
+# Agents — Run Agent, supervisors, questions, claims, the coordinator, worktrees, usage, harnesses and profiles
 
 The reasoning behind `.claude/rules/agents.md`: the rules there are the short, imperative form,
 and this file is why. `ARCHITECTURE.md` is the index of every area.
@@ -157,6 +157,11 @@ that no supervisor holds, which ends the turn `failed`/`lost` and retries it. A 
 its last turn ended — waits for a person and is never touched, unless it is waiting for its
 reset, or holds an answer — the clock's, a person's on another machine — that no supervisor
 delivered before it died: each of those has a supervisor's work to do, so `revive` starts one.
+**Two things call it, and nothing else does**: a window's start, over every project it shows,
+and `agent run`, over its own project only, before its lock. So a run whose supervisor was
+killed stays invisible — its card says it runs, and nothing moves — until one of the two
+happens on that machine; the dogfood run (N182) met exactly that. A revived supervisor runs
+in the environment of whoever revived it, not the one the run was launched from.
 
 **Plan mode is waiting on a person, and says so.** The Claude preset starts in plan mode, so
 a launched Claude writes a plan and waits for somebody to approve it — and a session in plan
@@ -367,7 +372,7 @@ picked preset's *text* — the dropdown reflects the field, which is what lets a
 edited into a custom command — so a machine that picked Claude Code before `--session-id`
 was added held `claude --permission-mode plan {prompt}` from then on: read as Custom,
 launched without a session id, never resumable, and no later change to the preset
-reached it. `AgentPreset.superseded` lists every command text the preset has shipped, and
+reached it. `AgentHarness.superseded` lists every command text the preset has shipped, and
 `launcher.current_command` maps a stored one to the current — the settings page reads
 through it, so the dropdown shows the preset again, and so do the wrapper and the resume
 hint. The same idea as a `Takeover` for module data: the old spelling is the contract,
@@ -627,9 +632,9 @@ CLI rather than read from `auth.json` for the same reason.
 has just signed in and pressed *Re-check* must see it — and every probe lands in the cache;
 `cached` and `why_not` read it and never run a CLI, so a state callback on the UI thread may
 ask whether a playbook's agents can run. A reading lives a minute, which is long enough for a
-menu opened twice and short enough that a sign-in elsewhere is noticed. One shared cache per
-process is the composition root's to wire when Run Playbook reads it (S17); until then each
-checklist builds its own.
+menu opened twice and short enough that a sign-in elsewhere is noticed. There is one cache per
+process, the composition root's (`_Root.availability`), read by the checklist and Run Playbook
+alike.
 
 **A CLI that is not installed is not a problem.** Nobody needs all three, so its row is well
 and says it is optional; *An agent CLI* is the row that fails when none can run. Only a CLI
@@ -843,10 +848,10 @@ live run say one without lying about the other.
 
 **No format bump, and the precedent that looks like it applies does not.** `progress_history`
 went to format 2 for its `saved` key so an older build would refuse to rewrite the entry
-rather than drop what somebody had authored. Here `usage.with_row` copies every kept row
-**verbatim** and `rows()` filters without rebuilding, so an older build cannot lose
-`prompt_chars` — and it re-stamps the entry to its own version on the next write anyway, so
-the guard would not even guard. `ModuleDataFormat` requires one migration function per
+rather than drop what somebody had authored. The step's usage rows this was first kept in
+(read now only as the ledger's legacy records) were copied **verbatim** and filtered without
+rebuilding, so an older build could not lose `prompt_chars` — and it re-stamped the entry to
+its own version on the next write anyway, so the guard would not even have guarded. `ModuleDataFormat` requires one migration function per
 version, so the bump would have put an identity function in the tree for no reader. The rule
 worth keeping from this: **bump when an older writer would destroy the new key, not when one
 merely would not write it.**
@@ -1023,7 +1028,10 @@ stranded whenever no window is open — the coordinator's whole case — and a s
 `agent run` would resume nothing on a machine that launches nothing more. A clock is not a
 person, so this is not waiting on one: *Retry now* needs no process at all — it answers the
 same question as a person, and the waiting supervisor finds the answer as it finds every
-other. A supervisor lost to a reboot is picked up the same way: `revive` starts it bare on a
+other. **The resume runs inside that supervisor, in the environment it was started with**:
+a person who switched `CLAUDE_CONFIG_DIR` to reach another login before pressing *Retry now*
+resumes on the old one (N184). Only when no supervisor is waiting does the answer start one,
+in the answerer's environment. A supervisor lost to a reboot is picked up the same way: `revive` starts it bare on a
 run parked on a limit with a known reset, it waits, and a reset already past resumes it at once.
 **So a SIGTERM during the wait is not a stop**: a reboot sends one to every process, and
 ending the run then would cancel every limit wait on the machine. The supervisor exits and
@@ -1348,6 +1356,15 @@ The loop carries the rest of what the first runs taught, one sentence each: keep
 awake, poll GitHub's `mergeable` past UNKNOWN, run the ratchet tests on the integrated branch,
 cap a cross-vendor review at two rounds, and brief a small fix fresh rather than resume a long
 session.
+
+**Headless, a coordinator needs a waker and a merge permission.** The briefing tells it to
+wait between checks with its harness's scheduled wake-up, and a `claude -p` turn has none: its
+process ends with its turn, and nothing resumes it until a person — or a timer they set up —
+does. And Claude's auto mode refuses the `gh pr merge` the loop orders, so a coordinator that
+is to merge on its own is started with `--allowedTools "Bash(gh pr merge:*)"`; refused, it asks
+a person. Both are sentences in the loop rather than machinery: the dogfood run (N185) is the
+only headless coordinator so far, and *Autonomous Work ▸ Local* opens a terminal, where a
+person is the waker and answers the permission prompt.
 
 ### What the window reads, and the one-writer rule across all three
 

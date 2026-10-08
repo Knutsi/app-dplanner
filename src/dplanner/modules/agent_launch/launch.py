@@ -55,7 +55,6 @@ from dplanner.planning.status import Unknown, readiness_of
 
 HEADLESS = "headless"  # Driven by a supervisor; nobody watches it, and nothing waits on it.
 TERMINAL = "terminal"  # In a terminal the person owns, as Run Agent has always launched.
-MODES = (HEADLESS, TERMINAL)
 
 # -- refusals --------------------------------------------------------------------------------
 

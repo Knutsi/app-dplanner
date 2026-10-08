@@ -169,7 +169,7 @@ should do.
 
 ## Cutting steps for an agent
 
-An agent step is one run: one terminal, one branch, one review when it lands. Every step
+An agent step is one launch: one branch, one review when it lands. Every step
 costs the user a launch and a review, so the plan pays for a step boundary in time — and
 an agent works best on one coherent batch of related changes, where the second task
 already has the first one's context. So, **unless the project's topology says otherwise,
@@ -227,7 +227,31 @@ prerequisites' work — it would wait on them while they wait on it. Where each 
 reviewed and merged on its own, leave them on the mainline and let every step land by itself.
 
 **Never draw a review as a step of its own.** Reviewing is how a step gets done, not more
-work beside it: until a step can run a playbook with a review stage, a person reviews its PR.
+work beside it: it is a stage of the step's **playbook**, or a person reading its PR.
+
+## How each step gets done: its playbook
+
+A step's **playbook** is the list of stages its work goes through — plan, execute, a review
+that loops back to the work, a gate where a person or the coordinator decides — run headless
+on the one step, with no card per stage. `dplanner playbook list` prints the presets with what
+each is for; choosing one is part of shaping the plan, so say which when you propose it.
+
+- **A project default covers most steps**: `dplanner playbook set --project-default <preset>`
+  (`none` for a plain Run Agent). A step that differs names its own: `dplanner playbook set S7
+  <preset>`, with `--rounds N` for how many verdicts a review may give before it escalates
+  and `--reviewer <agent CLI>` for who reviews.
+- **Which preset fits which step:** `plan-execute-review-other` where a second vendor's eyes
+  pay — core changes; `plan-person-execute` where a person must approve the plan before code
+  is written; `plan-execute-progress` for a step on a feature branch whose work should be
+  accepted there so what waits on it may start; `spike` for research whose plan is the
+  output; `review-only` for a PR that already exists; plain `execute` for a small change a
+  person reviews anyway.
+- **A landing runs `land` unless the project says otherwise**: the landing's own work, a
+  cross-vendor review, then a person, who merges. DPlanner never merges into the mainline.
+  `--landing-default <preset>` changes it for the project.
+
+A playbook needs no step drawn for it: the stages are read from the step's record of runs and
+questions, and the card says where its pass stands.
 
 ## A stretch on its own branch
 
@@ -238,7 +262,8 @@ branch put S4 S5 S6 --branch feature/<name>`. A *cut* is born before the steps a
 and one way out. Each step's PR then merges into the feature branch, and merging there is
 what accepts it; the landing — an agent step — merges the mainline in and opens the
 branch's own PR. **Review the landing, not each step**: a person reviews the landing's PR —
-the whole branch at once — or, once playbooks run, the landing's *Land* playbook reviews it before a person merges. Link work the stretch builds on into the cut, never into
+the whole branch at once — and the landing's *Land* playbook reviews it before a person
+merges (*How each step gets done*). Link work the stretch builds on into the cut, never into
 its middle (`project lint` names it, `branch.late-entry`), and keep milestones outside it —
 a release whose work is not on the mainline yet is not a release. `dplanner branch show`
 says what is on each branch; `dplanner branch remove` takes one away again.

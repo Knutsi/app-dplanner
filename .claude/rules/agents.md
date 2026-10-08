@@ -3,18 +3,21 @@ paths:
   - "src/dplanner/modules/{agent_briefing,agent_claims,agent_launch,agent_questions,agent_supervisor,agent_usage,step_agent_instruction,step_agent_run,agent_claude,agent_codex,agent_opencode}/**"
   - "src/dplanner/domain/agents.py"
   - "src/dplanner/domain/questions.py"
-  - "src/dplanner/domain/{claims,claim_sync}.py"
+  - "src/dplanner/domain/{claims,claim_sync,ledger,expenditure}.py"
+  - "src/dplanner/core/process.py"
   - "tests/modules/{agent_claims,agent_launch,agent_questions,agent_supervisor,agent_usage,step_agent_instruction,step_agent_run}/**"
+  - "tests/modules/agent_briefing/**"
+  - "tests/domain/test_{ledger,questions,claims,claim_sync,expenditure}.py"
   - "tests/modules/test_agent_readers.py"
   - "scripts/render_briefing_size.py"
 ---
 
-# Agents — Run Agent, worktrees, run directories, usage, harnesses and profiles
+# Agents — Run Agent, supervisors, questions, claims, the coordinator, worktrees, usage, harnesses and profiles
 
 - **Running an agent launches a peer, never a task.** *Run Agent* spawns a detached terminal
   the user owns — not a `TaskRunner` body, which would promise cancel and progress nobody
-  can honestly deliver. The terminal opens at the project's **git repository root** (via
-  the `workdir_for` seam the composition root wires from `find_repo_root`). The prompt goes
+  can honestly deliver. The terminal opens in the step's code checkout
+  (`agent_briefing.worktree.workdir` over `deps.facts_for`, or its worktree). The prompt goes
   to a per-run temp directory, never the project. The agent reports back through the CLI
   (`status set`, `agent-state set`, `note add`). **The graph gates launching**: a step
   whose `requires` do not all read done (through `status_for` on the module's Deps, the
@@ -107,16 +110,19 @@ paths:
   disk** (`claimed_on_disk(library)`, never a model loaded earlier), and its record is
   deleted only when no supervisor holds the run, its step reads unclaimed and it is older than
   `LAUNCH_GRACE` (two minutes) — a supervisor just started may not hold its lock yet. The
-  window calls it once at start (`agent_usage`'s module); `agent run` before its own lock. A
+  window calls it once at start (`agent_usage`'s module); `agent run` before its own lock,
+  over its own project — and nothing else, so a killed supervisor's run waits for one of
+  the two. A
   turnless run of a playbook's pass that is not its first record is started whatever the
   step's status: its pass is its claim.
   A parked run is a person's, never touched — except one waiting for its reset
   (`waits_for_reset`) or holding an answer nobody delivered (`answer_waiting`), whose
   supervisor is started again. A failed start's rollback — the record deleted,
   the withdrawal written — happens under the launch lock too, and the window saves before
-  every start, a claim it did not make included.
+  every start, a claim it did not make included. `docs/architecture/agents.md`'s *One launch
+  under both surfaces* has the reasoning.
 - **A step names the code location it works in.** With several code rows in a project,
-  the agent-instruction entry's `workplace` holds a location id (`aspect.workplace`,
+  the agent-instruction entry's `workplace` holds a location id (`planning.agent.workplace`,
   `with_workplace`; `dplanner agent workplace <step> code:UI|primary`), absent meaning
   the primary — the project's first code row — because which repository a step's change
   lands in is a fact about the step, exactly as its worktree choice is.
@@ -401,7 +407,7 @@ paths:
   coordinator may not answer a `person` gate (`may_answer`); `question escalate` passes an
   open question to a person. No warm hosting of Claude's own question tools yet. `docs/architecture/agents.md`'s *A question
   is a file, and the inbox is the directory* has the reasoning. **The window's inbox is a card
-  per open or escalated question on top of the Control Centre** (`agent_questions/panel.py`,
+  per open or escalated question on top of the Control Centre** (`agent_questions/cards.py`,
   handed to `status_board` as the `question_cards` factory): who asks — a playbook's gate says
   whose judgement it waits for — the step, the kind,
   the question, a button per choice and a person's own words — `inbox.answer` with the person
@@ -428,7 +434,9 @@ paths:
   to its run's member, and an agent shell's heartbeat renews that squad's claims alone. A
   pass's stages run as the member that started it (the first run records it); a worker's
   preamble names it; workers' branches stay `agent/<run name>`. A lesson a run teaches the
-  coordinator is one sentence in its loop, not a paragraph.
+  coordinator is one sentence in its loop, not a paragraph. **Headless, it needs a waker
+  and `--allowedTools "Bash(gh pr merge:*)"`** — a `-p` turn has no scheduled wake-up, and
+  Claude's auto mode refuses its merge; the loop says both.
   `docs/architecture/agents.md`'s *A coordinator is briefed, never built in* has the reasoning.
 - **A headless run is driven by its supervisor, and nothing waits on it.** `dplanner agent
   supervise <run>` (`modules/agent_supervisor/`, started detached by
@@ -446,7 +454,8 @@ paths:
   opens no library. **A limit with a known reset waits in its supervisor**, which answers the
   `limit` question for the clock (`answer.by.kind: clock`) at the reset and resumes with
   `reset`; **Retry now** is a person's answer to the same question (`inbox.retry_now`, `dplanner
-  agent retry`, *Step ▸ Retry Now*), resumed with `retry`. A reset the turn did not report is
+  agent retry`, *Step ▸ Retry Now*), resumed with `retry` — inside the waiting supervisor,
+  in the environment it started with; only with none waiting does the answer start one. A reset the turn did not report is
   the account's last-known one (`limits.py`, `config_dir()/usage-limits.json`); with neither,
   the run parks for a person; one already past is waited for once (`past-reset`), never
   twice in a row. **A SIGTERM during the wait leaves the run parked** for `revive`; only a

@@ -17,7 +17,7 @@ from PySide6.QtWidgets import QWidget
 from dplanner.domain.agents import AgentHarness
 from dplanner.domain.model import Library, NodeId, Step, StepId
 from dplanner.framework.window import StatusHost
-from dplanner.modules.agent_questions.panel import QuestionCards
+from dplanner.modules.agent_questions.cards import QuestionCards
 
 
 @dataclass(frozen=True)

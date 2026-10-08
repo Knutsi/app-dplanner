@@ -48,9 +48,10 @@ def preamble(
     """
     lines = [
         "First, confirm you can drive DPlanner: run `dplanner skill status`. If the"
-        " command is missing or the skill is not installed, STOP — do not carry out the"
+        " command is missing or a line reads `missing`, STOP — do not carry out the"
         " step — and tell the developer this step needs the DPlanner skill"
-        " (`dplanner skill install`)."
+        " (`dplanner skill install`). `stale` is not a stop: that skill came from another"
+        " build of DPlanner, so say so and carry on."
     ]
     key = key_of(step) or step.title or "this step"
     ref = quoted(key)
