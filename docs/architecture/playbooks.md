@@ -472,6 +472,57 @@ refusal, said in the status bar, as Run Agent leaves its own to the launch. **On
 time**: a step's own playbook is a fact of each step, and a selection is what *Autonomous
 work* runs. A *Remote ▸* entry waits for workers to exist.
 
+### Stopping a pass
+
+**A person stops a pass with one verb, whatever it is doing:** `dplanner playbook stop <step>`.
+*Step ▸ Stop Playbook* and the card's right-click run that same verb as a process, after a
+confirmation that names what is running (`engine.stoppable`). The entry is greyed, with the
+reason, when nothing of a pass is left to stop. The alternative was a *Stop* answer, which
+reaches only a pass that is asking something. A pass is just as often running a turn, parked
+on a run's own question, waiting out a usage reset or between two stages, and the one thing a
+person must be able to rely on is that *stop* means stopped.
+
+**A stop makes the pass's latest record read halted. It adds no record of its own.**
+`passes.due` already reads only the latest record, and a fenced run and a withdrawn question
+both read `Halted` there. So the stop, under the step's launch lock that an advance waits
+for, does two things:
+- it withdraws every question of the pass not yet settled: a gate, a round cap, a `limit` or
+  `blocked` card, or an answer no advance has acted on yet;
+- it fences every unfinished run of the pass, and the latest run too when that one ended
+  `done` with its advance still to come.
+
+Then it waits for each run to be over (`supervisor.stop_and_wait`):
+
+| The run | How it ends |
+|---|---|
+| a live turn, or a supervisor in its backoff | the fence's SIGTERM; the supervisor ends the turn `stopped` |
+| a supervisor waiting out a usage reset | the same SIGTERM, which ends a *fenced* waiting run (a bare one stays parked for `revive`) |
+| parked with no supervisor, or never started | ended here, holding its supervisor lock (`settle_fenced`) |
+| a turn whose supervisor died | its process group ended by its recorded pid, boot and start time, then the run |
+| a run on another machine | fenced only; its own supervisor obeys the fence |
+
+A pass whose turn will not die stays under way, and stopping again finishes it: a run is over
+only once its turn is gone (agents.md). Once the stop is done, nothing of the pass can start
+again by itself. An advance reads `Halted`. `revive` finds every run over. A `playbook wake`
+finds its card withdrawn. *Retry now* and an answer are refused on a withdrawn question.
+S27's card phrase reads the same `Halted` and shows it as *Stopped*. A stop record of its own
+would have been one more thing for every one of those readers to check.
+
+**The records first, then the plan.** The stop writes the records and only then changes the
+plan, through `workflows.stopped`:
+- a step that read *in progress* goes back to *pending*. That status was the pass's own
+  claim, and nobody works the step now;
+- any other status stands. *Ready for review*, *ready to merge* and *done* are statements
+  about finished work;
+- the at-work claim is ended, and the step is released from its squad's claim (`Release`).
+
+The other order, the plan first, would leave a moment in which a stage that ends launches
+the next one. The status from before the pass is not stored, because it was *pending* in every
+case. Stopping when nothing is left to stop exits 0 and says so, so a coordinator or a
+script may stop twice. The worktree and the branch are kept for inspection, and a new pass
+starts as any pass does: `agent run --playbook`. The stopped pass has reached its end, so
+`engine.active` lets the new one through, and it works in the same worktree.
+
 **Not yet:**
 - **the context ceiling's fresh run.** A turn's summed usage counts the context once per
   call, so it is no reading of the context's size.

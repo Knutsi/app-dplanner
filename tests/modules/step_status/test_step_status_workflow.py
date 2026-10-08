@@ -60,7 +60,9 @@ def test_a_plain_step_takes_any_status_from_anyone(library, status, actor):
     change, _kept = WORKFLOW.set_status(library, step, status, actor=actor, today=MONDAY)
     project = library.project_of(step.id).id
     # A person's stopped status also hands the step back from its squad's claim.
-    released = (Release(project, step.id, status.value),) if isinstance(actor, Person) else ()
+    released = (
+        (Release(project, step.id, f"set {status.value}"),) if isinstance(actor, Person) else ()
+    )
     assert change.follow_ups == (
         (EndClaim(project, step.id), *released) if status in STOPPED else ()
     )

@@ -1,13 +1,13 @@
 """A step leaving a squad, however it leaves: one function stops its worker (agents.md's *A
 claim is a lease in git*).
 
-A takeover, ``claim release``, ``claim end``, the window's *End Squad Claim* and a person's
-stopped status all take steps away from a squad, and each would leave that squad's worker
-running — or a parked run resumable — unless it is stopped. So every one of them ends in
-:func:`stop_runs`: each unfinished headless run the squad has under the claim on those steps
-is fenced, and its supervisor here is signalled, ending the turn ``stopped``; a live turn
-also reads its fence within a second. A supervisor on another machine finds the fence when
-the ledger reaches it — the second machine is not built yet.
+A takeover, ``claim release``, ``claim end``, the window's *End Squad Claim*, a person's
+stopped status and a stopped playbook all take steps away from a squad, and each would leave
+that squad's worker running — or a parked run resumable — unless it is stopped. So every
+one of them ends in :func:`stop_runs`: each unfinished headless run the squad has under the
+claim on those steps is fenced, and its supervisor here is signalled, ending the turn
+``stopped``; a live turn also reads its fence within a second. A supervisor on another
+machine finds the fence when the ledger reaches it — the second machine is not built yet.
 
 A release or an end takes the steps' launch locks when they are free, around the fencing.
 Either way a launch of the step cannot slip through: one that re-reads ownership just before
@@ -74,12 +74,12 @@ def end(project_dir: Path, claim_id: str, by: Mapping[str, str], why: str) -> Cl
     return claim
 
 
-def released_by_status(project_dir: Path, follow_up: Release) -> bool:
-    """A person's stopped status, performed: the step leaves its squad's claim and its worker
-    stops. False when no claim held it. Both surfaces' status verbs reach it."""
+def released_by_person(project_dir: Path, follow_up: Release) -> bool:
+    """A person's override, performed — a stopped status, a stopped playbook: the step leaves
+    its squad's claim and its worker stops. False when no claim held it."""
     by = {"kind": PERSON, "name": getpass.getuser()}
     try:
-        claim = release(project_dir, follow_up.step, by, f"set {follow_up.why} by a person")
+        claim = release(project_dir, follow_up.step, by, f"{follow_up.why} by a person")
     except LookupError:
         return False
     return claim is not None

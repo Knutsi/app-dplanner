@@ -124,7 +124,7 @@ class StatusWorkflow:
         if status in STOPPED:
             follow_ups = (EndClaim(project, step.id),)
             if isinstance(actor, Person):
-                follow_ups += (Release(project, step.id, status.value),)
+                follow_ups += (Release(project, step.id, f"set {status.value}"),)
         command = CompositeCommand(LABEL, commands) if commands else None
         return Change(command, follow_ups), kept
 

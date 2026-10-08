@@ -728,10 +728,27 @@ def test_a_fenced_run_still_live_here_is_stopped_before_the_step_launches(plan, 
 
     monkeypatch.setattr(supervisor, "stop", stop)
     assert launch.stop_fenced(plan, "s1", wait=2) == "" and signalled == [run]
-    live.add(run)
+    stopped = ledger.find(plan, run)
+    assert stopped is not None and stopped.over  # Its supervisor gone, the run is ended.
+    stuck = "20261007T101500Z-0000dddd"
+    ledger.write(plan, _headless(stuck, Turn(n=1, prompt="launch", started="…")))
+    supervisor.fence(plan, stuck, "kettle", "taken over")
+    live.add(stuck)
     monkeypatch.setattr(supervisor, "stop", lambda *_a, **_k: None)  # One that will not end.
     assert "still stopping" in launch.stop_fenced(plan, "s1", wait=0.3)
     assert launch.unfinished_run(plan, "s1") == ""  # Fenced: over, as far as a launch cares.
+
+
+def test_a_fenced_run_on_another_machine_is_left_to_that_machine(plan):
+    from dplanner.modules.agent_launch import launch
+
+    run = "20261007T101500Z-0000ffff"
+    parked = Turn(n=1, prompt="launch", started="…", ended="…", end="asked")
+    ledger.write(plan, _headless(run, parked, machine="elsewhere"))
+    supervisor.fence(plan, run, "kettle", "taken over")
+    assert launch.stop_fenced(plan, "s1", wait=0.1) == ""
+    record = ledger.find(plan, run)
+    assert record is not None and not record.over  # Its own supervisor ends it there.
 
 
 def _step_id(cli) -> str:

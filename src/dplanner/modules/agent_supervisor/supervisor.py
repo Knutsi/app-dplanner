@@ -124,6 +124,9 @@ LOCK_FILE = "supervisor.lock"
 RECORD_LOCK = "record.lock"
 # How often a live turn renews its squad's claim; the claim itself writes only when due.
 CLAIM_BEAT = 60.0
+# How long a stop waits for a run's supervisor to end its turn: the guards' grace between
+# SIGTERM and SIGKILL, and a little more.
+STOPPING_S = 15.0
 # How long an orphaned turn's killed process is given to disappear.
 ORPHAN_REAP_S = 2.0
 LAUNCHES_DIR = "launches"
@@ -296,6 +299,58 @@ def stop(project_dir: Path, run: str, by: str, why: str, config: Path | None = N
     if sys.platform != "win32" and supervised(directory):
         with suppress(OSError, ValueError):
             os.kill(int((directory / LOCK_FILE).read_text(encoding="utf-8")), signal.SIGTERM)
+
+
+def stop_and_wait(
+    project_dir: Path,
+    records: Iterable[LedgerRecord],
+    by: str,
+    why: str,
+    wait: float,
+    config: Path | None = None,
+) -> list[str]:
+    """Stop the runs and wait up to ``wait`` seconds for each to be over: the runs of this
+    machine still stopping, by id. Each is fenced; a supervisor here is signalled and waited
+    for; a run nobody supervises — parked, never started, or a turn that outlived its
+    supervisor — is ended here (:func:`settle_fenced`). A run on another machine is fenced
+    only: that machine's supervisor obeys the fence when the ledger reaches it."""
+    records = list(records)
+    here = ledger.machine_id(config)
+    for record in records:
+        stop(project_dir, record.run, by, why, config)
+    deadline = time.monotonic() + wait
+    still: list[str] = []
+    for record in records:
+        if record.machine != here:
+            continue
+        directory = ledger.run_dir(record.run, config)
+        while supervised(directory) and time.monotonic() < deadline:
+            time.sleep(0.2)
+        if supervised(directory) or not settle_fenced(project_dir, record.run, wait, config):
+            still.append(record.run)
+    return still
+
+
+def settle_fenced(project_dir: Path, run: str, grace: float, config: Path | None = None) -> bool:
+    """End a fenced run of this machine that no supervisor drives — what a supervisor finding
+    the fence does: its orphaned turn ended first (:func:`end_orphaned_turn`), then the run,
+    its questions withdrawn. The run's supervisor lock is held throughout, so none starts on
+    it meanwhile. Whether the run is over now; False while a supervisor holds it, or its turn
+    will not end."""
+    try:
+        with os_lock(ledger.run_dir(run, config) / LOCK_FILE, wait=False):
+            record = ledger.find(project_dir, run)
+            if record is None or record.over:
+                return True
+            if not record.fence or record.machine != ledger.machine_id(config):
+                return False
+            if not end_orphaned_turn(record, grace):
+                return False
+            update(project_dir, run, lambda fresh: fresh.ended_at(now_stamp(), None), config)
+            questions.withdraw_unsettled(project_dir, run, "the run was stopped", config=config)
+            return True
+    except BlockingIOError:
+        return False
 
 
 def end_orphaned_turn(record: LedgerRecord, grace: float) -> bool:
@@ -934,6 +989,8 @@ class Session:
                 self._clock_answers(last.question)
                 continue
             if stop.wait(min(self.guards.wake, left)):
+                if _record(self.project_dir, run).fence:  # Stopped by its fence's SIGTERM.
+                    continue
                 # A shutdown, not a decision: the run stays parked on its limit, and the next
                 # supervisor `revive` starts waits on. Only a fence ends a waiting run.
                 return "", f"run {run} is parked on its limit; its supervisor was stopped"

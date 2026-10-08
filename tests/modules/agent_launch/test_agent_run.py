@@ -2200,3 +2200,17 @@ def test_run_playbook_starts_nothing_over_a_plan_it_could_not_save(services, ste
     module.start_playbook(step, "execute")
     assert ran == []
     assert "could not be saved" in services.window.statusBar().currentMessage()
+
+
+def test_stop_playbook_runs_playbook_stop_and_says_how_it_went(services, step, monkeypatch):
+    from dplanner.modules.agent_supervisor.supervisor import dplanner_argv
+
+    module, ran = _playbook_launch(services, monkeypatch, said=(0, "stopped pass P"))
+    module.stop_playbook(step)
+    assert ran == [dplanner_argv(services.repo.library_path, "playbook", "stop", step.id)]
+    message = services.window.statusBar().currentMessage()
+    assert message == "Playbook stopped on “Deploy” — stopped pass P"
+
+    module, ran = _playbook_launch(services, monkeypatch, flush=lambda: False)
+    module.stop_playbook(step)
+    assert ran == [] and "could not be saved" in services.window.statusBar().currentMessage()

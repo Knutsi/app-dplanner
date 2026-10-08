@@ -954,27 +954,53 @@ class AgentLaunchModule:
         self._start_pass(step, playbook_id, anyway=bool(waiting))
 
     def _start_pass(self, step: Step, playbook_id: str, *, anyway: bool) -> None:
+        argv = launch.start_pass_argv(self._deps.library_path, step.id, playbook_id, anyway=anyway)
+        self._run_pass_verb(
+            step,
+            argv,
+            doing="Starting a playbook on",
+            ok="Playbook started on",
+            refused="No playbook started on",
+        )
+
+    def stop_playbook(self, step: Step) -> None:
+        """Stop the step's pass by running ``dplanner playbook stop`` — the one stop, on both
+        surfaces; the status it writes and the claim it releases arrive through the library
+        watcher. The person confirmed it already."""
+        argv = supervisor.dplanner_argv(self._deps.library_path, "playbook", "stop", step.id)
+        self._run_pass_verb(
+            step,
+            argv,
+            doing="Stopping the playbook on",
+            ok="Playbook stopped on",
+            refused="The playbook was not stopped on",
+        )
+
+    def _run_pass_verb(
+        self, step: Step, argv: Sequence[str], *, doing: str, ok: str, refused: str
+    ) -> None:
+        """Save, then run a pass's ``dplanner`` verb to its end on a task — one at a time —
+        and say its one line in the status bar. Saving first means the process writes over
+        no unsaved edit."""
         deps = self._deps
         title = _titled(step)
         if not deps.flush():
             deps.status.show_status(
-                f"No playbook started on “{title}” — the plan could not be saved; save it, then"
-                " run it again",
+                f"{refused} “{title}” — the plan could not be saved; save it, then try again",
                 8000,
             )
             return
-        argv = launch.start_pass_argv(deps.library_path, step.id, playbook_id, anyway=anyway)
         result: list[tuple[int, str]] = []
 
         def body() -> None:  # Worker thread: the verb runs to its end, the model untouched.
             result.append(deps.run_cli(argv))
 
         def done() -> None:
-            code, said = result[0] if result else (1, "the launch did not finish")
+            code, said = result[0] if result else (1, "the verb did not finish")
             if code == 0:
-                deps.status.show_status(f"Playbook started on “{title}” — {said}", 6000)
+                deps.status.show_status(f"{ok} “{title}” — {said}", 6000)
             else:
-                deps.status.show_status(f"No playbook started on “{title}” — {said}", 10000)
+                deps.status.show_status(f"{refused} “{title}” — {said}", 10000)
 
         if deps.tasks is None:
             body()
@@ -988,10 +1014,10 @@ class AgentLaunchModule:
                 done()
 
         runner.busy_changed.connect(finished)
-        label = f"Starting a playbook on “{title}”"
+        label = f"{doing} “{title}”"
         if not runner.run(label, body, key="agent.playbook"):
             runner.busy_changed.disconnect(finished)
-            deps.status.show_status("No playbook started — still starting the last one", 6000)
+            deps.status.show_status(f"{refused} “{title}” — a playbook verb is still running", 6000)
             return
         deps.status.show_status(f"{label}…", 0)
 

@@ -429,6 +429,113 @@ def active(project_dir: Path, step: Step) -> str:
     return f"has a playbook pass under way ({pass_.id}): {_under_way(next_)}"
 
 
+def stoppable(project_dir: Path, step: Step) -> str:
+    """What stopping the step's latest pass would end, in a person's words — *its execute
+    stage is running* — or "" when nothing of it is left to stop: it has reached its end and
+    every run of it is over. A run still dying after an earlier stop counts, so stopping again
+    finishes it."""
+    pass_ = _latest_pass(project_dir, step.id)
+    if isinstance(pass_, str):
+        return ""
+    left = [e for e in pass_.entries if isinstance(e, LedgerRecord) and not e.over]
+    if left:
+        run = left[-1]
+        return f"its {run.stage} stage is {'still stopping' if run.fence else _standing(run)}"
+    next_ = passes.due(pass_.playbook, pass_.settings, pass_.entries, _facts(step))
+    match next_:
+        case Complete() | Halted():
+            return ""
+        case Wait(why):  # With every run over, the pass waits on its question.
+            asked = pass_.entries[-1]
+            return (
+                f"its {asked.stage} stage waits on {asked.short}"
+                if isinstance(asked, Question)
+                else why
+            )
+        case _:
+            return f"its {next_.stage} stage is due"
+
+
+@dataclass(frozen=True)
+class Stopped:
+    """What a stop ended: the pass, its runs as they stood, the questions it withdrew, the
+    runs here still stopping, and whether a run of it is another machine's to stop."""
+
+    pass_: str
+    runs: tuple[str, ...]
+    questions: tuple[str, ...]
+    still: tuple[str, ...]
+    elsewhere: bool
+
+    def said(self) -> str:
+        parts = [f"stopped pass {self.pass_}"]
+        if self.runs:
+            parts.append(", ".join(self.runs))
+        if self.questions:
+            parts.append(f"withdrew {', '.join(self.questions)}")
+        if self.still:
+            parts.append(
+                f"run {self.still[0]} is still stopping — `dplanner playbook stop` again ends it"
+            )
+        if self.elsewhere:
+            parts.append("a run on another machine stops when its fence reaches it")
+        return "; ".join(parts)
+
+
+def stop(
+    project_dir: Path, step: Step, by: str, wait: float = supervisor.STOPPING_S
+) -> Stopped | None:
+    """Stop the step's latest pass, whatever state it is in, so that nothing of it starts
+    again by itself — or None when there is nothing to stop (:func:`stoppable`).
+
+    Under the step's launch lock, which an advance waits for: every unfinished run of the
+    pass, and its latest run when that ended between stages, is fenced and stopped
+    (``supervisor.stop_and_wait`` — a live turn signalled, a parked, unstarted or orphaned
+    run ended here); every question of the pass not yet settled is withdrawn. Each of those
+    makes :func:`~.passes.due` read the pass ``Halted``. Its worktree and branch are kept."""
+    seen = _latest_pass(project_dir, step.id)
+    if isinstance(seen, str):
+        return None
+    with supervisor.launching(seen.entries[0].project, step.id, wait=True):
+        pass_ = _latest_pass(project_dir, step.id)
+        if isinstance(pass_, str) or not stoppable(project_dir, step):
+            return None
+        runs = [e for e in pass_.entries if isinstance(e, LedgerRecord)]
+        latest = pass_.entries[-1]
+        targets = [r for r in runs if not r.over or (r is latest and not r.fence)]
+        why = "the playbook was stopped"
+        asked = [
+            e for e in pass_.entries if isinstance(e, Question) and e.state in questions.UNSETTLED
+        ]
+        for question in asked:
+            questions.update(
+                project_dir,
+                question.id,
+                lambda q: (
+                    questions.withdrawn(q, why, now_stamp())
+                    if q.state in questions.UNSETTLED
+                    else q
+                ),
+            )
+        still = supervisor.stop_and_wait(project_dir, targets, by, why, wait)
+        here = ledger.machine_id()
+        return Stopped(
+            pass_.id,
+            tuple(f"{r.stage} attempt {r.attempt} was {_standing(r)}" for r in targets),
+            tuple(q.short for q in asked),
+            tuple(still),
+            any(r.machine != here for r in targets),
+        )
+
+
+def _standing(run: LedgerRecord) -> str:
+    if run.over:
+        return "done, its next stage not yet begun"
+    if run.last_turn is None:
+        return "not started"
+    return "parked" if run.parked else "running"
+
+
 def _under_way(next_: Next) -> str:
     if isinstance(next_, Wait):
         return next_.why

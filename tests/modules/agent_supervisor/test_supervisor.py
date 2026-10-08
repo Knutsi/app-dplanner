@@ -1090,6 +1090,24 @@ def test_a_shutdown_while_waiting_leaves_the_run_parked_for_revive(rig, monkeypa
     retrying.join()
 
 
+def test_a_stop_while_waiting_for_a_reset_ends_the_run(rig):
+    """The fence and then its SIGTERM — ``supervisor.stop`` — end a waiting run at once, where
+    a SIGTERM alone leaves it parked for ``revive``."""
+    rig.play({"lines": limit_at(time.time() + 3600), "exit": 1})
+
+    def stop() -> None:
+        while not rig.record.parked:
+            time.sleep(0.02)
+        time.sleep(0.2)  # Into the wait.
+        supervisor.stop(rig.plan, RUN, "knut", "the playbook was stopped", rig.config)
+
+    stopping = threading.Thread(target=stop)
+    stopping.start()
+    assert rig.supervise() == f"run {RUN} was fenced"
+    stopping.join()
+    assert rig.record.over
+
+
 def test_a_reset_crossed_during_cleanup_resumes_once_and_never_loops(rig, tmp_path):
     rig.play({"lines": limit_at(time.time() - 5), "exit": 1}, {"lines": [INIT, result()]})
     assert rig.supervise() == f"run {RUN} is done"

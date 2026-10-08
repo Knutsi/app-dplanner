@@ -277,8 +277,10 @@ class _Reading:
         if isinstance(last, LedgerRecord):
             if not last.over:
                 return Wait(f"run {last.run} is {'parked' if last.parked else 'running'}")
+            if last.fence:
+                return Halted(f"run {last.run} was stopped: {last.fence.get('why', '')}")
             end = last.last_turn.end if last.last_turn is not None else ""
-            if last.fence or end != TurnEnd.DONE:
+            if end != TurnEnd.DONE:
                 return Halted(f"run {last.run} ended {end or 'without a turn'}")
         elif last.state in (questions.OPEN, questions.ESCALATED):
             return Wait(f"{last.short} waits for an answer")
