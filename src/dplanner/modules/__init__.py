@@ -64,6 +64,7 @@ if TYPE_CHECKING:
     from dplanner.framework.services import AppServices
     from dplanner.framework.undo import UndoService
     from dplanner.modules.agent_at_work.module import AgentAtWorkModule
+    from dplanner.modules.agent_launch.availability import Availability
     from dplanner.modules.agent_launch.module import AgentLaunchModule
     from dplanner.modules.agent_questions.module import AgentQuestionsModule
     from dplanner.modules.agent_usage.module import AgentUsageModule
@@ -190,6 +191,7 @@ class _Root:
     def __init__(self, services: "AppServices") -> None:
         from dplanner.domain.locations import roles_by_id
         from dplanner.domain.store import LibraryStore
+        from dplanner.modules.agent_launch.availability import Availability
 
         self.services = services
         self.library: Library = services.document
@@ -204,6 +206,8 @@ class _Root:
         self.store = store
         self.roles = roles_by_id(default_location_roles())
         self.managed = managed_for(self.roles)
+        # Whether each agent CLI is usable here: the checklist probes, Run Playbook greys.
+        self.availability = Availability(agent_harnesses())
         # The tuple the CLI reports read (`_asset_sources`), so the Assets tab, the picker
         # and `dplanner asset list` can never disagree about what a project holds.
         self.asset_sources = _asset_sources()
@@ -679,6 +683,8 @@ def _agents(
             tasks=services.tasks,
             notices=services.window,
             flush=services.autosave.saved,
+            # A playbook's pass starts as `dplanner agent run --playbook` on this library.
+            library_path=store.library_path,
         )
     )
     instruction = StepAgentInstructionModule(
@@ -2047,6 +2053,13 @@ def _aspects(
                 details=services.step_details,
                 project_settings=services.project_settings,
                 harness_ids=tuple(harness.id for harness in agent_harnesses()),
+                actions=services.actions,
+                context=services.context,
+                # Run Playbook: Run Agent's launch and gates, and whether its agents work here.
+                launcher=agents.launch,
+                readings=root.availability,
+                parent=services.window,
+                tasks=services.tasks,
             )
         ),
         # The branch cut, and the landing's id beside it: after the wait, the other kind of
@@ -2250,7 +2263,7 @@ def _machine(root: _Root) -> list["Module"]:
                 parent=services.window,
                 # Every module's rows, over the same skill files the installer compares
                 # against — the tuple `dplanner checklist show` reads.
-                checks=lambda: _machine_checks(files=skill_files),
+                checks=lambda: _machine_checks(files=skill_files, availability=root.availability),
             )
         ),
         # After every module whose verb the guide names — its page reads their specs as it
@@ -2575,7 +2588,9 @@ def _keychain() -> "SecretStore":
     return Keychain()
 
 
-def _machine_checks(*, files: "Callable[[], dict[str, str]]") -> tuple["MachineCheck", ...]:
+def _machine_checks(
+    *, files: "Callable[[], dict[str, str]]", availability: "Availability | None" = None
+) -> tuple["MachineCheck", ...]:
     """What this machine has of what DPlanner needs, from every module that owns a row.
 
     The tuple both surfaces read — ``dplanner checklist show`` and *Tools ▸ Setup
@@ -2584,7 +2599,7 @@ def _machine_checks(*, files: "Callable[[], dict[str, str]]") -> tuple["MachineC
     the order they are listed; the group itself is ``cli/checklist.py``'s ``GROUPS``.
 
     ``files`` is the generated skill the installer's rows compare against — the same
-    closure the Install dialog is handed.
+    closure the Install dialog is handed; ``availability`` the window's one agent reading.
     """
     from dplanner.modules.agent_launch import checks as agent_checks
     from dplanner.modules.checklist import checks as generic
@@ -2598,7 +2613,7 @@ def _machine_checks(*, files: "Callable[[], dict[str, str]]") -> tuple["MachineC
         *install_checks.checks(files=files),
         *generic.checks(),
         *github_checks.checks(),
-        *agent_checks.checks(harnesses=agent_harnesses()),
+        *agent_checks.checks(harnesses=agent_harnesses(), availability=availability),
         *confluence_checks.checks(),
         # The provider modules' ids and labels: the keychain is asked under each module's
         # own id, and the llm module never learns which providers exist by importing them.

@@ -301,6 +301,25 @@ def _no_greeting(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_agent_probes(monkeypatch):
+    """A built window never asks this machine's agent CLIs whether they work.
+
+    The window keeps one ``Availability`` and refreshes it on a task as the person moves
+    about, which would run every installed agent CLI's ``--version`` and sign-in check from
+    every test that builds the application. Here the window's reading finds no CLI on PATH,
+    asking nothing; a test about what a reading greys hands the module a fake one, and
+    ``tests/modules/agent_launch/test_availability.py`` probes through fake shells.
+    """
+    from dplanner.modules.agent_launch import availability
+
+    class Unprobed(availability.Availability):
+        def __init__(self, harnesses: Any, **kwargs: Any) -> None:
+            super().__init__(harnesses, **{**kwargs, "which": lambda _binary: None})
+
+    monkeypatch.setattr(availability, "Availability", Unprobed)
+
+
+@pytest.fixture(autouse=True)
 def _own_config_dir(monkeypatch, tmp_path_factory):
     """``config_dir()`` is a throwaway directory per test, as QSettings is: the agent
     profiles live there now, and a test that saves one must not write the developer's."""

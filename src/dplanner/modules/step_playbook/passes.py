@@ -125,6 +125,13 @@ def pinned(
     )
 
 
+def agents_of(playbook: Playbook, settings: Settings) -> tuple[str, ...]:
+    """The harnesses a pass of ``playbook`` under ``settings`` runs: the implementer's, which
+    does the work and any fix, and the reviewer's where a review is another agent's."""
+    other = (settings.reviewer,) if playbook.reviews_with_other() else ()
+    return tuple(dict.fromkeys((settings.implementer, *other)))
+
+
 # -- what is due --------------------------------------------------------------------------------
 
 

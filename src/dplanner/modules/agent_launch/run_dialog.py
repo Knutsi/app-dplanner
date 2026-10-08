@@ -64,7 +64,7 @@ class RunAnywayDialog(DialogFrame):
     ``count`` is the launches the gesture would make — every chosen step, not only the
     ones that wait — so *Run 3 Agents* says what Run Anyway does. ``groups`` is one
     ``(heading, lines)`` per waiting step; a single waiting step has no heading, the
-    lead already names it.
+    lead already names it. ``title`` names another launch than Run Agent's — Run Playbook.
     """
 
     def __init__(
@@ -74,8 +74,9 @@ class RunAnywayDialog(DialogFrame):
         groups: Sequence[tuple[str, Sequence[str]]],
         closing: str,
         parent: QWidget | None,
+        title: str = "",
     ) -> None:
-        super().__init__("Run Agent" if count == 1 else f"Run {count} Agents", parent)
+        super().__init__(title or ("Run Agent" if count == 1 else f"Run {count} Agents"), parent)
         body, layout = self.body, self.body_layout
         self._groups = [(heading, list(lines)) for heading, lines in groups]
         self.lead = QLabel(lead, body)

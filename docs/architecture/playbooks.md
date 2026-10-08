@@ -447,11 +447,35 @@ claimed, since a start only ever follows the saved claim — is no pass: its lau
 before the claim, and a retry deletes it and begins afresh rather than refusing. A separate `playbook run` would have been a second launch flow, with the gates
 written twice.
 
+**Run Playbook in the window runs the verb.** *Step ▸ Run Playbook ▸ <playbook>*, beside Run
+Agent's child menu and in the card's right-click with it, starts a pass by running `dplanner
+agent run <step> --playbook <id>` as a process of this build (`supervisor.dplanner_argv`), to
+its end on a task, and says its one line in the status bar. The engine, its launcher and its
+merge all stand on a `CliContext` — its save, the follow-ups after the save, what a refused
+save takes back — and the window applying the claim to its own model would be that order
+written a second time, which is exactly what one launch under both surfaces exists to prevent.
+So the window does only what is its own and the CLI refuses: it asks the graph gate (and passes
+`--anyway`), clones a repository this machine lacks, and saves, so the process writes over no
+unsaved edit. The claim and the pass's records arrive through the library watcher, as every
+agent's own `dplanner` call does; the process runs in a session of its own, so a window closed
+mid-launch does not end a process holding the step's launch lock.
+
+The child menu lists every preset — the step's own first, marked by where it was chosen
+(*this step's*, *project default*, *landing default*) — and greys each with its own reason:
+Run Agent's questions of the step and the default profile's headless agent; a role no profile
+runs (`passes.pinned`); an agent not usable here, `Availability.why_not` over the harnesses
+the pass would run (`passes.agents_of`). The window keeps **one** `Availability`, which the
+checklist's rows probe into too, and refreshes it on a task when it has gone stale — at
+start, as the context changes, and as the menu opens — so a reading is never taken on the GUI
+thread. A pass under way, or a run not over, is not read for the menu: it is the verb's
+refusal, said in the status bar, as Run Agent leaves its own to the launch. **One step at a
+time**: a step's own playbook is a fact of each step, and a selection is what *Autonomous
+work* runs. A *Remote ▸* entry waits for workers to exist.
+
 **Not yet:**
 - **the context ceiling's fresh run.** A turn's summed usage counts the context once per
   call, so it is no reading of the context's size.
 - **the card's phrase**, which `passes.due` makes derivable.
-- **greying Run Playbook** by `Availability.why_not` (S17).
 - **fetching and pushing** around consuming an answer.
 
 ## Each stage is one headless turn per harness

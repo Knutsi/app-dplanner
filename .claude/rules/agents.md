@@ -288,7 +288,9 @@ paths:
   probe — the shell is bound to the path `which` found, which is the seam a probe on another
   machine takes. **`check` probes; `cached` and `why_not` never do**, so a UI-thread reader
   reads a reading at most a minute old, or "checking…", and a `TaskRunner` runs
-  `refresh_stale`. The checklist has a row per harness beside *An agent CLI*; a CLI not on
+  `refresh_stale`. **The window keeps one** (`_Root.availability`): the checklist's rows probe
+  into it and Run Playbook greys from it, refreshing it on a task when it goes stale; the suite's
+  `_no_agent_probes` makes it find nothing on PATH. The checklist has a row per harness beside *An agent CLI*; a CLI not on
   PATH is well (*not installed — optional*), and only broken or signed out is advice.
   `docs/architecture/agents.md`'s *Installed is not usable* has the reasoning.
 - **Which terminal opens is a table, not a chain — and the multiplexers are its last

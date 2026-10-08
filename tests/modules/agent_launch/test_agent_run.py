@@ -2131,3 +2131,72 @@ def test_agent_workplace_names_a_code_location_from_the_terminal(cli_stdin):
     assert "primary" in cli_stdin("agent", "workplace", "Deploy", "primary")
     assert json.loads(cli_stdin("agent", "show", "Deploy", "--json"))["workplace"] == ""
     assert "no location" in cli_stdin("agent", "workplace", "Deploy", "l9", expect=1)
+
+
+# -- Run Playbook: a pass started through `dplanner agent run --playbook` ----------------------
+
+
+def _playbook_launch(services, monkeypatch, *, said=(0, "execute (attempt 1) launched"), **deps):
+    """The launch module with its `dplanner` run recorded instead of run, inline."""
+    from dataclasses import replace
+
+    module = next(m for m in services.modules if m.id == "agent_launch")
+    ran: list[list[str]] = []
+
+    def run_cli(argv):
+        ran.append(list(argv))
+        return said
+
+    monkeypatch.setattr(module, "_deps", replace(module._deps, run_cli=run_cli, tasks=None, **deps))
+    return module, ran
+
+
+def test_run_playbook_runs_agent_run_with_the_playbook_and_says_how_it_went(
+    services, step, monkeypatch
+):
+    from dplanner.cli.command import CliRegistry
+    from dplanner.cli.gate import ReadRecord
+    from dplanner.cli.main import build_tree
+    from dplanner.modules import default_cli_commands
+    from dplanner.modules.agent_launch.launch import start_pass_argv
+
+    module, ran = _playbook_launch(services, monkeypatch)
+    module.start_playbook(step, "plan-execute-review-other")
+    library = services.repo.library_path
+    assert ran == [start_pass_argv(library, step.id, "plan-execute-review-other", anyway=False)]
+    message = services.window.statusBar().currentMessage()
+    assert message == "Playbook started on “Deploy” — execute (attempt 1) launched"
+
+    # What the window runs is what the verb accepts: the two cannot drift apart.
+    registry = CliRegistry()
+    registry.register_all(default_cli_commands(reads=ReadRecord(None)))
+    words = ran[0][ran[0].index("dplanner") + 1 :]
+    args = build_tree(registry)[0].parse_args(words)
+    assert (args.step, args.playbook, args.anyway) == (step.id, "plan-execute-review-other", False)
+    assert Path(args.library) == library.expanduser().resolve()
+
+    module, ran = _playbook_launch(services, monkeypatch, said=(1, "a pass is under way"))
+    module.start_playbook(step, "execute")
+    message = services.window.statusBar().currentMessage()
+    assert message == "No playbook started on “Deploy” — a pass is under way"
+
+
+def test_run_playbook_asks_the_graph_gate_and_passes_its_answer_on(
+    services, step, prerequisite, monkeypatch
+):
+    module, ran = _playbook_launch(services, monkeypatch)
+    boxes = _record_boxes(monkeypatch, click=None)
+    module.start_playbook(step, "execute")
+    assert ran == [] and [title for title, _lead, _words in boxes] == ["Run Playbook"]
+
+    boxes = _record_boxes(monkeypatch, click=True)
+    module.start_playbook(step, "execute")
+    ((*_words, last),) = ran
+    assert last == "--anyway"
+
+
+def test_run_playbook_starts_nothing_over_a_plan_it_could_not_save(services, step, monkeypatch):
+    module, ran = _playbook_launch(services, monkeypatch, flush=lambda: False)
+    module.start_playbook(step, "execute")
+    assert ran == []
+    assert "could not be saved" in services.window.statusBar().currentMessage()
