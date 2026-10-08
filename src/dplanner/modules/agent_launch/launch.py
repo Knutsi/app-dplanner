@@ -244,11 +244,14 @@ def prepare_run(
     harnesses: tuple[AgentHarness, ...],
     mode: str,
     stage: StageKind = StageKind.EXECUTE,
+    callsign: str = "",
+    claim: str = "",
 ) -> Prepared:
     """Write the run on ``step`` in ``workdir`` (from :func:`place`): its files and its
     record, nothing started. ``project_dir`` is where the run's ledger is; a terminal run
     with none is launched unrecorded. Raises ``ValueError`` for a profile that cannot run
-    headless — ask :func:`headless_refusal` first — and for a headless run with no ledger."""
+    headless — ask :func:`headless_refusal` first — and for a headless run with no ledger.
+    ``callsign`` and ``claim`` say which squad's member runs it, under which claim."""
     if mode == HEADLESS and (why := headless_refusal(profile, harnesses)):
         raise ValueError(why)
     if mode == HEADLESS and project_dir is None:
@@ -304,6 +307,7 @@ def prepare_run(
             session=files.session if harness is not None and harness.names_session else "",
             prompt_chars=files.prompt_chars,
         )
+    record = replace(record, callsign=callsign, claim=claim)
     if project_dir is not None:
         ledger.write(project_dir, record)
     return Prepared(record, text, prompt_file, files, project_dir, profile, workdir)

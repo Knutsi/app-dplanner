@@ -40,6 +40,7 @@ from dplanner.core.storage.locations import (
 )
 from dplanner.core.storage.pointer import POINTER_FILE, add_to_index, remove_from_index
 from dplanner.core.storage.provider import StorageError, VersionedStorage
+from dplanner.domain.claims import CLAIMS_DIR
 from dplanner.domain.ledger import LEDGER_DIR
 from dplanner.domain.locations import CODE, Location, write_locations
 from dplanner.domain.model import ProjectId
@@ -121,7 +122,7 @@ def move_project(
         )
 
     target.mkdir(parents=True)
-    for name in (*PLAN_ENTRIES, LEDGER_DIR, QUESTIONS_DIR):
+    for name in (*PLAN_ENTRIES, LEDGER_DIR, QUESTIONS_DIR, CLAIMS_DIR):
         item = source / name
         if item.is_dir():
             shutil.copytree(item, target / name)

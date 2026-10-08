@@ -12,6 +12,7 @@ the next GUI open would migrate the untouched ones and leave the stamped one alo
 loss that shows up months later, in a project nobody can reconstruct.
 """
 
+import getpass
 import json
 import os
 from collections.abc import Callable, Iterator, Sequence
@@ -33,6 +34,7 @@ from dplanner.core.storage.pointer import POINTER_FILE, resolve_index
 from dplanner.domain.library_file import LIBRARY_ENV, resolve_library_path
 from dplanner.domain.locations import CODE, Location, of_role
 from dplanner.domain.model import Library, LinkRule, Project
+from dplanner.domain.questions import COORDINATOR, PERSON
 from dplanner.domain.shelf import migrate_shelved
 from dplanner.domain.store import PROJECT_META, LibraryStore, StaleWorkspaceError
 
@@ -42,6 +44,14 @@ PROJECT_ENV = "DPLANNER_PROJECT"
 # Names the run a shell belongs to — its record in the project's ledger, which
 # ``dplanner usage harvest`` reads back into when it is given no ``--run``.
 RUN_ENV = "DPLANNER_RUN"
+
+
+def acting(name: str, in_agent_shell: bool) -> dict[str, str]:
+    """Who acts on a question or a claim, read from where the call comes from: inside a run or
+    an agent's shell it is the coordinator — an agent cannot say it is a person — and
+    elsewhere a person. ``name`` only names them; it never changes which."""
+    agent = bool(os.environ.get(RUN_ENV)) or in_agent_shell
+    return {"kind": COORDINATOR if agent else PERSON, "name": name or getpass.getuser()}
 
 
 def find_library(explicit: str | None = None) -> Path:

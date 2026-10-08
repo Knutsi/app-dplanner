@@ -8,7 +8,7 @@ import pytest
 
 from dplanner.domain.commands import AddNodeCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, Project, Step
-from dplanner.domain.workflow import Actor, AgentRun, Daemon, EndClaim, Person, PlanView
+from dplanner.domain.workflow import Actor, AgentRun, Daemon, EndClaim, Person, PlanView, Release
 from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
 from dplanner.modules.step_status.workflows import STOPPED, Kept, StatusWorkflow, perform
 from dplanner.planning import agent, wait
@@ -58,8 +58,11 @@ def test_a_library_is_a_plan_view(library):
 def test_a_plain_step_takes_any_status_from_anyone(library, status, actor):
     step = _step(library, "Read the spec")
     change, _kept = WORKFLOW.set_status(library, step, status, actor=actor, today=MONDAY)
+    project = library.project_of(step.id).id
+    # A person's stopped status also hands the step back from its squad's claim.
+    released = (Release(project, step.id, status.value),) if isinstance(actor, Person) else ()
     assert change.follow_ups == (
-        (EndClaim(library.project_of(step.id).id, step.id),) if status in STOPPED else ()
+        (EndClaim(project, step.id), *released) if status in STOPPED else ()
     )
     if change.command is not None:
         change.command.redo(library)
@@ -128,7 +131,7 @@ def test_a_repeated_status_changes_nothing_but_still_ends_the_claim(library):
         library, step, Status.READY_FOR_REVIEW, actor=Person(), today=MONDAY
     )
     assert again.command is None and again.follow_ups == first.follow_ups
-    assert perform(again.follow_ups, lambda claim: True).ended == first.follow_ups
+    assert perform(again.follow_ups, lambda _: True, lambda _: True).ended == first.follow_ups
 
 
 # -- both surfaces, one outcome ----------------------------------------------------------------

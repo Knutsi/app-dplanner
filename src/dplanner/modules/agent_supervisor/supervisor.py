@@ -74,7 +74,7 @@ from dplanner.core.process import (
     spawn_detached,
     stamp_of,
 )
-from dplanner.domain import ledger, questions
+from dplanner.domain import claim_sync, ledger, questions
 from dplanner.domain.agents import (
     AgentHarness,
     AgentUsage,
@@ -108,6 +108,8 @@ PROMPTS = {
 }
 LOCK_FILE = "supervisor.lock"
 RECORD_LOCK = "record.lock"
+# How often a live turn renews its squad's claim; the claim itself writes only when due.
+CLAIM_BEAT = 60.0
 LAUNCHES_DIR = "launches"
 # How old a run with no turn must be before it may be taken for a launch nobody finished: a
 # supervisor started a moment ago may not hold its lock yet.
@@ -235,6 +237,17 @@ def fence(project_dir: Path, run: str, by: str, why: str, config: Path | None = 
         lambda record: record if record.fence else replace(record, fence=stamp),
         config,
     )
+
+
+def stop(project_dir: Path, run: str, by: str, why: str, config: Path | None = None) -> None:
+    """Fence the run, and end the turn a supervisor on this machine is driving with the
+    SIGTERM it turns into ``stopped``. A supervisor elsewhere — or on Windows, where the
+    signal cannot be caught — finds the fence before its next turn."""
+    fence(project_dir, run, by, why, config)
+    directory = ledger.run_dir(run, config)
+    if sys.platform != "win32" and supervised(directory):
+        with suppress(OSError, ValueError):
+            os.kill(int((directory / LOCK_FILE).read_text(encoding="utf-8")), signal.SIGTERM)
 
 
 def update(
@@ -455,9 +468,10 @@ class Session:
         lines: queue.Queue[str | None] = queue.Queue()
         reader = threading.Thread(target=_pump, args=(process, lines), daemon=True)
         reader.start()
-        began = heard = time.monotonic()
+        began = heard = beat = time.monotonic()
         wall = self.guards.wall.get(stage, max(self.guards.wall.values()))
         eof, killed = False, ""
+        renewing: threading.Thread | None = None
         while True:
             try:
                 line = lines.get(timeout=self.guards.poll)
@@ -471,6 +485,20 @@ class Session:
                 self._heard(log, tee, line)
             if eof and process.poll() is not None:
                 break
+            if (
+                self.record.claim
+                and now - beat >= CLAIM_BEAT
+                and not (renewing and renewing.is_alive())
+            ):
+                # A live turn is the squad's sign of life while its coordinator waits the
+                # stage out; off this thread, since a renewal may push.
+                beat = now
+                renewing = threading.Thread(
+                    target=claim_sync.renew,
+                    args=(self.project_dir, self.record.claim, self.config),
+                    daemon=True,
+                )
+                renewing.start()
             killed = (
                 "stopped"
                 if stop.is_set()

@@ -9,8 +9,10 @@ change. A :class:`Person` is never asked: the director has authority over the wo
 `docs/architecture/agents.md`'s *An agent finishes at Ready for review* has the reasoning.
 
 **A status that says nobody is working the step ends the claim on it**, whoever sets it —
-so a director marking a step done in the window takes the agent's banner down. Ending the
-claim is all it does: nothing yet tells the agent to stand down.
+so a director marking a step done in the window takes the agent's banner down. **Set by a
+person, it also releases the step from the squad claim holding it** and stops that step's
+worker (:class:`Release`), the squad keeping the rest; a worker reaching ready-for-review
+releases nothing, since its coordinator verifies and merges first.
 """
 
 import shlex
@@ -30,6 +32,7 @@ from dplanner.domain.workflow import (
     FollowUp,
     Person,
     PlanView,
+    Release,
 )
 from dplanner.planning.agent import enabled as is_agent
 from dplanner.planning.kinds import works_nobody
@@ -116,36 +119,50 @@ class StatusWorkflow:
         previous = step.module_data.get(MODULE_ID)
         if write(status, today=today, previous=previous) != (previous or {}):
             commands.append(status_command(step, status, today=today, label=LABEL))
-        follow_ups = (EndClaim(view.project_of(step.id).id, step.id),) if status in STOPPED else ()
+        project = view.project_of(step.id).id
+        follow_ups: tuple[FollowUp, ...] = ()
+        if status in STOPPED:
+            follow_ups = (EndClaim(project, step.id),)
+            if isinstance(actor, Person):
+                follow_ups += (Release(project, step.id, status.value),)
         command = CompositeCommand(LABEL, commands) if commands else None
         return Change(command, follow_ups), kept
 
 
 @dataclass(frozen=True)
 class Performed:
-    """What came of the follow-ups: the claims that stood and were ended, and the ones that
-    could not be, each with why."""
+    """What came of the follow-ups: those that found something to end or release, and the
+    ones that could not be performed, each with why."""
 
-    ended: tuple[EndClaim, ...] = ()
-    failed: tuple[tuple[EndClaim, str], ...] = ()
+    ended: tuple[FollowUp, ...] = ()
+    failed: tuple[tuple[FollowUp, str], ...] = ()
 
 
-def perform(follow_ups: Iterable[FollowUp], end_claim: Callable[[EndClaim], bool]) -> Performed:
+def perform(
+    follow_ups: Iterable[FollowUp],
+    end_claim: Callable[[EndClaim], bool],
+    release: Callable[[Release], bool],
+) -> Performed:
     """Perform follow-ups once their change is accepted, each on its own: one that fails is
     reported and the rest are still attempted. The model is never rolled back for an effect —
-    the change is true, and releasing a claim again is safe, so a retry is the remedy."""
-    ended: list[EndClaim] = []
-    failed: list[tuple[EndClaim, str]] = []
+    the change is true, and releasing a claim again is safe, so a retry is the remedy.
+    Each performer answers whether there was anything to end."""
+    ended: list[FollowUp] = []
+    failed: list[tuple[FollowUp, str]] = []
     for follow_up in follow_ups:
-        match follow_up:
-            case EndClaim():
-                try:
-                    if end_claim(follow_up):
-                        ended.append(follow_up)
-                except OSError as error:
-                    failed.append((follow_up, str(error)))
-            case _:
-                assert_never(follow_up)
+        try:
+            match follow_up:
+                case EndClaim():
+                    found = end_claim(follow_up)
+                case Release():
+                    found = release(follow_up)
+                case _:
+                    assert_never(follow_up)
+        except OSError as error:
+            failed.append((follow_up, str(error)))
+            continue
+        if found:
+            ended.append(follow_up)
     return Performed(tuple(ended), tuple(failed))
 
 

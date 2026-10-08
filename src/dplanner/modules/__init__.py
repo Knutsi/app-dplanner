@@ -56,7 +56,7 @@ if TYPE_CHECKING:
     from dplanner.domain.model import Edge, Library, LinkRule, Project, ProjectId, Step, StepId
     from dplanner.domain.repositories import RepositoryFacts
     from dplanner.domain.store import FilesFor
-    from dplanner.domain.workflow import Actor, EndClaim, PlanView
+    from dplanner.domain.workflow import Actor, EndClaim, PlanView, Release
     from dplanner.framework.context import ContextService
     from dplanner.framework.debounce import DebounceService
     from dplanner.framework.mime_files import Payload
@@ -2027,6 +2027,9 @@ def _aspects(
                 clock=services.clock,
                 workflow=_status_workflow(),
                 end_claim=lambda claim: board.end(claim.project, claim.step),
+                release=lambda follow_up: release_claimed(
+                    store.project_dir(follow_up.project), follow_up
+                ),
                 notices=services.window,
                 flush=services.autosave.saved,
             )
@@ -2699,6 +2702,38 @@ def _asset_sources() -> tuple["AssetSource", ...]:
     )
 
 
+def release_claimed(project_dir: "Path", follow_up: "Release") -> bool:
+    """A person's override, performed: ``follow_up``'s step handed back from the squad claim
+    holding it, and that step's unfinished runs under the claim stopped — the squad keeps the
+    rest. False when no claim held the step. Both surfaces' status verbs perform it."""
+    import getpass
+
+    from dplanner.domain import claims, ledger
+    from dplanner.domain.questions import PERSON
+    from dplanner.modules.agent_supervisor import supervisor
+
+    by = {"kind": PERSON, "name": getpass.getuser()}
+    why = f"set {follow_up.why} by a person"
+    try:
+        claim = claims.release_step(project_dir, follow_up.step, by, why)
+    except LookupError:
+        return False
+    if claim is None:
+        return False
+    for run in ledger.records(project_dir):
+        if run.claim == claim.id and run.step == follow_up.step and not run.over:
+            supervisor.stop(project_dir, run.run, by["name"], why)
+    return True
+
+
+def renew_claims(project_dir: "Path") -> None:
+    """The squad claims this machine holds in the project, renewed when due — what every
+    ``dplanner`` run from an agent's shell does, beside renewing its at-work claim."""
+    from dplanner.domain.claim_sync import renew
+
+    renew(project_dir)
+
+
 def at_work_board() -> "AtWorkBoard":
     """Where an agent's *at work* claims live on this machine — ``domain/at_work.py``.
 
@@ -2764,9 +2799,11 @@ def default_cli_commands(
     from dplanner.domain.workflow import AgentRun, Person
     from dplanner.modules.agent_at_work import cli as at_work_cli
     from dplanner.modules.agent_briefing.worktree import mainline
+    from dplanner.modules.agent_claims import cli as claims_cli
     from dplanner.modules.agent_launch import cli as launch_cli
     from dplanner.modules.agent_questions import cli as questions_cli
     from dplanner.modules.agent_supervisor import cli as supervisor_cli
+    from dplanner.modules.agent_supervisor import supervisor
     from dplanner.modules.agent_usage import cli as usage_cli
     from dplanner.modules.branches import cli as branches_cli
     from dplanner.modules.branches.plan import (
@@ -2842,7 +2879,9 @@ def default_cli_commands(
     def set_status(context: "CliContext", step: "Step", status: "Status") -> None:
         """A status written as `status set` writes it — refused as one line, its claim
         ended once the run is written."""
-        status_cli.write_status(context, workflow, end_claim, step, status, actor=actor())
+        status_cli.write_status(
+            context, workflow, end_claim, release_claimed, step, status, actor=actor()
+        )
 
     def finish_merged(context: "CliContext", step: "Step") -> bool:
         """A step waiting on its merge is done once its PR reads merged — written as
@@ -2913,6 +2952,11 @@ def default_cli_commands(
         *supervisor_cli.commands(harnesses=agent_harnesses()),
         # Who answers is read like `status set`'s reporter: an agent's shell is the coordinator.
         *questions_cli.commands(in_agent_shell=lambda: bool(agent_shell_marker())),
+        # A squad's lease on its steps; a takeover fences the old squad's runs as the
+        # supervisor fences, under the run's own record lock.
+        *claims_cli.commands(
+            in_agent_shell=lambda: bool(agent_shell_marker()), fence=supervisor.fence
+        ),
         # The agent's own account of what it is doing while it does it: the window's
         # banner and the watcher's stood-down modal both read what these write.
         *at_work_cli.commands(board=board, key_of=key_of),
@@ -2924,6 +2968,7 @@ def default_cli_commands(
             workflow=workflow,
             in_agent_shell=lambda: bool(agent_shell_marker()),
             end_claim=end_claim,
+            release=release_claimed,
         ),
         *milestone_cli.commands(),
         *wait_cli.commands(),

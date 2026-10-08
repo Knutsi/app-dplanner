@@ -15,7 +15,7 @@ from argparse import (
     Namespace,
     RawDescriptionHelpFormatter,
 )
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TextIO
 
@@ -147,6 +147,7 @@ def run(
     board: "AtWorkBoard | None" = None,
     clock: Clock | None = None,
     link_rules: Sequence[LinkRule] = (),
+    renew: Callable[[Path], None] = lambda _project_dir: None,
 ) -> int:
     """Parse, open the library if the verb needs one, and run it.
 
@@ -164,6 +165,10 @@ def run(
     the project it resolved, so an agent that is working — writing statuses, adding notes —
     never has to remember a heartbeat on top of the work. It never *makes* a claim, because
     running a verb is evidence for a claim somebody made and not a claim of its own.
+
+    ``renew`` is the same sign of life on the slow clock: the squad claims this machine holds
+    in the project (``domain/claim_sync.py``), renewed only when due — handed in beside the
+    board, and only when the board is.
 
     None means this run is nobody's sign of life, and that is the ordinary case: ``entry.py``
     passes a board only when an agent CLI's shell is around the process, because a developer
@@ -211,6 +216,7 @@ def run(
                 )
                 if board is not None and context.current is not None:
                     board.touch(context.current.id)
+                    renew(context.store.project_dir(context.current.id))
                 code = command.run(context, args)
     except CliError as error:
         print(f"{PROG}: {error}", file=err)

@@ -19,13 +19,15 @@ withdrawal, and says so.
 from argparse import ArgumentParser, Namespace
 from collections.abc import Callable
 from contextlib import ExitStack
+from pathlib import Path
 
 from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.lookup import find_step, step_arg
 from dplanner.core.storage.locations import remote_label
+from dplanner.domain import claim_sync, claims
 from dplanner.domain.agents import AgentHarness
 from dplanner.domain.locations import LocationRole
-from dplanner.domain.model import Library, Step
+from dplanner.domain.model import Library, Step, now_stamp
 from dplanner.domain.repositories import RepositoryFacts, repository_facts
 from dplanner.domain.store import StaleWorkspaceError
 from dplanner.modules.agent_briefing.worktree import WorktreeError, run_name_of
@@ -83,6 +85,11 @@ def _configure(parser: ArgumentParser) -> None:
     parser.add_argument(
         "--anyway", action="store_true", help="launch although prerequisites are not done"
     )
+    parser.add_argument(
+        "--callsign",
+        default="",
+        help="who runs it: a member of the squad whose claim holds the step (kettle-two)",
+    )
 
 
 def commands(
@@ -124,6 +131,7 @@ def commands(
             raise CliError(
                 f"{step.title!r} waits on work not done yet: {named} — --anyway to launch it"
             )
+        claim = _claim_for(project_dir, step, args.callsign)
         # What this machine lost or left half-launched is settled first, so a run it
         # restarts reads as running below.
         supervisor.revive([project_dir], library=context.store.library_path)
@@ -154,6 +162,8 @@ def commands(
             profile=profile,
             harnesses=harnesses,
             mode=args.mode,
+            callsign=args.callsign.strip().lower(),
+            claim=claim,
         )
         context.unwritten.append(prepared.discard)
         before = step.module_data.get(STATUS_ID)
@@ -223,3 +233,20 @@ def _withdrawn(context: CliContext, step: Step, before: object) -> str:
     except StaleWorkspaceError as error:
         return f"; the step still reads in progress ({error}) — `dplanner status set` it back"
     return "; the step is back where it was"
+
+
+def _claim_for(project_dir: Path, step: Step, callsign: str) -> str:
+    """The claim a run of ``callsign`` launches under: the one holding the step when it is
+    that member's squad's — "" when no claim holds it — and refused when another squad's
+    does, which is the check a squad makes before every launch."""
+    held = claims.read_holdings(project_dir, now_stamp(), claim_sync.push_order(project_dir))
+    holding = held.get(step.id)
+    if holding is None or holding.state not in claims.HOLDING:
+        return ""
+    if claims.squad_of(callsign) != holding.claim.callsign:
+        raise CliError(
+            f"{step.title!r} is held by squad {holding.claim.callsign} ({holding.claim.short},"
+            f" {holding.state}) — launch as one of it with --callsign, or release the step"
+            " first (`dplanner claim release`)"
+        )
+    return holding.claim.id
