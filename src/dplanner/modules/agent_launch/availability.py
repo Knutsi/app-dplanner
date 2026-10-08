@@ -130,6 +130,10 @@ class Availability:
             return None
         return kept[1]
 
+    def stale(self) -> bool:
+        """Whether any harness's answer is missing or old — a refresh is due. Never probes."""
+        return any(self.cached(harness_id) is None for harness_id in self._harnesses)
+
     def refresh_stale(self) -> None:
         """Probe every harness whose answer is missing or old — a ``TaskRunner`` body."""
         for harness_id in self._harnesses:
