@@ -85,7 +85,7 @@ class Turn:
     """
 
     n: int
-    prompt: str  # Why it began: "launch", "answer", "continue", "reset" or "retry".
+    prompt: str  # Why it began: "launch", "answer", "continue", "reset", "retry" or "verdict".
     started: str
     pid: int = 0
     boot: str = ""

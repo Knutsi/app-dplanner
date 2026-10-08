@@ -11,6 +11,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 
@@ -50,7 +51,7 @@ def recorded(name: str) -> list[str]:
 
 
 def result(
-    text: str = "Done.", session: str = SESSION, typed: dict[str, object] | None = None
+    text: str = "Done.", session: str = SESSION, typed: Mapping[str, object] | None = None
 ) -> str:
     """A Claude ``result`` event; ``typed`` is its ``structured_output``, the schema's answer."""
     event: dict[str, object] = {

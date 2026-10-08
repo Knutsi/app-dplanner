@@ -3,6 +3,7 @@
 Each test writes the runs and questions a pass would have left — in the order they were
 made — and asks what the engine does next. No process, no file: the derivation is pure."""
 
+from collections.abc import Mapping
 from itertools import count
 
 import pytest
@@ -25,6 +26,7 @@ from dplanner.modules.step_playbook.passes import (
     STOP,
     Ask,
     Complete,
+    Entry,
     Facts,
     Halted,
     Launch,
@@ -48,10 +50,10 @@ def run(
     stage: str,
     *,
     end: str = "done",
-    verdict: dict[str, object] | None = None,
+    verdict: Mapping[str, object] | None = None,
     session: str = "",
     harness: str = "claude",
-    declined: tuple[dict[str, object], ...] = (),
+    declined: tuple[Mapping[str, object], ...] = (),
     over: bool = True,
 ) -> LedgerRecord:
     at = _at()
@@ -217,7 +219,7 @@ def test_a_declined_finding_reaches_the_next_round_and_the_round_cap():
 def test_a_pass_stands_after_a_later_gates_fix():
     playbook = preset("review-only")
     assert playbook is not None
-    entries = [run("review", verdict=PASSED), gate("person", CHANGES + ": tweak it")]
+    entries: list[Entry] = [run("review", verdict=PASSED), gate("person", CHANGES + ": tweak it")]
     fix = due(playbook, settings("review-only"), entries, Facts())
     assert isinstance(fix, Launch) and fix.stage == FIX
     after_fix = due(playbook, settings("review-only"), [*entries, run(FIX)], Facts())

@@ -75,10 +75,10 @@ class Driver:
         return self.latest()
 
     def advance(self, step: str = "Build it") -> str:
-        return self.cli("playbook", "advance", step)
+        return str(self.cli("playbook", "advance", step))
 
     def answer(self, question: questions.Question, given: str) -> str:
-        return self.cli("--project", "Widget", "question", "answer", question.short, given)
+        return str(self.cli("--project", "Widget", "question", "answer", question.short, given))
 
     def asked(self) -> questions.Question:
         found = [q for q in questions.records(self.plan) if q.pass_]

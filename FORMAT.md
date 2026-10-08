@@ -27,7 +27,7 @@ Four places, and the choice is not stylistic:
 | Per user, per machine (Qt-free) | what the CLI must also read: the project library | `core/config_dir.py` + `domain/library_file.py` | no — it is a list of *this machine's* paths |
 | Per user, per machine (Qt-free) | what happened and how long it took: the telemetry journal, and a native crash's stack | `core/telemetry.py` under `config_dir()/telemetry/` — see *The telemetry journal* | no — it is this machine's diagnostics |
 | Per user, per machine (Qt-free) | who is working on a plan right now: an agent's *at work* claim | `domain/at_work.py` under `config_dir()/at-work/` — see *An agent's at-work claim* | no — it is a process that is running here, now |
-| Per user, per machine (Qt-free) | a headless run's working files: its briefing, each turn's stream (`turn-<n>.jsonl`) and stderr, DPlanner's copy of a plan the agent wrote (`plan.md`), the supervisor's and the record's locks (`supervisor.lock`, `record.lock`: OS locks on files never deleted) | `config_dir()/runs/<run id>/` (`ledger.run_dir`), named by the run's ledger record and never stored on it; not swept yet | no — only the launching machine can resume the run, and it needs them across a reboot, which is why they are not in `/tmp` |
+| Per user, per machine (Qt-free) | a headless run's working files: its briefing, each turn's stream (`turn-<n>.jsonl`) and stderr, DPlanner's copy of a plan the agent wrote (`plan.md`), the findings a fix was handed (`findings.json`), the supervisor's and the record's locks (`supervisor.lock`, `record.lock`: OS locks on files never deleted) | `config_dir()/runs/<run id>/` (`ledger.run_dir`), named by the run's ledger record and never stored on it; not swept yet | no — only the launching machine can resume the run, and it needs them across a reboot, which is why they are not in `/tmp` |
 | Per user, per machine (Qt-free) | a read-only location's managed clone, and a git spec source's: blobless, shallow, sparse to one folder | `core/storage/sparse.py` under `config_dir()/spec-git/<digest of remote, ref and folder>` | no — disposable: wipe it and the next read pays one tree fetch |
 | Per user, per machine (Qt-free) | the agent launch profiles: `{"format": 1, "profiles": [{"name", "agent", "terminal"}…], "seeded": bool}`, the first the default | `agent_launch/profiles.py` at `config_dir()/agent-profiles.json`, because `dplanner agent run --profile` reads them with no Qt; the window adopts what QSettings held before, once | no — which terminal a person prefers is not the project's business |
 | Per user, per machine (Qt-free) | a working clone DPlanner keeps for a verb that needed the repository here and nobody had checked out — Run Agent's code, a report's destination — under the default clone policy | `core/storage/kept.py` under `config_dir()/checkouts/<name>-<digest of remote>`, one per repository; recorded in the library file's `checkouts` map like any checkout | it is a checkout: commits an agent made there and never pushed are in it and nowhere else, so it is not wiped by the application |
@@ -475,16 +475,26 @@ A review run carries its `verdict`, and the fix run after it what it `declined`:
   resolved settings are pinned once, as `settings` — `{preset, revision, rounds, roles,
   overrides}` — on the pass's first record only: its first run, or its first gate question
   when the pass begins at a `person` or `coordinator` gate. `playbooks.md` says what each holds.
+- **`stage`** is the stage's id in its playbook — its kind, numbered where the kind repeats
+  (`review-2`) — or `fix`, the execute a gate with no work before it sends its findings to;
+  `agent run` alone writes `execute`. A pass's runs are stamped to the microsecond
+  (`launched`), so two made in one second still say which came first.
 - **`prompt`** is why the turn began: `launch` for every run's first turn, whether its session
-  is fresh or resumed for a loop-back, then `answer`, `continue`, `reset` or `retry`.
+  is fresh or resumed for a loop-back, then `answer`, `continue`, `reset`, `retry` or
+  `verdict` — a review that ended without its verdict, asked once more for it in its session.
+  A launch resumes a session exactly when an earlier run of its pass names the same one;
+  nothing else marks it.
 - **`verdict`** is on a review run: its typed final message (`--json-schema`,
   `--output-schema`), recorded by the supervisor and never posted by the agent — `outcome`
   `pass` or `changes`, a `summary`, and `findings`, each with `severity`, `file`, `line`,
   `text` and `evidence`. A review that ends without one has no verdict, and that is a
   failure, never a pass.
 - **`declined`** is on a fix run: each finding the implementer would not act on, by the
-  review run's id and the finding's `index` in its list, with the `reason` the next round
-  reads.
+  review run's id and the finding's `index` in its list (a person's note is `{"question": <id>,
+  "index": 0}`), with the `reason` the next round reads. The fix's typed final message names
+  them by their number in its briefing (`TURN_SCHEMA`'s `declined`); the supervisor turns the
+  numbers into these references through the run directory's `findings.json`, the list the
+  engine handed it.
 - **`end`** is how a turn ended, and it is read from the stream and the result, never from
   the exit alone — a headless `success` can hide an open question:
 

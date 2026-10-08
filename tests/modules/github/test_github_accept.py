@@ -6,11 +6,13 @@ from io import StringIO
 
 import pytest
 
+from dplanner.cli import CliContext
 from dplanner.cli.discovery import open_library
 from dplanner.cli.lookup import find_step
+from dplanner.domain.model import Step
 from dplanner.modules import default_module_formats
 from dplanner.modules.github import cli as github_cli
-from dplanner.modules.github.aspect import PR_MERGED, read
+from dplanner.modules.github.aspect import PR_MERGED, GithubRefs, read
 from dplanner.modules.github.gh import GhError, PrInfo
 
 
@@ -23,20 +25,20 @@ def gh(monkeypatch):
     """gh as a script: what ``view_pr`` answers in turn, and every merge asked for."""
     answers: list[PrInfo] = []
     merged: list[tuple[str, int]] = []
-    monkeypatch.setattr(github_cli, "view_pr", lambda _repo, _n: answers.pop(0) if answers else None)
+    monkeypatch.setattr(github_cli, "view_pr", lambda *_: answers.pop(0) if answers else None)
     monkeypatch.setattr(github_cli, "default_branch", lambda _repo: "main")
     monkeypatch.setattr(github_cli, "merge_pr", lambda repo, n: merged.append((repo, n)))
     return answers, merged
 
 
-def accept(cli_library, finished: list[str]) -> tuple[str, object]:
+def accept(cli_library, finished: list[str]) -> tuple[str, GithubRefs | None]:
+    def finish(_context: CliContext, step: Step) -> bool:
+        finished.append(step.id)
+        return True
+
     with open_library(cli_library, default_module_formats(), StringIO()) as context:
         step = find_step(context.library, "Build it", None)
-        said = github_cli.accept_by_merge(
-            context,
-            step,
-            finish_merged=lambda _context, done: finished.append(done.id) is None,
-        )
+        said = github_cli.accept_by_merge(context, step, finish_merged=finish)
         return said, read(context.library.step(step.id))
 
 
