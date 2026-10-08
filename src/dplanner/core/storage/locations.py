@@ -28,7 +28,8 @@ from pathlib import Path
 # Everything below in the `as` form is re-exported on purpose: this module is the storage
 # layer's public front door, and callers above it may not name a provider module. The
 # repository facts (find_repo_root, main_checkout, origin_url, canonical_remote, remote_label,
-# activity) and init_repo are what the domain, the CLI and the modules reach for.
+# activity), init_repo and the sync lock are what the domain, the CLI and the modules reach
+# for.
 from dplanner.core.storage.git import (
     Activity as Activity,
 )
@@ -55,6 +56,9 @@ from dplanner.core.storage.git import (
 )
 from dplanner.core.storage.git import (
     remote_label as remote_label,
+)
+from dplanner.core.storage.git import (
+    sync_lock as sync_lock,
 )
 from dplanner.core.storage.github import GitHubStorage
 from dplanner.core.storage.local import LocalStorage

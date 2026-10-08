@@ -676,3 +676,26 @@ needed for — the vendor says when it ends — so its supervisor now waits for 
 clock answers the question, and *Retry now* is a person answering it sooner. Now:
 `agents.md`'s *A headless run is driven by its supervisor* and `docs/architecture/agents.md`'s
 *A usage limit waits in its supervisor, and Retry now is an answer*.
+
+## 2026-10-08 — A person's stopped status releases the step from its squad's claim
+
+Setting a step done, blocked or under review used to end the agent's at-work banner and do
+nothing else: "nothing yet tells the agent to stand down". With claims in the plan, a
+person's stopped status also hands that one step back from the squad claim holding it and
+stops its worker — a second follow-up, `Release`, beside `EndClaim` — while a worker reaching
+ready-for-review releases nothing, because its coordinator verifies and merges first. Now:
+`agents.md`'s *Runs, questions and claims are three records in the plan*.
+
+## 2026-10-08 — Claim ownership is decided locally, per step; a claim publish never rebases
+
+The first claims ranked rival claims by which file reached the remote first, fetched and
+rebased the person's checkout to publish a heartbeat, and stopped a worker only on a person's
+status. Kettle Watch found a growing claim outranking a squad that took the step first, a
+superseded squad renewing its way back, release and Clear leaving workers running, a fenced
+run blocking its new owner, the window launching another squad's step, and a heartbeat's
+rebase racing the window's Save. Now each step carries its own `acquired` stamp, a takeover's
+`supersedes` is per step and final, every step that leaves a squad goes through one function
+that stops its worker, both surfaces check ownership in the one launch and again before the
+start, and a claim publish commits by pathspec under the repository's sync lock and never
+fetches. Arbitration between machines waits for multiplayer. Now: `agents.md`'s *Runs,
+questions and claims are three records in the plan*.

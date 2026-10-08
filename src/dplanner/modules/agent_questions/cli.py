@@ -12,14 +12,13 @@ an agent's shell it is the coordinator, which may not answer its own run's quest
 them commits: the window's Save does.
 """
 
-import getpass
 import os
 from argparse import ArgumentParser, Namespace
 from collections.abc import Callable
 from pathlib import Path
 
 from dplanner.cli import CliCommand, CliContext, CliError
-from dplanner.cli.discovery import RUN_ENV
+from dplanner.cli.discovery import RUN_ENV, acting
 from dplanner.cli.lookup import body_from, find_step
 from dplanner.domain import ledger, questions
 from dplanner.domain.commands import SetModuleDataCommand
@@ -34,11 +33,7 @@ ASKABLE = (questions.DECISION, questions.PLAN_APPROVAL, questions.BLOCKED)
 
 def commands(*, in_agent_shell: Callable[[], bool]) -> list[CliCommand]:
     def by(args: Namespace) -> dict[str, str]:
-        """Who acts, read from where the call comes from: inside a run or an agent's shell it
-        is the coordinator — an agent cannot say it is a person — and elsewhere a person."""
-        agent = bool(os.environ.get(RUN_ENV)) or in_agent_shell()
-        kind = questions.COORDINATOR if agent else questions.PERSON
-        return {"kind": kind, "name": args.by or getpass.getuser()}
+        return acting(args.by, in_agent_shell())
 
     def _answer(context: CliContext, args: Namespace) -> int:
         project_dir, question = _question(context, args.question)

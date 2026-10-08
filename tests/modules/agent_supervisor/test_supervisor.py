@@ -521,6 +521,36 @@ def test_a_fence_written_during_a_turn_stops_the_run_instead_of_retrying_it(rig)
     assert rig.record.over and rig.record.fence and len(rig.specs) == 1
 
 
+def test_a_fence_read_while_the_turn_runs_stops_that_turn_at_once(rig):
+    """A takeover or a release fences the run mid-turn: the watch reads it on its next poll
+    and ends the turn stopped — no stall, no retry, no waiting the turn out."""
+    patient = replace(rig.harnesses[0].headless, stall=60.0)
+    rig.harnesses = (replace(rig.harnesses[0], headless=patient),)
+    path = ledger.path_for(rig.plan, rig.record)
+    rig.play({"lines": [INIT], "hold": 30, "fence": str(path)})
+    began = time.monotonic()
+    assert rig.supervise() == f"run {RUN} was fenced"
+    assert time.monotonic() - began < 15
+    assert rig.ends() == [("stopped", "")] and rig.record.over
+
+
+def test_a_fenced_run_whose_turn_outlived_its_supervisor_ends_that_turn_first(rig):
+    """``revive`` hands a fenced run a supervisor; the turn its killed supervisor left running
+    is ended — its group, by its recorded stamp — before the run reads over."""
+    from tests.launching import orphaned_turn
+
+    from dplanner.core.process import is_live
+
+    with orphaned_turn() as stamp:
+        turn = Turn(n=1, prompt="launch", started="…", pid=stamp.pid, boot=stamp.boot,
+                    pid_started=stamp.started)  # fmt: skip
+        supervisor.update(rig.plan, RUN, lambda r: replace(r, turns=(turn,)), rig.config)
+        supervisor.fence(rig.plan, RUN, "kettle", "taken over", rig.config)
+        with pytest.raises(RefusedError, match="fenced"):
+            rig.supervise()
+        assert not is_live(stamp) and rig.record.over
+
+
 def test_being_told_to_stop_ends_the_turn_and_the_run_stopped(rig):
     rig.play({"lines": [INIT], "hold": 30})
     record = rig.record

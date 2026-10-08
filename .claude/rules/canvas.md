@@ -380,7 +380,10 @@ paths:
 - **A live agent run is a chip and a marching ring.** The chip on the bottom edge names the
   state; the dashed ring round the body moves, which is what says "somebody is on this one
   right now". The ring is derived from the chip (`NodeAccent.chip_text`), so one field says
-  both.
+  both. **The squad holding a step is the chip's still mirror** on the bottom edge's right
+  end (`NodeAccent.squad`, amber `squad_tone` once the claim is abandoned): a claim is
+  ownership, not work, so it never marches; each chip takes at most its own half of the edge.
+  `docs/architecture/agents.md`'s *A claim is a lease in git* has the reasoning.
 - **The canvas has one motion clock.** One `QTimer` on the scene (`_motion_clock`,
   `advance_motion`) moves every ring and every pulse on one phase, and runs only while a
   card `moves()` — `_settle_motion_clock` after every sync, so an idle canvas ticks nothing. A new motion rides this clock, never a timer of its

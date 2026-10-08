@@ -41,17 +41,21 @@ from dplanner.modules.agent_briefing.worktree import WorktreeError, mainline, ru
 from dplanner.modules.agent_launch import launcher
 from dplanner.modules.agent_launch.launch import (
     HEADLESS,
+    STOPPING_S,
     TERMINAL,
     Briefed,
     Prepared,
+    claim_for,
     headless_harnesses,
     headless_refusal,
+    held_claim,
     place,
     prepare_run,
     profile_for,
     read_absolute,
     refusal,
     start_run,
+    stop_fenced,
     unfinished_run,
     unplaced,
     waiting_on,
@@ -96,6 +100,11 @@ def _configure(parser: ArgumentParser) -> None:
     parser.set_defaults(mode=HEADLESS)
     parser.add_argument(
         "--anyway", action="store_true", help="launch although prerequisites are not done"
+    )
+    parser.add_argument(
+        "--callsign",
+        default="",
+        help="who runs it: a member of the squad whose claim holds the step (kettle-two)",
     )
     parser.add_argument(
         "--playbook",
@@ -201,6 +210,9 @@ class StageLauncher:
             workdir = Path(directory) if directory else place(*worktree_of(step, facts), branches)
         except WorktreeError as error:
             raise CliError(str(error)) from error
+        # A pass goes on for whichever squad holds its step: the re-read before the start
+        # then refuses only a change of hands while the stage was prepared.
+        squad, claim = held_claim(project_dir, step.id)
         try:
             prepared = prepare_run(
                 library,
@@ -216,6 +228,8 @@ class StageLauncher:
                 stage=kind,
                 extra=extra,
                 dress=dress,
+                callsign=squad,
+                claim=claim,
             )
         except ValueError as error:
             raise CliError(str(error)) from error
@@ -285,6 +299,12 @@ def commands(
         except BlockingIOError:
             raise CliError(f"{step.title!r} is being launched right now — by another run") from None
         context.unwritten.append(held.close)
+        try:
+            claim = claim_for(project_dir, step.id, args.callsign)
+        except ValueError as error:
+            raise CliError(f"{step.title!r}: {error}") from None
+        if stopping := stop_fenced(project_dir, step.id, wait=STOPPING_S):
+            raise CliError(f"{step.title!r}: {stopping}")
         if live := unfinished_run(project_dir, step.id, of_passes=begin is None):
             raise CliError(
                 f"{step.title!r} already has a headless run, {live}, that is not over — resume"
@@ -307,6 +327,8 @@ def commands(
             profile=profile,
             harnesses=harnesses,
             mode=args.mode,
+            callsign=args.callsign.strip().lower(),
+            claim=claim,
         )
         context.unwritten.append(prepared.discard)
         before = step.module_data.get(STATUS_ID)

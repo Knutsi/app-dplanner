@@ -223,6 +223,10 @@ class NodeAccent:
     key_glyph_tone: str = ""  # "" the key's ink | "warn": the attention amber.
     chip_text: str = ""  # "" → no chip.
     chip_tone: str = ""  # "" neutral | "info" | "attention".
+    # The squad whose claim holds the step, in a chip on the bottom edge's right end — still,
+    # not marching: a claim is ownership, and the ring is a run at work. Its words and its
+    # tone: "" neutral, "attention" once the claim was abandoned. ("", "") → unclaimed.
+    squad: tuple[str, str] = ("", "")
     body_tone: str = ""  # "" plain | "highlight" | "good" | "feature": the node is a kind.
     # A milestone's own shade of the project's colour map, as "#rrggbb" — it recolours the
     # body tone, the badge and the tag medallion together, so the card says *which*
@@ -349,6 +353,8 @@ def paint_node(
         )
     if accent.chip_text:
         paint_chip(painter, palette, card, accent.chip_text, accent.chip_tone)
+    if accent.squad[0]:
+        paint_chip(painter, palette, card, *accent.squad, right=True)
     paint_handle(painter, palette, body, state)
     painter.restore()
 
@@ -680,16 +686,28 @@ def paint_pulse(painter: QPainter, body: QRectF, tone: str, phase: float) -> Non
         )
 
 
-def paint_chip(painter: QPainter, palette: QPalette, body: QRectF, text: str, tone: str) -> None:
-    """A pill on the bottom edge, left end: the badge's mirror, worn by a live agent run."""
+def paint_chip(
+    painter: QPainter,
+    palette: QPalette,
+    body: QRectF,
+    text: str,
+    tone: str,
+    *,
+    right: bool = False,
+) -> None:
+    """A pill on the bottom edge: at its left end the badge's mirror, worn by a live agent
+    run; at its right end, inset as the badge is, the squad holding the step. Each may take
+    no more than its own half of the edge, so the two never meet."""
     font = painter.font()
     small = painter.font()
     small.setPointSizeF(max(6.0, font.pointSizeF() - 2.0))
     painter.setFont(small)
     metrics = painter.fontMetrics()
-    shown = metrics.elidedText(text, Qt.TextElideMode.ElideRight, int(body.width() * 0.5))
+    budget = body.width() * 0.5 - (BADGE_INSET if right else LEFT_INSET)
+    shown = metrics.elidedText(text, Qt.TextElideMode.ElideRight, int(budget))
     width = metrics.horizontalAdvance(shown) + 2 * BADGE_PAD
-    pill = QRectF(LEFT_INSET, body.bottom() - CHIP_H / 2, width, CHIP_H)
+    left = body.right() - BADGE_INSET - width if right else LEFT_INSET
+    pill = QRectF(left, body.bottom() - CHIP_H / 2, width, CHIP_H)
     ink = QColor(palette.text().color())
     faded_ink = QColor(ink)
     faded_ink.setAlpha(SECONDARY_ALPHA)

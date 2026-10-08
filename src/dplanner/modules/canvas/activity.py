@@ -189,11 +189,7 @@ class ProjectActivity(EntityActivity):
                 self._sync_after_prose.trigger,
                 signals=(library.text_edited,),
             ),
-            *(
-                [deps.accents_changed.connect(self._on_accents_changed)]
-                if deps.accents_changed is not None
-                else []
-            ),
+            *(signal.connect(self._on_accents_changed) for signal in deps.accents_changed),
         ]
         self._sync()
 

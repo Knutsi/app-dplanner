@@ -48,6 +48,7 @@ from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QWidget
 
 from dplanner.core.clock import Clock
+from dplanner.core.signals import Signal
 from dplanner.domain.model import Library, NodeId, Step, StepId
 from dplanner.framework.action_registry import (
     DISABLED,
@@ -119,6 +120,15 @@ class QuestionLane(Protocol):
     def close(self) -> None: ...
 
 
+class Holders(Protocol):
+    """Who holds which step — the squad claims' reading, as the boards name it: the board
+    only shows the words, and re-reads when ``changed`` names a project."""
+
+    changed: Signal[str]
+
+    def held_by(self, step: Step) -> str: ...
+
+
 @dataclass(frozen=True)
 class ProgressionDeps:
     library: Library
@@ -148,6 +158,9 @@ class ProgressionDeps:
     # The step's key, under its title, and the canvas medallion naming what it is.
     key_of: Callable[[Step], str] = field(default=lambda _step: "")
     glyph_of: Callable[[Step], str] = field(default=lambda _step: "step")
+    # Who holds each step — a column shown while any row is held. Read from files beside
+    # the plan, so the board also re-reads when ``changed`` names a project. None: no column.
+    holders: Holders | None = None
     # The question cards the Control Centre puts on top of its board, built for its page;
     # None is a build without them.
     question_cards: Callable[[QWidget], QuestionLane] | None = None

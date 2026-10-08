@@ -557,6 +557,11 @@ src/dplanner/
 │   │                        questions/ (`domain/questions.py`); answering resumes the
 │   │                        parked run on this machine (inbox.py); the cards the Control
 │   │                        Centre shows on top, one per open question (panel.py)
+│   ├── agent_claims/        which squad holds which steps: `dplanner claim take|list|
+│   │                        release|end` over claims/ (`domain/claims.py`, pushed by
+│   │                        `domain/claim_sync.py`), every way a step leaves a squad
+│   │                        stopping its worker (ownership.py), and the squad chip and
+│   │                        Squad column (module.py)
 │   ├── step_agent_run/      where a launched agent stands — stamped at launch, moved by
 │   │                        `dplanner agent-state`, cleared when the shell ends (`runs.py`
 │   │                        reads the wrapper's report; `terminal.py` finds the window or

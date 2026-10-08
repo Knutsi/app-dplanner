@@ -79,7 +79,7 @@ from dplanner.core.process import (
     spawn_detached,
     stamp_of,
 )
-from dplanner.domain import ledger, questions
+from dplanner.domain import claim_sync, ledger, questions
 from dplanner.domain.agents import (
     AgentHarness,
     AgentUsage,
@@ -122,6 +122,10 @@ NO_VERDICT = "no-verdict"
 NUDGES = {"abandoned-wait": "continue", NO_VERDICT: "verdict"}
 LOCK_FILE = "supervisor.lock"
 RECORD_LOCK = "record.lock"
+# How often a live turn renews its squad's claim; the claim itself writes only when due.
+CLAIM_BEAT = 60.0
+# How long an orphaned turn's killed process is given to disappear.
+ORPHAN_REAP_S = 2.0
 LAUNCHES_DIR = "launches"
 # How old a run with no turn must be before it may be taken for a launch nobody finished: a
 # supervisor started a moment ago may not hold its lock yet.
@@ -283,6 +287,61 @@ def fence(project_dir: Path, run: str, by: str, why: str, config: Path | None = 
     )
 
 
+def stop(project_dir: Path, run: str, by: str, why: str, config: Path | None = None) -> None:
+    """Fence the run, and end the turn a supervisor on this machine is driving with the
+    SIGTERM it turns into ``stopped``. A supervisor elsewhere — or on Windows, where the
+    signal cannot be caught — finds the fence before its next turn."""
+    fence(project_dir, run, by, why, config)
+    directory = ledger.run_dir(run, config)
+    if sys.platform != "win32" and supervised(directory):
+        with suppress(OSError, ValueError):
+            os.kill(int((directory / LOCK_FILE).read_text(encoding="utf-8")), signal.SIGTERM)
+
+
+def end_orphaned_turn(record: LedgerRecord, grace: float) -> bool:
+    """End the run's last turn when its process outlived its supervisor — the turn's whole
+    group, asked with SIGTERM and killed after ``grace`` — and answer whether nothing of it
+    still runs. Only the process the turn recorded counts (pid, boot id and start time, so a
+    reused pid is left alone); a turn that ended, or never started, has nothing to end."""
+    last = record.last_turn
+    if last is None or last.end or not last.pid:
+        return True
+    stamp = ProcessStamp(last.pid, last.boot, last.pid_started)
+    if not is_live(stamp):
+        return True
+    if sys.platform == "win32":
+        subprocess.run(
+            ["taskkill", "/T", "/F", "/PID", str(last.pid)], capture_output=True, check=False
+        )
+    else:
+        group = last.pid  # The turn's CLI led its own session: its pid is the group's id.
+        with suppress(ProcessLookupError, PermissionError):
+            os.killpg(group, signal.SIGTERM)
+        deadline = time.monotonic() + grace
+        while _orphans_alive(group) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        if _orphans_alive(group):
+            with suppress(ProcessLookupError, PermissionError):
+                os.killpg(group, signal.SIGKILL)
+    deadline = time.monotonic() + ORPHAN_REAP_S
+    while is_live(stamp) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    return not is_live(stamp)
+
+
+def _orphans_alive(group: int) -> bool:
+    if sys.platform == "win32":
+        return False
+    else:
+        try:
+            os.killpg(group, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+
+
 def update(
     project_dir: Path,
     run: str,
@@ -336,6 +395,10 @@ class Session:
         if record.over:
             raise RefusedError(f"run {record.run} is over")
         if record.fence:
+            # A turn that outlived its supervisor is ended first: until it is gone, the run
+            # is not over, whatever the fence says.
+            if not end_orphaned_turn(record, self.guards.grace):
+                raise RefusedError(f"run {record.run} is fenced, and its last turn will not end")
             self._end(TurnEnd.STOPPED)
             raise RefusedError(f"run {record.run} was fenced: {record.fence.get('why', '')}")
         last = record.last_turn
@@ -379,6 +442,8 @@ class Session:
     def next(self, ending: Ending, stop: threading.Event) -> tuple[str, str]:
         """What follows a turn: the next turn's prompt and words, or ("", why it stopped)."""
         if ending.end in OVER:
+            if ending.end is TurnEnd.STOPPED and self._fenced():
+                return "", f"run {self.record.run} was fenced"
             return "", _over(self.record.run, ending.end)
         last = self.record.turns[-1]
         failures = _failures(self.record)
@@ -554,6 +619,12 @@ class Session:
             self._streamed(turn.n).session for turn in self.record.turns
         )
 
+    def _fenced(self) -> bool:
+        """Whether a takeover or a release fenced the run while its turn runs: read on every
+        poll, so the turn stops within a second wherever the fence was written here."""
+        record = ledger.find(self.project_dir, self.record.run)
+        return record is not None and bool(record.fence)
+
     def _watch(
         self,
         process: "subprocess.Popen[str]",
@@ -571,9 +642,10 @@ class Session:
         lines: queue.Queue[str | None] = queue.Queue()
         reader = threading.Thread(target=_pump, args=(process, lines), daemon=True)
         reader.start()
-        began = heard = time.monotonic()
+        began = heard = beat = time.monotonic()
         wall = self.guards.wall.get(stage, max(self.guards.wall.values()))
         eof, killed = False, ""
+        renewing: threading.Thread | None = None
         while True:
             try:
                 line = lines.get(timeout=self.guards.poll)
@@ -587,9 +659,23 @@ class Session:
                 self._heard(log, tee, line)
             if eof and process.poll() is not None:
                 break
+            if (
+                self.record.claim
+                and now - beat >= CLAIM_BEAT
+                and not (renewing and renewing.is_alive())
+            ):
+                # A live turn is the squad's sign of life while its coordinator waits the
+                # stage out; off this thread, since a renewal may push.
+                beat = now
+                renewing = threading.Thread(
+                    target=claim_sync.renew,
+                    args=(self.project_dir, self.record.claim, self.config),
+                    daemon=True,
+                )
+                renewing.start()
             killed = (
                 "stopped"
-                if stop.is_set()
+                if stop.is_set() or self._fenced()
                 else "runaway"
                 if log.idle >= self.guards.runaway
                 else "timeout"

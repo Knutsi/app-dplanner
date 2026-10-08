@@ -302,9 +302,15 @@ def shell_markers(harnesses: tuple[AgentHarness, ...]) -> tuple[str, ...]:
     return tuple(h.shell_markers[0] for h in harnesses if h.shell_markers)
 
 
-def shell_marker(harnesses: tuple[AgentHarness, ...], env: Mapping[str, str]) -> str:
-    """The marker set in ``env``, or "" when no agent's shell is around us. Set to nothing
-    is not set."""
+def shell_marker(
+    harnesses: tuple[AgentHarness, ...], env: "Mapping[str, str] | None" = None
+) -> str:
+    """The marker set in ``env`` (this process's environment by default), or "" when no
+    agent's shell is around us — read by the entry point's window guard and by
+    ``status set``, which holds an agent's done at review. Set to nothing is not set."""
+    import os
+
+    env = os.environ if env is None else env
     return next((name for name in shell_markers(harnesses) if env.get(name)), "")
 
 
@@ -329,6 +335,13 @@ def scrubbed_environment(
 
 def harness_by_id(harnesses: tuple[AgentHarness, ...], harness_id: str) -> AgentHarness | None:
     return next((h for h in harnesses if h.id == harness_id), None)
+
+
+def names_session(harnesses: tuple[AgentHarness, ...], harness_id: str) -> bool:
+    """Whether ``harness_id`` names its own session up front — the one a launch records
+    for a resume; a harness that mints its own is found by its record once the run ends."""
+    harness = harness_by_id(harnesses, harness_id)
+    return harness is not None and harness.names_session
 
 
 def harness_for_command(harnesses: tuple[AgentHarness, ...], command: str) -> AgentHarness | None:

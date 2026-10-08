@@ -42,9 +42,19 @@ class EndClaim:
     step: StepId
 
 
+@dataclass(frozen=True)
+class Release:
+    """Hand ``step`` back from the squad claim holding it and stop its worker — a person's
+    override, saying ``why``; the squad keeps its other steps."""
+
+    project: ProjectId
+    step: StepId
+    why: str
+
+
 # What a caller performs once the change is accepted: effects outside the model. A new kind
 # joins this union, and every performer's `match` then fails mypy until it handles it.
-type FollowUp = EndClaim
+type FollowUp = EndClaim | Release
 
 
 @dataclass(frozen=True)

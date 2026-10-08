@@ -56,11 +56,12 @@ it, and one holds it:
   step not already under review or waiting on its merge, exits 1, naming
   `ready-for-review`. A reviewing agent is not stopped: from review or merge it may finish
   the step. It is a guard on *who is reporting*, not on the word, so it reads the same fact
-  the window word refuses on — an agent CLI's marker in the environment, read by the
-  composition root's `agent_shell_marker` over `domain/agents.py`'s `shell_marker`, which
-  the entry point imports (the root, which wires the verb, may not import the entry
-  point, so the reading lives there rather than in `entry.py`). **A person's own terminal and
-  the window are never asked**: the developer marking a step done is the acceptance.
+  the window word refuses on — an agent CLI's marker in the environment, read by
+  `domain/agents.py`'s `shell_marker` over the composition root's `agent_harnesses()`,
+  which the entry point and the root's `status set` wiring each read directly (`shell_marker`
+  defaults its `env` to this process's own, so neither caller passes it). **A person's own
+  terminal and the window are never asked**: the developer marking a step done is the
+  acceptance.
 - **The way out is a reason, and the reason is kept.** Some steps have nothing to review — a
   docs-only change, a step that only reports. `--because '<reason>'` sets done and writes a
   `decision` note on the step in the same run (*Done without review*, the reason as its
@@ -881,8 +882,9 @@ that is sent, which is what lets the Agent tab colour it without ever showing so
 
 ## Runs, questions and claims are three records in the plan
 
-*The run record and its supervisor are built (S10, below), and the question record and its
-door (S13); the inbox cards and the coordinator are built to these records, and FORMAT.md's* The `ledger` directory *(format
+*The run record and its supervisor are built (S10, below), the question record and its
+door (S13), and the claim record, its verbs and its heartbeat (S18); the inbox cards and the
+coordinator are built to these records, and FORMAT.md's* The `ledger` directory *(format
 2),* The `questions` directory *and* The `claims` directory *are the formats.* Every one of them
 rests on the finding of `docs/research/2026-10-07-headless-agents/`: **DPlanner never
 waits on a process for a person.** A headless run is one turn of a process that exits;
@@ -1238,6 +1240,57 @@ and the squad keeps the rest — ending the whole claim would hand its other ste
 squad while their workers still ran. *Clear* ends all of it. That is the one deliberate
 second writer; the coordinator re-reads before every write, and in a merge the person's act
 wins.
+
+**As built — one machine, simpler than the protocol above.** Version one decides ownership
+**locally, from the files, per step**, and leaves the arbitration between machines for
+multiplayer. Ranking claims by which file reached the remote first was the first version,
+and Kettle Watch found two ways it handed a step to two squads: a squad *growing* an old
+claim outranked one that had taken the step before it, because the file's age is not the
+step's; and a superseded squad that woke and renewed got its steps back, because the
+takeover was not part of the ranking. So each step a claim holds carries its own
+**`acquired`** stamp and the earliest wins, a tie by claim id; a takeover names in
+**`supersedes`**, step by step, the claim it took from, and that is final; and a claim
+**stands down before it renews** from any step it no longer holds. `claim take` checks under
+the project's taking lock, writes and publishes. **A publish never rewrites the person's
+checkout**: it commits `claims/` by pathspec under the repository's sync lock — the one the
+window's own Save and sync take — and pushes; a refused push is left for the window's next
+sync, never fetched, rebased or stashed under the person's unsaved plan, which is what a
+heartbeat racing autosave and the window's rebase did. Unpublished, a claim still holds
+here, since this machine decides. **The heartbeat needs no verb**: every `dplanner` run from
+an agent's shell renews the claims this machine holds in the project — a coordinator renews
+by working — and a live turn's supervisor renews its run's claim; a backoff wait or a park
+renews nothing. Renewing what *this machine* holds costs one thing: two squads on one
+machine keep each other alive, until the coordinator's launch can set a
+`DPLANNER_CALLSIGN`.
+
+**Ownership is checked inside the one launch, twice.** `launch.claim_for` refuses a step
+another squad holds on both surfaces — a person's Run Agent too, which the first version let
+straight through — and `start_run` asks again under the step's launch lock, just before
+anything starts: a worktree takes seconds to prepare, and a release or a takeover in that
+time must start nothing. **Every way a step leaves a squad stops its worker, through one
+function** (`agent_claims/ownership.py`): a takeover, `claim release`, `claim end`, *End
+Squad Claim* and a person's stopped status each fence the squad's unfinished runs on the step
+and signal their supervisor here, and a live turn reads its fence on every poll — so the
+first version's release and Clear, which changed the claim and left the worker running, are
+the same act as the override. A release takes the step's launch lock when it is free; when a
+launch holds it — the window's own, possibly, on its GUI thread — waiting would deadlock, and
+the launch's own re-read covers the gap, since its record already exists to be fenced. A
+fenced run counts as over for the next launch only once nothing of it runs here — and a
+supervisor can be killed while its turn's detached process group survives it, which a
+supervisor lock alone cannot see. So the launch, and the supervisor `revive` hands a fenced
+run, end any such turn by its recorded process stamp first (TERM, grace, KILL), and a turn
+that will not end refuses the launch with the reason. Ending a claim fences exactly the steps
+it held when its locked write ended it, and `claims.grown` refuses an ended claim, so a take
+racing an end can neither escape the fence nor grow a closed claim. A playbook stage's run
+launches under whichever claim holds its step at the time.
+**Only a person's status releases a step** (the status workflow's `Release` follow-up): a
+worker setting its own ready-for-review must not hand the step back before its coordinator
+has verified and merged; the release is written, and Save carries it. The window polls
+`claims/` and `questions/` (the questions say whether a quiet squad is parked), re-reads once
+a minute for the clock alone, wears the squad as a still chip on the card's other bottom
+corner — the run chip marches, a claim is ownership — and names it in the Control Centre's
+*Squad* column. Not built — the second machine: which squad pushed first, a fence reaching
+the machine that runs the turn, and a claim file conflicting in a merge.
 
 ### What the window reads, and the one-writer rule across all three
 

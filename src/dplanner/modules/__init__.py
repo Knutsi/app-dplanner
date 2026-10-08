@@ -64,6 +64,7 @@ if TYPE_CHECKING:
     from dplanner.framework.services import AppServices
     from dplanner.framework.undo import UndoService
     from dplanner.modules.agent_at_work.module import AgentAtWorkModule
+    from dplanner.modules.agent_claims.module import AgentClaimsModule
     from dplanner.modules.agent_launch.availability import Availability
     from dplanner.modules.agent_launch.module import AgentLaunchModule
     from dplanner.modules.agent_questions.module import AgentQuestionsModule
@@ -138,9 +139,9 @@ def default_modules(
         board = at_work_board()
     branches = _branches(root)
     agents = _agents(root, branches=branches, settings=settings, board=board)
-    graph = _graph(root, branches=branches, launch=agents.launch)
+    graph = _graph(root, branches=branches, agents=agents)
     knowledge = _knowledge(root, editor=graph.editor)
-    tabs = _project_tabs(root, questions=agents.questions)
+    tabs = _project_tabs(root, agents)
     return [
         *_shell(root, agents),
         *_assistants(root, settings),
@@ -497,6 +498,7 @@ def _branches(root: _Root) -> "BranchesModule":
 class _Agents(NamedTuple):
     runs: "StepAgentRunModule"
     at_work: "AgentAtWorkModule"
+    claims: "AgentClaimsModule"
     checkouts: "CheckoutService"
     instruction: "StepAgentInstructionModule"
     launch: "AgentLaunchModule"
@@ -519,9 +521,11 @@ def _agents(
     from pathlib import Path
 
     from dplanner.core.config_dir import config_dir
+    from dplanner.domain.agents import names_session
     from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
     from dplanner.modules.agent_at_work.module import AgentAtWorkDeps, AgentAtWorkModule
     from dplanner.modules.agent_briefing.worktree import mainline
+    from dplanner.modules.agent_claims.module import AgentClaimsDeps, AgentClaimsModule
     from dplanner.modules.agent_launch.launch import read_absolute
     from dplanner.modules.agent_launch.module import AgentLaunchDeps, AgentLaunchModule
     from dplanner.modules.agent_questions import inbox
@@ -623,6 +627,9 @@ def _agents(
         )
     )
 
+    claims = AgentClaimsModule(
+        AgentClaimsDeps(library, store.project_dir, services.actions, parent=services.window)
+    )
     # A repository on this machine for a verb that needs one, cloned where the clone
     # policy says: the projects module's service, built here because Run Agent is handed
     # it too. Owned by the window, so its task runner outlives every dialog.
@@ -664,7 +671,7 @@ def _agents(
                 harness,
                 # The session the command named, for a harness that names one; a harness
                 # that mints its own is found by its record once the run ends.
-                files.session if _names_session(harness) else "",
+                files.session if names_session(agent_harnesses(), harness) else "",
                 # What the briefing came to: measured where prompt.md was written.
                 files.prompt_chars,
                 # A session that starts in plan mode waits for a person from the first
@@ -724,7 +731,7 @@ def _agents(
             key_of=key_of,
         )
     )
-    return _Agents(runs, at_work, checkouts, instruction, launch, usage, questions)
+    return _Agents(runs, at_work, claims, checkouts, instruction, launch, usage, questions)
 
 
 class _Graph(NamedTuple):
@@ -732,7 +739,7 @@ class _Graph(NamedTuple):
     editor: "CanvasModule"
 
 
-def _graph(root: _Root, *, branches: "BranchesModule", launch: "AgentLaunchModule") -> _Graph:
+def _graph(root: _Root, *, branches: "BranchesModule", agents: _Agents) -> _Graph:
     """The graph editor, the Problems panel it stands beside the canvas, and the canvas's
     reading of every aspect a card or an arrow wears."""
     from dplanner.framework.side_panel import SidePanel
@@ -849,6 +856,7 @@ def _graph(root: _Root, *, branches: "BranchesModule", launch: "AgentLaunchModul
             key_glyph_tone=key_glyph_tone,
             chip_text=chip_text,
             chip_tone=chip_tone,
+            squad=agents.claims.chip(library.project_of(step.id).id, step.id),
             # Done outranks a kind; otherwise the kind tints the body, and the medallion
             # still says what the node also is.
             body_tone=(
@@ -889,8 +897,8 @@ def _graph(root: _Root, *, branches: "BranchesModule", launch: "AgentLaunchModul
             facts_of=root.facts_of,
             key_of=key_of,
             # Handing the problems to an agent is Run Agent's.
-            fix_profiles=launch.plan_profiles,
-            fix=lambda project_id, findings, profile: launch.fix_problems(
+            fix_profiles=agents.launch.plan_profiles,
+            fix=lambda project_id, findings, profile: agents.launch.fix_problems(
                 project_id,
                 [(row.check, row.subject, row.message) for row in findings],
                 profile,
@@ -913,7 +921,7 @@ def _graph(root: _Root, *, branches: "BranchesModule", launch: "AgentLaunchModul
             file_modules=tuple(source.id for source in root.asset_sources),
             paste_policies=_paste_policies(),
             step_accents=step_accents,
-            accents_changed=problems.findings.flagged_changed,
+            accents_changed=(problems.findings.flagged_changed, agents.claims.changed),
             edge_accents=edge_accents,
             # The cards that wear a branch strip, from the same reading their accents are.
             strips=lambda project_id: frozenset(
@@ -1123,7 +1131,7 @@ class _Tabs(NamedTuple):
     step_order: "StepOrderModule"
 
 
-def _project_tabs(root: _Root, *, questions: "AgentQuestionsModule") -> _Tabs:
+def _project_tabs(root: _Root, agents: _Agents) -> _Tabs:
     """The tabs a project's index rows open — each built ahead of the list because the
     projects index opens it — and the Time tab's simulator, over a world of its own."""
     from dplanner.core.storage.locations import find_repo_root, origin_url
@@ -1193,6 +1201,7 @@ def _project_tabs(root: _Root, *, questions: "AgentQuestionsModule") -> _Tabs:
             counts_as_work=_counts_as_work,
             # An agent that waits on a person is a row of its own: Waits for you.
             asks_person=asks_person,
+            holders=agents.claims,
             verbs=(
                 StripVerb("agent.run", data_menu=RUN_MENU_ID, face="Run Agents"),
                 StripVerb("status.ready-to-merge"),
@@ -1206,7 +1215,7 @@ def _project_tabs(root: _Root, *, questions: "AgentQuestionsModule") -> _Tabs:
             # Who works the step, as its key block and Find's rows say it.
             glyph_of=lambda step: _primary_glyph(step)[0],
             # The open questions, a card each, on top of the Control Centre.
-            question_cards=questions.create_cards,
+            question_cards=agents.questions.create_cards,
         )
     )
     estimation = EstimationModule(
@@ -1516,6 +1525,7 @@ def _shell(root: _Root, agents: _Agents) -> list["Module"]:
         # Before the watcher: the banner that says an agent is at work is what makes the
         # watcher's stood-down modal legible, so it must already be on screen.
         agents.at_work,
+        agents.claims,
         # After sync, so the conflict button lands to the right of the library path.
         LibraryWatchModule(
             LibraryWatchDeps(
@@ -1822,6 +1832,7 @@ def _aspects(
         SetModuleDataCommand,
     )
     from dplanner.domain.model import TextEdit
+    from dplanner.modules.agent_claims.ownership import released_by_status
     from dplanner.modules.branches.module import LandingModule
     from dplanner.modules.branches.plan import merged_into_its_branch
     from dplanner.modules.docs.module import DocsCompiledModule, DocsDeps, DocsModule
@@ -2077,6 +2088,7 @@ def _aspects(
                 clock=services.clock,
                 workflow=_status_workflow(),
                 end_claim=lambda claim: board.end(claim.project, claim.step),
+                release=lambda f: released_by_status(store.project_dir(f.project), f),
                 notices=services.window,
                 flush=services.autosave.saved,
             )
@@ -2812,10 +2824,13 @@ def default_cli_commands(
     from dplanner.cli.telemetry import commands as telemetry_commands
     from dplanner.core.config_dir import config_dir
     from dplanner.core.telemetry import crash_log_path, journal_path
+    from dplanner.domain.agents import shell_marker
     from dplanner.domain.locations import roles_by_id
     from dplanner.domain.workflow import AgentRun, Person
     from dplanner.modules.agent_at_work import cli as at_work_cli
     from dplanner.modules.agent_briefing.worktree import mainline
+    from dplanner.modules.agent_claims import cli as claims_cli
+    from dplanner.modules.agent_claims.ownership import released_by_status as release
     from dplanner.modules.agent_launch import cli as launch_cli
     from dplanner.modules.agent_questions import cli as questions_cli
     from dplanner.modules.agent_supervisor import cli as supervisor_cli
@@ -2885,17 +2900,20 @@ def default_cli_commands(
 
     workflow = _status_workflow()
     plan_branches = lambda lib, step, facts: branch_plan(lib, step, mainline(facts, step))  # noqa: E731
+    # Who answers is read like `status set`'s reporter: an agent's shell is the coordinator.
+    harnesses = agent_harnesses()
+    in_agent_shell: Callable[[], bool] = lambda: bool(shell_marker(harnesses))  # noqa: E731
 
     def end_claim(claim: "EndClaim") -> bool:
         return board.end(claim.project, claim.step)
 
     def actor() -> "Actor":
-        return AgentRun() if agent_shell_marker() else Person()
+        return AgentRun() if in_agent_shell() else Person()
 
     def set_status(context: "CliContext", step: "Step", status: "Status") -> None:
         """A status written as `status set` writes it — refused as one line, its claim
         ended once the run is written."""
-        status_cli.write_status(context, workflow, end_claim, step, status, actor=actor())
+        status_cli.write_status(context, workflow, end_claim, release, step, status, actor=actor())
 
     def finish_merged(context: "CliContext", step: "Step") -> bool:
         """A step waiting on its merge is done once its PR reads merged — written as
@@ -2912,7 +2930,6 @@ def default_cli_commands(
 
     # A playbook's stages launch as `agent run` launches, and `progress` merges into the
     # feature branch and accepts the step by the merge, as `github refresh` does.
-    harnesses = agent_harnesses()
     engine = PlaybookEngine(
         launch=launch_cli.StageLauncher(default_location_roles(), plan_branches, harnesses),
         accept=lambda context, step, base, head: github_cli.accept_by_merge(
@@ -2974,10 +2991,10 @@ def default_cli_commands(
         ),
         *agent_state_cli.commands(),
         # A run's usage and its supervisor read the harness that ran it: the window's tuple.
-        *usage_cli.commands(harnesses=agent_harnesses()),
-        *supervisor_cli.commands(harnesses=agent_harnesses()),
-        # Who answers is read like `status set`'s reporter: an agent's shell is the coordinator.
-        *questions_cli.commands(in_agent_shell=lambda: bool(agent_shell_marker())),
+        *usage_cli.commands(harnesses=harnesses),
+        *supervisor_cli.commands(harnesses=harnesses),
+        *questions_cli.commands(in_agent_shell=in_agent_shell),
+        *claims_cli.commands(in_agent_shell=in_agent_shell),
         # The agent's own account of what it is doing while it does it: the window's
         # banner and the watcher's stood-down modal both read what these write.
         *at_work_cli.commands(board=board, key_of=key_of),
@@ -2987,8 +3004,9 @@ def default_cli_commands(
         # is working the step ends the claim somebody made on it, on the board above.
         *status_cli.commands(
             workflow=workflow,
-            in_agent_shell=lambda: bool(agent_shell_marker()),
+            in_agent_shell=in_agent_shell,
             end_claim=end_claim,
+            release=release,
         ),
         *milestone_cli.commands(),
         *wait_cli.commands(),
@@ -3097,13 +3115,6 @@ def default_cli_commands(
     return [*commands, *skill, *installer, *checklist]
 
 
-def _names_session(harness_id: str) -> bool:
-    from dplanner.domain.agents import harness_by_id
-
-    harness = harness_by_id(agent_harnesses(), harness_id)
-    return harness is not None and harness.names_session
-
-
 def agent_harnesses() -> tuple["AgentHarness", ...]:
     """Every agent CLI this build can launch, first is the default.
 
@@ -3118,18 +3129,6 @@ def agent_harnesses() -> tuple["AgentHarness", ...]:
     from dplanner.modules.agent_opencode import harness as opencode
 
     return (claude.HARNESS, codex.HARNESS, opencode.HARNESS)
-
-
-def agent_shell_marker(env: "Mapping[str, str] | None" = None) -> str:
-    """The marker set in ``env`` (this process's environment by default), or "" when no
-    agent's shell is around us — ``domain/agents.py``'s reading over this build's
-    harnesses. Read by the entry point's window guard and by ``status set``, which holds an
-    agent's done at review."""
-    import os
-
-    from dplanner.domain.agents import shell_marker
-
-    return shell_marker(agent_harnesses(), os.environ if env is None else env)
 
 
 def dictation_providers() -> tuple["DictationProvider", ...]:

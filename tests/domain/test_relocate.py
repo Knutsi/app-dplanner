@@ -8,7 +8,7 @@ import pytest
 
 from dplanner.core.storage.locations import canonical_remote, init_repo
 from dplanner.core.storage.pointer import POINTER_FILE, read_index, remove_from_index
-from dplanner.domain import ledger, questions
+from dplanner.domain import claims, ledger, questions
 from dplanner.domain.library_file import read_library_file, write_library_file
 from dplanner.domain.model import Step
 from dplanner.domain.relocate import RelocateError, move_project
@@ -89,10 +89,10 @@ def test_the_plan_moves_with_its_files_index_lines_and_two_commits(colocated):
     assert (code / "src" / "main.py").is_file()
 
 
-def test_the_usage_ledger_and_the_questions_move_with_the_plan(colocated):
-    """The store never flushes the ledger or the questions, but they are the plan's history of
-    what its agents consumed and asked: a move that left them behind would delete them with
-    the source directory."""
+def test_the_usage_ledger_the_questions_and_the_claims_move_with_the_plan(colocated):
+    """The store never flushes the ledger, the questions or the claims, but they are the
+    plan's history of what its agents consumed and asked and who held its work: a move that
+    left them behind would delete them with the source directory."""
     store, library, _code, plans = colocated
     project = library.projects[0]
     record = ledger.LedgerRecord(
@@ -101,9 +101,12 @@ def test_the_usage_ledger_and_the_questions_move_with_the_plan(colocated):
     ledger.write(store.project_dir(project.id), record)
     question = questions.asked(project.id, "s1", "2026-10-01T10:00Z", [questions.one("Why?")])
     questions.write(store.project_dir(project.id), question)
+    claim = claims.claimed(project.id, "kettle", ["s1"], "2026-10-01T10:00Z", worker={})
+    claims.write(store.project_dir(project.id), claim)
     moved = move_project(store, project.id, plans / "search-rewrite")
     assert ledger.records(moved.target) == [record]
     assert questions.records(moved.target) == [question]
+    assert claims.records(moved.target) == [claim]
 
 
 def test_the_target_must_be_free_and_inside_a_repository(colocated, tmp_path):

@@ -165,6 +165,10 @@ def run(
     never has to remember a heartbeat on top of the work. It never *makes* a claim, because
     running a verb is evidence for a claim somebody made and not a claim of its own.
 
+    The same run is the squad claims' sign of life on the slow clock: the claims this machine
+    holds in the project are renewed when due (``domain/claim_sync.py``) — imported only then,
+    since every other run would pay for git it never runs.
+
     None means this run is nobody's sign of life, and that is the ordinary case: ``entry.py``
     passes a board only when an agent CLI's shell is around the process, because a developer
     running a verb in their own terminal must not renew somebody else's claim. The verbs that
@@ -211,6 +215,9 @@ def run(
                 )
                 if board is not None and context.current is not None:
                     board.touch(context.current.id)
+                    from dplanner.domain.claim_sync import renew
+
+                    renew(context.store.project_dir(context.current.id))
                 code = command.run(context, args)
     except CliError as error:
         print(f"{PROG}: {error}", file=err)

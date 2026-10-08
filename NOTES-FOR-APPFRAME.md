@@ -1179,9 +1179,14 @@ per listener.
   `init_repo`, `origin_url` (memoised on `.git/config`'s mtime — an action state asks it on
   every context change), `canonical_remote` and `remote_label` (one spelling for a remote, and
   how it is named to a person), and `activity` (who worked under a path, from the last commits).
+- **`sync_lock(repo_root)`**: an OS lock on `dplanner-sync.lock` in the repository's common git
+  directory (`git_common_dir`, shared by its worktrees), held by `commit` — and by
+  `GitHubStorage.pull`/`push` — so the window's Save and sync never interleave with another
+  process committing or pushing the same checkout (DPlanner's claims commit from the CLI and a
+  run's supervisor). Never nested; signals are emitted after it is let go.
 
 **Upstream?** yes — any template application that opens a repository by path meets each of
-these.
+these; the lock, for any application with a second process writing commits to the checkout.
 
 ## `core/storage/github.py`
 
@@ -1192,6 +1197,8 @@ a Save from a second clone is never refused for being second; a conflict is abor
 restored) and raised as `DivergedError`. `GitHubStorage.create(name, dest)` creates an empty
 repository and clones it. `repository_url(checkout)` asks `gh` and answers None on any refusal.
 `has_origin` goes through the memoised `origin_url`, and the label is `remote_label`'s.
+`pull` and `push` hold `git.sync_lock` across their fetch, rebase and push, and say
+`worktree_changed` once it is free.
 
 **Upstream?** yes — any application whose saves are commits from several clones.
 

@@ -687,63 +687,97 @@ git never conflicts:
 
 ### The `claims` directory
 
-*Designed, not yet written by any build.* Which work is taken by which squad — a lease in
-git, so a person or a worker on another machine sees it at their next pull:
+Written by `dplanner claim take|release|end`, the heartbeat and a person's override
+(`domain/claims.py`; the git half is `domain/claim_sync.py`). Which work is taken by which
+squad — a lease in git, so a person or a worker on another machine sees it at their next pull:
 
 ```
 <project dir>/claims/
-└── 2026-10/
-    └── 20261007T100212Z-5a0b7c3d.json
+└── 2026-10/                                  the month it was taken
+    └── 20261007T100212Z-5a0b7c3d.json        minted as a run id is; shown as C-5a0b
 ```
 
 ```json
 {
   "format": 1, "id": "20261007T100212Z-5a0b7c3d", "project": "<id>",
   "callsign": "kettle", "worker": {"machine": "<machine id>", "host": "knut-arch"},
-  "steps": ["<id>", "<id>"],
+  "steps": ["<step A>", "<step B>"],
+  "acquired": {"<step A>": "2026-10-07T10:02:12+00:00", "<step B>": "2026-10-07T10:40:03+00:00"},
   "released": [{"step": "<id>", "at": "…", "by": {"kind": "person", "name": "Knut"}, "why": "blocked"}],
   "started": "2026-10-07T10:02:12+00:00", "heartbeat": "2026-10-07T11:20:40+00:00",
   "lease_minutes": 90, "max_park_hours": 24,
+  "supersedes": [{"claim": "20261006T081500Z-77aa01bc", "step": "<step B>"}],
   "ended": {"at": "…", "by": {"kind": "coordinator", "name": "kettle-actual"}, "why": "released"}
 }
 ```
 
-- **One claim per squad**, written by its coordinator; `callsign` is the squad word. Which
-  member works which step is on the *run* (`callsign`), not here.
-- **Acquiring is fetch, check, commit, push — before anything is spawned.** The coordinator
-  fetches, refuses if a live claim holds any of the steps (naming the holder), commits the
-  new claim and pushes it; a rejected push means fetch and check again, and only a pushed
-  claim launches work. If a merge still brings two live claims onto one step, **the one
-  pushed first** — the earlier of their adding commits in the remote's history — holds it,
-  and the other squad stands down from that step at its next check, which it makes before
-  every launch and every heartbeat.
-- **`heartbeat`** is renewed, only when it is ten minutes old, by the coordinator's own
-  `dplanner` runs and by the supervisor of any of the squad's runs while that run is live,
-  so a squad whose coordinator waits through a long stage keeps its lease. The coordinator
-  commits and pushes its claim when it claims, after each merge and when it releases, and a
-  commit carrying only a heartbeat at most every thirty minutes — **the supervisor does that
-  commit and push while the coordinator is silent**; a failed push is retried at the next
-  beat.
+- **One claim per squad**, written by its coordinator; `callsign` is the squad word — the
+  first word of a member's callsign, so `claim take --callsign kettle-two` writes `kettle`,
+  and a second take by the same squad grows its one live claim. Which member works which step
+  is on the *run* (`callsign`, and `claim` naming this file).
+- **Ownership is decided from the files, per step** — the one rule every reader applies
+  (`claims.holdings`). **`acquired`** is when the claim took each step it holds, so growing
+  an old claim never outranks a squad that took the step first: of the live or parked claims
+  on a step, the earliest acquisition holds it, and a tie goes to the lower claim id.
+  **`supersedes`** names, step by step, the abandoned claim a takeover took a step from, and
+  it is final: the superseded claim never holds that step again, even once it renews.
+- **Taking is check, write, commit, push.** `claim take` refuses a step another squad's live
+  or parked claim holds (naming the holder), takes over a step whose holder is abandoned, and
+  publishes. A playbook stage's run launches under whichever claim holds its step then.
+  *One machine, as built:* the check is local, under a per-project OS lock on
+  `config_dir()/claims/take-<project>.lock`; which squad pushed first across machines is not
+  decided yet.
+- **Every launch checks ownership, twice.** Both surfaces' one launch (`launch.claim_for`)
+  refuses a step another squad holds — a person's Run Agent included — and a run of the
+  holding squad (`agent run --callsign kettle-two`) records the claim. The check is made again
+  under the step's launch lock just before the run starts (`launch.start_run`), so a release
+  or a takeover made while a worktree was prepared starts nothing.
+- **A publish never rewrites the person's checkout.** It commits `claims/` alone, by pathspec,
+  under the repository's sync lock — the OS lock in the common git directory that the window's
+  own Save and sync take too (`core/storage/git.py`'s `sync_lock`) — and pushes. It never
+  fetches, rebases or stashes: a push the remote refuses leaves the commit, marks the claim
+  `config_dir()/claims/<id>.unpublished`, and the window's next sync carries it. Unpublished,
+  a claim still holds on its machine.
+- **`heartbeat`** is renewed, only when it is ten minutes old, by every `dplanner` run from
+  an agent's shell — for the claims **this machine** holds in its project (`worker.machine`)
+  — and once a minute by the supervisor of any of the squad's runs **while a turn is live**:
+  a backoff wait or a park renews nothing. A commit carrying only a heartbeat is pushed at
+  most every thirty minutes; when this machine last pushed is
+  `config_dir()/claims/<id>.pushed`. **Before it renews, a claim stands down** from every
+  step it no longer holds — superseded, or acquired first by another squad — so a squad that
+  lost a step hands it back instead of renewing its way back to it.
 - **A claim whose heartbeat is older than `lease_minutes` (default 90) is abandoned**, by the
   reader's clock — the lease is three pushes long so one failed push, or a little clock
   skew, does not read as death — **unless the squad is parked**: every step it still holds
   waits on a question that is open, escalated, or answered and not yet consumed. Parked work
   is still owned, and its claim stands until the work resumes, is cancelled (the question
   withdrawn, the run fenced or stopped), or the oldest of those parks is `max_park_hours`
-  (default 24) old.
-  An abandoned claim is shown as abandoned and deleted by nobody; a new claim may take its
-  steps and names it in `supersedes`, fencing each of the old squad's unfinished runs on
-  them (the run's `fence`), and the old coordinator stands down at its next check.
-- **A person's override releases one step, not the squad.** A status that stops one of the
-  claim's steps moves it from `steps` into `released` and stops that step's worker alone;
-  the squad keeps the rest. A person's *Clear* ends the whole claim. Either is the director's
-  act and a second writer on purpose; the coordinator re-reads the file before every write,
-  and in a merge a release or an end wins.
+  (default 24) old. An abandoned claim is shown as abandoned and deleted by nobody.
+- **A step that leaves a squad stops its worker**, however it leaves — a takeover, `claim
+  release`, `claim end`, the window's *End Squad Claim*, a person's stopped status — through
+  one function (`agent_claims/ownership.py`): every unfinished headless run of the squad on
+  that step is fenced, and its supervisor on this machine is signalled; a live turn also
+  reads its fence within a second and ends `stopped`. A fenced run counts as over for the
+  next launch only once nothing of it runs here: a live supervisor is signalled, and a turn
+  that outlived its supervisor — found by its recorded `pid`, `boot` and `pid_started` — has
+  its process group ended (SIGTERM, a grace, SIGKILL) first, by the launch and by the
+  supervisor `revive` hands the run; a turn that will not end refuses the launch, saying so.
+  Ending a claim stops the workers of exactly the steps it held when its locked write ended
+  it, and an ended claim never grows again — a take racing the end starts a claim of its own.
+- **A person's override releases one step, not the squad.** Only a *person's* stopped status
+  releases — a worker reaching ready-for-review does not, since its coordinator verifies and
+  merges first. *End Squad Claim* ends the whole claim. Either is the director's act and a
+  second writer on purpose; every write re-reads the file under its lock. A release or an
+  end takes the step's launch lock when it is free; a launch holding it re-reads ownership
+  before it starts.
 - **`ended`** is written once: by the coordinator (`released`, `done`), by a person
   (`by.kind: person`), or when the last step leaves `steps`.
 - Outside `PLAN_ENTRIES`, polled, committed by Save, carried by Move Plan; absence encodes the
-  default, an unreadable file is skipped, no migration. It is the record a multiplayer
-  coordination service would broadcast, and git stays the authority.
+  default, an unreadable file is skipped, no migration. Every change is a read-modify-write
+  under an OS lock on `config_dir()/claims/<id>.lock`. It is the record a multiplayer
+  coordination service would broadcast, and git stays the authority. *Not built yet — the
+  second machine:* deciding which squad pushed first, delivering a fence to the machine that
+  runs the turn, and resolving a merge that conflicts on one claim file.
 
 ### Changing it
 
