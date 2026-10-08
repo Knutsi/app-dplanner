@@ -222,6 +222,12 @@ class Holding:
     state: str
 
 
+def holder_words(holding: Holding) -> str:
+    """Who holds a step, as the window says it: ``kettle``, ``kettle · parked``."""
+    state = holding.state
+    return holding.claim.callsign + ("" if state == LIVE else f" · {state}")
+
+
 def holdings(
     claims: Iterable[Claim], now: str, parked: Mapping[str, str], order: Sequence[str] = ()
 ) -> dict[str, Holding]:

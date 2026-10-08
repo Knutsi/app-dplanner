@@ -43,6 +43,7 @@ from dataclasses import dataclass, field
 from PySide6.QtGui import QIcon
 
 from dplanner.core.clock import Clock
+from dplanner.core.signals import Signal
 from dplanner.domain.model import Library, NodeId, Step, StepId
 from dplanner.framework.action_registry import (
     DISABLED,
@@ -123,6 +124,11 @@ class ProgressionDeps:
     # The step's key, under its title, and the canvas medallion naming what it is.
     key_of: Callable[[Step], str] = field(default=lambda _step: "")
     glyph_of: Callable[[Step], str] = field(default=lambda _step: "step")
+    # The squad whose claim holds a step — "kettle", "kettle · parked" — or "": a column
+    # shown while any row has one. Read from files beside the plan, so the board also
+    # re-reads when ``held_changed`` names a project.
+    held_by: Callable[[Step], str] = field(default=lambda _step: "")
+    held_changed: Signal[str] | None = None
 
 
 class ProgressionModule:

@@ -667,3 +667,12 @@ could both pass the "no run yet" check. Now a launch holds the step's OS launch 
 its first check to its start, saves its record and its claim first and starts the run as
 the follow-up, withdrawing the claim when the start fails; `revive` settles a launch cut off
 in between. Now: `agents.md`'s *One launch under both surfaces*.
+
+## 2026-10-08 — A person's stopped status releases the step from its squad's claim
+
+Setting a step done, blocked or under review used to end the agent's at-work banner and do
+nothing else: "nothing yet tells the agent to stand down". With claims in the plan, a
+person's stopped status also hands that one step back from the squad claim holding it and
+stops its worker — a second follow-up, `Release`, beside `EndClaim` — while a worker reaching
+ready-for-review releases nothing, because its coordinator verifies and merges first. Now:
+`agents.md`'s *Runs, questions and claims are three records in the plan*.

@@ -600,3 +600,22 @@ def test_a_relative_library_reaches_every_turn_as_an_absolute_path(
     monkeypatch.chdir(tmp_path)
     rig.supervise(library=Path("mine.json"))
     assert seen == [str(tmp_path.resolve() / "mine.json")]
+
+
+def test_a_step_another_squad_holds_is_never_launched(cli, plan, started):
+    cli("claim", "take", "Build it", "--callsign", "osprey", "--project", "widget")
+    said = cli("agent", "run", "Build it", "--anyway", expect=1)
+    assert "held by squad osprey" in said and "--callsign" in said
+    said = cli("agent", "run", "Build it", "--callsign", "kettle-two", expect=1)
+    assert "held by squad osprey" in said
+    assert started == []
+
+
+def test_a_member_of_the_holding_squad_launches_under_its_claim(cli, plan, started):
+    from dplanner.domain import claims
+
+    cli("claim", "take", "Build it", "--callsign", "kettle", "--project", "widget")
+    run = json.loads(cli("agent", "run", "Build it", "--callsign", "Kettle-Two", "--json"))["run"]
+    record = ledger.find(plan, run)
+    (claim,) = claims.records(plan)
+    assert record is not None and (record.callsign, record.claim) == ("kettle-two", claim.id)

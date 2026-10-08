@@ -632,13 +632,14 @@ git never conflicts:
 
 ### The `claims` directory
 
-*Designed, not yet written by any build.* Which work is taken by which squad — a lease in
-git, so a person or a worker on another machine sees it at their next pull:
+Written by `dplanner claim take|release|end`, the heartbeat and a person's override
+(`domain/claims.py`; the git half is `domain/claim_sync.py`). Which work is taken by which
+squad — a lease in git, so a person or a worker on another machine sees it at their next pull:
 
 ```
 <project dir>/claims/
-└── 2026-10/
-    └── 20261007T100212Z-5a0b7c3d.json
+└── 2026-10/                                  the month it was taken
+    └── 20261007T100212Z-5a0b7c3d.json        minted as a run id is; shown as C-5a0b
 ```
 
 ```json
@@ -649,12 +650,17 @@ git, so a person or a worker on another machine sees it at their next pull:
   "released": [{"step": "<id>", "at": "…", "by": {"kind": "person", "name": "Knut"}, "why": "blocked"}],
   "started": "2026-10-07T10:02:12+00:00", "heartbeat": "2026-10-07T11:20:40+00:00",
   "lease_minutes": 90, "max_park_hours": 24,
+  "supersedes": ["20261006T081500Z-77aa01bc"],
   "ended": {"at": "…", "by": {"kind": "coordinator", "name": "kettle-actual"}, "why": "released"}
 }
 ```
 
-- **One claim per squad**, written by its coordinator; `callsign` is the squad word. Which
-  member works which step is on the *run* (`callsign`), not here.
+- **One claim per squad**, written by its coordinator; `callsign` is the squad word — the
+  first word of a member's callsign, so `claim take --callsign kettle-two` writes `kettle`,
+  and a second take by the same squad grows its one claim. Which member works which step is
+  on the *run* (`callsign`, and `claim` naming this file): `agent run --callsign kettle-two`
+  launches under the claim holding the step, and refuses a step another squad's live or
+  parked claim holds — the check made before every launch.
 - **Acquiring is fetch, check, commit, push — before anything is spawned.** The coordinator
   fetches, refuses if a live claim holds any of the steps (naming the holder), commits the
   new claim and pushes it; a rejected push means fetch and check again, and only a pushed
@@ -668,7 +674,12 @@ git, so a person or a worker on another machine sees it at their next pull:
   commits and pushes its claim when it claims, after each merge and when it releases, and a
   commit carrying only a heartbeat at most every thirty minutes — **the supervisor does that
   commit and push while the coordinator is silent**; a failed push is retried at the next
-  beat.
+  beat. *As built:* every `dplanner` run from an agent's shell renews the claims **this
+  machine** holds in its project (`worker.machine`), and a supervisor renews its run's
+  claim once a minute **while a turn is live** — a backoff wait or a park renews nothing.
+  When this machine last pushed a claim is kept beside its lock, in
+  `config_dir()/claims/<id>.pushed`, never in the plan. Every publish commits `claims/`
+  alone, so unsaved plan work is never swept into a claim's commit.
 - **A claim whose heartbeat is older than `lease_minutes` (default 90) is abandoned**, by the
   reader's clock — the lease is three pushes long so one failed push, or a little clock
   skew, does not read as death — **unless the squad is parked**: every step it still holds
@@ -680,15 +691,22 @@ git, so a person or a worker on another machine sees it at their next pull:
   steps and names it in `supersedes`, fencing each of the old squad's unfinished runs on
   them (the run's `fence`), and the old coordinator stands down at its next check.
 - **A person's override releases one step, not the squad.** A status that stops one of the
-  claim's steps moves it from `steps` into `released` and stops that step's worker alone;
-  the squad keeps the rest. A person's *Clear* ends the whole claim. Either is the director's
+  claim's steps moves it from `steps` into `released` and stops that step's worker alone
+  (its runs under the claim fenced, and a live supervisor on this machine signalled);
+  the squad keeps the rest. Only a *person's* status does — a worker reaching
+  ready-for-review releases nothing, since its coordinator verifies and merges first — and
+  the release is written, not pushed: Save carries it, as it carries the status. A person's *Clear* ends the whole claim. Either is the director's
   act and a second writer on purpose; the coordinator re-reads the file before every write,
   and in a merge a release or an end wins.
 - **`ended`** is written once: by the coordinator (`released`, `done`), by a person
   (`by.kind: person`), or when the last step leaves `steps`.
 - Outside `PLAN_ENTRIES`, polled, committed by Save, carried by Move Plan; absence encodes the
-  default, an unreadable file is skipped, no migration. It is the record a multiplayer
-  coordination service would broadcast, and git stays the authority.
+  default, an unreadable file is skipped, no migration. Every change is a read-modify-write
+  under an OS lock on `config_dir()/claims/<id>.lock`, and taking is serialised per project
+  on `config_dir()/claims/take-<project>.lock`. It is the record a multiplayer coordination
+  service would broadcast, and git stays the authority. *Not built yet:* a merge that
+  conflicts on one claim file is refused like any other rebase conflict rather than resolved
+  by "a release or an end wins".
 
 ### Changing it
 

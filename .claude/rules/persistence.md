@@ -62,10 +62,10 @@ paths:
   `PLAN_ENTRIES` (`project.dproj`,
   `modules/`, `steps/`) — a project directory is often the repository root, and counting
   the source tree or an agent worktree under `.dplanner-worktrees/` as another writer
-  reloaded the window on every edit anyone made. The usage `ledger/` and the `questions/`
-  beside them are outside on purpose — a file per run or question, never flushed by the
-  store — and `PLAN_ENTRIES` must not grow to take them in; Move Plan copies them by name
-  (`relocate.py`), and Save commits it with the project's scope.
+  reloaded the window on every edit anyone made. The usage `ledger/`, the `questions/` and
+  the `claims/` beside them are outside on purpose — a file per run, question or claim, never
+  flushed by the store — and `PLAN_ENTRIES` must not grow to take them in; Move Plan copies
+  them by name (`relocate.py`), and Save commits them with the project's scope.
 - **The window takes an outside change in place, entry by entry.** The same per-file
   record says *which* files changed, and each plan file is one entry of one node, so
   `LibraryStore.adopt_outside_changes` reads the change into the live model through the

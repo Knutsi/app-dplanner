@@ -1,9 +1,10 @@
 ---
 paths:
-  - "src/dplanner/modules/{agent_briefing,agent_launch,agent_questions,agent_supervisor,agent_usage,step_agent_instruction,step_agent_run,agent_claude,agent_codex,agent_opencode}/**"
+  - "src/dplanner/modules/{agent_briefing,agent_claims,agent_launch,agent_questions,agent_supervisor,agent_usage,step_agent_instruction,step_agent_run,agent_claude,agent_codex,agent_opencode}/**"
   - "src/dplanner/domain/agents.py"
   - "src/dplanner/domain/questions.py"
-  - "tests/modules/{agent_launch,agent_questions,agent_supervisor,agent_usage,step_agent_instruction,step_agent_run}/**"
+  - "src/dplanner/domain/{claims,claim_sync}.py"
+  - "tests/modules/{agent_claims,agent_launch,agent_questions,agent_supervisor,agent_usage,step_agent_instruction,step_agent_run}/**"
   - "tests/modules/test_agent_readers.py"
   - "scripts/render_briefing_size.py"
 ---
@@ -334,7 +335,7 @@ paths:
   was added for it: the gate asks each chosen step's own project where a shell opens, so
   *Run 2 Agents…* over two projects is one gesture opening each in its own checkout.
 - **Runs, questions and claims are three records in the plan, and there are no others**
-  (designed; FORMAT.md's *The `ledger` directory* format 2, *The `questions` directory*, *The
+  (FORMAT.md's *The `ledger` directory* format 2, *The `questions` directory*, *The
   `claims` directory*). **A run is the ledger record**: one stage attempt, whose resumes —
   an answer, a reset, a retry — are its `turns` (a loop-back is a new run), each ending `done`, `asked`, `denied`, `limit`, `failed` or `stopped` —
   classified from the stream, never the exit alone — written only by the launching machine;
@@ -345,6 +346,12 @@ paths:
   lease in `claims/`**: heartbeat at most every ten minutes, a heartbeat-only push at most
   every thirty, acquired by a push before anything spawns, abandoned past a ninety-minute lease
   unless parked, and a person's override releases one step from it, not the squad.
+  **Built as verbs** (`modules/agent_claims/`, over `domain/claims.py` and the git half
+  `domain/claim_sync.py`): `claim take` checks, commits `claims/` alone and pushes, then
+  stands down where a rival pushed first; `agent run --callsign` launches under the squad's
+  claim and refuses another squad's step; the heartbeat is every agent-shell `dplanner` run
+  (this machine's claims) and a **live** turn's supervisor, never a wait; only a *person's*
+  stopped status releases a step (the `Release` follow-up), written and never pushed.
   It never absorbs the at-work claim, nor the at-work claim it: two clocks, two jobs.
   **An answer counts only once its run's machine has consumed it.**
   `docs/architecture/agents.md`'s *Runs, questions and claims are three records in the plan*

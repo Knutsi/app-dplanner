@@ -64,6 +64,7 @@ if TYPE_CHECKING:
     from dplanner.framework.services import AppServices
     from dplanner.framework.undo import UndoService
     from dplanner.modules.agent_at_work.module import AgentAtWorkModule
+    from dplanner.modules.agent_claims.module import AgentClaimsModule
     from dplanner.modules.agent_launch.module import AgentLaunchModule
     from dplanner.modules.agent_usage.module import AgentUsageModule
     from dplanner.modules.branches.module import BranchesModule
@@ -136,9 +137,9 @@ def default_modules(
         board = at_work_board()
     branches = _branches(root)
     agents = _agents(root, branches=branches, settings=settings, board=board)
-    graph = _graph(root, branches=branches, launch=agents.launch)
+    graph = _graph(root, branches=branches, launch=agents.launch, claims=agents.claims)
     knowledge = _knowledge(root, editor=graph.editor)
-    tabs = _project_tabs(root)
+    tabs = _project_tabs(root, claims=agents.claims)
     return [
         *_shell(root, agents),
         *_assistants(root, settings),
@@ -491,6 +492,7 @@ def _branches(root: _Root) -> "BranchesModule":
 class _Agents(NamedTuple):
     runs: "StepAgentRunModule"
     at_work: "AgentAtWorkModule"
+    claims: "AgentClaimsModule"
     checkouts: "CheckoutService"
     instruction: "StepAgentInstructionModule"
     launch: "AgentLaunchModule"
@@ -514,6 +516,7 @@ def _agents(
     from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
     from dplanner.modules.agent_at_work.module import AgentAtWorkDeps, AgentAtWorkModule
     from dplanner.modules.agent_briefing.worktree import mainline
+    from dplanner.modules.agent_claims.module import AgentClaimsDeps, AgentClaimsModule
     from dplanner.modules.agent_launch.launch import read_absolute
     from dplanner.modules.agent_launch.module import AgentLaunchDeps, AgentLaunchModule
     from dplanner.modules.agent_usage.aspect import ledger_dir, step_usage_words
@@ -600,6 +603,17 @@ def _agents(
         )
     )
 
+    # Who holds which step, polled from each project's claims/: the canvas and the boards
+    # read it, and re-read when it says a project moved.
+    claims = AgentClaimsModule(
+        AgentClaimsDeps(
+            library=library,
+            project_dir=store.project_dir,
+            actions=services.actions,
+            parent=services.window,
+        )
+    )
+
     # A repository on this machine for a verb that needs one, cloned where the clone
     # policy says: the projects module's service, built here because Run Agent is handed
     # it too. Owned by the window, so its task runner outlives every dialog.
@@ -683,7 +697,7 @@ def _agents(
             pick_assets=root.pick_assets,
         )
     )
-    return _Agents(runs, at_work, checkouts, instruction, launch, usage)
+    return _Agents(runs, at_work, claims, checkouts, instruction, launch, usage)
 
 
 class _Graph(NamedTuple):
@@ -691,7 +705,13 @@ class _Graph(NamedTuple):
     editor: "CanvasModule"
 
 
-def _graph(root: _Root, *, branches: "BranchesModule", launch: "AgentLaunchModule") -> _Graph:
+def _graph(
+    root: _Root,
+    *,
+    branches: "BranchesModule",
+    launch: "AgentLaunchModule",
+    claims: "AgentClaimsModule",
+) -> _Graph:
     """The graph editor, the Problems panel it stands beside the canvas, and the canvas's
     reading of every aspect a card or an arrow wears."""
     from dplanner.framework.side_panel import SidePanel
@@ -740,6 +760,7 @@ def _graph(root: _Root, *, branches: "BranchesModule", launch: "AgentLaunchModul
                 # Finished work waits on a person: to review it, or to merge it.
                 pulse=status_for(step) in REVIEW_AND_MERGE,
                 strip=strips.get(step.id, ("", "")),
+                squad=claims.chip(project_id, step.id),
             )
             for step in project.steps
         }
@@ -761,6 +782,7 @@ def _graph(root: _Root, *, branches: "BranchesModule", launch: "AgentLaunchModul
         flagged: bool = False,
         pulse: bool = False,
         strip: tuple[str, str] = ("", ""),
+        squad: tuple[str, str] = ("", ""),
     ) -> "NodeAccent":
         """How a step looks on the canvas, translated from aspects the canvas never learns.
 
@@ -778,7 +800,8 @@ def _graph(root: _Root, *, branches: "BranchesModule", launch: "AgentLaunchModul
         beyond its title and its key — every aspect it wears is one of these, never a
         phrase — but for the one name a person has to read: the feature branch its work goes
         onto, in a strip under the body (``strip`` is the branch and its lane colour,
-        ``plan.strips``).
+        ``plan.strips``). The squad whose claim holds the step is a still chip on the
+        bottom edge's other end, amber once its claim is abandoned (``squad``).
         """
         refs = github_read(step)
 
@@ -808,6 +831,8 @@ def _graph(root: _Root, *, branches: "BranchesModule", launch: "AgentLaunchModul
             key_glyph_tone=key_glyph_tone,
             chip_text=chip_text,
             chip_tone=chip_tone,
+            squad=squad[0],
+            squad_tone=squad[1],
             # Done outranks a kind; otherwise the kind tints the body, and the medallion
             # still says what the node also is.
             body_tone=(
@@ -872,7 +897,7 @@ def _graph(root: _Root, *, branches: "BranchesModule", launch: "AgentLaunchModul
             file_modules=tuple(source.id for source in root.asset_sources),
             paste_policies=_paste_policies(),
             step_accents=step_accents,
-            accents_changed=problems.findings.flagged_changed,
+            accents_changed=(problems.findings.flagged_changed, claims.changed),
             edge_accents=edge_accents,
             # The cards that wear a branch strip, from the same reading their accents are.
             strips=lambda project_id: frozenset(
@@ -1082,7 +1107,7 @@ class _Tabs(NamedTuple):
     step_order: "StepOrderModule"
 
 
-def _project_tabs(root: _Root) -> _Tabs:
+def _project_tabs(root: _Root, *, claims: "AgentClaimsModule") -> _Tabs:
     """The tabs a project's index rows open — each built ahead of the list because the
     projects index opens it — and the Time tab's simulator, over a world of its own."""
     from dplanner.core.storage.locations import find_repo_root, origin_url
@@ -1152,6 +1177,9 @@ def _project_tabs(root: _Root) -> _Tabs:
             counts_as_work=_counts_as_work,
             # An agent that waits on a person is a row of its own: Waits for you.
             asks_person=asks_person,
+            # The squad holding a step, from the claims the canvas reads too.
+            held_by=lambda step: claims.held_by(library.project_of(step.id).id, step.id),
+            held_changed=claims.changed,
             verbs=(
                 StripVerb("agent.run", data_menu=RUN_MENU_ID, face="Run Agents"),
                 StripVerb("status.ready-to-merge"),
@@ -1473,6 +1501,8 @@ def _shell(root: _Root, agents: _Agents) -> list["Module"]:
         # Before the watcher: the banner that says an agent is at work is what makes the
         # watcher's stood-down modal legible, so it must already be on screen.
         agents.at_work,
+        # Its End Squad Claim sits in the Step menu's agent group, after Clear Agent Run.
+        agents.claims,
         # After sync, so the conflict button lands to the right of the library path.
         LibraryWatchModule(
             LibraryWatchDeps(
@@ -2703,27 +2733,11 @@ def _asset_sources() -> tuple["AssetSource", ...]:
 
 
 def release_claimed(project_dir: "Path", follow_up: "Release") -> bool:
-    """A person's override, performed: ``follow_up``'s step handed back from the squad claim
-    holding it, and that step's unfinished runs under the claim stopped — the squad keeps the
-    rest. False when no claim held the step. Both surfaces' status verbs perform it."""
-    import getpass
+    """A person's override, performed on both surfaces — ``agent_claims/release.py``."""
+    from dplanner.modules.agent_claims.release import release
+    from dplanner.modules.agent_supervisor.supervisor import stop
 
-    from dplanner.domain import claims, ledger
-    from dplanner.domain.questions import PERSON
-    from dplanner.modules.agent_supervisor import supervisor
-
-    by = {"kind": PERSON, "name": getpass.getuser()}
-    why = f"set {follow_up.why} by a person"
-    try:
-        claim = claims.release_step(project_dir, follow_up.step, by, why)
-    except LookupError:
-        return False
-    if claim is None:
-        return False
-    for run in ledger.records(project_dir):
-        if run.claim == claim.id and run.step == follow_up.step and not run.over:
-            supervisor.stop(project_dir, run.run, by["name"], why)
-    return True
+    return release(project_dir, follow_up, stop)
 
 
 def renew_claims(project_dir: "Path") -> None:

@@ -9,8 +9,8 @@ while its transaction flushes what the move marked.
 What moves is the plan, ``PLAN_ENTRIES``: ``project.dproj``, ``modules/`` and ``steps/``,
 module file areas included, so specs, images and attachments travel — and the usage
 ``ledger/`` beside them (``domain/ledger.py``), which is the plan's history of what its
-agents consumed even though the store never flushes it, and the ``questions/`` they asked
-(``domain/questions.py``). What is written into
+agents consumed even though the store never flushes it, the ``questions/`` they asked
+(``domain/questions.py``) and the ``claims/`` their squads hold (``domain/claims.py``). What is written into
 the moved ``project.dproj`` is the one fact the plan needs from then on — the code
 repository it came out of, as git names it — for a plan of the older shape; a plan a plan
 repository held with no code named leaves a repository that was never its code, and moves

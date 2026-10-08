@@ -22,8 +22,7 @@ from dplanner.core.fsio import write_atomic
 from dplanner.core.storage.locations import find_repo_root, repo_storage
 from dplanner.core.storage.provider import RemoteStorage, StorageError, VersionedStorage
 from dplanner.core.storage.sparse import GitError, run_git
-from dplanner.domain import claims
-from dplanner.domain.ledger import machine_id
+from dplanner.domain import claims, ledger
 from dplanner.domain.model import now_stamp
 
 
@@ -81,7 +80,7 @@ def renew(project_dir: Path, claim_id: str = "", config: Path | None = None) -> 
     """The heartbeat: renew ``claim_id`` — or, with none, every claim this machine holds in
     the project — when it is due, and push when this machine has not pushed it for
     ``PUSH_MINUTES``. Never raises: a renewal that fails is made again at the next beat."""
-    here = machine_id(config)
+    here = ledger.machine_id(config)
     at = now_stamp()
     due = [
         claim

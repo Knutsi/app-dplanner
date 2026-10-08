@@ -879,8 +879,9 @@ that is sent, which is what lets the Agent tab colour it without ever showing so
 
 ## Runs, questions and claims are three records in the plan
 
-*The run record and its supervisor are built (S10, below), and the question record and its
-door (S13); the inbox cards and the coordinator are built to these records, and FORMAT.md's* The `ledger` directory *(format
+*The run record and its supervisor are built (S10, below), the question record and its
+door (S13), and the claim record, its verbs and its heartbeat (S18); the inbox cards and the
+coordinator are built to these records, and FORMAT.md's* The `ledger` directory *(format
 2),* The `questions` directory *and* The `claims` directory *are the formats.* Every one of them
 rests on the finding of `docs/research/2026-10-07-headless-agents/`: **DPlanner never
 waits on a process for a person.** A headless run is one turn of a process that exits;
@@ -1161,6 +1162,31 @@ and the squad keeps the rest — ending the whole claim would hand its other ste
 squad while their workers still ran. *Clear* ends all of it. That is the one deliberate
 second writer; the coordinator re-reads before every write, and in a merge the person's act
 wins.
+
+**As built, the verbs are the protocol.** `dplanner claim take` holds the project's taking
+lock, fetches, refuses a step another squad's live or parked claim holds, writes, commits
+`claims/` alone and pushes — and then reads the order the files reached the remote
+(`claim_sync.push_order`, one `git log --diff-filter=A`) and stands down from any step a
+rival pushed first. A push that fails lets go of what it took, since only a pushed claim
+launches work. The launch is the other check: `agent run --callsign kettle-two` records the
+claim on the run, and refuses a step another squad holds. **The heartbeat needs no verb**:
+every `dplanner` run from an agent's shell renews the claims this machine holds in the
+project — so a coordinator renews by working — and a live turn's supervisor renews its
+run's claim; a backoff wait or a park renews nothing, since nothing is running. Renewing
+what *this machine* holds rather than a named squad costs one thing: two squads on one
+machine keep each other alive. That waits for a `DPLANNER_CALLSIGN` the coordinator's launch
+can set, because a coordinator's shell calls do not keep an `export`.
+**Only a person's status releases a step**, through the status workflow's `Release`
+follow-up on both surfaces (`agent_claims/release.py`): a worker setting its own
+ready-for-review must not hand the step back before its coordinator has verified and merged.
+The release is written and not pushed — a window gesture must not wait on a two-minute push
+— and Save carries it, as it carries the status. A takeover fences the old squad's
+unfinished runs under the run's own record lock (`supervisor.fence`); a person's release
+also signals a live supervisor here (`supervisor.stop`), whose turn then ends `stopped`.
+The window polls `claims/` and `questions/` (the questions say whether a quiet squad is
+parked), re-reads once a minute for the clock alone, wears the squad as a still chip on the
+card's other bottom corner — the run chip marches, a claim is ownership — and names it in
+the Control Centre's *Squad* column; *End Squad Claim* is the window's *Clear*.
 
 ### What the window reads, and the one-writer rule across all three
 

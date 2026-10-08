@@ -78,11 +78,12 @@ CONTROL_CENTRE = "Control Centre"
 
 
 STEP_ROLE = HOST_ROLE
-CHECK_COLUMN, STEP_COLUMN, PROJECT_COLUMN, UNBLOCKS_COLUMN, MENU_COLUMN = range(5)
+CHECK_COLUMN, STEP_COLUMN, PROJECT_COLUMN, SQUAD_COLUMN, UNBLOCKS_COLUMN, MENU_COLUMN = range(6)
 COLUMNS = (
     Column("", check=True),
     Column("Step", glyph=True, detail=True, resize="stretch"),
     Column("Project"),
+    Column("Squad"),
     Column("Unblocks", numeric=True),
     Column("", menu=True),
 )
@@ -157,9 +158,11 @@ class StatusTable(Table):
         glyph_of: Callable[[Step], str],
         milestone_badge: Callable[[StepId], QIcon | None],
         project_of: Callable[[Step], str],
+        held_by: Callable[[Step], str] = lambda _step: "",
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(COLUMNS, selection="extended", parent=parent)
+        self._held_by = held_by
         self._key_of = key_of
         self._glyph_of = glyph_of
         self._milestone_badge = milestone_badge
@@ -193,6 +196,7 @@ class StatusTable(Table):
         picked = self.picked()
         self._glyphs.clear()
         self.blockSignals(True)
+        held = False
         try:
             self.clear_rows()
             for group in GROUPS:
@@ -202,12 +206,15 @@ class StatusTable(Table):
                 if shown == ALL:  # One group on its own needs no heading: the filter says it.
                     self.add_heading(group.heading, key=group.key)
                 for step in steps:
-                    self._add(step, progress.unlocks.get(step.id, 0))
+                    held = self._add(step, progress.unlocks.get(step.id, 0)) or held
             self._reselect(picked)
         finally:
             self.blockSignals(False)
+        self.setColumnHidden(SQUAD_COLUMN, not held)
 
-    def _add(self, step: Step, unlocks: int) -> None:
+    def _add(self, step: Step, unlocks: int) -> bool:
+        """One row; True when a squad holds its step."""
+        squad = self._held_by(step)
         self.add_row(
             (
                 Cell(),
@@ -217,11 +224,13 @@ class StatusTable(Table):
                     glyph=self._glyph(step),
                 ),
                 Cell(self._project_of(step)),
+                Cell(squad),
                 Cell(str(unlocks) if unlocks else ""),
                 Cell(tooltip=ROW_MENU_TIP),
             ),
             data={STEP_ROLE: step.id},
         )
+        return bool(squad)
 
     def _glyph(self, step: Step) -> QIcon:
         badge = self._milestone_badge(step.id)
@@ -333,6 +342,7 @@ class StatusBoard(EntityActivity):
             glyph_of=deps.glyph_of,
             milestone_badge=deps.milestone_badge,
             project_of=lambda step: library.project_of(step.id).title or UNTITLED,
+            held_by=deps.held_by,
             parent=page,
         )
         self.table.itemSelectionChanged.connect(self._on_selection)
@@ -350,6 +360,11 @@ class StatusBoard(EntityActivity):
         self.updating.follow(self._refresh_soon)
         self._unsubscribes = [
             deps.clock.day_changed.connect(lambda _day: self._refresh_soon.trigger()),
+            *(
+                [deps.held_changed.connect(lambda _project: self._refresh_soon.trigger())]
+                if deps.held_changed is not None
+                else []
+            ),
         ]
 
     # -- what a subclass says ------------------------------------------------------------------
