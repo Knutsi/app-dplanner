@@ -46,10 +46,10 @@ def rewrite(services, project, question):
     questions.write(services.repo.project_dir(project.id), question)
 
 
-def board(services) -> ControlCentreActivity:
+def board(services) -> tuple[ControlCentreActivity, QuestionCards]:
     tab = services.tabs.open(CONTROL_CENTRE_KIND)
-    assert isinstance(tab, ControlCentreActivity) and tab.questions is not None
-    return tab
+    assert isinstance(tab, ControlCentreActivity) and isinstance(tab.questions, QuestionCards)
+    return tab, tab.questions
 
 
 def ids(cards: QuestionCards) -> list[str]:
@@ -111,7 +111,7 @@ def faked(services):
 
 def test_open_and_escalated_questions_are_cards_oldest_first(services, alpha) -> None:
     project, step = alpha
-    tab = board(services)
+    tab, cards = board(services)
     rows = tab._needing
     assert tab.title == (f"Control Centre ({rows})" if rows else "Control Centre")
     later = ask(services, project, step, "Second?", minutes=5)
@@ -126,40 +126,40 @@ def test_open_and_escalated_questions_are_cards_oldest_first(services, alpha) ->
             gone = questions.withdrawn(gone, "the run ended", "")
         rewrite(services, project, gone)
 
-    tab.questions.refresh()
+    cards.refresh()
 
-    assert ids(tab.questions) == [first.id, later.id, passed.id]
+    assert ids(cards) == [first.id, later.id, passed.id]
     assert tab.title == f"Control Centre ({rows + 3})"
-    assert tab.questions.widget.isVisibleTo(tab.widget)
+    assert cards.widget.isVisibleTo(tab.widget)
 
 
 def test_the_lane_hides_with_no_question(services, alpha) -> None:
-    tab = board(services)
-    assert tab.questions.count == 0
-    assert not tab.questions.widget.isVisibleTo(tab.widget)
+    tab, cards = board(services)
+    assert cards.count == 0
+    assert not cards.widget.isVisibleTo(tab.widget)
 
 
 def test_a_new_question_appears_on_the_next_poll(services, alpha) -> None:
     project, step = alpha
-    tab = board(services)
+    _tab, cards = board(services)
     ask(services, project, step)
-    tab.questions.poll()
-    assert tab.questions.count == 1
+    cards.poll()
+    assert cards.count == 1
 
 
 def test_a_half_typed_answer_survives_a_poll(services, alpha) -> None:
     project, step = alpha
-    tab = board(services)
+    _tab, cards = board(services)
     ask(services, project, step)
-    tab.questions.refresh()
-    (card,) = tab.questions.cards()
+    cards.refresh()
+    (card,) = cards.cards()
     assert card.field is not None
     card.field.setText("Redis, with a ")
 
     ask(services, project, step, "Another?", minutes=3)
-    tab.questions.poll()
+    cards.poll()
 
-    first, _second = tab.questions.cards()
+    first, _second = cards.cards()
     assert first is card and card.field.text() == "Redis, with a "
 
 
@@ -168,22 +168,22 @@ def test_the_projects_filter_narrows_the_cards(services, alpha, make_project) ->
     beta = make_project("Beta")
     elsewhere = ask(services, beta, add_step(services, beta, "Paint"))
     ask(services, project, step, minutes=1)
-    tab = board(services)
-    tab.questions.refresh()
-    assert tab.questions.count == 2
-    assert "Beta" in tab.questions.cards()[0].kind.text()
+    tab, cards = board(services)
+    cards.refresh()
+    assert cards.count == 2
+    assert "Beta" in cards.cards()[0].kind.text()
 
     tab.projects.set_active({beta.id})
 
-    assert ids(tab.questions) == [elsewhere.id]
+    assert ids(cards) == [elsewhere.id]
 
 
 def test_a_choice_answers_as_the_person_through_the_inbox(services, alpha) -> None:
     project, step = alpha
     asked = ask(services, project, step, options=(("Redis", "fast"), ("SQLite", "simple")))
-    tab = board(services)
-    tab.questions.refresh()
-    (card,) = tab.questions.cards()
+    _tab, cards = board(services)
+    cards.refresh()
+    (card,) = cards.cards()
     assert [button.text() for button in card.options] == ["Redis", "SQLite"]
 
     card.options[1].click()
@@ -194,7 +194,7 @@ def test_a_choice_answers_as_the_person_through_the_inbox(services, alpha) -> No
     assert stored.answer["by"]["kind"] == questions.PERSON
     # It parks no run, so nothing resumes — and the person is told so.
     assert "parks no run" in services.window.statusBar().currentMessage()
-    assert tab.questions.count == 0
+    assert cards.count == 0
 
 
 def test_a_free_answer_goes_in_its_own_words(services, alpha, faked) -> None:

@@ -1183,8 +1183,10 @@ the new ones: a rebuild per poll would take a half-typed answer with it.
 **Oldest first, and gone when settled.** The question that has waited longest leads. An
 answered one leaves the lane at once — it waits in its file for its run's machine, and the
 status bar says so in `inbox.answer`'s own words. With no card the lane is hidden rather
-than saying *no questions*, since the board under it already says what needs nobody; when a
-card comes or goes the seam between lane and board returns to the cards' own height.
+than saying *no questions*, since the board under it already says what needs nobody. The lane
+is as tall as its cards up to about two, then scrolls: the board keeps the rest of the page.
+A splitter between them was tried and dropped — two framed wells either side of a seam drew
+three lines where one belongs, and a lane that fits its cards needs no dragging.
 
 ### A claim is a lease in git, and at-work stays beside it
 

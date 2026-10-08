@@ -1016,7 +1016,7 @@ Tables and lists:
   nothing matches, and speaks the strips' words.)* *(The Settings tree is done —
   S16: the picker list's wash and edge, folders as headings.)*
 - *(done — S14)* The Control Centre's question cards — a `#ToolCard` per open question on
-  a `#CardLane` above the board's seam: who asks over the rule, the ways to answer on one
+  a `#CardLane` under the strip, as tall as two cards before it scrolls: who asks over the rule, the ways to answer on one
   line under it, quiet buttons only, and a field dressed as a dialog's.
 - *(done — S15)* Task and Agents browsers — one `RowWell` on the dialog frame; a task
   with no known fraction is a busy line. Milestones list — a `Table` with the day each

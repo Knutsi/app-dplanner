@@ -40,7 +40,7 @@ from typing import TYPE_CHECKING, Final
 
 from PySide6.QtCore import QEvent, QItemSelectionModel, QPoint, Qt
 from PySide6.QtGui import QAction, QColor, QIcon
-from PySide6.QtWidgets import QHBoxLayout, QMenu, QSplitter, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QMenu, QVBoxLayout, QWidget
 
 from dplanner.domain.model import NodeId, Project, Step, StepId
 from dplanner.domain.short_titles import UNTITLED
@@ -327,35 +327,25 @@ class StatusBoard(EntityActivity):
         self.updating = UpdatingIndicator(page)
         strip.addWidget(self.updating)
 
-        # The board under a seam, so whatever a tab puts above it — the Control Centre's
-        # question cards — takes the share a person drags it to.
-        self.split = QSplitter(Qt.Orientation.Vertical, page)
-        self.split.setChildrenCollapsible(False)
-        layout.addWidget(self.split, 1)
-        board = QWidget()
-        self.split.addWidget(board)
-        rows = QVBoxLayout(board)
-        rows.setContentsMargins(0, 0, 0, 0)
-        rows.setSpacing(0)
-
         library = deps.library
         self.table = StatusTable(
             key_of=deps.key_of,
             glyph_of=deps.glyph_of,
             milestone_badge=deps.milestone_badge,
             project_of=lambda step: library.project_of(step.id).title or UNTITLED,
-            parent=board,
+            parent=page,
         )
         self.table.itemSelectionChanged.connect(self._on_selection)
         self.table.cellActivated.connect(self._on_row_activated)
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._on_context_menu)
         self.table.menu_requested.connect(self._drop_row_menu)
-        rows.addWidget(self.table, 1)
-        self.empty = EmptyState(parent=board, stands_in_for=self.table)
-        rows.addWidget(self.empty, 1)
+        layout.addWidget(self.table, 1)
+        self.empty = EmptyState(parent=page, stands_in_for=self.table)
+        layout.addWidget(self.empty, 1)
 
         self._widget = page
+        self._layout = layout  # The Control Centre puts its question cards under the strip.
         # After a quiet spell, not per signal: every row is rebuilt.
         self._refresh_soon = Debounced(self._refresh, parent=page, service=deps.debounce)
         self.updating.follow(self._refresh_soon)
@@ -551,11 +541,9 @@ class ControlCentreActivity(StatusBoard):
         self._unsubscribes.append(self.projects.changed.connect(self._show))
         self.questions: QuestionLane | None = None
         if deps.question_cards is not None:
-            self.questions = deps.question_cards(self.split)
-            self.split.insertWidget(0, self.questions.widget)
-            self.split.setStretchFactor(0, 0)
-            self.split.setStretchFactor(1, 1)
-            self.questions.set_changed(self._cards_changed)
+            self.questions = deps.question_cards(self.widget)
+            self._layout.insertWidget(1, self.questions.widget)  # Under the strip.
+            self.questions.set_changed(lambda: deps.tabs.set_tab_title(self, self.title))
         self._refresh()
 
     @property
@@ -566,17 +554,6 @@ class ControlCentreActivity(StatusBoard):
     def title(self) -> str:
         count = self._needing + (self.questions.count if self.questions is not None else 0)
         return f"{CONTROL_CENTRE} ({count})" if count else CONTROL_CENTRE
-
-    def _cards_changed(self) -> None:
-        """A card came or went: the title counts it, and the seam goes back to the cards'
-        own height — a lane kept at the size of four cards when one is left is a hole."""
-        self._deps.tabs.set_tab_title(self, self.title)
-        if self.questions is None:
-            return
-        total = sum(self.split.sizes())
-        wanted = self.questions.widget.sizeHint().height()
-        if total > wanted:
-            self.split.setSizes([wanted, total - wanted])
 
     def close(self) -> None:
         if self.questions is not None:

@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -59,8 +60,8 @@ KIND_WORDS = {
     questions.BLOCKED: "Blocked",
     questions.LIMIT: "Usage hold",
 }
-# The most height the lane asks for; the host's seam gives it more when dragged.
-LANE_HEIGHT_CAP = 360
+# The most height the lane takes: about two cards, so the host's surface keeps the page.
+LANE_HEIGHT_CAP = 320
 
 
 @dataclass(frozen=True)
@@ -229,14 +230,15 @@ def _options(question: Question) -> list[tuple[str, str]]:
 
 
 class _Lane(QScrollArea):
-    """The scroller the cards sit in, asking for their own height up to a cap: the host's
-    seam gives the lane more when a person drags it."""
+    """The scroller the cards sit in: as tall as the cards, up to a cap, past which they
+    scroll and the host's own surface keeps the rest of the page."""
 
     def __init__(self, lane: QWidget, parent: QWidget | None) -> None:
         super().__init__(parent)
         self.setWidgetResizable(True)
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         self.setWidget(lane)
         self._lane = lane
 
