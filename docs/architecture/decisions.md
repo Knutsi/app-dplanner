@@ -719,3 +719,13 @@ review read a branch with no landing PR. Knut chose a preset that does the work 
 execute ⇄ review (other agent) → human review, where the person merges because DPlanner never
 merges into the mainline. *Review only* stays, for a PR that already exists. Now:
 `playbooks.md`'s *The presets* and *A step names its playbook*.
+
+## 2026-10-08 — A pass through its stages waits for the merge; it is not *Done* yet
+
+The strip said *Done* the moment a pass had nothing left to run. The S21 dogfood found that a
+lie on every playbook that produces work: the pass ends at Ready for review with a PR nobody
+has merged into the mainline, and DPlanner never merges there, so the card read *Done* on a
+step a person still had to land. Such a pass now reads *Waits for merge* (warn) until the step
+reads done, and is not ended, so its strip outlives `ENDED_SHOWN`; a playbook with nothing to
+merge (*Spike*) still reads *Done* on its approval. Now: `playbooks.md`'s *The mark on the one
+card*.

@@ -1,4 +1,4 @@
-# Playbooks — stages, gates, loop-back, presets and headless invocations
+# Playbooks — stages, gates, loop-back, presets, the step's playbook and headless invocations
 
 The rules are in `.claude/rules/playbooks.md`; this is why they are what they are. The research
 behind them is `docs/research/2026-10-03-playbooks/` (the shape, failures, the floor) and

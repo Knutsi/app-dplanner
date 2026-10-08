@@ -1,4 +1,4 @@
-# Agents — Run Agent, worktrees, run directories, usage, harnesses and profiles
+# Agents — Run Agent, supervisors, questions, claims, the coordinator, worktrees, usage, harnesses and profiles
 
 The reasoning behind `.claude/rules/agents.md`: the rules there are the short, imperative form,
 and this file is why. `ARCHITECTURE.md` is the index of every area.

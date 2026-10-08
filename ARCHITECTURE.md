@@ -60,6 +60,7 @@ exists, so a renamed section is caught where it is cited.
 - A picked node is lifted, not recoloured
 - A card's size is the step's, and a layout never says how big
 - A card on a branch names it
+- A card running a playbook says where its pass stands
 - The ground is a preference; snapping belongs to the gesture
 - A step placed by pointing at a spot earns a stored position
 
@@ -109,7 +110,7 @@ exists, so a renamed section is caught where it is cited.
 - A project names its locations
 - Save spans repositories; the exit dialog says what it records
 
-## [Agents — Run Agent, worktrees, run directories, usage, harnesses and profiles](docs/architecture/agents.md)
+## [Agents — Run Agent, supervisors, questions, claims, the coordinator, worktrees, usage, harnesses and profiles](docs/architecture/agents.md)
 
 - The description is the instructions
 - An agent finishes at Ready for review
@@ -117,7 +118,7 @@ exists, so a renamed section is caught where it is cited.
 - Running an agent launches a peer, not a task
 - Runs, questions and claims are three records in the plan
 
-## [Playbooks — stages, gates, loop-back, presets and headless invocations](docs/architecture/playbooks.md)
+## [Playbooks — stages, gates, loop-back, presets, the step's playbook and headless invocations](docs/architecture/playbooks.md)
 
 - A playbook is a list of stages around one step
 - A gate gets two rounds, then somebody decides
@@ -128,6 +129,7 @@ exists, so a renamed section is caught where it is cited.
 - The mark on the one card
 - A failure is never a verdict
 - The run record is the ledger
+- How the engine drives a pass
 - Each stage is one headless turn per harness
 - Decided at S4 (coordinator) — for Knut to confirm at the final review
 
