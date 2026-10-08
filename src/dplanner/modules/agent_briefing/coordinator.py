@@ -302,8 +302,10 @@ def _loop(project: str, actual: str, at_once: int) -> PromptPart:
             " unblocked may be ready now.",
             "",
             "A run parked on a limit is its supervisor's; `dplanner agent retry <key>` is for a"
-            " block you understand; a step that cannot go on is `dplanner status set <key>"
-            " blocked`, with a note saying why. Record each ruling you make:"
+            " block you understand; a pass going nowhere is `dplanner playbook stop <key>` —"
+            " every run and question of it ends, its worktree stays; a step that cannot go on"
+            " is `dplanner status set <key> blocked`, with a note saying why. Record each"
+            " ruling you make:"
             f" `dplanner note add {project} decision '{said}: <what>' --step <key> --text"
             " '<why>'`.",
         ]

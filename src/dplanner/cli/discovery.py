@@ -24,6 +24,7 @@ from dplanner.cli.command import CliContext, CliError
 from dplanner.cli.lookup import find_project
 from dplanner.core.clock import Clock
 from dplanner.core.module_data import ModuleDataFormat, migrate_module_data
+from dplanner.core.process import RUN_ENV as RUN_ENV  # Names the run a shell belongs to.
 from dplanner.core.storage.locations import (
     canonical_remote,
     find_repo_root,
@@ -41,9 +42,6 @@ from dplanner.domain.store import PROJECT_META, LibraryStore, StaleWorkspaceErro
 # Names the current project for every verb in a shell — what Run Agent's wrapper sets, so
 # an agent's calls are scoped without the briefing saying `--project` on each line.
 PROJECT_ENV = "DPLANNER_PROJECT"
-# Names the run a shell belongs to — its record in the project's ledger, which
-# ``dplanner usage harvest`` reads back into when it is given no ``--run``.
-RUN_ENV = "DPLANNER_RUN"
 # Names the squad member a shell is — ``kettle-actual``, ``kettle-two`` — so the heartbeat of
 # every ``dplanner`` run from it renews that squad's claim alone, and ``claim take`` knows the
 # squad's own shell from another squad's coordinator that picked the same word.

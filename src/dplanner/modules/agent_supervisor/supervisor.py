@@ -52,6 +52,7 @@ between leaves a turn to start, never an answer to consume twice.
 Qt-free: it is a CLI verb, and the run it drives must outlive every window.
 """
 
+import errno
 import json
 import os
 import queue
@@ -124,6 +125,9 @@ LOCK_FILE = "supervisor.lock"
 RECORD_LOCK = "record.lock"
 # How often a live turn renews its squad's claim; the claim itself writes only when due.
 CLAIM_BEAT = 60.0
+# How long a stop waits for a run's supervisor to end its turn: the guards' grace between
+# SIGTERM and SIGKILL, and a little more.
+STOPPING_S = 15.0
 # How long an orphaned turn's killed process is given to disappear.
 ORPHAN_REAP_S = 2.0
 LAUNCHES_DIR = "launches"
@@ -298,39 +302,176 @@ def stop(project_dir: Path, run: str, by: str, why: str, config: Path | None = N
             os.kill(int((directory / LOCK_FILE).read_text(encoding="utf-8")), signal.SIGTERM)
 
 
+def stop_and_wait(
+    project_dir: Path,
+    records: Iterable[LedgerRecord],
+    by: str,
+    why: str,
+    wait: float,
+    config: Path | None = None,
+) -> list[str]:
+    """Stop the runs and wait up to ``wait`` seconds for each to be over: the runs of this
+    machine still stopping, by id. Each is fenced; a supervisor here is signalled and waited
+    for; a run nobody supervises — parked, never started, or a turn that outlived its
+    supervisor — is ended here (:func:`settle_fenced`). A run on another machine is fenced
+    only: that machine's supervisor obeys the fence when the ledger reaches it."""
+    records = list(records)
+    here = ledger.machine_id(config)
+    for record in records:
+        stop(project_dir, record.run, by, why, config)
+    deadline = time.monotonic() + wait
+    still: list[str] = []
+    for record in records:
+        if record.machine != here:
+            continue
+        directory = ledger.run_dir(record.run, config)
+        while supervised(directory) and time.monotonic() < deadline:
+            time.sleep(0.2)
+        if supervised(directory) or not settle_fenced(project_dir, record.run, wait, config):
+            still.append(record.run)
+    return still
+
+
+def settle_fenced(project_dir: Path, run: str, grace: float, config: Path | None = None) -> bool:
+    """End a fenced run of this machine that no supervisor drives — what a supervisor finding
+    the fence does: whatever of it still runs ended first (:func:`end_orphaned_turn`), then
+    the run, its questions withdrawn. A run already over is swept too, for a process its turn
+    left behind. The run's supervisor lock is held throughout, so none starts on it
+    meanwhile. Whether the run is over now, nothing of it running; False while a supervisor
+    holds it, or something of it will not end."""
+    try:
+        with os_lock(ledger.run_dir(run, config) / LOCK_FILE, wait=False):
+            record = ledger.find(project_dir, run)
+            if record is None:
+                return True
+            if record.machine != ledger.machine_id(config):
+                return record.over
+            if not record.over and not record.fence:
+                return False
+            if not end_orphaned_turn(record, grace):
+                return False
+            if not record.over:
+                update(project_dir, run, lambda fresh: fresh.ended_at(now_stamp(), None), config)
+                questions.withdraw_unsettled(project_dir, run, "the run was stopped", config=config)
+            return True
+    except BlockingIOError:
+        return False
+
+
 def end_orphaned_turn(record: LedgerRecord, grace: float) -> bool:
-    """End the run's last turn when its process outlived its supervisor — the turn's whole
-    group, asked with SIGTERM and killed after ``grace`` — and answer whether nothing of it
-    still runs. Only the process the turn recorded counts (pid, boot id and start time, so a
-    reused pid is left alone); a turn that ended, or never started, has nothing to end."""
+    """End whatever of the run still runs with no supervisor to end it — SIGTERM, then
+    SIGKILL after ``grace`` — and answer whether nothing of it is left.
+
+    Found by identity, never by a pid alone: every process whose environment carries the run
+    (``DPLANNER_RUN``, which a turn and everything it starts inherit), and the turn's recorded
+    process group while it is provably the turn's — its leader the very process recorded (pid,
+    boot and start time), or a member carrying the run. So a child that outlived its leader,
+    and a turn whose supervisor died before it wrote its pid down, are ended too. Only Linux
+    lets one process read another's environment; elsewhere the recorded leader alone counts."""
     last = record.last_turn
-    if last is None or last.end or not last.pid:
+    leader = ProcessStamp(last.pid, last.boot, last.pid_started) if last and last.pid else None
+    group = _turn_group(record.run, leader)
+    if not _run_left(record.run, leader, group):
         return True
-    stamp = ProcessStamp(last.pid, last.boot, last.pid_started)
-    if not is_live(stamp):
-        return True
-    if sys.platform == "win32":
-        subprocess.run(
-            ["taskkill", "/T", "/F", "/PID", str(last.pid)], capture_output=True, check=False
-        )
-    else:
-        group = last.pid  # The turn's CLI led its own session: its pid is the group's id.
-        with suppress(ProcessLookupError, PermissionError):
-            os.killpg(group, signal.SIGTERM)
-        deadline = time.monotonic() + grace
-        while _orphans_alive(group) and time.monotonic() < deadline:
-            time.sleep(0.05)
-        if _orphans_alive(group):
-            with suppress(ProcessLookupError, PermissionError):
-                os.killpg(group, signal.SIGKILL)
-    deadline = time.monotonic() + ORPHAN_REAP_S
-    while is_live(stamp) and time.monotonic() < deadline:
+    _end_run(record.run, leader, group, hard=False)
+    deadline = time.monotonic() + grace
+    while _run_left(record.run, leader, group) and time.monotonic() < deadline:
         time.sleep(0.05)
-    return not is_live(stamp)
+    if _run_left(record.run, leader, group):
+        _end_run(record.run, leader, group, hard=True)
+    deadline = time.monotonic() + ORPHAN_REAP_S
+    while _run_left(record.run, leader, group) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    return not _run_left(record.run, leader, group)
 
 
-def _orphans_alive(group: int) -> bool:
-    if sys.platform == "win32":
+def carrying_run(run: str) -> list[ProcessStamp]:
+    """Every process of this machine whose environment names ``run``, as it was when found —
+    never this one nor an ancestor of it, which a stop given from inside the run would
+    otherwise end, the person's own shell with it. Linux only; [] elsewhere, where no process
+    may read another's environment."""
+    if sys.platform != "linux":
+        return []
+    else:
+        lineage = _lineage()
+        found = []
+        for proc in Path("/proc").iterdir():
+            if not proc.name.isdigit() or int(proc.name) in lineage:
+                continue
+            stamp = stamp_of(int(proc.name)) if _carries(int(proc.name), run) else None
+            if stamp is not None:
+                found.append(stamp)
+        return found
+
+
+def _carries(pid: int, run: str) -> bool:
+    try:
+        environ = Path(f"/proc/{pid}/environ").read_bytes()
+    except OSError:  # Gone meanwhile, or somebody else's.
+        return False
+    return f"{RUN_ENV}={run}".encode() in environ.split(b"\0")
+
+
+def _lineage() -> set[int]:
+    """This process and every ancestor of it, by each one's parent in ``/proc/<pid>/stat``."""
+    pids, pid = set(), os.getpid()
+    while pid > 0 and pid not in pids:
+        pids.add(pid)
+        try:
+            stat = Path(f"/proc/{pid}/stat").read_text(encoding="ascii", errors="replace")
+        except OSError:
+            break
+        # The command name is in parentheses and may hold spaces; the parent is the second
+        # field after the closing one.
+        fields = stat.rpartition(")")[2].split()
+        pid = int(fields[1]) if len(fields) > 1 and fields[1].isdigit() else 0
+    return pids
+
+
+def _signal_carrier(found: ProcessStamp, run: str, sig: signal.Signals) -> None:
+    """Signal a process :func:`carrying_run` found only while it is still that process and
+    still carries the run — a pid can be reused between the scan and the signal. Linux holds
+    the process by a pidfd across the check and signals through it, so the signal reaches the
+    process checked or none; without pidfds the stamp is checked just before the kill."""
+    if sys.platform != "linux":
+        return
+    else:
+        try:
+            handle = os.pidfd_open(found.pid)
+        except OSError as error:
+            if error.errno != errno.ENOSYS:
+                return  # Gone already.
+            handle = -1  # A kernel without pidfds.
+        try:
+            if is_live(found) and _carries(found.pid, run):
+                with suppress(ProcessLookupError, PermissionError):
+                    if handle < 0:
+                        os.kill(found.pid, sig)
+                    else:
+                        signal.pidfd_send_signal(handle, sig)
+        finally:
+            if handle >= 0:
+                os.close(handle)
+
+
+def _turn_group(run: str, leader: ProcessStamp | None) -> int:
+    """The turn's process group, when it is provably still the turn's; 0 when not."""
+    if sys.platform == "win32" or leader is None:
+        return 0
+    else:
+        if is_live(leader):
+            return leader.pid
+        for found in carrying_run(run):
+            with suppress(OSError):
+                if os.getpgid(found.pid) == leader.pid:
+                    return leader.pid
+        return 0
+
+
+def _run_left(run: str, leader: ProcessStamp | None, group: int) -> bool:
+    if (leader is not None and is_live(leader)) or carrying_run(run):
+        return True
+    if sys.platform == "win32" or not group:
         return False
     else:
         try:
@@ -340,6 +481,21 @@ def _orphans_alive(group: int) -> bool:
         except PermissionError:
             return True
         return True
+
+
+def _end_run(run: str, leader: ProcessStamp | None, group: int, *, hard: bool) -> None:
+    if sys.platform == "win32":
+        if leader is not None and is_live(leader):
+            subprocess.run(
+                ["taskkill", "/T", "/F", "/PID", str(leader.pid)], capture_output=True, check=False
+            )
+    else:
+        sig = signal.SIGKILL if hard else signal.SIGTERM
+        for found in carrying_run(run):
+            _signal_carrier(found, run, sig)
+        if group:
+            with suppress(ProcessLookupError, PermissionError):
+                os.killpg(group, sig)
 
 
 def update(
@@ -934,6 +1090,8 @@ class Session:
                 self._clock_answers(last.question)
                 continue
             if stop.wait(min(self.guards.wake, left)):
+                if _record(self.project_dir, run).fence:  # Stopped by its fence's SIGTERM.
+                    continue
                 # A shutdown, not a decision: the run stays parked on its limit, and the next
                 # supervisor `revive` starts waits on. Only a fence ends a waiting run.
                 return "", f"run {run} is parked on its limit; its supervisor was stopped"

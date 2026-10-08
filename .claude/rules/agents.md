@@ -94,7 +94,9 @@ paths:
   headless by default (`--terminal` for a terminal) and always claims — `--playbook` starts a
   playbook's pass instead, through the same gate, lock and claim (`playbooks.md`). **A supervisor is
   `sys.executable -m dplanner --library <the launch's>`**, and every turn's environment
-  carries `DPLANNER_LIBRARY`, `DPLANNER_PROJECT` and `DPLANNER_RUN`.
+  carries `DPLANNER_LIBRARY`, `DPLANNER_PROJECT` and `DPLANNER_RUN` — which nothing started
+  detached inherits (`core.process.detached_environment`: `spawn_detached`, a terminal's
+  launch, the window's `dplanner` calls), since a stop ends every process carrying its run.
   `docs/architecture/agents.md`'s *One launch under both surfaces* has the reasoning.
 - **A machine's start settles its headless runs.** `supervisor.revive(project_dirs,
   claimed=, library=)` starts a supervisor for each run of this machine whose last turn has
@@ -363,11 +365,15 @@ paths:
   `start_run`. **Every way a step leaves a squad goes through `ownership.py`**, which fences
   and stops its runs (an end, exactly the steps its locked write held; an ended claim never
   grows); a live turn reads its fence each poll, and a fenced run is over for the next launch
-  only once its turn is gone — one that outlived its supervisor is ended by its recorded
-  stamp (`supervisor.end_orphaned_turn`) by the launch and by `revive`'s supervisor. The
+  only once its turn is gone — what outlived its supervisor is ended by identity, every
+  process carrying the run's `DPLANNER_RUN` and its provable group
+  (`supervisor.end_orphaned_turn`; Linux reads environments, elsewhere the recorded leader)
+  by `revive`'s supervisor and by **the one stopper, `supervisor.stop_and_wait`** (the launch's `stop_fenced`, *Stop Playbook*), which signals a
+  supervisor here, waits for it, and ends a fenced run nobody drives under its supervisor
+  lock (`settle_fenced`) — never another machine's. The
   heartbeat is every agent-shell `dplanner` run (this machine's claims) and a **live** turn's
-  supervisor, never a wait; only a *person's* stopped status releases a step (the `Release`
-  follow-up).
+  supervisor, never a wait; only a *person's* override — a stopped status, a stopped playbook
+  — releases a step (the `Release` follow-up, `ownership.released_by_person`).
   It never absorbs the at-work claim, nor the at-work claim it: two clocks, two jobs.
   **An answer counts only once its run's machine has consumed it.**
   `docs/architecture/agents.md`'s *Runs, questions and claims are three records in the plan*
@@ -444,7 +450,7 @@ paths:
   the account's last-known one (`limits.py`, `config_dir()/usage-limits.json`); with neither,
   the run parks for a person; one already past is waited for once (`past-reset`), never
   twice in a row. **A SIGTERM during the wait leaves the run parked** for `revive`; only a
-  fence ends a waiting run. *Retry now* is a retry only on a `limit` or `blocked` question
+  fence ends a waiting run — `supervisor.stop`'s fence and SIGTERM end it at once. *Retry now* is a retry only on a `limit` or `blocked` question
   (`supervisor.RETRYABLE`) — on any other, the words are the answer. An account is the
   harness and its config home (`limits.account_of`), and every observation carries its
   turn's end: older windows never replace newer, and only a turn answered after the

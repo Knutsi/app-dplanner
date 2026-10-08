@@ -19,6 +19,7 @@ from pathlib import Path
 
 import pytest
 
+from dplanner.cli.discovery import RUN_ENV
 from dplanner.core.process import ProcessStamp, is_live, stamp_of
 
 
@@ -50,20 +51,35 @@ def services(services, monkeypatch):
     return services
 
 
+def group_of(pid: int) -> int:
+    """The process group ``pid`` is in; 0 on Windows, which has none."""
+    if sys.platform == "win32":
+        return 0
+    else:
+        return os.getpgid(pid)
+
+
 @contextmanager
-def orphaned_turn() -> Iterator[ProcessStamp]:
+def orphaned_turn(run: str = "", *, leader_exits: bool = False) -> Iterator[ProcessStamp]:
     """A turn's process that outlived its supervisor: started by a parent that has already
     exited, so — as a real one is — it is nobody's child here and is reaped by the system once
     it ends. Yields its stamp; whatever is left of it is killed afterwards. The caller allows
-    ``sys.executable`` to spawn."""
+    ``sys.executable`` to spawn.
+
+    With ``run`` it carries the run in its environment, as everything a turn starts does.
+    With ``leader_exits`` it is a child the turn's leader started, in the leader's process
+    group, and the leader has gone: the group's id, ``os.getpgid`` of it, is a dead pid."""
     sleeper = "import time; time.sleep(120)"
     starter = (
-        "import subprocess, sys; "
-        f"print(subprocess.Popen([sys.executable, '-c', {sleeper!r}], start_new_session=True, "
-        "stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).pid)"
+        "import os, subprocess, sys; "
+        + ("os.setsid(); " if leader_exits else "")
+        + f"print(subprocess.Popen([sys.executable, '-c', {sleeper!r}], "
+        f"start_new_session={not leader_exits}, stdin=subprocess.DEVNULL, "
+        "stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).pid)"
     )
+    env = {**os.environ, RUN_ENV: run} if run else None
     pid = int(subprocess.run([sys.executable, "-c", starter], capture_output=True, text=True,
-                             check=True).stdout)  # fmt: skip
+                             check=True, env=env).stdout)  # fmt: skip
     stamp = stamp_of(pid)
     assert stamp is not None
     try:

@@ -1832,7 +1832,7 @@ def _aspects(
         SetModuleDataCommand,
     )
     from dplanner.domain.model import TextEdit
-    from dplanner.modules.agent_claims.ownership import released_by_status
+    from dplanner.modules.agent_claims.ownership import released_by_person
     from dplanner.modules.branches.module import LandingModule
     from dplanner.modules.branches.plan import merged_into_its_branch
     from dplanner.modules.docs.module import DocsCompiledModule, DocsDeps, DocsModule
@@ -2089,7 +2089,7 @@ def _aspects(
                 clock=services.clock,
                 workflow=_status_workflow(),
                 end_claim=lambda claim: board.end(claim.project, claim.step),
-                release=lambda f: released_by_status(store.project_dir(f.project), f),
+                release=lambda f: released_by_person(store.project_dir(f.project), f),
                 notices=services.window,
                 flush=services.autosave.saved,
             )
@@ -2831,7 +2831,7 @@ def default_cli_commands(
     from dplanner.modules.agent_at_work import cli as at_work_cli
     from dplanner.modules.agent_briefing.worktree import mainline
     from dplanner.modules.agent_claims import cli as claims_cli
-    from dplanner.modules.agent_claims.ownership import released_by_status as release
+    from dplanner.modules.agent_claims.ownership import released_by_person as release
     from dplanner.modules.agent_launch import cli as launch_cli
     from dplanner.modules.agent_questions import cli as questions_cli
     from dplanner.modules.agent_supervisor import cli as supervisor_cli
@@ -2904,9 +2904,7 @@ def default_cli_commands(
     # Who answers is read like `status set`'s reporter: an agent's shell is the coordinator.
     harnesses = agent_harnesses()
     in_agent_shell: Callable[[], bool] = lambda: bool(shell_marker(harnesses))  # noqa: E731
-
-    def end_claim(claim: "EndClaim") -> bool:
-        return board.end(claim.project, claim.step)
+    end_claim: Callable[[EndClaim], bool] = lambda c: board.end(c.project, c.step)  # noqa: E731
 
     def actor() -> "Actor":
         return AgentRun() if in_agent_shell() else Person()
@@ -3011,7 +3009,9 @@ def default_cli_commands(
         ),
         *milestone_cli.commands(),
         *wait_cli.commands(),
-        *playbook_cli.commands(harnesses=harnesses, advance=engine.advance),
+        *playbook_cli.commands(
+            harnesses=harnesses, advance=engine.advance, end_claim=end_claim, release=release
+        ),
         # A branch's two ends are born dressed as the window's Put on a Branch makes them.
         *branches_cli.commands(
             stacked_apart=stack_split,

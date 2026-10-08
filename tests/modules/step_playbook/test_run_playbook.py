@@ -25,6 +25,7 @@ class FakeLauncher:
     refusal: str = ""
     harnesses: tuple[str, ...] = ("claude", "codex")
     started: list[tuple[str, str]] = field(default_factory=list)
+    stopped: list[str] = field(default_factory=list)
 
     def playbook_refusal(self, _step: Step) -> str:
         return self.refusal
@@ -37,6 +38,9 @@ class FakeLauncher:
 
     def start_playbook(self, step: Step, playbook_id: str) -> None:
         self.started.append((step.id, playbook_id))
+
+    def stop_playbook(self, step: Step) -> None:
+        self.stopped.append(step.id)
 
 
 @dataclass
@@ -159,3 +163,50 @@ def test_the_window_greys_by_run_agents_own_questions(services, steps):
     select(services, steps[0])
     listed, _menu = entries(services)
     assert all(not on and "mark the step as an agent step first" in label for label, on in listed)
+
+
+# -- Stop Playbook ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def stopping(services, fakes, monkeypatch):
+    """The module told what each step's pass has left to stop, and its confirmation recorded."""
+    from dplanner.modules.step_playbook import module as playbook_module
+
+    running: dict[str, str] = {}
+    monkeypatch.setattr(playbook_module, "stoppable", lambda _dir, step: running.get(step.id, ""))
+    asked: list[str] = []
+    answer = [True]
+
+    def confirm(_parent, title, question, **_kw) -> bool:
+        asked.append(f"{title}: {question}")
+        return answer[0]
+
+    monkeypatch.setattr(playbook_module, "confirm", confirm)
+    return running, asked, answer
+
+
+def test_stop_playbook_is_greyed_with_its_reason_when_nothing_runs(services, steps, stopping):
+    select(services, steps[0])
+    state = services.actions.spec("playbook.stop").state(services.context.current())
+    assert not state.enabled and state.label.endswith("no playbook pass runs or waits on it")
+    select(services, *steps)
+    state = services.actions.spec("playbook.stop").state(services.context.current())
+    assert not state.enabled and state.label.endswith(ONE_AT_A_TIME)
+
+
+def test_stop_playbook_names_what_runs_and_stops_only_once_confirmed(
+    services, steps, fakes, stopping
+):
+    launcher, _readings = fakes
+    running, asked, answer = stopping
+    step = steps[0]
+    running[step.id] = "pass P: run R is running"
+    select(services, step)
+    assert services.actions.spec("playbook.stop").state(services.context.current()).enabled
+    answer[0] = False
+    services.actions.run("playbook.stop", services.context.current())
+    assert launcher.stopped == [] and "run R is running" in asked[0]
+    answer[0] = True
+    services.actions.run("playbook.stop", services.context.current())
+    assert launcher.stopped == [step.id]

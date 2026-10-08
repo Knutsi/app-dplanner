@@ -36,7 +36,9 @@ from dplanner.modules.agent_supervisor.supervisor import (
 
 FAKE = Path(__file__).parent / "fake_agent.py"
 TURNS = Path(__file__).parent.parent.parent / "fixtures" / "agent_turns"
-RUN = "20261007T101500Z-9c1e44ab"
+# Minted per worker: a stop ends every process whose environment names its run, so two
+# workers driving one run id would end each other's fake agents.
+RUN = ledger.new_run_id(datetime(2026, 10, 7, 10, 15, tzinfo=UTC))
 GUARDS = Guards(
     wall={"plan": 20.0, "execute": 20.0, "review": 20.0},
     runaway=200,
@@ -1088,6 +1090,24 @@ def test_a_shutdown_while_waiting_leaves_the_run_parked_for_revive(rig, monkeypa
     retrying = retry_soon(rig)  # The revived supervisor waits again, and goes on.
     assert rig.supervise() == f"run {RUN} is done"
     retrying.join()
+
+
+def test_a_stop_while_waiting_for_a_reset_ends_the_run(rig):
+    """The fence and then its SIGTERM — ``supervisor.stop`` — end a waiting run at once, where
+    a SIGTERM alone leaves it parked for ``revive``."""
+    rig.play({"lines": limit_at(time.time() + 3600), "exit": 1})
+
+    def stop() -> None:
+        while not rig.record.parked:
+            time.sleep(0.02)
+        time.sleep(0.2)  # Into the wait.
+        supervisor.stop(rig.plan, RUN, "knut", "the playbook was stopped", rig.config)
+
+    stopping = threading.Thread(target=stop)
+    stopping.start()
+    assert rig.supervise() == f"run {RUN} was fenced"
+    stopping.join()
+    assert rig.record.over
 
 
 def test_a_reset_crossed_during_cleanup_resumes_once_and_never_loops(rig, tmp_path):

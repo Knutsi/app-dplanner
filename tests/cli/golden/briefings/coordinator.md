@@ -61,7 +61,7 @@ Work the selection until every step is done, blocked, or waiting on a person. Ea
 7. **Verify and merge.** When a step reads ready-for-review and no `progress` stage merged it: read the diff, and check its PR goes from the step's branch into the base listed above — never the mainline, which a person merges. GitHub reads `mergeable` as UNKNOWN for a few seconds after any push or merge: poll `gh pr view <n> --json mergeable` until it settles, since UNKNOWN is not a conflict; then `gh pr merge <n> --merge`. Run the project's checks on the integrated branch in your own worktree (`kettle-actual/verify`), in the foreground under a timeout — the ratchet tests first (an architecture or rule-size ceiling): two PRs that each fit a ceiling can exceed it together. Rerun a lone failure alone before you believe it.
 8. **Release.** `dplanner github refresh <key>` lets the merge accept the step; then `dplanner claim release <key> --why merged`, and back to 1 — what it unblocked may be ready now.
 
-A run parked on a limit is its supervisor's; `dplanner agent retry <key>` is for a block you understand; a step that cannot go on is `dplanner status set <key> blocked`, with a note saying why. Record each ruling you make: `dplanner note add Widget decision 'Kettle Actual: <what>' --step <key> --text '<why>'`.
+A run parked on a limit is its supervisor's; `dplanner agent retry <key>` is for a block you understand; a pass going nowhere is `dplanner playbook stop <key>` — every run and question of it ends, its worktree stays; a step that cannot go on is `dplanner status set <key> blocked`, with a note saying why. Record each ruling you make: `dplanner note add Widget decision 'Kettle Actual: <what>' --step <key> --text '<why>'`.
 
 ## When you are done
 

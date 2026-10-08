@@ -1121,6 +1121,10 @@ rendering PDF pages from the CLI.
 `spawn_detached()` and `detached_flags()`: start a process the user owns — an agent's terminal,
 a second window — so that closing the application never takes it down; `start_new_session` on
 POSIX, creation flags on Windows. One place, where there had been several.
+`detached_environment()` drops the run marker (`RUN_ENV`, `DPLANNER_RUN`) from what a detached
+process inherits: DPlanner ends a run by finding every process that carries it, and a detached
+start is never part of its starter's run. The name lives here so that `spawn_detached` can
+apply it to every caller. `cli/discovery.py` re-exports it.
 
 `ProcessStamp`, `stamp_of()`, `is_live()` and `process_alive()`: whether a recorded process is
 *still that process* — its pid, the machine's boot id and the process's start time, all three
@@ -1129,7 +1133,8 @@ stranger as its own process running. `process_alive` (pid only) moved here from
 `step_agent_run/runs.py` so there is one per-platform probe.
 
 **Upstream?** yes — any desktop application that opens a second window of itself; the stamp
-for any application that records a process it must find again after a restart.
+for any application that records a process it must find again after a restart. The run marker
+does not belong upstream. It is DPlanner's own.
 
 ## `core/repository.py`
 

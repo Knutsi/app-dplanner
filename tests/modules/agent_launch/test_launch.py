@@ -199,7 +199,7 @@ def test_a_machine_picks_up_its_lost_turns_and_nothing_else(tmp_path, started):
 def test_a_supervisor_is_this_build_never_whatever_is_on_path(tmp_path, monkeypatch):
     """A run launched from a branch's build is supervised by that build."""
     argv: list[list[str]] = []
-    monkeypatch.setattr(supervisor, "spawn_detached", lambda command: argv.append(command))
+    monkeypatch.setattr(supervisor, "spawn_detached", lambda command, **_k: argv.append(command))
     supervisor.start_detached(tmp_path, "r1", prompt="answer", text="Keep both")
     assert argv == [
         [sys.executable, "-m", "dplanner", "agent", "supervise", "r1", "--project-dir",
@@ -344,7 +344,7 @@ def test_the_supervisor_is_started_on_the_library_of_its_launch(
     cli, plan, monkeypatch, cli_library
 ):
     argv: list[list[str]] = []
-    monkeypatch.setattr(supervisor, "spawn_detached", lambda command: argv.append(command))
+    monkeypatch.setattr(supervisor, "spawn_detached", lambda command, **_k: argv.append(command))
     cli("agent", "run", "Build it")
     ((command,),) = [argv]
     assert command[command.index("--library") + 1] == str(cli_library)
@@ -728,10 +728,27 @@ def test_a_fenced_run_still_live_here_is_stopped_before_the_step_launches(plan, 
 
     monkeypatch.setattr(supervisor, "stop", stop)
     assert launch.stop_fenced(plan, "s1", wait=2) == "" and signalled == [run]
-    live.add(run)
+    stopped = ledger.find(plan, run)
+    assert stopped is not None and stopped.over  # Its supervisor gone, the run is ended.
+    stuck = "20261007T101500Z-0000dddd"
+    ledger.write(plan, _headless(stuck, Turn(n=1, prompt="launch", started="…")))
+    supervisor.fence(plan, stuck, "kettle", "taken over")
+    live.add(stuck)
     monkeypatch.setattr(supervisor, "stop", lambda *_a, **_k: None)  # One that will not end.
     assert "still stopping" in launch.stop_fenced(plan, "s1", wait=0.3)
     assert launch.unfinished_run(plan, "s1") == ""  # Fenced: over, as far as a launch cares.
+
+
+def test_a_fenced_run_on_another_machine_is_left_to_that_machine(plan):
+    from dplanner.modules.agent_launch import launch
+
+    run = "20261007T101500Z-0000ffff"
+    parked = Turn(n=1, prompt="launch", started="…", ended="…", end="asked")
+    ledger.write(plan, _headless(run, parked, machine="elsewhere"))
+    supervisor.fence(plan, run, "kettle", "taken over")
+    assert launch.stop_fenced(plan, "s1", wait=0.1) == ""
+    record = ledger.find(plan, run)
+    assert record is not None and not record.over  # Its own supervisor ends it there.
 
 
 def _step_id(cli) -> str:

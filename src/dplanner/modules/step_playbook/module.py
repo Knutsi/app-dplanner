@@ -1,5 +1,6 @@
 """The playbook aspect, in the running application: a Details block, a project tab,
-*Step ▸ Run Playbook*, and where each step's pass stands for the card's strip.
+*Step ▸ Run Playbook* and *Stop Playbook*, and where each step's pass stands for the card's
+strip.
 
 A step's block picks its playbook and the overrides a choice of its own may carry; the
 project's tab, under *Project ▸ Settings…*, picks what a step that never chose runs.
@@ -12,6 +13,10 @@ probed on the GUI thread). Starting one is the launch module's, handed in by the
 (:class:`PlaybookLauncher`): a pass starts only as ``dplanner agent run --playbook``. It is
 one step at a time — a selection is what *Autonomous work* runs — and a *Remote ▸* entry is
 for when workers exist.
+
+**Stop Playbook stops the step's pass whatever it is doing**, after a confirmation naming what
+runs, by running ``dplanner playbook stop`` — the launch module runs it, as it runs Run
+Playbook's verb. It is greyed with the reason when nothing of a pass is left to stop.
 
 **Where a pass stands is polled** (:class:`PassStandings`). Its runs and questions are
 written by other processes — a supervisor, an advance, an answer — and nothing watches their
@@ -49,8 +54,9 @@ from dplanner.framework.step_selection import chosen_steps
 from dplanner.framework.task_runner import TaskRunner
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.undo import UndoService
+from dplanner.framework.widgets import confirm
 from dplanner.modules.step_playbook.aspect import DATA_FORMAT, MODULE_ID, SPEC, read, resolve
-from dplanner.modules.step_playbook.engine import standings
+from dplanner.modules.step_playbook.engine import standings, stoppable
 from dplanner.modules.step_playbook.passes import Standing, agents_of, describe, pinned
 from dplanner.modules.step_playbook.presets import PRESETS, Playbook
 from dplanner.modules.step_playbook.project_section import ProjectPlaybookSection
@@ -61,6 +67,7 @@ from dplanner.theme.icons import playbook_icon
 RUN_MENU_ID = f"{MODULE_ID}.run_with"
 RUN_MENU_TITLE = "Run Playbook"
 ONE_AT_A_TIME = "one step at a time — Autonomous work runs a selection"
+STOP_TITLE = "Stop Playbook"
 # Where the step's playbook was chosen, as its entry in the child menu says.
 SOURCE_WORDS = {"step": "this step's", "project": "project default", "landing": "landing default"}
 POLL_MS = 2000
@@ -95,6 +102,11 @@ class PassStandings:
         tooltip — or ("", "", "") for a step with no pass shown."""
         stands = self._held.get(project_id, {}).get(step_id)
         return ("", "", "") if stands is None else (stands.phrase, stands.tone, describe(stands))
+
+    def stoppable(self, step: Step) -> str:
+        """What stopping the step's pass would end, or "" — Stop Playbook's reading, made
+        afresh from the records rather than the strip's last poll."""
+        return stoppable(self._project_dir(self._library.project_of(step.id).id), step)
 
     def refresh(self) -> None:
         """Re-read each project whose records moved — every project once a minute — and say
@@ -132,6 +144,10 @@ class PlaybookLauncher(Protocol):
 
     def start_playbook(self, step: Step, playbook_id: str) -> None:
         """Start a pass, saying how it went."""
+        ...
+
+    def stop_playbook(self, step: Step) -> None:
+        """Stop the step's pass, saying how it went."""
         ...
 
 
@@ -231,6 +247,19 @@ class StepPlaybookModule:
                 fill=self._fill,
             )
         )
+        deps.actions.register(
+            ActionSpec(
+                id="playbook.stop",
+                label="Stop Playboo&k",
+                menu="Step",
+                group="agent",
+                order=16,  # Right after Run Playbook's child menu.
+                tip="Stop the step's playbook pass, whatever it is doing; nothing of it starts"
+                " again by itself",
+                state=self._can_stop,
+                run=self._stop,
+            )
+        )
         # Whether each agent is usable is read, never probed, when a menu asks; the probes
         # run on a task whenever the reading has gone stale and the person moves on.
         deps.context.changed.connect(lambda _context: self._refresh())
@@ -283,6 +312,33 @@ class StepPlaybookModule:
         step = self._step(context)
         if isinstance(step, Step) and (playbook := self._own(step)[0]) is not None:
             self._deps.launcher.start_playbook(step, playbook.id)
+
+    # -- Stop Playbook -------------------------------------------------------------------------
+
+    def _can_stop(self, context: Context) -> ActionState:
+        step = self._step(context)
+        if step is None:
+            return DISABLED
+        if isinstance(step, str):
+            return ActionState(enabled=False, label=f"{STOP_TITLE} — {step}")
+        if not self._deps.standings.stoppable(step):
+            return ActionState(
+                enabled=False, label=f"{STOP_TITLE} — no playbook pass runs or waits on it"
+            )
+        return ENABLED
+
+    def _stop(self, context: Context) -> None:
+        deps = self._deps
+        step = self._step(context)
+        if not isinstance(step, Step) or not (running := self._deps.standings.stoppable(step)):
+            return
+        question = (
+            f"Stop the playbook on “{step.title}”? {running[0].upper()}{running[1:]}. Nothing"
+            " of the pass will start again by itself; a step in progress goes back to pending,"
+            " and its worktree and branch are kept."
+        )
+        if confirm(deps.parent, STOP_TITLE, question, verb="Stop"):
+            deps.launcher.stop_playbook(step)
 
     def _fill(self, menu: QMenu) -> None:
         """Every preset over the chosen step, its own first and marked, each greyed with its

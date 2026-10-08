@@ -23,14 +23,13 @@ A launch interrupted between its record and its start is reconciled by
 """
 
 import subprocess
-import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
 from pathlib import Path
 
 from dplanner.cli.main import PROG
-from dplanner.core.process import detached_flags
+from dplanner.core.process import detached_environment, detached_flags
 from dplanner.domain import claims, ledger
 from dplanner.domain.agents import AgentHarness
 from dplanner.domain.headless import StageKind
@@ -159,17 +158,11 @@ def unfinished_run(project_dir: Path | None, step_id: str, *, of_passes: bool = 
     )
 
 
-# How long ``agent run`` waits for a fenced run's supervisor to end its turn: the guards'
-# grace between SIGTERM and SIGKILL, and a little more.
-STOPPING_S = 15.0
-
-
 def stop_fenced(project_dir: Path | None, step_id: str, wait: float = 0.0) -> str:
     """Stop what is left of every fenced, unfinished run of the step on this machine — "", or
-    why the step cannot launch yet. A run whose supervisor lives is signalled and waited for
-    up to ``wait`` seconds; a turn that outlived its supervisor has its process group ended
-    (SIGTERM, ``wait`` as the grace, then SIGKILL). Only then does the fenced run count as over
-    for :func:`unfinished_run`. A fence on a run elsewhere is that machine's to obey."""
+    why the step cannot launch yet (``supervisor.stop_and_wait``, ``wait`` seconds). Only
+    then does the fenced run count as over for :func:`unfinished_run`. A fence on a run
+    elsewhere is that machine's to obey."""
     if project_dir is None:
         return ""
     fenced = [
@@ -177,27 +170,12 @@ def stop_fenced(project_dir: Path | None, step_id: str, wait: float = 0.0) -> st
         for record in ledger.records(project_dir)
         if record.step == step_id and record.headless and record.fence and not record.over
     ]
-    supervised = [r for r in fenced if supervisor.supervised(ledger.run_dir(r.run))]
-    for record in supervised:
-        supervisor.stop(project_dir, record.run, "launch", "a new owner launches the step")
-    orphaned = [
-        record.run
-        for record in fenced
-        if record not in supervised and not supervisor.end_orphaned_turn(record, wait)
-    ]
-    deadline = time.monotonic() + wait
-    still = orphaned + [r.run for r in supervised if _still_supervised(r.run, deadline)]
+    still = supervisor.stop_and_wait(
+        project_dir, fenced, "launch", "a new owner launches the step", wait
+    )
     if still:
         return f"its fenced run {still[0]} is still stopping — run it again in a moment"
     return ""
-
-
-def _still_supervised(run: str, deadline: float) -> bool:
-    while supervisor.supervised(ledger.run_dir(run)):
-        if time.monotonic() >= deadline:
-            return True
-        time.sleep(0.2)
-    return False
 
 
 def held_claim(project_dir: Path | None, step_id: str) -> tuple[str, str]:
@@ -505,6 +483,7 @@ def run_dplanner(argv: Sequence[str]) -> tuple[int, str]:
             text=True,
             timeout=START_TIMEOUT_S,
             check=False,
+            env=detached_environment(),
             start_new_session=True,
             creationflags=detached_flags(),
         )

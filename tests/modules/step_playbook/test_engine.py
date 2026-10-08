@@ -98,7 +98,7 @@ class Driver:
 def advanced(monkeypatch):
     """Every detached `playbook advance` the supervisor or an answer would have started."""
     told: list[str] = []
-    monkeypatch.setattr(supervisor, "spawn_detached", lambda argv: told.append(argv[-1]))
+    monkeypatch.setattr(supervisor, "spawn_detached", lambda argv, **_k: told.append(argv[-1]))
     return told
 
 

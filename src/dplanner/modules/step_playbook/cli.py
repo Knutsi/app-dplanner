@@ -6,8 +6,10 @@ a step's choice — or, with no step, the project's default and landing default.
 runs anything: a playbook is a choice until ``agent run --playbook`` starts a pass.
 ``advance`` moves a pass on — what a finished stage and an answered gate start on their own,
 and what a person may run to see a pass take its next step; it acts once however often it runs.
+``stop`` ends a pass in whatever state it is in — Step ▸ Stop Playbook runs it as a process.
 """
 
+import getpass
 from argparse import ArgumentParser, Namespace
 from collections.abc import Callable
 from dataclasses import replace
@@ -21,6 +23,7 @@ from dplanner.domain.agents import AgentHarness
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.library_file import resolve_library_path
 from dplanner.domain.model import Step
+from dplanner.domain.workflow import EndClaim, Release
 from dplanner.modules.step_playbook.aspect import (
     MODULE_ID,
     Choice,
@@ -30,9 +33,12 @@ from dplanner.modules.step_playbook.aspect import (
     write,
     write_project,
 )
-from dplanner.modules.step_playbook.engine import standing_of, wake
+from dplanner.modules.step_playbook.engine import halted_pass, standing_of, stop, wake
 from dplanner.modules.step_playbook.passes import describe
 from dplanner.modules.step_playbook.presets import MAX_ROUNDS, PRESETS, ROUNDS, Playbook, preset
+from dplanner.modules.step_playbook.workflows import stopped
+from dplanner.modules.step_status.workflows import perform
+from dplanner.planning.status import stored, word
 
 DEFAULT = "default"  # `set <step> default`: the step goes back to the project's choice.
 NONE = "none"  # `set --project-default none`: steps that never chose get Run Agent.
@@ -45,12 +51,81 @@ _SOURCES = {
 
 
 def commands(
-    *, harnesses: tuple[AgentHarness, ...], advance: Callable[[CliContext, Step], str]
+    *,
+    harnesses: tuple[AgentHarness, ...],
+    advance: Callable[[CliContext, Step], str],
+    end_claim: Callable[[EndClaim], bool],
+    release: Callable[[Path, Release], bool],
 ) -> list[CliCommand]:
     def _advance(context: CliContext, args: Namespace) -> int:
         step = find_step(context.library, args.step, context.current)
         said = advance(context, step)
         context.report({"step": step.id, "said": said}, said)
+        return 0
+
+    def _stop(context: CliContext, args: Namespace) -> int:
+        """The pass stopped first, then the plan — and the plan only once nothing of the pass
+        runs: the other order would let a stage that ends in between launch the next one, or
+        say nobody works a step a surviving process still works. A stop whose change to the
+        plan did not land, or a pass something else halted, is finished by the next. Nothing to
+        stop is said, and is no error."""
+        step = find_step(context.library, args.step, context.current)
+        project = context.library.project_of(step.id).id
+        project_dir = context.store.project_dir(project)
+        done = stop(project_dir, project, step, getpass.getuser())
+        if done is not None and done.still:
+            raise CliError(f"{step.title}: {done.said()} — its status is left as it was")
+        # The plan as it stands now, not as it was read before the step's lock came free: a
+        # launch that held it may have claimed the step meanwhile.
+        adopted = context.store.adopt_outside_changes()
+        if adopted.deferred or adopted.rebuild_required:
+            raise CliError(f"{step.title}: the plan was being written meanwhile — run it again")
+        step = context.library.step(step.id)
+        pass_id = done.pass_ if done is not None else halted_pass(project_dir, step)
+        nothing = f"{step.title}: nothing to stop — no playbook pass runs or waits on it"
+        if not pass_id:
+            context.report({"step": step.id, "stopped": False}, nothing)
+            return 0
+        change = stopped(context.library, step, today=context.clock.today())
+        if change.command is not None:
+            context.apply(change.command)
+
+        def settle() -> None:
+            performed = perform(
+                change.follow_ups,
+                end_claim,
+                lambda follow_up: release(context.store.project_dir(follow_up.project), follow_up),
+            )
+            if (
+                done is None
+                and change.command is None
+                and not (performed.ended or performed.failed)
+            ):
+                context.report({"step": step.id, "stopped": False}, nothing)
+                return
+            released = any(isinstance(each, Release) for each in performed.ended)
+            now = word(stored(context.library.step(step.id)))
+            data = {
+                "step": step.id,
+                "stopped": True,
+                "pass": pass_id,
+                "runs": list(done.runs) if done is not None else [],
+                "questions": list(done.questions) if done is not None else [],
+                "status": now,
+                "released": released,
+            }
+            said = done.said() if done is not None else f"finished stopping pass {pass_id}"
+            tail = (f"; it reads {now}" if change.command is not None else "") + (
+                "; released from its squad's claim" if released else ""
+            )
+            context.report(data, f"{step.title}: {said}{tail} — its worktree and branch are kept")
+            if performed.failed:
+                raise CliError(
+                    "; ".join(f"{type(each).__name__}: {why}" for each, why in performed.failed)
+                    + " — `dplanner playbook stop` again finishes it"
+                )
+
+        context.after_flush.append(settle)
         return 0
 
     def _configure_set(parser: ArgumentParser) -> None:
@@ -114,6 +189,15 @@ def commands(
             run=_wake,
             needs_library=False,
             examples=("dplanner playbook wake Q-e1f2 --project-dir ~/plans/widget",),
+        ),
+        CliCommand(
+            path=("playbook", "stop"),
+            summary="Stop a step's playbook pass whatever it is doing — a live turn, a parked or"
+            " held run, a stage between turns — so nothing of it starts again; a step in"
+            " progress goes back to pending. Its worktree and branch are kept.",
+            configure=step_arg,
+            run=_stop,
+            examples=("dplanner playbook stop S7",),
         ),
         CliCommand(
             path=("playbook", "advance"),

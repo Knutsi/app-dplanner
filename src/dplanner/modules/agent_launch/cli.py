@@ -41,7 +41,6 @@ from dplanner.modules.agent_briefing.worktree import WorktreeError, mainline, ru
 from dplanner.modules.agent_launch import launcher
 from dplanner.modules.agent_launch.launch import (
     HEADLESS,
-    STOPPING_S,
     TERMINAL,
     Briefed,
     Prepared,
@@ -308,7 +307,7 @@ def commands(
             claim = claim_for(project_dir, step.id, args.callsign)
         except ValueError as error:
             raise CliError(f"{step.title!r}: {error}") from None
-        if stopping := stop_fenced(project_dir, step.id, wait=STOPPING_S):
+        if stopping := stop_fenced(project_dir, step.id, wait=supervisor.STOPPING_S):
             raise CliError(f"{step.title!r}: {stopping}")
         if live := unfinished_run(project_dir, step.id, of_passes=begin is None):
             raise CliError(
