@@ -1155,6 +1155,40 @@ Gate, round-cap and escalation questions say which they are in `purpose`, and ca
 for the reason runs do. An open question never times out into an approval; it is the one
 thing in this design that waits, and it waits in a file.
 
+### The inbox is cards on top of the Control Centre
+
+The rule is `.claude/rules/agents.md`'s *One question door* (its last sentences).
+
+A person looks at the Control Centre to see what needs them, so that is where a question
+goes: **a card per open or escalated question, above the board**, counted with the board's
+rows in the tab's title. A headless run parked on a question sets no agent state, so its step
+is not under *Waits for you* — the card is the only place it shows, and a plain sum of cards
+and rows double-counts almost nothing. A card says who asks (callsign and harness), about
+which step, the kind, the question, and the ways to answer: a button per choice, a person's
+own words on the same line, *Retry Now* where a retry is an answer (`supervisor.RETRYABLE`:
+a usage hold or a block), and *Go to Step*. A usage hold's words are the card's own, worded
+from `resets` as it is read: the time the supervisor wrote is stale by the next morning.
+
+**The questions module owns the card; the board only hosts it.** `agent_questions/` gained a
+`module.py` that registers nothing and hands out `create_cards`, the Control Centre takes it
+as a factory typed by a protocol it owns (`QuestionLane`), and the root wires the answer as
+`inbox.answer` with the person as `by` — so the card and `question answer` are one function
+and `status_board` learns nothing about questions. Putting the cards in `status_board` was
+fewer files, but then the board would know kinds, resets, harnesses and the inbox.
+
+**It polls, and reconciles.** Nothing watches `questions/`; supervisors, agents and git pulls
+write it. The lane compares each project's `questions.fingerprint` every two seconds and
+re-reads only what changed, then keeps every card whose facts are the same and builds only
+the new ones: a rebuild per poll would take a half-typed answer with it.
+
+**Oldest first, and gone when settled.** The question that has waited longest leads. An
+answered one leaves the lane at once — it waits in its file for its run's machine, and the
+status bar says so in `inbox.answer`'s own words. With no card the lane is hidden rather
+than saying *no questions*, since the board under it already says what needs nobody. The lane
+is as tall as its cards up to about two, then scrolls: the board keeps the rest of the page.
+A splitter between them was tried and dropped — two framed wells either side of a seam drew
+three lines where one belongs, and a lane that fits its cards needs no dragging.
+
 ### A claim is a lease in git, and at-work stays beside it
 
 Knut's brief: what work is taken by which agent is project-level data, in git, with when and

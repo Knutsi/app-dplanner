@@ -66,6 +66,7 @@ if TYPE_CHECKING:
     from dplanner.modules.agent_at_work.module import AgentAtWorkModule
     from dplanner.modules.agent_claims.module import AgentClaimsModule
     from dplanner.modules.agent_launch.module import AgentLaunchModule
+    from dplanner.modules.agent_questions.module import AgentQuestionsModule
     from dplanner.modules.agent_usage.module import AgentUsageModule
     from dplanner.modules.branches.module import BranchesModule
     from dplanner.modules.canvas.clipboard.clip import PastePolicy
@@ -137,9 +138,9 @@ def default_modules(
         board = at_work_board()
     branches = _branches(root)
     agents = _agents(root, branches=branches, settings=settings, board=board)
-    graph = _graph(root, branches=branches, launch=agents.launch, claims=agents.claims)
+    graph = _graph(root, branches=branches, agents=agents)
     knowledge = _knowledge(root, editor=graph.editor)
-    tabs = _project_tabs(root, claims=agents.claims)
+    tabs = _project_tabs(root, agents)
     return [
         *_shell(root, agents),
         *_assistants(root, settings),
@@ -167,6 +168,7 @@ def default_modules(
         graph.editor,
         tabs.step_order,
         agents.usage,
+        agents.questions,
         tabs.progression,
         tabs.time,
         # After every module whose report_source it renders; before Settings, whose dialog
@@ -497,6 +499,7 @@ class _Agents(NamedTuple):
     instruction: "StepAgentInstructionModule"
     launch: "AgentLaunchModule"
     usage: "AgentUsageModule"
+    questions: "AgentQuestionsModule"
 
 
 def _agents(
@@ -521,6 +524,7 @@ def _agents(
     from dplanner.modules.agent_launch.launch import read_absolute
     from dplanner.modules.agent_launch.module import AgentLaunchDeps, AgentLaunchModule
     from dplanner.modules.agent_questions import inbox
+    from dplanner.modules.agent_questions.module import AgentQuestionsDeps, AgentQuestionsModule
     from dplanner.modules.agent_usage.aspect import ledger_dir, step_usage_words
     from dplanner.modules.agent_usage.module import AgentUsageDeps, AgentUsageModule
     from dplanner.modules.branches.plan import branch_plan
@@ -551,13 +555,16 @@ def _agents(
         nothing ends before the build is up."""
         usage.sweep()
 
+    # Whoever answers in the window is the person at it.
+    person = {"kind": "person", "name": getuser()}
+
     def retry_now(step_id: str) -> str:
         """Step ▸ Retry Now: the step's parked run answered ``Retry now`` by the person here."""
         project_dir = ledger_of(step_id)
         run = inbox.parked_run(project_dir, step_id) if project_dir is not None else ""
         if project_dir is None or not run:
             raise ValueError("no headless run is parked on this step")
-        return inbox.retry_now(project_dir, run, {"kind": "person", "name": getuser()}).said
+        return inbox.retry_now(project_dir, run, person).said
 
     # Every launch is handed here, and this is the one place that keeps an eye on the shell
     # afterwards.
@@ -615,15 +622,8 @@ def _agents(
         )
     )
 
-    # Who holds which step, polled from each project's claims/: the canvas and the boards
-    # read it, and re-read when it says a project moved.
     claims = AgentClaimsModule(
-        AgentClaimsDeps(
-            library=library,
-            project_dir=store.project_dir,
-            actions=services.actions,
-            parent=services.window,
-        )
+        AgentClaimsDeps(library, store.project_dir, services.actions, parent=services.window)
     )
 
     # A repository on this machine for a verb that needs one, cloned where the clone
@@ -709,7 +709,23 @@ def _agents(
             pick_assets=root.pick_assets,
         )
     )
-    return _Agents(runs, at_work, claims, checkouts, instruction, launch, usage)
+    # The question cards the Control Centre hosts: a person answering in the window, through
+    # the same inbox `question answer` uses, so the two cannot drift.
+    questions = AgentQuestionsModule(
+        AgentQuestionsDeps(
+            library=library,
+            status=services.window,
+            project_dir=lambda project_id: ledger_dir(store, project_id),
+            answer=lambda project_dir, question_id, given: (
+                inbox.answer(project_dir, question_id, given, person).said
+            ),
+            retry_now=lambda project_dir, run: inbox.retry_now(project_dir, run, person).said,
+            reveal=reveal_step,
+            harnesses=agent_harnesses(),
+            key_of=key_of,
+        )
+    )
+    return _Agents(runs, at_work, claims, checkouts, instruction, launch, usage, questions)
 
 
 class _Graph(NamedTuple):
@@ -717,13 +733,7 @@ class _Graph(NamedTuple):
     editor: "CanvasModule"
 
 
-def _graph(
-    root: _Root,
-    *,
-    branches: "BranchesModule",
-    launch: "AgentLaunchModule",
-    claims: "AgentClaimsModule",
-) -> _Graph:
+def _graph(root: _Root, *, branches: "BranchesModule", agents: _Agents) -> _Graph:
     """The graph editor, the Problems panel it stands beside the canvas, and the canvas's
     reading of every aspect a card or an arrow wears."""
     from dplanner.framework.side_panel import SidePanel
@@ -772,7 +782,7 @@ def _graph(
                 # Finished work waits on a person: to review it, or to merge it.
                 pulse=status_for(step) in REVIEW_AND_MERGE,
                 strip=strips.get(step.id, ("", "")),
-                squad=claims.chip(project_id, step.id),
+                squad=agents.claims.chip(project_id, step.id),
             )
             for step in project.steps
         }
@@ -812,8 +822,7 @@ def _graph(
         beyond its title and its key — every aspect it wears is one of these, never a
         phrase — but for the one name a person has to read: the feature branch its work goes
         onto, in a strip under the body (``strip`` is the branch and its lane colour,
-        ``plan.strips``). The squad whose claim holds the step is a still chip on the
-        bottom edge's other end, amber once its claim is abandoned (``squad``).
+        ``plan.strips``).
         """
         refs = github_read(step)
 
@@ -885,8 +894,8 @@ def _graph(
             facts_of=root.facts_of,
             key_of=key_of,
             # Handing the problems to an agent is Run Agent's.
-            fix_profiles=launch.plan_profiles,
-            fix=lambda project_id, findings, profile: launch.fix_problems(
+            fix_profiles=agents.launch.plan_profiles,
+            fix=lambda project_id, findings, profile: agents.launch.fix_problems(
                 project_id,
                 [(row.check, row.subject, row.message) for row in findings],
                 profile,
@@ -909,7 +918,7 @@ def _graph(
             file_modules=tuple(source.id for source in root.asset_sources),
             paste_policies=_paste_policies(),
             step_accents=step_accents,
-            accents_changed=(problems.findings.flagged_changed, claims.changed),
+            accents_changed=(problems.findings.flagged_changed, agents.claims.changed),
             edge_accents=edge_accents,
             # The cards that wear a branch strip, from the same reading their accents are.
             strips=lambda project_id: frozenset(
@@ -1119,7 +1128,7 @@ class _Tabs(NamedTuple):
     step_order: "StepOrderModule"
 
 
-def _project_tabs(root: _Root, *, claims: "AgentClaimsModule") -> _Tabs:
+def _project_tabs(root: _Root, agents: _Agents) -> _Tabs:
     """The tabs a project's index rows open — each built ahead of the list because the
     projects index opens it — and the Time tab's simulator, over a world of its own."""
     from dplanner.core.storage.locations import find_repo_root, origin_url
@@ -1189,9 +1198,8 @@ def _project_tabs(root: _Root, *, claims: "AgentClaimsModule") -> _Tabs:
             counts_as_work=_counts_as_work,
             # An agent that waits on a person is a row of its own: Waits for you.
             asks_person=asks_person,
-            # The squad holding a step, from the claims the canvas reads too.
-            held_by=lambda step: claims.held_by(library.project_of(step.id).id, step.id),
-            held_changed=claims.changed,
+            held_by=lambda step: agents.claims.held_by(library.project_of(step.id).id, step.id),
+            held_changed=agents.claims.changed,
             verbs=(
                 StripVerb("agent.run", data_menu=RUN_MENU_ID, face="Run Agents"),
                 StripVerb("status.ready-to-merge"),
@@ -1204,6 +1212,8 @@ def _project_tabs(root: _Root, *, claims: "AgentClaimsModule") -> _Tabs:
             key_of=key_of,
             # Who works the step, as its key block and Find's rows say it.
             glyph_of=lambda step: _primary_glyph(step)[0],
+            # The open questions, a card each, on top of the Control Centre.
+            question_cards=agents.questions.create_cards,
         )
     )
     estimation = EstimationModule(
@@ -1513,7 +1523,6 @@ def _shell(root: _Root, agents: _Agents) -> list["Module"]:
         # Before the watcher: the banner that says an agent is at work is what makes the
         # watcher's stood-down modal legible, so it must already be on screen.
         agents.at_work,
-        # Its End Squad Claim sits in the Step menu's agent group, after Clear Agent Run.
         agents.claims,
         # After sync, so the conflict button lands to the right of the library path.
         LibraryWatchModule(
@@ -2070,9 +2079,7 @@ def _aspects(
                 clock=services.clock,
                 workflow=_status_workflow(),
                 end_claim=lambda claim: board.end(claim.project, claim.step),
-                release=lambda follow_up: released_by_status(
-                    store.project_dir(follow_up.project), follow_up
-                ),
+                release=lambda f: released_by_status(store.project_dir(f.project), f),
                 notices=services.window,
                 flush=services.autosave.saved,
             )
@@ -2818,7 +2825,7 @@ def default_cli_commands(
     from dplanner.modules.agent_at_work import cli as at_work_cli
     from dplanner.modules.agent_briefing.worktree import mainline
     from dplanner.modules.agent_claims import cli as claims_cli
-    from dplanner.modules.agent_claims.ownership import released_by_status
+    from dplanner.modules.agent_claims.ownership import released_by_status as release
     from dplanner.modules.agent_launch import cli as launch_cli
     from dplanner.modules.agent_questions import cli as questions_cli
     from dplanner.modules.agent_supervisor import cli as supervisor_cli
@@ -2897,9 +2904,7 @@ def default_cli_commands(
     def set_status(context: "CliContext", step: "Step", status: "Status") -> None:
         """A status written as `status set` writes it — refused as one line, its claim
         ended once the run is written."""
-        status_cli.write_status(
-            context, workflow, end_claim, released_by_status, step, status, actor=actor()
-        )
+        status_cli.write_status(context, workflow, end_claim, release, step, status, actor=actor())
 
     def finish_merged(context: "CliContext", step: "Step") -> bool:
         """A step waiting on its merge is done once its PR reads merged — written as
@@ -2970,7 +2975,6 @@ def default_cli_commands(
         *supervisor_cli.commands(harnesses=agent_harnesses()),
         # Who answers is read like `status set`'s reporter: an agent's shell is the coordinator.
         *questions_cli.commands(in_agent_shell=lambda: bool(agent_shell_marker())),
-        # A squad's lease on its steps: who takes, releases and ends it is read from the shell.
         *claims_cli.commands(in_agent_shell=lambda: bool(agent_shell_marker())),
         # The agent's own account of what it is doing while it does it: the window's
         # banner and the watcher's stood-down modal both read what these write.
@@ -2983,7 +2987,7 @@ def default_cli_commands(
             workflow=workflow,
             in_agent_shell=lambda: bool(agent_shell_marker()),
             end_claim=end_claim,
-            release=released_by_status,
+            release=release,
         ),
         *milestone_cli.commands(),
         *wait_cli.commands(),

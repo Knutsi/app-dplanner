@@ -386,7 +386,14 @@ paths:
   standing. The
   coordinator may not answer a `person` gate (`may_answer`); `question escalate` passes an
   open question to a person. No warm hosting of Claude's own question tools yet. `docs/architecture/agents.md`'s *A question
-  is a file, and the inbox is the directory* has the reasoning.
+  is a file, and the inbox is the directory* has the reasoning. **The window's inbox is a card
+  per open or escalated question on top of the Control Centre** (`agent_questions/panel.py`,
+  handed to `status_board` as the `question_cards` factory): who asks, the step, the kind,
+  the question, a button per choice and a person's own words — `inbox.answer` with the person
+  as `by` — *Retry Now* on a `limit` or `blocked` card (`inbox.retry_now`) and *Go to Step*;
+  oldest first, polled by `questions.fingerprint` and reconciled by id so a half-typed answer
+  survives. `docs/architecture/agents.md`'s *The inbox is cards on top of the Control Centre*
+  has the reasoning.
 - **A headless run is driven by its supervisor, and nothing waits on it.** `dplanner agent
   supervise <run>` (`modules/agent_supervisor/`, started detached by
   `supervisor.start_detached`) is the record's **one writer**: it starts each turn through
