@@ -178,3 +178,15 @@ def test_the_windows_save_waits_on_the_same_lock_a_claim_publish_holds(plan):
         assert not done.wait(0.5)
     worker.join(10)
     assert done.is_set()
+
+
+def test_a_squad_s_shell_renews_its_own_squad_and_no_other_on_this_machine(plan, tmp_path):
+    config = tmp_path / "config"
+    here = {"machine": ledger.machine_id(config), "host": "here"}
+    old = "2026-10-07T10:00:00+00:00"
+    kettle = _taken(plan, "s1", worker=here, heartbeat=old)
+    anvil = replace(_taken(plan, "s2", worker=here, heartbeat=old), callsign="anvil")
+    claims.write(plan, anvil)
+    claim_sync.renew(plan, config=config, squad="kettle")
+    assert _found(plan, kettle.id).heartbeat != old
+    assert _found(plan, anvil.id).heartbeat == old

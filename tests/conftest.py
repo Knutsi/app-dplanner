@@ -258,15 +258,17 @@ def _no_agent_shell(monkeypatch):
 
     Run Agent's wrapper exports ``DPLANNER_PROJECT`` into an agent's shell so ``dplanner``
     reaches the plan from a worktree; an agent running this suite would hand every CLI
-    test that project instead of the one the test built. And every agent CLI marks its
-    shell (``CLAUDECODE`` and the rest), which ``status set`` reads to hold an agent's done
-    at review: the suite is routinely run by an agent, so a test that wants an agent's
-    shell sets the marker itself.
+    test that project instead of the one the test built, and a coordinator's shell names its
+    squad in ``DPLANNER_CALLSIGN``, which ``claim take`` and the heartbeat read. And every
+    agent CLI marks its shell (``CLAUDECODE`` and the rest), which ``status set`` reads to
+    hold an agent's done at review: the suite is routinely run by an agent, so a test that
+    wants an agent's shell sets the marker itself.
     """
     from dplanner.modules import agent_harnesses
 
     monkeypatch.delenv("DPLANNER_PROJECT", raising=False)
     monkeypatch.delenv("DPLANNER_RUN", raising=False)
+    monkeypatch.delenv("DPLANNER_CALLSIGN", raising=False)
     harnesses = agent_harnesses()
     for name in list(os.environ):
         if any(harness.marks(name) for harness in harnesses):

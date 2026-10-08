@@ -44,6 +44,10 @@ PROJECT_ENV = "DPLANNER_PROJECT"
 # Names the run a shell belongs to — its record in the project's ledger, which
 # ``dplanner usage harvest`` reads back into when it is given no ``--run``.
 RUN_ENV = "DPLANNER_RUN"
+# Names the squad member a shell is — ``kettle-actual``, ``kettle-two`` — so the heartbeat of
+# every ``dplanner`` run from it renews that squad's claim alone, and ``claim take`` knows the
+# squad's own shell from another squad's coordinator that picked the same word.
+CALLSIGN_ENV = "DPLANNER_CALLSIGN"
 
 
 def acting(name: str, in_agent_shell: bool) -> dict[str, str]:

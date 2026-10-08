@@ -1907,6 +1907,7 @@ def test_a_cards_menu_holds_only_what_is_about_the_step(services, project, tab):
         "Estimate",
         "Run Agent",
         "Run Playbook",
+        "Autonomous Work",
         "Step Details…",
         "Show in",
         "Coverage",

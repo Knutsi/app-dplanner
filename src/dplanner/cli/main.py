@@ -7,6 +7,7 @@ without editing anything here.
 **Help output is a pure function of the registry** — ``_Formatter`` has the why.
 """
 
+import os
 import sys
 from argparse import (
     SUPPRESS,
@@ -20,7 +21,12 @@ from pathlib import Path
 from typing import TextIO
 
 from dplanner.cli.command import CliCommand, CliContext, CliError, CliRegistry
-from dplanner.cli.discovery import find_current_project, find_library, open_library
+from dplanner.cli.discovery import (
+    CALLSIGN_ENV,
+    find_current_project,
+    find_library,
+    open_library,
+)
 from dplanner.core.clock import Clock
 from dplanner.core.module_data import ModuleDataFormat
 from dplanner.core.telemetry import current
@@ -216,8 +222,14 @@ def run(
                 if board is not None and context.current is not None:
                     board.touch(context.current.id)
                     from dplanner.domain.claim_sync import renew
+                    from dplanner.domain.claims import squad_of
 
-                    renew(context.store.project_dir(context.current.id))
+                    # A squad member's shell renews its own squad's claims alone: two squads
+                    # on one machine must not keep each other alive.
+                    renew(
+                        context.store.project_dir(context.current.id),
+                        squad=squad_of(os.environ.get(CALLSIGN_ENV, "")),
+                    )
                 code = command.run(context, args)
     except CliError as error:
         print(f"{PROG}: {error}", file=err)

@@ -1,7 +1,10 @@
 """``dplanner claim take|list|release|end`` — a squad's lease on its steps.
 
 The coordinator takes the steps it was given before it starts any of them: ``claim take``
-refuses a step another squad holds (naming the holder), writes the claim — each new step
+refuses a step another squad holds (naming the holder), and a squad word a live or parked
+claim anywhere in the library answers to unless the caller's shell is that squad's own
+(``$DPLANNER_CALLSIGN``) — two coordinators that chose one word would otherwise grow one
+claim between them. It writes the claim — each new step
 acquired now — and commits and pushes it; a push the remote refuses is left for the window's
 next sync, since ownership is decided on this machine. A step whose holder has gone quiet
 past its lease is taken over: the new claim names the old one, step by step, in
@@ -11,12 +14,13 @@ and both stop the workers they take steps from (``ownership.py``). The heartbeat
 every ``dplanner`` run's (``claim_sync.renew``).
 """
 
+import os
 from argparse import ArgumentParser, Namespace
 from collections.abc import Callable
 from pathlib import Path
 
 from dplanner.cli import CliCommand, CliContext, CliError
-from dplanner.cli.discovery import acting
+from dplanner.cli.discovery import CALLSIGN_ENV, acting
 from dplanner.cli.lookup import find_step
 from dplanner.core.storage.provider import StorageError
 from dplanner.domain import claim_sync, claims, ledger, questions
@@ -98,6 +102,7 @@ def _take(context: CliContext, args: Namespace) -> int:
         raise CliError("name your squad with --callsign")
     with claims.acquiring(project.id):
         now = now_stamp()
+        _refuse_another_squads_word(context, squad, now)
         held = claims.read_holdings(project_dir, now)
         taken = [
             f"{keys.get(step.id, step.title)} is held by {holding.claim.callsign}"
@@ -127,6 +132,19 @@ def _take(context: CliContext, args: Namespace) -> int:
         claim.to_json(), f"{claim.short} {squad} holds {_listed(claim.steps, keys)}{said}"
     )
     return 0
+
+
+def _refuse_another_squads_word(context: CliContext, squad: str, now: str) -> None:
+    """Refuse ``squad`` when a live or parked claim in the library answers to it and the
+    caller's shell is not one of that squad's."""
+    running = claims.squads_holding(
+        (context.store.project_dir(project.id) for project in context.library.projects), now
+    )
+    if squad in running and claims.squad_of(os.environ.get(CALLSIGN_ENV, "")) != squad:
+        raise CliError(
+            f"squad {squad} is running already ({running[squad].short}) — choose another word;"
+            f" if it is your own squad, name yourself with {CALLSIGN_ENV}={claims.member(squad)}"
+        )
 
 
 def _written(

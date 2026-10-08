@@ -1259,9 +1259,11 @@ heartbeat racing autosave and the window's rebase did. Unpublished, a claim stil
 here, since this machine decides. **The heartbeat needs no verb**: every `dplanner` run from
 an agent's shell renews the claims this machine holds in the project — a coordinator renews
 by working — and a live turn's supervisor renews its run's claim; a backoff wait or a park
-renews nothing. Renewing what *this machine* holds costs one thing: two squads on one
-machine keep each other alive, until the coordinator's launch can set a
-`DPLANNER_CALLSIGN`.
+renews nothing. Renewing what *this machine* holds would cost one thing — two squads on one
+machine keeping each other alive — so a shell that names its member in `DPLANNER_CALLSIGN`
+renews that squad's claims alone: the coordinator sets its own once it has chosen its word,
+and the supervisor sets each turn's to its run's member, never inheriting the coordinator's
+from the shell that started it.
 
 **Ownership is checked inside the one launch, twice.** `launch.claim_for` refuses a step
 another squad holds on both surfaces — a person's Run Agent too, which the first version let
@@ -1300,16 +1302,32 @@ The 4 October run's director rebuilt Run Agent by hand for every step and still 
 the window would have done for it. Everything it lacked is a verb now — `claim take`, `agent
 run --playbook --callsign`, `question answer|escalate`, `agent limits`, `playbook advance` —
 so a coordinator is **an agent with a briefing**, not a daemon: `agent_briefing/coordinator.py`
-composes it, `dplanner agent coordinate <keys> --callsign <word>` prints it, and Autonomous
+composes it, `dplanner agent coordinate <keys> [--callsign <word>]` prints it, and Autonomous
 work ▸ Local launches a coordinator with the same text. A daemon would be a second engine
 deciding what an agent decides better — which plans collide, what a question means, whether a
 person is needed — and the verbs already refuse what it must never do: `may_answer` keeps it
 off a person or progress gate, `claim_for` off another squad's step, the hold off a spent
 account.
 
-**Callsigns are Knut's radio net.** The squad word is the coordinator's pick and unique among
-running squads — the verb refuses a word a live or parked claim answers to, because `claim
-take` under one word grows that squad's claim, and two coordinators would quietly share one.
+**A lasso is a squad, whatever else it caught.** A selection on the canvas catches the
+milestone between two steps and the cut in front of them; refusing it for that would make the
+person pick around the graph's own furniture. So only agent steps get members, and the rest
+ride in the briefing's selection as what they are — a person's step *waits on a person* — which
+is also what the coordinator needs to know to read what is ready.
+
+**Callsigns are Knut's radio net, and the coordinator names its own squad.** A person clicking
+*Autonomous Work* has no word to give, and a fixed list picked from by the window would make
+every squad Kettle; Knut asked for the agents to choose. So the window launches the briefing
+with no word: it opens with *Choose your squad word* — one concrete, friendly, slightly
+whimsical word, easy to say and spell, professional enough for a net people read — and the
+words running now, and its first order is `claim take` under the word chosen. That makes
+`claim take` the arbiter, so it **refuses a word a live or parked claim anywhere in the library
+answers to** unless the caller's `DPLANNER_CALLSIGN` says it is that squad: before, a take
+under a running word grew that squad's claim, and two coordinators that chose one word would
+quietly have shared one. `agent coordinate --callsign` refuses a running word for the same
+reason. The window claims nothing itself — the chip arrives with the coordinator's take,
+seconds later, which the status bar says — because a claim taken for a coordinator that never
+came up would hold the steps against everyone with nobody renewing it.
 The coordinator is *Actual*, the workers *Two, Three…* in the selection's order, a worker's
 own sub-agent *Two-One*, the verifier *Watch* (`claims.member`, `claims.spoken`):
 lowercase-kebab where a machine reads it, capitalised in prose, and in every message, note
@@ -1324,7 +1342,8 @@ key on it, so only the branches and worktrees a coordinator makes itself carry i
 7 October one ran out of usage while its workers ran, leaving nobody to resume them. So the
 briefing launches nothing at or above 90 % of any window — under the supervisor's 95 % hold,
 leaving the coordinator room — and leaves every reset to the supervisor. *Max agents launched
-at once* is a QSettings value no CLI can read, so `--at-once` carries it (three by default).
+at once* is a QSettings value no CLI can read, so `--at-once` carries it (three by default),
+and the window's own launch passes the setting.
 The loop carries the rest of what the first runs taught, one sentence each: keep the machine
 awake, poll GitHub's `mergeable` past UNKNOWN, run the ratchet tests on the integrated branch,
 cap a cross-vendor review at two rounds, and brief a small fix fresh rather than resume a long

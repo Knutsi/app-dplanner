@@ -160,6 +160,17 @@ def test_a_done_turn_ends_the_run_with_its_stream_teed_and_its_usage_counted(rig
         pass
 
 
+def test_a_turn_is_the_member_that_runs_it_never_the_shell_that_started_it(
+    rig, tmp_path, monkeypatch
+):
+    monkeypatch.setenv("DPLANNER_CALLSIGN", "kettle-actual")  # The coordinator's shell.
+    ledger.write(rig.plan, replace(rig.record, callsign="kettle-two"))
+    told = tmp_path / "callsign"
+    rig.play({"environ": str(told), "lines": [INIT, result()]})
+    rig.supervise()
+    assert told.read_text() == "kettle-two"
+
+
 def test_a_question_in_prose_parks_on_a_question_record_and_words_given_withdraw_it(rig):
     rig.play({"lines": recorded("claude-asked-prose-1")}, {"lines": [result()]})
     said = rig.supervise()

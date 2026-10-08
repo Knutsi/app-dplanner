@@ -15,6 +15,13 @@ and none of the modes a briefed run picks — the harness's own ``open_command``
 what the planning *before* the plan needs: a spec has been imported, there are no steps
 to brief yet, and the agent's first instruction is the one the person types.
 
+**And a selection may be handed to a coordinator.** *Step ▸ Autonomous Work ▸ Local ▸
+<profile>* opens one terminal on the coordinator's briefing over the chosen steps
+(``agent_briefing.coordinator``, what ``dplanner agent coordinate`` prints with no word): the
+coordinator chooses its squad word, takes the claim and launches the squad's runs itself, so
+the window claims nothing and its chip arrives with the coordinator's ``claim take``. A
+*Remote ▸* beside *Local* waits for workers to exist.
+
 **It runs one agent per chosen step, up to a limit.** The verb reads the selection the way
 Delete does, so lassoing three agent steps is *Run 3 Agents…* and one gesture; past
 *Settings ▸ Agent profiles*'s limit (four by default) the count itself is the refusal, greyed with
@@ -45,9 +52,10 @@ from PySide6.QtWidgets import QDialog, QMenu, QWidget
 from dplanner.core.clock import Clock
 from dplanner.core.storage.locations import remote_label
 from dplanner.core.telemetry import current
+from dplanner.domain import claims
 from dplanner.domain.agents import AgentHarness
 from dplanner.domain.locations import LocationRole
-from dplanner.domain.model import Library, Node, NodeId, Step, StepId
+from dplanner.domain.model import Library, Node, NodeId, Step, StepId, now_stamp
 from dplanner.domain.repositories import RepositoryFacts
 from dplanner.domain.store import Conflict, FilesFor
 from dplanner.framework.action_menu import append_action
@@ -72,6 +80,7 @@ from dplanner.framework.user_config import get_global
 from dplanner.framework.widgets import notice
 from dplanner.framework.window import NoticeHost, StatusHost
 from dplanner.modules.agent_briefing import worktree as where
+from dplanner.modules.agent_briefing.coordinator import MOST_MEMBERS, coordinate, feature_branch
 from dplanner.modules.agent_briefing.prompt import (
     AssembledPrompt,
     conflict_prompt,
@@ -104,7 +113,7 @@ from dplanner.planning.branches import DEFAULT_BRANCHES, BranchPlan
 from dplanner.planning.kinds import key_of
 from dplanner.planning.schedule import status_on
 from dplanner.planning.status import MODULE_ID as STATUS_MODULE_ID
-from dplanner.planning.status import Reading, Status, phrase, stored
+from dplanner.planning.status import Reading, Status, phrase, readiness_of, stored
 from dplanner.theme.icons import spark_icon
 
 # The Step menu's Run Agent child: the profiles, then the way to Settings. The data menu
@@ -116,6 +125,10 @@ RUN_MENU_TITLE = "Run Agent"
 # planning before the steps needs — there is no step to be about yet.
 OPEN_MENU_ID = "agent.open_with"
 OPEN_MENU_TITLE = "Open Agent in Code"
+# The Step menu's Autonomous Work child: a coordinator over the selection, run here (Local)
+# in one of the profiles' terminals.
+AUTONOMOUS_MENU_ID = "agent.autonomous"
+AUTONOMOUS_MENU_TITLE = "Autonomous Work"
 SETTINGS_SECTION = f"{MODULE_ID}.launch"
 PROFILES_NOTICE = f"{MODULE_ID}.profiles"
 
@@ -357,6 +370,33 @@ class AgentLaunchModule:
                 title=OPEN_MENU_TITLE,
                 order=10,
                 fill=self._fill_open_profiles,
+            )
+        )
+        # A coordinator over the selection: the palette's verb on the default profile, seated
+        # in its own child menu whose Local child lists every profile.
+        deps.actions.register(
+            ActionSpec(
+                id="agent.coordinate",
+                label="Autonomous &Work…",
+                menu="Step",
+                group="agent",
+                submenu=f"{AUTONOMOUS_MENU_TITLE} ▸ Local",
+                order=17,
+                in_menus=False,
+                tip="Open a terminal with a coordinator briefed on the selection: it names its"
+                " squad, claims the agent steps and runs them through their playbooks",
+                state=self._can_coordinate,
+                run=self._coordinate,
+            )
+        )
+        deps.actions.register_data_menu(
+            DataMenuSpec(
+                id=AUTONOMOUS_MENU_ID,
+                menu="Step",
+                group="agent",
+                title=AUTONOMOUS_MENU_TITLE,
+                order=17,
+                fill=self._fill_autonomous,
             )
         )
         deps.actions.register(
@@ -764,6 +804,11 @@ class AgentLaunchModule:
         menu.addSeparator()
         append_action(menu, deps.actions, deps.context, "agent.profiles")
 
+    def _fill_autonomous(self, menu: QMenu) -> None:
+        """Step ▸ Autonomous Work: *Local*, the profiles a coordinator runs in here. A
+        *Remote* child beside it is where a coordinator on a worker will go."""
+        self._fill_with(menu.addMenu("&Local"), self._can_coordinate, self._coordinate)
+
     # -- a shell of one's own ------------------------------------------------------------------
 
     def _shell_place(self, step: Step) -> tuple[Path | None, str]:
@@ -949,6 +994,127 @@ class AgentLaunchModule:
             deps.status.show_status("No playbook started — still starting the last one", 6000)
             return
         deps.status.show_status(f"{label}…", 0)
+
+    # -- a coordinator over the selection -------------------------------------------------------
+
+    def _can_coordinate(self, context: Context, profile: Profile | None = None) -> ActionState:
+        """Whether a coordinator can take the selection, greyed with the reason.
+
+        A lasso catches milestones, cuts and a person's steps; they ride in the briefing as
+        context, so only a selection with **no** agent step refuses. One terminal opens, so
+        neither the agent limit nor the graph gate is asked: the coordinator reads readiness
+        itself and runs at most the limit at once."""
+        chosen = self._chosen(context)
+        if not chosen:
+            return DISABLED
+        deps = self._deps
+        verb = AUTONOMOUS_MENU_TITLE
+        projects = {deps.library.project_of(step.id).id for step in chosen}
+        if len(projects) > 1:
+            return ActionState(enabled=False, label=f"{verb} — one project at a time")
+        workers = sum(1 for step in chosen if enabled(step))
+        if not workers:
+            return ActionState(enabled=False, label=f"{verb} — the selection holds no agent step")
+        if workers > MOST_MEMBERS:
+            return ActionState(
+                enabled=False, label=f"{verb} — at most {MOST_MEMBERS} agent steps a squad"
+            )
+        if refusal := launcher.template_refusal(launch_command(profile)):
+            return ActionState(enabled=False, label=f"{verb} — {refusal}")
+        facts = deps.facts_for(chosen[0].id)
+        if unplaced := launch.unplaced(facts):
+            return ActionState(label=f"Autonomous &Work… — clones {remote_label(unplaced)} first")
+        if refusal := launch.workdir_refusal(facts):
+            return ActionState(enabled=False, label=f"{verb} — {refusal}")
+        return ENABLED
+
+    def _coordinate(self, context: Context, profile: Profile | None = None) -> None:
+        """Open the profile's terminal in the project's code on the coordinator's briefing
+        over the selection — no worktree, nothing claimed: the coordinator chooses its squad
+        word and takes the claim itself."""
+        deps = self._deps
+        if not self._can_coordinate(context, profile).enabled:
+            return  # The state gate already prevents this; stay honest.
+        chosen = [step.id for step in self._chosen(context)]
+        profile = profile or default_profile()
+        if unplaced := launch.unplaced(deps.facts_for(chosen[0])):
+            deps.status.show_status(f"Cloning {remote_label(unplaced)} before the coordinator…", 0)
+
+            def cloned(_landed: dict[str, Path], error: str) -> None:
+                if error:
+                    deps.status.show_status(
+                        f"No coordinator launched — could not clone {error}", 8000
+                    )
+                    return
+                self._coordinate_on(chosen, profile)
+
+            deps.ensure_checkouts([unplaced], cloned)
+            return
+        self._coordinate_on(chosen, profile)
+
+    def _coordinate_on(self, chosen: Sequence[StepId], profile: Profile) -> None:
+        deps = self._deps
+        library = deps.library
+        steps = [library.step(step_id) for step_id in chosen if library.has(step_id)]
+        if not any(enabled(step) for step in steps):
+            return  # Deleted or unmarked while the code was cloned.
+        project = library.project_of(steps[0].id)
+        title = project.title or "Untitled project"
+        # The coordinator reads the plan through the CLI: what it is briefed on must be on disk.
+        if not deps.flush():
+            deps.status.show_status(
+                "No coordinator launched — the plan could not be saved; save it, then run it again",
+                8000,
+            )
+            return
+        facts = deps.facts_for(project.id)
+        text = coordinate(
+            library,
+            steps,
+            squad=None,
+            files=deps.files,
+            facts=facts,
+            roles=deps.location_roles,
+            merges_into=lambda step: feature_branch(
+                deps.branch_plan(library, step, facts), facts, step
+            ),
+            status_for=readiness_of(status_on(library, deps.clock.today())),
+            at_once=max_agents(),
+            taken=self._squads_running(),
+        ).text
+        spawned, prepared = self._launch(
+            text,
+            launcher.new_run_dir(),
+            where.workdir(facts),
+            profile,
+            project_id=project.id,
+            subject=title,
+            note="coordinator",
+        )
+        if not spawned:
+            PromptFallbackDialog(
+                text, str(prepared.prompt_file), deps.parent, title=AUTONOMOUS_MENU_TITLE
+            ).exec()
+            return
+        workers = sum(1 for step in steps if enabled(step))
+        deps.status.show_status(
+            f"A coordinator is choosing its squad word for {workers} agent"
+            f" step{'s' if workers != 1 else ''} in “{title}” — its claim shows once it takes"
+            " them",
+            8000,
+        )
+
+    def _squads_running(self) -> dict[str, claims.Claim]:
+        """Every squad word a live or parked claim in the library answers to: the words a new
+        coordinator may not choose. A project is reached through one of its steps — a claim
+        holds nothing else, so a project with none holds no claim."""
+        deps = self._deps
+        dirs = [
+            directory
+            for project in deps.library.projects
+            if project.steps and (directory := deps.project_dir(project.steps[0].id))
+        ]
+        return claims.squads_holding(dirs, now_stamp())
 
     # -- opening an agent with nothing to do ---------------------------------------------------
 

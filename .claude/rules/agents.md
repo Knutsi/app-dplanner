@@ -403,15 +403,25 @@ paths:
   survives. `docs/architecture/agents.md`'s *The inbox is cards on top of the Control Centre*
   has the reasoning.
 - **A coordinator is a briefing over the verbs, never an engine.** `agent_briefing/coordinator.py`
-  composes it and `dplanner agent coordinate <keys> --callsign <word>` prints it (Autonomous
-  work launches the same text): take the claim, start each ready step with `agent run
-  --playbook --callsign <member>`, watch, answer what `may_answer` allows and escalate the
-  rest, verify and merge into the feature branch, release. **Callsigns** are `claims.member`:
-  the squad word (refused while a live or parked claim answers to it), `-actual` for the
-  coordinator, `-two`… in selection order, `-two-one` for a sub-agent, `-watch` for the
-  verifier. A pass's stages run as the member that started it (the first run records it); a
-  worker's preamble names it; workers' branches stay `agent/<run name>`. A lesson a run teaches
-  the coordinator is one sentence in its loop, not a paragraph.
+  composes it and `dplanner agent coordinate <keys> [--callsign <word>]` prints it: take the
+  claim, start each ready step with `agent run --playbook --callsign <member>`, watch, answer
+  what `may_answer` allows and escalate the rest, verify and merge into the feature branch,
+  release. **Only agent steps get members**; a milestone, cut, wait or person's step in the
+  selection is context, and only a selection with no agent step is refused. **Callsigns** are
+  `claims.member`: the squad word, `-actual` for the coordinator, `-two`… in selection order,
+  `-two-one` for a sub-agent, `-watch` for the verifier. **The coordinator chooses its own
+  word**: with no `--callsign` the briefing opens with *Choose your squad word* (the rules and
+  the words running now) and its first order is `claim take`, which refuses a word a live or
+  parked claim in the library answers to unless the caller's `DPLANNER_CALLSIGN` is that
+  squad's. **Step ▸ Autonomous Work ▸ Local ▸ <profile>** (`agent_launch/module.py`'s
+  `_coordinate`) saves, then opens the profile's terminal in the code checkout on that
+  briefing with `at_once` the window's *Max agents* — no worktree, no claim of its own, no
+  squad word picked; *Remote ▸* waits for workers. **`DPLANNER_CALLSIGN` names the member a
+  shell is**: the coordinator sets its own once it has a word, the supervisor sets each turn's
+  to its run's member, and an agent shell's heartbeat renews that squad's claims alone. A
+  pass's stages run as the member that started it (the first run records it); a worker's
+  preamble names it; workers' branches stay `agent/<run name>`. A lesson a run teaches the
+  coordinator is one sentence in its loop, not a paragraph.
   `docs/architecture/agents.md`'s *A coordinator is briefed, never built in* has the reasoning.
 - **A headless run is driven by its supervisor, and nothing waits on it.** `dplanner agent
   supervise <run>` (`modules/agent_supervisor/`, started detached by

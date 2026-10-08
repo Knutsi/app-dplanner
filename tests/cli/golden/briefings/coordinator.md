@@ -14,7 +14,11 @@ WARNING: this plan lives inside the code repository it plans: its files (`projec
 
 The project's locations — which repositories it is about, and where each is on this machine (`dplanner location list` prints them again): Code: acme/widget — `<tmp>/widget`.
 
-Take the selection before you start any of it: `dplanner claim take S2 S3 S4 S6 --callsign kettle`. If it refuses a step, another squad holds it: leave that step out and say so — never take it over by hand.
+Take the selection before you start any of it: `dplanner claim take S2 S3 S4 S6 --callsign kettle`.
+
+If `claim take` refuses a step, another squad holds it: leave that step out and say so — never take it over by hand.
+
+Once the claim is yours, name yourself to DPlanner: `DPLANNER_CALLSIGN=kettle-actual` on every `dplanner` command you run — exported in your shell, or before each command where your harness starts a fresh shell for every one — so your checks renew your squad's claim and no other squad's on this machine.
 
 Other agents may be working beside you in this repository, each in a worktree of its own, and their processes carry the same names and paths as yours. Never kill a process by name or pattern (`pkill -f`, `killall`, `kill $(pgrep …)`): kill only by a pid your own shell started.
 

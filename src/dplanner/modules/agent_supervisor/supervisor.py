@@ -69,7 +69,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import IO
 
-from dplanner.cli.discovery import PROJECT_ENV, RUN_ENV
+from dplanner.cli.discovery import CALLSIGN_ENV, PROJECT_ENV, RUN_ENV
 from dplanner.core.config_dir import config_dir
 from dplanner.core.fsio import os_lock
 from dplanner.core.process import (
@@ -499,8 +499,10 @@ class Session:
         spec = self._spec(kind, words)
         env = scrubbed_environment(os.environ, (self.harness,))
         # Every `dplanner` call the turn makes reaches the plan its run was launched from:
-        # the run (what `question ask` parks), the project and the library.
+        # the run (what `question ask` parks), the project and the library — and is the
+        # member that runs it, never the coordinator whose shell started the supervisor.
         env[RUN_ENV], env[PROJECT_ENV] = self.record.run, self.record.project
+        env[CALLSIGN_ENV] = self.record.callsign
         if self.library is not None:
             env[LIBRARY_ENV] = str(self.library)
         argv = self.headless.command(spec)
