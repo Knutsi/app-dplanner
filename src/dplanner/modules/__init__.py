@@ -563,16 +563,13 @@ def _agents(
         nothing ends before the build is up."""
         usage.sweep()
 
-    # Whoever answers in the window is the person at it.
-    person = {"kind": "person", "name": getuser()}
+    # Whoever answers in the window is the person at it, and what the answer resumes reaches
+    # the window's library.
+    person, chosen = {"kind": "person", "name": getuser()}, store.library_path
 
     def retry_now(step_id: str) -> str:
         """Step ▸ Retry Now: the step's parked run answered ``Retry now`` by the person here."""
-        project_dir = ledger_of(step_id)
-        run = inbox.parked_run(project_dir, step_id) if project_dir is not None else ""
-        if project_dir is None or not run:
-            raise ValueError("no headless run is parked on this step")
-        return inbox.retry_now(project_dir, run, person).said
+        return inbox.retry_step(ledger_of(step_id), step_id, person, library=chosen).said
 
     # Every launch is handed here, and this is the one place that keeps an eye on the shell
     # afterwards.
@@ -726,9 +723,11 @@ def _agents(
             status=services.window,
             project_dir=lambda project_id: ledger_dir(store, project_id),
             answer=lambda project_dir, question_id, given: (
-                inbox.answer(project_dir, question_id, given, person).said
+                inbox.answer(project_dir, question_id, given, person, library=chosen).said
             ),
-            retry_now=lambda project_dir, run: inbox.retry_now(project_dir, run, person).said,
+            retry_now=lambda project_dir, run: (
+                inbox.retry_now(project_dir, run, person, library=chosen).said
+            ),
             reveal=reveal_step,
             harnesses=agent_harnesses(),
             key_of=key_of,

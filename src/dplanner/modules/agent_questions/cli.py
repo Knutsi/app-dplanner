@@ -56,7 +56,11 @@ def commands(*, in_agent_shell: Callable[[], bool]) -> list[CliCommand]:
         run = _run_of(context, project_dir, args.target)
         try:
             done = inbox.retry_now(
-                project_dir, run, by(args), caller_run=os.environ.get(RUN_ENV, "")
+                project_dir,
+                run,
+                by(args),
+                caller_run=os.environ.get(RUN_ENV, ""),
+                library=context.store.library_path,
             )
         except (LookupError, ValueError) as error:
             raise CliError(str(error)) from error

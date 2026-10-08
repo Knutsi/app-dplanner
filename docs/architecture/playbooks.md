@@ -454,7 +454,10 @@ record back. A pass's later stage is claimed by its pass rather than by the step
 revive starts that one whatever the step reads. The profile's agent is the implementer, and
 the pass's settings are pinned (`passes.pinned`). A role that no launch profile runs headless
 is refused before anything is written. On a step at Ready for review, the pass starts at its
-first gate and claims nothing, because the work is not taken up again. **A step has one pass
+first gate and claims nothing, because the work is not taken up again — so a first run that
+reviews, on a step still at Ready for review, stands as its launch left it, and revive and a
+new launch both treat it as one owed its start (`supervisor.launch_stands`), never as a launch
+that died before its claim. **A step has one pass
 at a time**: until its latest pass has reached its end — complete, stopped, or given up by a
 person — another `--playbook` is refused with the reason (`engine.active`, which asks
 `passes.due`), between stages too, while a finished stage waits for its advance. Replacing a
@@ -600,9 +603,9 @@ harness's `harness.py` spells it as an argv (`domain/headless.py`'s `Headless.co
 
 | Stage | Claude Code (`claude -p`) | Codex (`codex exec`) | opencode (`opencode run`) |
 |---|---|---|---|
-| plan | `--permission-mode plan` | `-c sandbox_mode="read-only" -c approval_policy="never"` | `--agent plan` |
+| plan | `--permission-mode plan` | `-C <run dir> --skip-git-repo-check`, then `-c sandbox_mode="workspace-write" -c approval_policy="never" -c sandbox_workspace_write.writable_roots=[<plan repo>, <config dir>]`; the prompt names the checkout to read | `--agent plan` |
 | execute | `--permission-mode auto --json-schema <turn>` | `-c sandbox_mode="workspace-write" -c approval_policy="on-request" -c approvals_reviewer="auto_review" -c sandbox_workspace_write.writable_roots=[…] --output-schema <file>` | `--auto` |
-| review | `--permission-mode plan --json-schema <verdict>` | read-only, as plan, `--output-schema <file>` | `--agent plan` |
+| review | `--permission-mode plan --json-schema <verdict>` | as plan, `--output-schema <file>` | `--agent plan` |
 | a fresh session | `--session-id <id>`, minted at launch | — (Codex mints the thread) | — |
 | the next turn: an answer, a reset, a retry, a loop-back | `--resume <id>`, same mode | `codex exec resume … <id> <prompt>`, **same overrides** | `--session <id>`, same mode |
 
@@ -612,8 +615,8 @@ harness's `harness.py` spells it as an argv (`domain/headless.py`'s `Headless.co
 - Claude's `--strict-mcp-config` and no MCP list, because a headless Claude otherwise inherits
   the person's claude.ai connectors (mail, calendar);
 - the run directory and the **plan repository** as writable — Claude's `--add-dir`, Codex's
-  `writable_roots` on an execute turn — since the 10-04 run's 21 Codex sandbox prompts were the
-  plan repository outside the writable roots;
+  `writable_roots` (on a plan or review, its working root and the roots) — since the 10-04
+  run's 21 Codex sandbox prompts were the plan repository outside the writable roots;
 - a typed final message where the CLI has one (`--json-schema`, `--output-schema`), so a
   verdict and a question are read, not guessed from prose — `domain/headless.py`'s
   `TURN_SCHEMA` for execute and `VERDICT_SCHEMA` for review, both strict because Codex takes no
@@ -626,7 +629,14 @@ harness's `harness.py` spells it as an argv (`domain/headless.py`'s `Headless.co
 began in — a read-only thread resumed bare came back `workspace-write`. Read off the rollout's
 `turn_context` against the fake API, `--approve-for-me --add-dir <d>` is exactly the four
 overrides in the table, and they hold on `exec resume`; so a fresh turn uses them too, and the
-two spellings cannot drift. A review in Claude's plan mode does run read-only Bash (a recorded
+two spellings cannot drift. **A Codex plan or review never runs read-only**, because its
+briefing opens with `dplanner agent-work start` and asks through `dplanner question ask`, and
+both write — read-only, a reviewer could not even say it had begun. Codex has no read-only
+sandbox with writable exceptions, so the turn's working root is its run directory (`-C`, which
+with `--skip-git-repo-check` goes on `codex exec` before `resume`, the subcommand taking
+neither), its other writable roots the plan repository and DPlanner's config directory, and the
+prompt names the checkout to read — under no writable root, so the code stays the execute
+stage's to change. A review in Claude's plan mode does run read-only Bash (a recorded
 review ran `find`), which settles the review row.
 
 **How a turn ended is one function over what the stream said.** Each harness's reader

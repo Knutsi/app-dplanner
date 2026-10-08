@@ -97,12 +97,14 @@ class TurnSpec:
     stage: StageKind
     prompt: str
     run_dir: str  # The run's directory: the briefing, the schema file, the stream.
-    # What an execute turn may write beyond the checkout it runs in: the plan repository.
+    # What a turn may write beyond the checkout it runs in: the plan repository.
     writable: tuple[str, ...] = ()
     # A fresh turn names its session with it where the CLI lets it (Claude); a resumed turn
     # continues it.
     session: str = ""
     resume: bool = False
+    checkout: str = ""  # The code the turn works on: its process's working directory.
+    config: str = ""  # DPlanner's config directory, where `dplanner` records questions.
 
     def resumed(self, session: str, prompt: str) -> "TurnSpec":
         """The next turn of the same stage: the session continued with one prompt — an

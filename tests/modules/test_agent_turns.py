@@ -369,10 +369,33 @@ def test_codex_states_the_stages_mode_as_overrides_fresh_and_resumed_alike():
         "t-1",
         "continue",
     ]
-    for stage in (StageKind.PLAN, StageKind.REVIEW):
-        argv = command(spec(stage))
-        assert overrides(argv) == {"sandbox_mode": "read-only", "approval_policy": "never"}
     assert "--output-schema" not in command(spec(StageKind.PLAN))
+
+
+def test_a_codex_plan_or_review_writes_its_run_and_dplanners_records_but_only_reads_the_code():
+    """Read-only, a reviewer could not run the `dplanner agent-work start` its briefing opens
+    with, nor ask through `dplanner question ask`: both write. It works from the run
+    directory, writes the plan repository and the config directory, and is told where the
+    code is — which no writable root reaches."""
+    command = headless("codex").command
+    checkout, config = str(Path("code") / "wt"), str(Path("config") / "dplanner")
+    for stage in (StageKind.PLAN, StageKind.REVIEW):
+        turn = spec(stage, checkout=checkout, config=config)
+        for argv in (command(turn), command(turn.resumed("t-1", "Answer: yes"))):
+            assert overrides(argv) == {
+                "sandbox_mode": "workspace-write",
+                "approval_policy": "never",
+                "sandbox_workspace_write.writable_roots": [PLAN_REPO, config],
+            }
+            assert argv[2:5] == ["-C", RUN_DIR, "--skip-git-repo-check"]
+            assert checkout not in argv[:-1]
+            assert argv[-1].endswith(codex.reading_note(checkout))
+        fresh, resumed = command(turn), command(turn.resumed("t-1", "Answer: yes"))
+        assert fresh[5] == "--json" and fresh[-1].startswith("Read your briefing")
+        assert resumed[5:7] == ["resume", "--json"]
+        assert resumed[-2] == "t-1" and resumed[-1].startswith("Answer: yes")
+    execute = command(spec(StageKind.EXECUTE, checkout=checkout, config=config))
+    assert "-C" not in execute and execute[-1] == "Read your briefing"
 
 
 def test_opencode_runs_the_plan_agent_to_read_and_auto_to_work():

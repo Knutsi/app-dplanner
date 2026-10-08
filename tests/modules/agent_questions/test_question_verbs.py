@@ -11,6 +11,7 @@ from tests.platforms import set_home
 from dplanner.domain import ledger, questions
 from dplanner.domain.ledger import LedgerRecord
 from dplanner.domain.questions import Question
+from dplanner.modules.agent_supervisor import supervisor
 from dplanner.modules.step_agent_run.aspect import MODULE_ID
 
 RUN = "20261007T101500Z-9c1e44ab"
@@ -177,3 +178,35 @@ def test_agent_retry_answers_the_limit_a_run_is_held_on(cli, project):
 
 def test_agent_retry_refuses_a_step_with_no_parked_run(cli, project):
     assert "has no parked headless run" in cli("agent", "retry", "Read the spec", expect=1)
+
+
+def test_an_answer_and_a_retry_resume_the_run_with_the_library_named(
+    cli, project, cli_library, monkeypatch
+):
+    """`--library` named an alternate library; the supervisor an answer or Retry now started
+    resolved the default one, so the resumed run's `dplanner` calls reached another plan."""
+    started: list[list[str]] = []
+    monkeypatch.setattr(supervisor, "spawn_detached", started.append)
+    record = ledger.find(project, RUN)
+    assert record is not None
+    library = str(cli_library.expanduser().resolve())
+    for kind, words, verb in (
+        (questions.DECISION, "Keep both", ("question", "answer")),
+        (questions.LIMIT, questions.RETRY_NOW, ("agent", "retry")),
+    ):
+        question = questions.asked(
+            record.project,
+            record.step,
+            "2026-10-07T10:20:00+00:00",
+            [questions.one("Which?", "Ask", [(words, "")])],
+            kind=kind,
+            run=RUN,
+        )
+        questions.write(project, question)
+        held = ledger.Turn(n=1, prompt="launch", started="…", end="asked", question=question.id)
+        ledger.write(project, record.with_turns((held,)))
+        target = question.id if verb[0] == "question" else RUN
+        cli(*verb, target, *([words] if verb[0] == "question" else []), "--by", "Knut")
+        argv = started.pop()
+        assert argv[argv.index("supervise") + 1] == RUN
+        assert argv[argv.index("--library") + 1] == library

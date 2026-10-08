@@ -1016,7 +1016,12 @@ in the same write as the turn that ended it**, so no crash leaves a finished tur
 that reads as parked — which `--prompt retry` would have run again; a supervisor that finds
 one anyway ends the run. Each turn records its process's `ProcessStamp` (`core/process.py`:
 pid, boot id, start time — a pid alone is reused) the moment it starts, so a supervisor
-started after a reboot tells a turn still running from one the machine lost.
+started after a reboot tells a turn still running from one the machine lost. **A turn still
+running when its supervisor is gone is ended, not waited on**: nothing else would ever finish
+its turn or hand its pass on, so the new supervisor — holding the run's lock, which proves the
+old one dead — ends it by identity (`end_orphaned_turn`: the processes carrying the run, the
+recorded process group) and retries it as a lost turn. Refusing it, as the first build did,
+left a worker that outlived a killed supervisor to end into nothing.
 
 ### A usage limit waits in its supervisor, and Retry now is an answer
 

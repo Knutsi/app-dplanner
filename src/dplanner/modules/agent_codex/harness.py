@@ -319,7 +319,6 @@ def report(facts: RunFacts, home: Path | None = None) -> RunReport | None:
     return RunReport(session=thread, agents=tuple(agents), account=account, partial=spawned is None)
 
 
-READ_ONLY = {"sandbox_mode": "read-only", "approval_policy": "never"}
 APPROVE_FOR_ME = {
     "sandbox_mode": "workspace-write",
     "approval_policy": "on-request",
@@ -328,11 +327,28 @@ APPROVE_FOR_ME = {
 
 
 def headless_command(spec: TurnSpec) -> list[str]:
-    settings: dict[str, object] = dict(READ_ONLY)
+    """A plan or a review cannot edit the code yet must run `dplanner agent-work` and
+    `dplanner question ask`, which write: so it works from the run directory with the plan
+    repository and the config directory as its only other writable roots, and is told where
+    the code is to read. Codex has no read-only sandbox with writable exceptions."""
     if spec.stage is StageKind.EXECUTE:
         roots = [spec.run_dir, *spec.writable]
-        settings = {**APPROVE_FOR_ME, "sandbox_workspace_write.writable_roots": roots}
-    argv = ["codex", "exec", *(["resume"] if spec.resume else []), "--json"]
+        settings: dict[str, object] = {
+            **APPROVE_FOR_ME,
+            "sandbox_workspace_write.writable_roots": roots,
+        }
+        root, prompt = [], spec.prompt
+    else:
+        roots = [*spec.writable, *([spec.config] if spec.config else [])]
+        settings = {
+            "sandbox_mode": "workspace-write",
+            "approval_policy": "never",
+            "sandbox_workspace_write.writable_roots": roots,
+        }
+        # On the parent command: `exec resume` takes neither (0.160.0).
+        root = ["-C", spec.run_dir, "--skip-git-repo-check"]
+        prompt = f"{spec.prompt}\n\n{reading_note(spec.checkout)}" if spec.checkout else spec.prompt
+    argv = ["codex", "exec", *root, *(["resume"] if spec.resume else []), "--json"]
     for key, value in settings.items():
         # A JSON string or list is TOML too — unescaped, since TOML refuses the surrogate
         # pairs JSON escapes an astral character into.
@@ -341,7 +357,15 @@ def headless_command(spec: TurnSpec) -> list[str]:
     if schema is not None:
         argv += ["--output-schema", str(schema)]
     # "--" ends the options, so an answer that reads like a flag ("--help") is still a prompt.
-    return [*argv, "--", *([spec.session] if spec.resume else []), spec.prompt]
+    return [*argv, "--", *([spec.session] if spec.resume else []), prompt]
+
+
+def reading_note(checkout: str) -> str:
+    """Where a plan or review turn, working from its run directory, finds the code."""
+    return (
+        f"The code is in {checkout}: `cd` there to read it and run git. It is read-only to"
+        " you; your working directory is this run's own."
+    )
 
 
 def read_event(log: TurnLog, event: Mapping[str, object]) -> None:

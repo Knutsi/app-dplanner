@@ -403,6 +403,26 @@ def test_a_later_stages_record_with_no_turn_is_started_by_revive_whatever_the_st
     assert restarted == [fix.run] and ledger.find(drive.plan, fix.run) is not None
 
 
+def test_a_first_review_with_no_turn_on_a_step_at_review_is_kept_and_started(
+    drive, cli_library, monkeypatch
+):
+    """A pass begun at review takes no claim — the step stays Ready for review — so its first
+    record, its supervisor not started yet, read as a launch that died before its claim: a
+    new launch and ``revive`` both deleted it, and its pinned settings with it."""
+    drive.cli("playbook", "set", "Build it", "review-only")
+    drive.cli("status", "set", "Build it", "ready-for-review")
+    drive.cli("agent", "run", "Build it", "--playbook")  # Its supervisor never ran.
+    (first,) = ledger.records(drive.plan)
+    assert first.stage == "review" and not first.turns and first.settings is not None
+    said = drive.cli("agent", "run", "Build it", "--playbook", expect=1)
+    assert "has a playbook pass under way" in said
+    restarted: list[str] = []
+    monkeypatch.setattr(supervisor, "start_detached", lambda _d, run, **_k: restarted.append(run))
+    monkeypatch.setattr(supervisor, "_age", lambda _record: 10_000.0)
+    supervisor.revive([drive.plan], library=cli_library)
+    assert restarted == [first.run] and ledger.records(drive.plan) == [first]
+
+
 def _died(owed) -> None:
     """What a process that died leaves undone: everything but its OS locks."""
     for undo in owed:
