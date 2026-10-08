@@ -1,8 +1,9 @@
 """``dplanner playbook …`` — which playbook a step runs, and the project's defaults.
 
-``list`` prints the presets, ``show`` says which one a step resolves to and why, and ``set``
-writes a step's choice — or, with no step, the project's default and landing default. None of
-them runs anything: a playbook is a choice until ``agent run --playbook`` starts a pass.
+``list`` prints the presets, ``show`` says which one a step resolves to and why, and where its
+latest pass stands in the words the card's strip uses (``passes.standing``), and ``set`` writes
+a step's choice — or, with no step, the project's default and landing default. None of them
+runs anything: a playbook is a choice until ``agent run --playbook`` starts a pass.
 ``advance`` moves a pass on — what a finished stage and an answered gate start on their own,
 and what a person may run to see a pass take its next step; it acts once however often it runs.
 ``stop`` ends a pass in whatever state it is in — Step ▸ Stop Playbook runs it as a process.
@@ -12,7 +13,9 @@ import getpass
 from argparse import ArgumentParser, Namespace
 from collections.abc import Callable
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
+from textwrap import indent
 
 from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.lookup import find_step, step_arg
@@ -30,7 +33,8 @@ from dplanner.modules.step_playbook.aspect import (
     write,
     write_project,
 )
-from dplanner.modules.step_playbook.engine import stop, wake
+from dplanner.modules.step_playbook.engine import standing_of, stop, wake
+from dplanner.modules.step_playbook.passes import describe
 from dplanner.modules.step_playbook.presets import MAX_ROUNDS, PRESETS, ROUNDS, Playbook, preset
 from dplanner.modules.step_playbook.workflows import stopped
 from dplanner.modules.step_status.workflows import perform
@@ -225,10 +229,25 @@ def _show(context: CliContext, args: Namespace) -> int:
     choice = read(step)
     rounds = choice.rounds if choice is not None else None
     reviewer = choice.reviewer if choice is not None else None
+    project_dir = context.store.project_dir(context.library.project_of(step.id).id)
+    stands = standing_of(project_dir, step, datetime.now(UTC))
+    now = (
+        None
+        if stands is None
+        else {
+            "id": stands.pass_id,
+            "phrase": stands.phrase,
+            "tone": stands.tone,
+            "stage": stands.stages[stands.current] if stands.current >= 0 else None,
+            "ended": stands.ended,
+        }
+    )
+    # The pass under way, or the last one, as the card's strip says it.
+    under = "" if stands is None else "\n" + indent(describe(stands), "  ")
     if resolved.playbook is None:
         context.report(
-            {"step": step.id, "playbook": None, "source": resolved.source},
-            f"{step.title}: no playbook — Run Agent",
+            {"step": step.id, "playbook": None, "source": resolved.source, "pass": now},
+            f"{step.title}: no playbook — Run Agent{under}",
         )
         return 0
     playbook = resolved.playbook
@@ -242,12 +261,13 @@ def _show(context: CliContext, args: Namespace) -> int:
             "source": resolved.source,
             "rounds": rounds if rounds is not None else ROUNDS,
             "reviewer": reviewer,
+            "pass": now,
         }
         | _data(playbook),
         f"{step.title}: {playbook.name} ({playbook.id}), {_SOURCES[resolved.source]}\n"
         f"{stages}\n"
         f"  rounds {rounds if rounds is not None else f'{ROUNDS} (default)'}"
-        f" · reviewer {reviewer or 'another vendor (default)'}",
+        f" · reviewer {reviewer or 'another vendor (default)'}{under}",
     )
     return 0
 

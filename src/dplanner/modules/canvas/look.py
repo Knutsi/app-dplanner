@@ -1,6 +1,6 @@
 """How this user works on graphs: the marks, the spotlight, the ground under them, whether
-a gesture snaps to its grid, and whether the panel beside the canvas is open — one value,
-kept per user and pushed to every open canvas.
+a gesture snaps to its grid, whether the panel beside the canvas is open and whether motion
+is reduced — one value, kept per user and pushed to every open canvas.
 
 None of it is a fact about a project. Whether a graph's ends are lit, whether dots are
 drawn under it, whether a drag lands on the grid and whether a tool palette stands beside
@@ -47,6 +47,10 @@ class Look:
     # Whether the panel beside the canvas is open. Off by default: the canvas is what a
     # project tab is for, and a palette nobody asked for is width taken from it.
     side_panel: bool = False
+    # Reduce Motion: what would move to say a fact arrived — a playbook strip growing out of
+    # a card's foot — appears at once instead. Off by default: the motion is short and says
+    # something; a person who would rather not see it switches it off.
+    reduce_motion: bool = False
 
     def with_mark(self, name: str, on: bool) -> "Look":
         return replace(self, marks=self.marks.with_(name, on))
@@ -65,6 +69,9 @@ class Look:
     def with_side_panel(self, on: bool) -> "Look":
         return replace(self, side_panel=on)
 
+    def with_reduce_motion(self, on: bool) -> "Look":
+        return replace(self, reduce_motion=on)
+
     def to_json(self) -> dict[str, object]:
         return {
             "marks": self.marks.to_json(),
@@ -72,6 +79,7 @@ class Look:
             "background": self.background,
             "snap": self.snap,
             "side_panel": self.side_panel,
+            "reduce_motion": self.reduce_motion,
         }
 
     @classmethod
@@ -86,4 +94,5 @@ class Look:
             background=background if background in BACKGROUNDS else DEFAULT_BACKGROUND,
             snap=bool(data.get("snap", True)),
             side_panel=bool(data.get("side_panel", False)),
+            reduce_motion=bool(data.get("reduce_motion", False)),
         )

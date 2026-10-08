@@ -94,6 +94,7 @@ if TYPE_CHECKING:
     from dplanner.modules.step_agent_instruction.module import StepAgentInstructionModule
     from dplanner.modules.step_agent_run.module import StepAgentRunModule
     from dplanner.modules.step_order.module import StepOrderModule
+    from dplanner.modules.step_playbook.module import PassStandings
     from dplanner.modules.step_properties.module import StepPropertiesModule
     from dplanner.modules.step_status.workflows import StatusWorkflow
     from dplanner.planning.status import Reading, Status, Unknown
@@ -504,6 +505,7 @@ class _Agents(NamedTuple):
     launch: "AgentLaunchModule"
     usage: "AgentUsageModule"
     questions: "AgentQuestionsModule"
+    standings: "PassStandings"  # Read by the canvas; the playbook module starts its polling.
 
 
 def _agents(
@@ -539,6 +541,7 @@ def _agents(
         StepAgentInstructionModule,
     )
     from dplanner.modules.step_agent_run.module import StepAgentRunDeps, StepAgentRunModule
+    from dplanner.modules.step_playbook.module import PassStandings
     from dplanner.planning.kinds import key_of
     from dplanner.planning.status import Status
 
@@ -731,7 +734,10 @@ def _agents(
             key_of=key_of,
         )
     )
-    return _Agents(runs, at_work, claims, checkouts, instruction, launch, usage, questions)
+    standings = PassStandings(library, store.project_dir, services.window)
+    return _Agents(
+        runs, at_work, claims, checkouts, instruction, launch, usage, questions, standings
+    )
 
 
 class _Graph(NamedTuple):
@@ -751,14 +757,7 @@ def _graph(root: _Root, *, branches: "BranchesModule", agents: _Agents) -> _Grap
     from dplanner.modules.github.aspect import read as github_read
     from dplanner.modules.problems.module import ProblemsDeps, ProblemsModule
     from dplanner.modules.schedule.landings import card_stats
-    from dplanner.modules.step_agent_run.aspect import (
-        LAUNCHED,
-        NEEDS_INPUT,
-        PENDING_APPROVAL,
-        PLAN_FOR_REVIEW,
-        WORKING,
-    )
-    from dplanner.modules.step_agent_run.aspect import read as agent_run_state
+    from dplanner.modules.step_agent_run.aspect import chip as agent_run_chip
     from dplanner.planning.kinds import Kind, key_of, kind_of
     from dplanner.planning.milestone import read as milestone_read
     from dplanner.planning.status import REVIEW_AND_MERGE, Status, word
@@ -788,6 +787,7 @@ def _graph(root: _Root, *, branches: "BranchesModule", agents: _Agents) -> _Grap
                 # Finished work waits on a person: to review it, or to merge it.
                 pulse=status_for(step) in REVIEW_AND_MERGE,
                 strip=strips.get(step.id, ("", "")),
+                playbook=agents.standings.card(project_id, step.id),
             )
             for step in project.steps
         }
@@ -809,6 +809,7 @@ def _graph(root: _Root, *, branches: "BranchesModule", agents: _Agents) -> _Grap
         flagged: bool = False,
         pulse: bool = False,
         strip: tuple[str, str] = ("", ""),
+        playbook: tuple[str, str, str] = ("", "", ""),
     ) -> "NodeAccent":
         """How a step looks on the canvas, translated from aspects the canvas never learns.
 
@@ -824,22 +825,16 @@ def _graph(root: _Root, *, branches: "BranchesModule", agents: _Agents) -> _Grap
         chip on the bottom edge; a plain step's stat is its own estimate; a step a person
         moves next — ready for review or to merge — pulses. The card says nothing in words
         beyond its title and its key — every aspect it wears is one of these, never a
-        phrase — but for the one name a person has to read: the feature branch its work goes
-        onto, in a strip under the body (``strip`` is the branch and its lane colour,
-        ``plan.strips``).
+        phrase — but in two strips under the body: the feature branch its work goes onto
+        (``strip``, the branch and its lane colour, ``plan.strips``) and where its playbook
+        pass stands (``playbook``: ``passes.standing``'s phrase, tone and stages).
         """
         refs = github_read(step)
 
         pill = ""
         if refs is not None and refs.has_pr():
             pill = pr_label(refs)
-        chip_text, chip_tone = {
-            LAUNCHED: ("launched", "info"),
-            WORKING: ("working", "info"),
-            PLAN_FOR_REVIEW: ("plan ready", "attention"),
-            PENDING_APPROVAL: ("needs approval", "attention"),
-            NEEDS_INPUT: ("needs input", "attention"),
-        }.get(agent_run_state(step), ("", ""))
+        chip_text, chip_tone = agent_run_chip(step)
         status = _card_status(step)
         milestone = milestone_read(step)
         key_glyph, key_glyph_tone = _primary_glyph(step)
@@ -881,6 +876,7 @@ def _graph(root: _Root, *, branches: "BranchesModule", agents: _Agents) -> _Grap
             stat_strong=bool(milestone),
             strip=strip[0],
             strip_tone=strip[1],
+            playbook=playbook,
         )
 
     # Built before the graph editor because the editor stands its panel beside the canvas.
@@ -921,7 +917,11 @@ def _graph(root: _Root, *, branches: "BranchesModule", agents: _Agents) -> _Grap
             file_modules=tuple(source.id for source in root.asset_sources),
             paste_policies=_paste_policies(),
             step_accents=step_accents,
-            accents_changed=(problems.findings.flagged_changed, agents.claims.changed),
+            accents_changed=(
+                problems.findings.flagged_changed,
+                agents.claims.changed,
+                agents.standings.changed,
+            ),
             edge_accents=edge_accents,
             # The cards that wear a branch strip, from the same reading their accents are.
             strips=lambda project_id: frozenset(
@@ -2070,8 +2070,8 @@ def _aspects(
                 launcher=agents.launch,
                 readings=root.availability,
                 parent=services.window,
+                standings=agents.standings,
                 tasks=services.tasks,
-                project_dir=store.project_dir,  # Stop Playbook reads the pass's records.
             )
         ),
         # The branch cut, and the landing's id beside it: after the wait, the other kind of

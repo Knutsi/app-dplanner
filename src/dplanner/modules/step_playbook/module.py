@@ -1,5 +1,6 @@
-"""The playbook aspect, in the running application: a Details block, a project tab, and
-*Step ▸ Run Playbook* and *Stop Playbook*.
+"""The playbook aspect, in the running application: a Details block, a project tab,
+*Step ▸ Run Playbook* and *Stop Playbook*, and where each step's pass stands for the card's
+strip.
 
 A step's block picks its playbook and the overrides a choice of its own may carry; the
 project's tab, under *Project ▸ Settings…*, picks what a step that never chose runs.
@@ -16,16 +17,29 @@ for when workers exist.
 **Stop Playbook stops the step's pass whatever it is doing**, after a confirmation naming what
 runs, by running ``dplanner playbook stop`` — the launch module runs it, as it runs Run
 Playbook's verb. It is greyed with the reason when nothing of a pass is left to stop.
+
+**Where a pass stands is polled** (:class:`PassStandings`). Its runs and questions are
+written by other processes — a supervisor, an advance, an answer — and nothing watches their
+directories, so every :data:`POLL_MS` it compares each project's ledger and questions
+fingerprints, re-reads a project whose records moved (``engine.standings``, the reading
+``playbook show`` makes) and re-reads everything once a minute for the clock alone: a hold's
+reset passes, and a pass that ended stops being shown, with nothing written. When what it
+holds for a project changes, :attr:`PassStandings.changed` names it and the canvas re-reads.
 """
 
+import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QMenu, QWidget
 
-from dplanner.domain.model import Library, Step
+from dplanner.core.signals import Signal
+from dplanner.domain import ledger, questions
+from dplanner.domain.model import Library, ProjectId, Step, StepId
 from dplanner.framework.action_registry import (
     DISABLED,
     ENABLED,
@@ -42,8 +56,8 @@ from dplanner.framework.tasks import TaskService
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import confirm
 from dplanner.modules.step_playbook.aspect import DATA_FORMAT, MODULE_ID, SPEC, read, resolve
-from dplanner.modules.step_playbook.engine import stoppable
-from dplanner.modules.step_playbook.passes import agents_of, pinned
+from dplanner.modules.step_playbook.engine import standings, stoppable
+from dplanner.modules.step_playbook.passes import Standing, agents_of, describe, pinned
 from dplanner.modules.step_playbook.presets import PRESETS, Playbook
 from dplanner.modules.step_playbook.project_section import ProjectPlaybookSection
 from dplanner.modules.step_playbook.section import PlaybookSection
@@ -56,6 +70,61 @@ ONE_AT_A_TIME = "one step at a time — Autonomous work runs a selection"
 STOP_TITLE = "Stop Playbook"
 # Where the step's playbook was chosen, as its entry in the child menu says.
 SOURCE_WORDS = {"step": "this step's", "project": "project default", "landing": "landing default"}
+POLL_MS = 2000
+# A hold's reset passes and an ended pass stops being shown with nothing written.
+CLOCK_S = 60.0
+
+
+class PassStandings:
+    """Where each step's latest playbook pass stands, per project — what the card's playbook
+    strip says. Built by the root ahead of the canvas that reads it; polling starts with the
+    module's :meth:`StepPlaybookModule.register`, so a discarded build stops."""
+
+    def __init__(
+        self, library: Library, project_dir: Callable[[ProjectId], Path], parent: QWidget
+    ) -> None:
+        self._library = library
+        self._project_dir = project_dir
+        self._seen: dict[ProjectId, tuple[object, ...]] = {}
+        self._held: dict[ProjectId, dict[StepId, Standing]] = {}
+        self._read_at = 0.0
+        self.changed: Signal[str] = Signal("step_playbook.standings_changed")
+        self._timer = QTimer(parent)
+        self._timer.setInterval(POLL_MS)
+        self._timer.timeout.connect(self.refresh)
+
+    def start(self) -> None:
+        self._timer.start()
+        self.refresh()
+
+    def card(self, project_id: ProjectId, step_id: StepId) -> tuple[str, str, str]:
+        """What a card's playbook strip says — the phrase, its tone and the stages for its
+        tooltip — or ("", "", "") for a step with no pass shown."""
+        stands = self._held.get(project_id, {}).get(step_id)
+        return ("", "", "") if stands is None else (stands.phrase, stands.tone, describe(stands))
+
+    def stoppable(self, step: Step) -> str:
+        """What stopping the step's pass would end, or "" — Stop Playbook's reading, made
+        afresh from the records rather than the strip's last poll."""
+        return stoppable(self._project_dir(self._library.project_of(step.id).id), step)
+
+    def refresh(self) -> None:
+        """Re-read each project whose records moved — every project once a minute — and say
+        which changed."""
+        clock = time.monotonic() - self._read_at >= CLOCK_S
+        if clock:
+            self._read_at = time.monotonic()
+        now = datetime.now(UTC)
+        for project in self._library.projects:
+            directory = self._project_dir(project.id)
+            stamp = (ledger.fingerprint(directory), questions.fingerprint(directory))
+            if stamp == self._seen.get(project.id) and not clock:
+                continue
+            self._seen[project.id] = stamp
+            found = standings(directory, project.steps, now) if stamp[0] else {}
+            if found != self._held.get(project.id, {}):
+                self._held[project.id] = found
+                self.changed.emit(project.id)
 
 
 class PlaybookLauncher(Protocol):
@@ -108,10 +177,9 @@ class StepPlaybookDeps:
     launcher: PlaybookLauncher
     readings: AgentReadings
     parent: QWidget
+    standings: PassStandings  # Started here; read by the canvas through the root.
     # Where the readings are refreshed, off the GUI thread; None refreshes them inline.
     tasks: TaskService | None = None
-    # Where a project's runs and questions are: what Stop Playbook reads; None reads nothing.
-    project_dir: Callable[[str], Path] | None = None
 
 
 class StepPlaybookModule:
@@ -124,6 +192,7 @@ class StepPlaybookModule:
 
     def register(self) -> None:
         deps = self._deps
+        deps.standings.start()
         deps.details.register(
             InspectorSection(
                 id=f"{MODULE_ID}.details",
@@ -246,24 +315,13 @@ class StepPlaybookModule:
 
     # -- Stop Playbook -------------------------------------------------------------------------
 
-    def _running(self, step: Step) -> str:
-        """What stopping the step's pass would end, in words, or "" — read from its records."""
-        deps = self._deps
-        if deps.project_dir is None:
-            return ""
-        try:
-            project_dir = deps.project_dir(deps.library.project_of(step.id).id)
-        except KeyError:  # A project the store does not hold has no records here.
-            return ""
-        return stoppable(project_dir, step)
-
     def _can_stop(self, context: Context) -> ActionState:
         step = self._step(context)
         if step is None:
             return DISABLED
         if isinstance(step, str):
             return ActionState(enabled=False, label=f"{STOP_TITLE} — {step}")
-        if not self._running(step):
+        if not self._deps.standings.stoppable(step):
             return ActionState(
                 enabled=False, label=f"{STOP_TITLE} — no playbook pass runs or waits on it"
             )
@@ -272,7 +330,7 @@ class StepPlaybookModule:
     def _stop(self, context: Context) -> None:
         deps = self._deps
         step = self._step(context)
-        if not isinstance(step, Step) or not (running := self._running(step)):
+        if not isinstance(step, Step) or not (running := self._deps.standings.stoppable(step)):
             return
         question = (
             f"Stop the playbook on “{step.title}”? {running[0].upper()}{running[1:]}. Nothing"

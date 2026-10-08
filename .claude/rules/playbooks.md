@@ -101,8 +101,11 @@ paths:
   choice is its aspect (absence encodes the default), then the project's landing default on a
   landing, then the project default, then none (Run Agent) — `aspect.py`'s `resolve`, one
   function every surface reads. **A stage's kind is a `StageRole`, never a second
-  `StageKind`**; `agent_stage` maps it onto `domain/headless.py`'s. Until the engine writes
-  passes, the card's mark is the `playbook` medallion on a step's **own** choice only.
+  `StageKind`**; `agent_stage` maps it onto `domain/headless.py`'s. The `playbook` medallion
+  marks a step's **own** choice only; **where a pass stands is `passes.standing`** — one
+  Qt-free reading of its runs, its questions and the questions its runs parked on, said by
+  the card's playbook strip and by `playbook show` alike (`engine.standings` for a project,
+  an ended pass shown for `ENDED_SHOWN`). A new phrase goes there, never in a surface.
 - **Every stage is one headless turn**, with the invocation per harness in
   `docs/architecture/playbooks.md`'s *Each stage is one headless turn per harness*: the JSON stream,
   Claude's `--strict-mcp-config`, the plan repository and the run directory writable,
