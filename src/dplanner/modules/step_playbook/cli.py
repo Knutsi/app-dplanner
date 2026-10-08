@@ -33,7 +33,7 @@ from dplanner.modules.step_playbook.aspect import (
     write,
     write_project,
 )
-from dplanner.modules.step_playbook.engine import standing_of, stop, wake
+from dplanner.modules.step_playbook.engine import standing_of, stop, stopped_pass, wake
 from dplanner.modules.step_playbook.passes import describe
 from dplanner.modules.step_playbook.presets import MAX_ROUNDS, PRESETS, ROUNDS, Playbook, preset
 from dplanner.modules.step_playbook.workflows import stopped
@@ -64,14 +64,26 @@ def commands(
         return 0
 
     def _stop(context: CliContext, args: Namespace) -> int:
-        """The pass stopped first, then the plan: the other order would let a stage that
-        ends in between launch the next one. Nothing to stop is said, and is no error."""
+        """The pass stopped first, then the plan — and the plan only once nothing of the pass
+        runs: the other order would let a stage that ends in between launch the next one, or
+        say nobody works a step a surviving process still works. A stop whose change to the
+        plan did not land is finished by the next. Nothing to stop is said, and is no error."""
         step = find_step(context.library, args.step, context.current)
-        project_dir = context.store.project_dir(context.library.project_of(step.id).id)
-        done = stop(project_dir, step, getpass.getuser())
-        if done is None:
-            said = f"{step.title}: nothing to stop — no playbook pass runs or waits on it"
-            context.report({"step": step.id, "stopped": False}, said)
+        project = context.library.project_of(step.id).id
+        project_dir = context.store.project_dir(project)
+        done = stop(project_dir, project, step, getpass.getuser())
+        if done is not None and done.still:
+            raise CliError(f"{step.title}: {done.said()} — its status is left as it was")
+        # The plan as it stands now, not as it was read before the step's lock came free: a
+        # launch that held it may have claimed the step meanwhile.
+        adopted = context.store.adopt_outside_changes()
+        if adopted.deferred or adopted.rebuild_required:
+            raise CliError(f"{step.title}: the plan was being written meanwhile — run it again")
+        step = context.library.step(step.id)
+        pass_id = done.pass_ if done is not None else stopped_pass(project_dir, step.id)
+        nothing = f"{step.title}: nothing to stop — no playbook pass runs or waits on it"
+        if not pass_id:
+            context.report({"step": step.id, "stopped": False}, nothing)
             return 0
         change = stopped(context.library, step, today=context.clock.today())
         if change.command is not None:
@@ -83,28 +95,33 @@ def commands(
                 end_claim,
                 lambda follow_up: release(context.store.project_dir(follow_up.project), follow_up),
             )
+            if (
+                done is None
+                and change.command is None
+                and not (performed.ended or performed.failed)
+            ):
+                context.report({"step": step.id, "stopped": False}, nothing)
+                return
             released = any(isinstance(each, Release) for each in performed.ended)
             now = word(stored(context.library.step(step.id)))
             data = {
                 "step": step.id,
                 "stopped": True,
-                "pass": done.pass_,
-                "runs": list(done.runs),
-                "questions": list(done.questions),
-                "still": list(done.still),
+                "pass": pass_id,
+                "runs": list(done.runs) if done is not None else [],
+                "questions": list(done.questions) if done is not None else [],
                 "status": now,
                 "released": released,
             }
+            said = done.said() if done is not None else f"finished stopping pass {pass_id}"
             tail = (f"; it reads {now}" if change.command is not None else "") + (
                 "; released from its squad's claim" if released else ""
             )
-            context.report(
-                data, f"{step.title}: {done.said()}{tail} — its worktree and branch are kept"
-            )
-            failed = [f"{type(each).__name__}: {why}" for each, why in performed.failed]
-            if done.still or failed:
+            context.report(data, f"{step.title}: {said}{tail} — its worktree and branch are kept")
+            if performed.failed:
                 raise CliError(
-                    "; ".join([*(f"run {run} is still stopping" for run in done.still), *failed])
+                    "; ".join(f"{type(each).__name__}: {why}" for each, why in performed.failed)
+                    + " — `dplanner playbook stop` again finishes it"
                 )
 
         context.after_flush.append(settle)

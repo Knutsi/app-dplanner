@@ -44,6 +44,14 @@ SYMLINKS = pytest.mark.skipif(
 )
 
 
+# A stop finds every process of a run by the run its environment carries, and only Linux lets
+# one process read another's: elsewhere it finds the turn by its recorded process alone.
+PROCESS_ENVIRONMENTS = pytest.mark.skipif(
+    not Path("/proc/self/environ").exists(),
+    reason="reading another process's environment needs Linux's /proc",
+)
+
+
 SH = pytest.mark.skipif(
     shutil.which("sh") is None,
     reason="the test runs the generated POSIX wrapper through sh, which Windows does not ship",

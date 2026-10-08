@@ -333,59 +333,95 @@ def stop_and_wait(
 
 def settle_fenced(project_dir: Path, run: str, grace: float, config: Path | None = None) -> bool:
     """End a fenced run of this machine that no supervisor drives — what a supervisor finding
-    the fence does: its orphaned turn ended first (:func:`end_orphaned_turn`), then the run,
-    its questions withdrawn. The run's supervisor lock is held throughout, so none starts on
-    it meanwhile. Whether the run is over now; False while a supervisor holds it, or its turn
-    will not end."""
+    the fence does: whatever of it still runs ended first (:func:`end_orphaned_turn`), then
+    the run, its questions withdrawn. A run already over is swept too, for a process its turn
+    left behind. The run's supervisor lock is held throughout, so none starts on it
+    meanwhile. Whether the run is over now, nothing of it running; False while a supervisor
+    holds it, or something of it will not end."""
     try:
         with os_lock(ledger.run_dir(run, config) / LOCK_FILE, wait=False):
             record = ledger.find(project_dir, run)
-            if record is None or record.over:
+            if record is None:
                 return True
-            if not record.fence or record.machine != ledger.machine_id(config):
+            if record.machine != ledger.machine_id(config):
+                return record.over
+            if not record.over and not record.fence:
                 return False
             if not end_orphaned_turn(record, grace):
                 return False
-            update(project_dir, run, lambda fresh: fresh.ended_at(now_stamp(), None), config)
-            questions.withdraw_unsettled(project_dir, run, "the run was stopped", config=config)
+            if not record.over:
+                update(project_dir, run, lambda fresh: fresh.ended_at(now_stamp(), None), config)
+                questions.withdraw_unsettled(project_dir, run, "the run was stopped", config=config)
             return True
     except BlockingIOError:
         return False
 
 
 def end_orphaned_turn(record: LedgerRecord, grace: float) -> bool:
-    """End the run's last turn when its process outlived its supervisor — the turn's whole
-    group, asked with SIGTERM and killed after ``grace`` — and answer whether nothing of it
-    still runs. Only the process the turn recorded counts (pid, boot id and start time, so a
-    reused pid is left alone); a turn that ended, or never started, has nothing to end."""
+    """End whatever of the run still runs with no supervisor to end it — SIGTERM, then
+    SIGKILL after ``grace`` — and answer whether nothing of it is left.
+
+    Found by identity, never by a pid alone: every process whose environment carries the run
+    (``DPLANNER_RUN``, which a turn and everything it starts inherit), and the turn's recorded
+    process group while it is provably the turn's — its leader the very process recorded (pid,
+    boot and start time), or a member carrying the run. So a child that outlived its leader,
+    and a turn whose supervisor died before it wrote its pid down, are ended too. Only Linux
+    lets one process read another's environment; elsewhere the recorded leader alone counts."""
     last = record.last_turn
-    if last is None or last.end or not last.pid:
+    leader = ProcessStamp(last.pid, last.boot, last.pid_started) if last and last.pid else None
+    group = _turn_group(record.run, leader)
+    if not _run_left(record.run, leader, group):
         return True
-    stamp = ProcessStamp(last.pid, last.boot, last.pid_started)
-    if not is_live(stamp):
-        return True
-    if sys.platform == "win32":
-        subprocess.run(
-            ["taskkill", "/T", "/F", "/PID", str(last.pid)], capture_output=True, check=False
-        )
-    else:
-        group = last.pid  # The turn's CLI led its own session: its pid is the group's id.
-        with suppress(ProcessLookupError, PermissionError):
-            os.killpg(group, signal.SIGTERM)
-        deadline = time.monotonic() + grace
-        while _orphans_alive(group) and time.monotonic() < deadline:
-            time.sleep(0.05)
-        if _orphans_alive(group):
-            with suppress(ProcessLookupError, PermissionError):
-                os.killpg(group, signal.SIGKILL)
-    deadline = time.monotonic() + ORPHAN_REAP_S
-    while is_live(stamp) and time.monotonic() < deadline:
+    _end_run(record.run, leader, group, hard=False)
+    deadline = time.monotonic() + grace
+    while _run_left(record.run, leader, group) and time.monotonic() < deadline:
         time.sleep(0.05)
-    return not is_live(stamp)
+    if _run_left(record.run, leader, group):
+        _end_run(record.run, leader, group, hard=True)
+    deadline = time.monotonic() + ORPHAN_REAP_S
+    while _run_left(record.run, leader, group) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    return not _run_left(record.run, leader, group)
 
 
-def _orphans_alive(group: int) -> bool:
-    if sys.platform == "win32":
+def carrying_run(run: str) -> list[int]:
+    """Every process of this machine but this one whose environment names ``run`` — Linux
+    only; [] elsewhere, where no process may read another's environment."""
+    if sys.platform != "linux":
+        return []
+    else:
+        entry = f"{RUN_ENV}={run}".encode()
+        found = []
+        for proc in Path("/proc").iterdir():
+            if not proc.name.isdigit() or int(proc.name) == os.getpid():
+                continue
+            try:
+                environ = (proc / "environ").read_bytes()
+            except OSError:  # Gone meanwhile, or somebody else's.
+                continue
+            if entry in environ.split(b"\0"):
+                found.append(int(proc.name))
+        return found
+
+
+def _turn_group(run: str, leader: ProcessStamp | None) -> int:
+    """The turn's process group, when it is provably still the turn's; 0 when not."""
+    if sys.platform == "win32" or leader is None:
+        return 0
+    else:
+        if is_live(leader):
+            return leader.pid
+        for pid in carrying_run(run):
+            with suppress(OSError):
+                if os.getpgid(pid) == leader.pid:
+                    return leader.pid
+        return 0
+
+
+def _run_left(run: str, leader: ProcessStamp | None, group: int) -> bool:
+    if (leader is not None and is_live(leader)) or carrying_run(run):
+        return True
+    if sys.platform == "win32" or not group:
         return False
     else:
         try:
@@ -395,6 +431,22 @@ def _orphans_alive(group: int) -> bool:
         except PermissionError:
             return True
         return True
+
+
+def _end_run(run: str, leader: ProcessStamp | None, group: int, *, hard: bool) -> None:
+    if sys.platform == "win32":
+        if leader is not None and is_live(leader):
+            subprocess.run(
+                ["taskkill", "/T", "/F", "/PID", str(leader.pid)], capture_output=True, check=False
+            )
+    else:
+        sig = signal.SIGKILL if hard else signal.SIGTERM
+        for pid in carrying_run(run):
+            with suppress(ProcessLookupError, PermissionError):
+                os.kill(pid, sig)
+        if group:
+            with suppress(ProcessLookupError, PermissionError):
+                os.killpg(group, sig)
 
 
 def update(
@@ -1092,22 +1144,29 @@ def start_detached(
         argv += ["--prompt", prompt]
     if text:
         argv += ["--text", text]
-    spawn_detached(argv)
+    _detached(argv)
 
 
 def advance_detached(step: str, *, library: Path | None = None) -> None:
     """Start ``dplanner playbook advance <step>`` that outlives whoever started it: a pass's
     stage ended, or its gate was answered, and the engine decides what is due next. This
     interpreter, as :func:`start_detached` is."""
-    spawn_detached(dplanner_argv(library, "playbook", "advance", step))
+    _detached(dplanner_argv(library, "playbook", "advance", step))
 
 
 def wake_detached(project_dir: Path, question: str, *, library: Path | None = None) -> None:
     """Start ``dplanner playbook wake <question>``: a pass held on its account's usage waits
     for the reset in a process of its own, then answers the card for the clock and advances."""
-    spawn_detached(
+    _detached(
         dplanner_argv(library, "playbook", "wake", question, "--project-dir", str(project_dir))
     )
+
+
+def _detached(argv: list[str]) -> None:
+    """Start ``argv`` detached, never carrying the run of the shell that started it — an
+    answer or a launch given from inside a turn — since stopping that run ends every process
+    that carries it (:func:`end_orphaned_turn`)."""
+    spawn_detached(argv, env={k: v for k, v in os.environ.items() if k != RUN_ENV})
 
 
 def revive(

@@ -23,7 +23,7 @@ from typing import Any, Protocol
 
 from dplanner.cli import CliContext, CliError
 from dplanner.domain import ledger, questions
-from dplanner.domain.headless import StageKind
+from dplanner.domain.headless import StageKind, TurnEnd
 from dplanner.domain.ledger import LedgerRecord
 from dplanner.domain.model import Step, now_stamp
 from dplanner.domain.questions import Question
@@ -430,31 +430,66 @@ def active(project_dir: Path, step: Step) -> str:
     return f"has a playbook pass under way ({pass_.id}): {_under_way(next_)}"
 
 
+# Why a stop fences a pass's runs and withdraws its questions: how a later stop knows the
+# pass was a person's to end, and finishes what that stop left of the plan.
+STOP_WHY = "the playbook was stopped"
+
+
 def stoppable(project_dir: Path, step: Step) -> str:
     """What stopping the step's latest pass would end, in a person's words — *its execute
-    stage is running* — or "" when nothing of it is left to stop: it has reached its end and
-    every run of it is over. A run still dying after an earlier stop counts, so stopping again
-    finishes it."""
-    pass_ = _latest_pass(project_dir, step.id)
-    if isinstance(pass_, str):
-        return ""
-    left = [e for e in pass_.entries if isinstance(e, LedgerRecord) and not e.over]
-    if left:
+    stage is running* — or "" when nothing of it is left to stop. Read from its raw records,
+    by pass id alone, so a pass whose preset this build does not know is stopped all the
+    same: a run not over, a question not settled — an answer no advance has acted on yet
+    included — or a stage done whose advance is still to come. A run still dying after an
+    earlier stop counts, so stopping again finishes it; so does a stop whose change to the
+    plan did not land, while the step still reads in progress."""
+    entries = _latest_entries(project_dir, step.id)
+    if said := _left(project_dir, step, entries):
+        return said
+    if stopped_pass(project_dir, step.id) and stored(step) is Status.IN_PROGRESS:
+        return "its stop is unfinished: the step still reads in progress"
+    return ""
+
+
+def _left(project_dir: Path, step: Step, entries: Sequence[passes.Entry]) -> str:
+    runs = [e for e in entries if isinstance(e, LedgerRecord)]
+    if left := [r for r in runs if not r.over]:
         run = left[-1]
         return f"its {run.stage} stage is {'still stopping' if run.fence else _run_state(run)}"
-    next_ = passes.due(pass_.playbook, pass_.settings, pass_.entries, _facts(step))
-    match next_:
-        case Complete() | Halted():
+    if asked := [e for e in entries if isinstance(e, Question) and not e.settled]:
+        question = asked[-1]
+        if question.state == questions.ANSWERED:
+            return f"its {question.stage} stage's answer to {question.short} is not acted on yet"
+        return f"its {question.stage} stage waits on {question.short}"
+    latest = entries[-1] if entries else None
+    if not isinstance(latest, LedgerRecord) or latest.fence:
+        return ""
+    if latest.last_turn is None or latest.last_turn.end != TurnEnd.DONE:
+        return ""
+    pass_ = _latest_pass(project_dir, step.id)
+    if not isinstance(pass_, str):
+        next_ = passes.due(pass_.playbook, pass_.settings, pass_.entries, _facts(step))
+        if isinstance(next_, Complete | Halted):
             return ""
-        case Wait(why):  # With every run over, the pass waits on its question.
-            asked = pass_.entries[-1]
-            return (
-                f"its {asked.stage} stage waits on {asked.short}"
-                if isinstance(asked, Question)
-                else why
-            )
-        case _:
-            return f"its {next_.stage} stage is due"
+    return f"its {latest.stage} stage is {_run_state(latest)}"
+
+
+def stopped_pass(project_dir: Path, step_id: str) -> str:
+    """The id of the step's latest pass when a stop ended it and nothing of the step has run
+    since — what a stop repeated may still finish in the plan — else ""."""
+    entries = _latest_entries(project_dir, step_id)
+    stopped = any(
+        (e.fence or {}).get("why") == STOP_WHY
+        if isinstance(e, LedgerRecord)
+        else e.withdrawn.get("why") == STOP_WHY
+        for e in entries
+    )
+    if not stopped:
+        return ""
+    others = [r for r in ledger.records(project_dir) if r.step == step_id and not r.pass_]
+    runs = [e for e in entries if isinstance(e, LedgerRecord)]
+    asked = [e for e in entries if isinstance(e, Question)]
+    return entries[-1].pass_ if passes.in_order([*others, *runs], asked)[-1].pass_ else ""
 
 
 @dataclass(frozen=True)
@@ -484,44 +519,36 @@ class Stopped:
 
 
 def stop(
-    project_dir: Path, step: Step, by: str, wait: float = supervisor.STOPPING_S
+    project_dir: Path, project: str, step: Step, by: str, wait: float = supervisor.STOPPING_S
 ) -> Stopped | None:
     """Stop the step's latest pass, whatever state it is in, so that nothing of it starts
-    again by itself — or None when there is nothing to stop (:func:`stoppable`).
+    again by itself — or None when nothing of it is left to stop (:func:`_left`).
 
-    Under the step's launch lock, which an advance waits for: every unfinished run of the
-    pass, and its latest run when that ended between stages, is fenced and stopped
-    (``supervisor.stop_and_wait`` — a live turn signalled, a parked, unstarted or orphaned
-    run ended here); every question of the pass not yet settled is withdrawn. Each of those
-    makes :func:`~.passes.due` read the pass ``Halted``. Its worktree and branch are kept."""
-    seen = _latest_pass(project_dir, step.id)
-    if isinstance(seen, str):
-        return None
-    with supervisor.launching(seen.entries[0].project, step.id, wait=True):
-        pass_ = _latest_pass(project_dir, step.id)
-        if isinstance(pass_, str) or not stoppable(project_dir, step):
+    The step's launch lock first, then the reading: a launch holding it may be about to
+    write the pass's first record, and an advance waits for it. Under it, every question of
+    the pass not yet settled is withdrawn, and every unfinished run of the pass — and its
+    latest run when that ended between stages — is fenced and stopped
+    (``supervisor.stop_and_wait``: a live turn signalled, a parked, unstarted or orphaned
+    run ended here, whatever carries the run killed). Each of those makes
+    :func:`~.passes.due` read the pass ``Halted``. Its worktree and branch are kept."""
+    with supervisor.launching(project, step.id, wait=True):
+        entries = _latest_entries(project_dir, step.id)
+        if not _left(project_dir, step, entries):
             return None
-        runs = [e for e in pass_.entries if isinstance(e, LedgerRecord)]
-        latest = pass_.entries[-1]
+        runs = [e for e in entries if isinstance(e, LedgerRecord)]
+        latest = entries[-1]
         targets = [r for r in runs if not r.over or (r is latest and not r.fence)]
-        why = "the playbook was stopped"
-        asked = [
-            e for e in pass_.entries if isinstance(e, Question) and e.state in questions.UNSETTLED
-        ]
+        asked = [e for e in entries if isinstance(e, Question) and not e.settled]
         for question in asked:
             questions.update(
                 project_dir,
                 question.id,
-                lambda q: (
-                    questions.withdrawn(q, why, now_stamp())
-                    if q.state in questions.UNSETTLED
-                    else q
-                ),
+                lambda q: q if q.settled else questions.withdrawn(q, STOP_WHY, now_stamp()),
             )
-        still = supervisor.stop_and_wait(project_dir, targets, by, why, wait)
+        still = supervisor.stop_and_wait(project_dir, targets, by, STOP_WHY, wait)
         here = ledger.machine_id()
         return Stopped(
-            pass_.id,
+            latest.pass_,
             tuple(f"{r.stage} attempt {r.attempt} was {_run_state(r)}" for r in targets),
             tuple(q.short for q in asked),
             tuple(still),
@@ -612,17 +639,28 @@ def _latest_pass(project_dir: Path, step_id: str) -> "_Pass | str":
     return _pass_of(step_id, ledger.records(project_dir), questions.records(project_dir))
 
 
+def _latest_entries(project_dir: Path, step_id: str) -> list[passes.Entry]:
+    """The step's latest pass's runs and questions, oldest first, by pass id alone."""
+    return _entries_of(step_id, ledger.records(project_dir), questions.records(project_dir))
+
+
+def _entries_of(
+    step_id: str, records: Sequence[LedgerRecord], asked_all: Sequence[Question]
+) -> list[passes.Entry]:
+    runs = [r for r in records if r.step == step_id and r.pass_]
+    asked = [q for q in asked_all if q.step == step_id and q.pass_]
+    entries = passes.in_order(runs, asked)
+    return [e for e in entries if e.pass_ == entries[-1].pass_] if entries else []
+
+
 def _pass_of(
     step_id: str, records: Sequence[LedgerRecord], asked_all: Sequence[Question]
 ) -> "_Pass | str":
     """:func:`_latest_pass` over records already read: a project's, for every step at once."""
-    runs = [r for r in records if r.step == step_id and r.pass_]
-    asked = [q for q in asked_all if q.step == step_id and q.pass_]
-    entries = passes.in_order(runs, asked)
+    entries = _entries_of(step_id, records, asked_all)
     if not entries:
         return "no playbook pass to advance"
     pass_id = entries[-1].pass_
-    entries = [e for e in entries if e.pass_ == pass_id]
     first = entries[0]
     settings = passes.Settings.from_json(first.settings or {})
     if settings is None:

@@ -10,13 +10,15 @@ whose supervisor lock it holds. Never a real agent CLI, never a model API.
 import json
 import threading
 import time
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from tests.modules.agent_supervisor.test_supervisor import INIT, limit_at, result
 from tests.modules.step_playbook.test_engine import _status
+from tests.platforms import PROCESS_ENVIRONMENTS
 
-from dplanner.core.process import is_live
+from dplanner.core.process import is_live, stamp_of
 from dplanner.domain import claims, ledger, questions
 from dplanner.domain.ledger import Turn
 from dplanner.domain.model import now_stamp
@@ -244,8 +246,153 @@ def test_what_a_stop_would_end_is_said_in_a_persons_words(drive, cli_library):
     drive.cli("agent", "run", STEP, "--playbook")
     assert said() == "its plan stage is not started"
     drive.supervise()
-    assert said() == "its person stage is due"
+    assert said() == "its plan stage is done, its next stage not yet begun"
     drive.advance()
     assert said() == f"its person stage waits on {drive.asked().short}"
     stop(drive)
     assert said() == ""
+
+
+# -- what a stop must never leave behind (the S28 review's eight findings) -----------------------
+
+
+@PROCESS_ENVIRONMENTS
+def test_a_child_that_outlived_its_turns_leader_is_ended(drive, cli_library, monkeypatch):
+    """The leader the turn recorded is gone; a child it started runs on in its group."""
+    from tests.launching import group_of, orphaned_turn
+
+    drive.cli("playbook", "set", STEP, "execute")
+    drive.cli("agent", "run", STEP, "--playbook")
+    run = drive.latest().run
+    with orphaned_turn(run, leader_exits=True) as child:
+        leader = group_of(child.pid)
+        assert leader != child.pid and stamp_of(leader) is None
+        turn = Turn(n=1, prompt="launch", started=now_stamp(), pid=leader, boot=child.boot,
+                    pid_started="1")  # fmt: skip
+        supervisor.update(drive.plan, run, lambda r: r.with_turns((turn,)))
+        assert "was running" in stop(drive)
+        assert not is_live(child) and drive.latest().over
+    nothing_restarts(drive, cli_library, monkeypatch)
+
+
+@PROCESS_ENVIRONMENTS
+@pytest.mark.parametrize("claimed", [False, True], ids=["launch", "claimed-answer"])
+def test_a_turn_whose_supervisor_died_before_writing_its_pid_is_ended(
+    drive, cli_library, monkeypatch, claimed
+):
+    """The supervisor was killed between the spawn and the pid's write: a launch's turn is not
+    in the record at all, an answer's is ``spawning`` with no pid. Its process carries the
+    run all the same."""
+    from tests.launching import orphaned_turn
+
+    drive.cli("playbook", "set", STEP, "execute")
+    drive.cli("agent", "run", STEP, "--playbook")
+    run = drive.latest().run
+    if claimed:
+        turn = Turn(n=1, prompt="answer", started=now_stamp(), spawning=now_stamp(),
+                    consumed={"question": "q", "answer": "a"})  # fmt: skip
+        supervisor.update(drive.plan, run, lambda r: r.with_turns((turn,)))
+    with orphaned_turn(run) as agent:
+        stop(drive)
+        assert not is_live(agent) and drive.latest().over
+    nothing_restarts(drive, cli_library, monkeypatch)
+
+
+def test_a_stop_waits_for_a_launch_holding_the_step_and_stops_what_it_began(
+    drive, cli_library, monkeypatch
+):
+    begin, paused, go = engine.Engine.begin, threading.Event(), threading.Event()
+
+    def held_begin(self, *args, **kwargs):
+        paused.set()
+        go.wait(10)
+        return begin(self, *args, **kwargs)
+
+    monkeypatch.setattr(engine.Engine, "begin", held_begin)
+    drive.cli("playbook", "set", STEP, "execute")
+    launch = threading.Thread(target=lambda: drive.cli("agent", "run", STEP, "--playbook"))
+    launch.start()
+    assert paused.wait(10)  # The launch holds the step's lock, its pass not yet written.
+    said: list[str] = []
+    stopping = threading.Thread(target=lambda: said.append(stop(drive)))
+    stopping.start()
+    stopping.join(0.5)
+    assert said == []
+    go.set()
+    launch.join()
+    stopping.join()
+    assert "execute attempt 1 was not started" in said[0] and drive.latest().over
+    nothing_restarts(drive, cli_library, monkeypatch)
+
+
+def test_a_spikes_final_approval_answered_but_not_acted_on_is_withdrawn(
+    drive, cli_library, monkeypatch
+):
+    drive.cli("playbook", "set", STEP, "spike")
+    drive.play({"lines": [INIT, result("A plan", session="s")]})
+    drive.cli("agent", "run", STEP, "--playbook")
+    drive.supervise()
+    drive.advance()
+    gate = drive.asked()
+    drive.answer(gate, "Pass")  # Its advance would mark the step done; it has not run.
+    assert f"withdrew {gate.short}" in stop(drive)
+    assert "withdrawn" in drive.advance() or "stopped" in drive.advance()
+    assert _status(drive.cli, STEP) == "pending"
+    nothing_restarts(drive, cli_library, monkeypatch)
+
+
+def test_a_stop_whose_plan_change_did_not_land_is_finished_by_the_next(drive, monkeypatch):
+    from dplanner.modules.agent_claims import ownership
+
+    drive.cli("claim", "take", STEP, "--callsign", "osprey", "--project", "widget")
+    drive.cli("playbook", "set", STEP, "execute")
+    drive.cli("agent", "run", STEP, "--playbook", "--callsign", "osprey-1")
+    release = ownership.release
+
+    def unreachable(*_args, **_kwargs):
+        raise OSError("the claims push was refused")
+
+    monkeypatch.setattr(ownership, "release", unreachable)
+    assert "again finishes it" in stop(drive, expect=1)
+    assert claims.read_holdings(drive.plan, now_stamp()) != {}
+    monkeypatch.setattr(ownership, "release", release)
+    report = json.loads(drive.cli("playbook", "stop", STEP, "--json"))
+    assert report["stopped"] and report["released"]
+    assert claims.read_holdings(drive.plan, now_stamp()) == {}
+
+    drive.cli("status", "set", STEP, "in-progress")  # As a flush that lost a race leaves it.
+    assert "finished stopping pass" in stop(drive)
+    assert _status(drive.cli, STEP) == "pending"
+    assert "nothing to stop" in stop(drive)
+
+
+def test_a_run_that_will_not_end_leaves_the_status_and_a_stop_again_finishes(drive):
+    drive.cli("playbook", "set", STEP, "execute")
+    drive.cli("agent", "run", STEP, "--playbook")
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(supervisor, "end_orphaned_turn", lambda _record, _grace: False)
+        said = stop(drive, expect=1)
+    assert "still stopping" in said and "left as it was" in said
+    assert _status(drive.cli, STEP) == "in-progress" and not drive.latest().over
+    assert "it reads pending" in stop(drive)
+    assert drive.latest().over
+
+
+def test_a_pass_whose_preset_revision_this_build_lacks_is_stopped(drive, cli_library):
+    from dplanner.cli.lookup import find_step
+    from dplanner.domain.store import LibraryStore
+
+    drive.cli("playbook", "set", STEP, "execute")
+    drive.cli("agent", "run", STEP, "--playbook")
+    supervisor.update(
+        drive.plan,
+        drive.latest().run,
+        lambda r: replace(r, settings={**(r.settings or {}), "revision": 999}),
+    )
+    store = LibraryStore(cli_library)
+    try:
+        assert engine.stoppable(drive.plan, find_step(store.load(), STEP))
+    finally:
+        store.close()
+    assert "execute attempt 1 was not started" in stop(drive)
+    assert drive.latest().over and _status(drive.cli, STEP) == "pending"

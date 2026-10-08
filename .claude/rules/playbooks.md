@@ -84,14 +84,21 @@ paths:
   `docs/architecture/playbooks.md`'s *How the engine drives a pass* has the reasoning.
 - **A pass is stopped by one verb, whatever it is doing: `dplanner playbook stop <step>`**
   (`engine.stop`), which *Step ▸ Stop Playbook* — confirmed, naming what runs
-  (`engine.stoppable`), greyed with the reason when nothing does — runs as a process. Under the
-  step's launch lock it withdraws the pass's unsettled questions and fences and stops its
-  unfinished runs and its latest run (`supervisor.stop_and_wait`), so the latest record reads
-  `Halted` to `passes.due` — the stopped state every surface reads, and no new record kind;
-  then the plan (`workflows.stopped`): in progress back to pending, any other status standing,
-  the at-work claim ended and the squad's released. Nothing of a stopped pass starts again —
-  not an advance, `revive`, the clock or *Retry now*; nothing to stop exits 0 and says so; the
-  worktree and branch are kept, and the next `agent run --playbook` starts a new pass.
+  (`engine.stoppable`), greyed with the reason when nothing does — runs as a process, on a task
+  of its own that nothing running refuses. **The step's launch lock first, then the reading**,
+  and the reading is raw — the pass's runs and questions by pass id, never its preset. It
+  withdraws the pass's unsettled questions (an answer not yet acted on too) and fences and
+  stops its unfinished runs and its latest run (`supervisor.stop_and_wait`, which ends
+  **everything carrying the run's `DPLANNER_RUN`** and its provable process group, never a
+  pid alone), so the latest record reads `Halted` to `passes.due` — the stopped state every
+  surface reads, and no new record kind; then, **only once no run of it is left here**, the
+  plan as it stands after the lock (`workflows.stopped`): in progress back to pending, any
+  other status standing, the at-work claim ended and the squad's released. A run that
+  survives leaves the status as it was. **A stop is idempotent**: a pass a stop ended
+  (`STOP_WHY`) with its plan unfinished is finished by the next. Nothing of a stopped pass
+  starts again — not an advance, `revive`, the clock or *Retry now*; nothing to stop exits 0
+  and says so; the worktree and branch are kept, and the next `agent run --playbook` starts a
+  new pass.
   `docs/architecture/playbooks.md`'s *Stopping a pass* has the reasoning.
 - **A role names a harness, never a profile or a path**, and maps at launch to the first
   profile running it; an unrunnable role is refused, never swapped for the default. Whether

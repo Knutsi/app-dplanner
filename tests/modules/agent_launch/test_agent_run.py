@@ -2151,6 +2151,34 @@ def _playbook_launch(services, monkeypatch, *, said=(0, "execute (attempt 1) lau
     return module, ran
 
 
+def test_stop_playbook_runs_on_a_task_of_its_own_beside_a_start_and_another_stop(
+    services, step, monkeypatch, qtbot
+):
+    """The production path, real tasks: a start still running refuses no stop, nor does a
+    stop; stops of one step wait for each other on its launch lock, in the verb."""
+    import threading
+    from dataclasses import replace
+
+    starting, ran = threading.Event(), []
+
+    def run_cli(argv):
+        ran.append(list(argv))
+        if "agent" in argv:  # The start holds on until both stops have run.
+            starting.wait(10)
+        return 0, "done"
+
+    module = next(m for m in services.modules if m.id == "agent_launch")
+    monkeypatch.setattr(
+        module, "_deps", replace(module._deps, run_cli=run_cli, tasks=services.tasks)
+    )
+    module.start_playbook(step, "execute")
+    module.stop_playbook(step)
+    module.stop_playbook(step)
+    qtbot.waitUntil(lambda: sum("stop" in argv for argv in ran) == 2, timeout=10_000)
+    starting.set()
+    qtbot.waitUntil(lambda: "Playbook started" in services.window.statusBar().currentMessage())
+
+
 def test_run_playbook_runs_agent_run_with_the_playbook_and_says_how_it_went(
     services, step, monkeypatch
 ):

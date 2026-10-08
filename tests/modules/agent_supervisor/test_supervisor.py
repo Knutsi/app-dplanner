@@ -36,7 +36,9 @@ from dplanner.modules.agent_supervisor.supervisor import (
 
 FAKE = Path(__file__).parent / "fake_agent.py"
 TURNS = Path(__file__).parent.parent.parent / "fixtures" / "agent_turns"
-RUN = "20261007T101500Z-9c1e44ab"
+# Minted per worker: a stop ends every process whose environment names its run, so two
+# workers driving one run id would end each other's fake agents.
+RUN = ledger.new_run_id(datetime(2026, 10, 7, 10, 15, tzinfo=UTC))
 GUARDS = Guards(
     wall={"plan": 20.0, "execute": 20.0, "review": 20.0},
     runaway=200,

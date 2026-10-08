@@ -199,7 +199,7 @@ def test_a_machine_picks_up_its_lost_turns_and_nothing_else(tmp_path, started):
 def test_a_supervisor_is_this_build_never_whatever_is_on_path(tmp_path, monkeypatch):
     """A run launched from a branch's build is supervised by that build."""
     argv: list[list[str]] = []
-    monkeypatch.setattr(supervisor, "spawn_detached", lambda command: argv.append(command))
+    monkeypatch.setattr(supervisor, "spawn_detached", lambda command, **_k: argv.append(command))
     supervisor.start_detached(tmp_path, "r1", prompt="answer", text="Keep both")
     assert argv == [
         [sys.executable, "-m", "dplanner", "agent", "supervise", "r1", "--project-dir",
@@ -344,7 +344,7 @@ def test_the_supervisor_is_started_on_the_library_of_its_launch(
     cli, plan, monkeypatch, cli_library
 ):
     argv: list[list[str]] = []
-    monkeypatch.setattr(supervisor, "spawn_detached", lambda command: argv.append(command))
+    monkeypatch.setattr(supervisor, "spawn_detached", lambda command, **_k: argv.append(command))
     cli("agent", "run", "Build it")
     ((command,),) = [argv]
     assert command[command.index("--library") + 1] == str(cli_library)

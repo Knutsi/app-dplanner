@@ -489,10 +489,15 @@ person must be able to rely on is that *stop* means stopped.
 
 **A stop makes the pass's latest record read halted. It adds no record of its own.**
 `passes.due` already reads only the latest record, and a fenced run and a withdrawn question
-both read `Halted` there. So the stop, under the step's launch lock that an advance waits
-for, does two things:
+both read `Halted` there. The stop takes the step's launch lock **first**, then reads: a launch
+holding the lock may be moments from writing the pass's first record, and a stop that read
+first would say *nothing to stop* and let it start. It reads the pass **raw** — its runs and
+questions by pass id — never through its pinned preset, so a pass begun by a build with
+another revision of the preset is stopped all the same; interpreting a pass's stages is not
+needed to end them. Under the lock it does two things:
 - it withdraws every question of the pass not yet settled: a gate, a round cap, a `limit` or
-  `blocked` card, or an answer no advance has acted on yet;
+  `blocked` card, or an answer no advance has acted on yet — a Spike's final approval
+  answered *Pass* included, whose advance would otherwise mark the step done;
 - it fences every unfinished run of the pass, and the latest run too when that one ended
   `done` with its advance still to come.
 
@@ -503,8 +508,21 @@ Then it waits for each run to be over (`supervisor.stop_and_wait`):
 | a live turn, or a supervisor in its backoff | the fence's SIGTERM; the supervisor ends the turn `stopped` |
 | a supervisor waiting out a usage reset | the same SIGTERM, which ends a *fenced* waiting run (a bare one stays parked for `revive`) |
 | parked with no supervisor, or never started | ended here, holding its supervisor lock (`settle_fenced`) |
-| a turn whose supervisor died | its process group ended by its recorded pid, boot and start time, then the run |
+| a turn whose supervisor died | everything of it ended by identity, then the run (below) |
 | a run on another machine | fenced only; its own supervisor obeys the fence |
+
+**Everything of a run is found by identity, never by a pid alone** (`end_orphaned_turn`).
+Every turn's environment carries `DPLANNER_RUN=<run id>`, and so does everything it starts.
+The stop ends every process on the machine whose environment carries that exact entry
+(Linux, from `/proc/*/environ`), and the turn's recorded process group while it is provably
+the turn's — its leader the very process recorded, or a member carrying the run — with
+SIGTERM, then SIGKILL after the grace, and then confirms none is left. A recorded pid alone
+missed two cases: a child that outlives its leader, which the leader's dead stamp says nothing
+about; and a supervisor killed between the spawn and the pid's write, which leaves no pid at
+all. A process started detached from inside a turn — a supervisor an answer starts, an
+advance — is spawned without the run's variable, so a stop never ends a process that is not
+the run's. A run whose supervisor ended its turn is swept the same way, for a grandchild that
+left the turn's group.
 
 A pass whose turn will not die stays under way, and stopping again finishes it: a run is over
 only once its turn is gone (agents.md). Once the stop is done, nothing of the pass can start
@@ -513,8 +531,9 @@ finds its card withdrawn. *Retry now* and an answer are refused on a withdrawn q
 S27's card phrase reads the same `Halted` and shows it as *Stopped*. A stop record of its own
 would have been one more thing for every one of those readers to check.
 
-**The records first, then the plan.** The stop writes the records and only then changes the
-plan, through `workflows.stopped`:
+**The records first, then the plan — and the plan only once nothing of the pass runs.** The
+stop writes the records, confirms each run of this machine is over, and only then changes the
+plan, through `workflows.stopped`, re-reading the plan as it stands after the lock:
 - a step that read *in progress* goes back to *pending*. That status was the pass's own
   claim, and nobody works the step now;
 - any other status stands. *Ready for review*, *ready to merge* and *done* are statements
@@ -522,13 +541,29 @@ plan, through `workflows.stopped`:
 - the at-work claim is ended, and the step is released from its squad's claim (`Release`).
 
 The other order, the plan first, would leave a moment in which a stage that ends launches
-the next one. The status from before the pass is not stored, because it was *pending* in every
+the next one. A run that outlives the grace is reported, and the status is left as it was:
+*pending* would say nobody works a step a process still works. Stopping again finishes it.
+
+**A stop is idempotent.** When the pass already reads stopped — a run fenced or a question
+withdrawn with the stop's own reason (`engine.STOP_WHY`), and no run of the step launched
+since — a stop repeated finishes the plan: a step still *in progress* (a flush that lost a
+race) goes back to *pending*, a claim still held (a refused push) is released. Only when all
+of it is settled does it say *nothing to stop*. *Stop Playbook* stays enabled for a step
+that still reads in progress after a stop; a claim alone left held is the CLI's to finish.
+
+**The window runs each stop on a task of its own.** A start or another stop running never
+refuses it; two stops of one step wait for each other on the step's launch lock, inside the
+verb. The status from before the pass is not stored, because it was *pending* in every
 case. Stopping when nothing is left to stop exits 0 and says so, so a coordinator or a
 script may stop twice. The worktree and the branch are kept for inspection, and a new pass
 starts as any pass does: `agent run --playbook`. The stopped pass has reached its end, so
 `engine.active` lets the new one through, and it works in the same worktree.
 
 **Not yet:**
+- **finding a run's processes by identity on macOS and Windows.** Neither lets one process
+  read another's environment, so there a stop ends the recorded process group (macOS) or tree
+  (Windows) while its leader lives, and a child that outlived it, or a turn whose pid was
+  never written, is not found.
 - **the context ceiling's fresh run.** A turn's summed usage counts the context once per
   call, so it is no reading of the context's size.
 - **fetching and pushing** around consuming an answer.

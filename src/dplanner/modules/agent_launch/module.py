@@ -974,14 +974,24 @@ class AgentLaunchModule:
             doing="Stopping the playbook on",
             ok="Playbook stopped on",
             refused="The playbook was not stopped on",
+            own_task=True,
         )
 
     def _run_pass_verb(
-        self, step: Step, argv: Sequence[str], *, doing: str, ok: str, refused: str
+        self,
+        step: Step,
+        argv: Sequence[str],
+        *,
+        doing: str,
+        ok: str,
+        refused: str,
+        own_task: bool = False,
     ) -> None:
-        """Save, then run a pass's ``dplanner`` verb to its end on a task — one at a time —
-        and say its one line in the status bar. Saving first means the process writes over
-        no unsaved edit."""
+        """Save, then run a pass's ``dplanner`` verb to its end on a task, and say its one
+        line in the status bar. Saving first means the process writes over no unsaved edit.
+        Starts go one at a time; a stop has a task of its own (``own_task``), so a start or
+        another stop running never refuses it — stops of one step wait for each other on
+        its launch lock, in the verb."""
         deps = self._deps
         title = _titled(step)
         if not deps.flush():
@@ -1006,12 +1016,17 @@ class AgentLaunchModule:
             body()
             done()
             return
-        runner = self._starting = self._starting or TaskRunner(deps.tasks, deps.parent)
+        if own_task:
+            runner = TaskRunner(deps.tasks, deps.parent)
+        else:
+            runner = self._starting = self._starting or TaskRunner(deps.tasks, deps.parent)
 
         def finished(busy: bool) -> None:
             if not busy:
                 runner.busy_changed.disconnect(finished)
                 done()
+                if own_task:
+                    runner.deleteLater()
 
         runner.busy_changed.connect(finished)
         label = f"{doing} “{title}”"
