@@ -81,11 +81,24 @@ def test_a_squad_takes_steps_and_another_squad_is_refused_naming_the_holder(cli,
     assert len(claims.records(project)) == 1  # Refused whole: S3 was not taken either.
 
 
-def test_one_squad_grows_its_one_claim(cli, project):
+def test_one_squad_grows_its_one_claim(cli, project, monkeypatch):
     cli("claim", "take", "S1", "--callsign", "kettle")
+    monkeypatch.setenv("DPLANNER_CALLSIGN", "kettle-actual")
     cli("claim", "take", "S2", "--callsign", "kettle-two")
     (claim,) = claims.records(project)
     assert len(claim.steps) == 2
+
+
+def test_a_second_coordinator_that_chose_a_running_word_is_refused(cli, project, monkeypatch):
+    cli("claim", "take", "S1", "--callsign", "kettle")
+    (claim,) = claims.records(project)
+    said = cli("claim", "take", "S2", "--callsign", "kettle", expect=1)
+    assert f"squad kettle is running already ({claim.short}) — choose another word" in said
+    monkeypatch.setenv("DPLANNER_CALLSIGN", "anvil-actual")
+    cli("claim", "take", "S2", "--callsign", "kettle", expect=1)
+    assert claims.records(project)[0].steps == claim.steps  # Nothing grew.
+    cli("claim", "take", "S2", "--callsign", "anvil")
+    assert len(claims.records(project)) == 2
 
 
 def test_the_claim_is_committed_and_nothing_else_is(cli, project, workspace):
@@ -179,12 +192,18 @@ def test_an_agent_shells_dplanner_run_renews_its_projects_claims(
     from dplanner.domain import claim_sync
     from dplanner.modules import default_module_formats
 
-    heard: list[Path] = []
-    monkeypatch.setattr(claim_sync, "renew", heard.append)
+    heard: list[tuple[Path, str]] = []
+    monkeypatch.setattr(claim_sync, "renew", lambda path, squad: heard.append((path, squad)))
     argv = ["--library", str(cli_library), "status", "list", "Discovery"]
     for board in (None, at_work_board):  # Only an agent's shell signs: entry.py's rule.
         run(registry, default_module_formats(), argv, StringIO(), StringIO(), board=board)
-    assert [path.resolve() for path in heard] == [project.resolve()]
+    # A shell that names its member renews that member's squad alone.
+    monkeypatch.setenv("DPLANNER_CALLSIGN", "kettle-actual")
+    run(registry, default_module_formats(), argv, StringIO(), StringIO(), board=at_work_board)
+    assert [(path.resolve(), squad) for path, squad in heard] == [
+        (project.resolve(), ""),
+        (project.resolve(), "kettle"),
+    ]
 
 
 def test_claim_verbs_need_a_squad_word(cli, project):

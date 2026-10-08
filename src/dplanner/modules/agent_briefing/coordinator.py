@@ -1,17 +1,23 @@
 """The coordinator's briefing: a squad's Actual working a selection of one project's graph.
 
-A coordinator carries out no step of its own. It takes the selection as its squad's claim,
-starts each ready step as a member of the squad (``agent run --playbook --callsign``), watches
-the runs, answers what it may and escalates the rest, verifies and merges, and releases what
-it finished — with the verbs every other surface uses, so nothing here is a second engine.
+A coordinator carries out no step of its own. It takes the selection's agent steps as its
+squad's claim, starts each ready one as a member of the squad (``agent run --playbook
+--callsign``), watches the runs, answers what it may and escalates the rest, verifies and
+merges, and releases what it finished — with the verbs every other surface uses, so nothing
+here is a second engine.
 What the 4 October run's director learned by hand is in the loop, one sentence each.
 
+A step nobody works — a milestone, a wait, a cut, a person's step — travels in the selection
+as context and gets no member: a lasso catches them, and the coordinator should know them.
+
 ``dplanner agent coordinate`` prints it, and Autonomous work ▸ Local launches a coordinator
-with the same text.
+with the same text. With no squad word yet (``squad=None``), the briefing opens with the
+coordinator choosing its own, and every callsign in it reads ``<word>`` until it has.
 """
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 
+from dplanner.cli.discovery import CALLSIGN_ENV
 from dplanner.domain.claims import WATCH, member, spoken
 from dplanner.domain.locations import LocationRole
 from dplanner.domain.model import Library, Step
@@ -30,47 +36,64 @@ from dplanner.modules.agent_briefing.protocol import (
     locations_told,
     plan_whereabouts,
 )
+from dplanner.modules.agent_briefing.worktree import mainline
 from dplanner.modules.notes.aspect import project_ref
-from dplanner.planning.agent import read_project
-from dplanner.planning.kinds import key_of
+from dplanner.planning.agent import enabled, read_project
+from dplanner.planning.branches import BranchPlan
+from dplanner.planning.kinds import key_of, kind_word, works_nobody
 from dplanner.planning.progression import outstanding
 from dplanner.planning.status import Status
 
 # The share of any usage window past which the coordinator launches nothing: under the
 # supervisor's own hold, so the coordinator — on the same account — keeps room to work.
 LAUNCH_CEILING = 90
+# What a coordinator still choosing its squad word reads in place of it.
+UNCHOSEN = "<word>"
+# How many agent steps one squad works: its members are numbered Two to Twenty.
+MOST_MEMBERS = 19
 
 
 def members(squad: str, steps: Sequence[Step]) -> dict[str, str]:
-    """Each selected step's member callsign, by the selection's order: the first is Two."""
-    return {step.id: member(squad, number) for number, step in enumerate(steps, start=2)}
+    """Each selected agent step's member callsign, by the selection's order: the first is
+    Two. A step nobody's agent works gets none."""
+    workers = [step for step in steps if enabled(step)]
+    return {step.id: member(squad, number) for number, step in enumerate(workers, start=2)}
+
+
+def feature_branch(plan: BranchPlan, facts: RepositoryFacts | None, step: Step) -> str:
+    """The feature branch the step's PR merges into, "" when it goes to the mainline."""
+    return plan.pr_base if plan.pr_base != mainline(facts, step) else ""
 
 
 def coordinate(
     library: Library,
     steps: Sequence[Step],
     *,
-    squad: str,
+    squad: str | None,
     files: FilesFor,
     facts: RepositoryFacts | None,
     roles: Sequence[LocationRole],
     merges_into: Callable[[Step], str],
     status_for: Callable[[Step], Status],
     at_once: int,
+    taken: Collection[str] = (),
 ) -> AssembledPrompt:
     """The briefing for ``squad``'s coordinator over ``steps`` — one project's, in the order
-    the squad takes them. ``merges_into`` names the feature branch a step's PR merges
-    into, "" for the mainline; ``status_for``
-    reads a status as readiness does, and ``at_once`` is how many runs may be live."""
+    the squad takes them, at least one of them an agent step. ``squad`` None leaves the word
+    to the coordinator, told the ``taken`` ones. ``merges_into`` names the feature branch a
+    step's PR merges into, "" for the mainline; ``status_for`` reads a status as readiness
+    does, and ``at_once`` is how many runs may be live."""
     project = library.project_of(steps[0].id)
-    actual = member(squad)
+    word = squad or UNCHOSEN
+    actual = member(word)
     ref = project_ref(project)
-    keys = [key_of(step) or step.title for step in steps]
-    called = members(squad, steps)
+    called = members(word, steps)
+    keys = [key_of(step) or step.title for step in steps if step.id in called]
     standing = read_project(project)
     parts: list[tuple[str, PromptPart]] = [
-        ("protocol", _before(squad, keys, facts, roles)),
-        ("context", _squad(squad, steps, called)),
+        *([] if squad else [("protocol", _choose(keys, taken))]),
+        ("protocol", _before(word, keys, facts, roles, chosen=bool(squad))),
+        ("context", _squad(word, steps, called, chosen=bool(squad))),
         ("context", _selection(library, steps, called, merges_into, status_for)),
         *(
             [("project", PromptPart("What every worker is told", standing))]
@@ -82,7 +105,11 @@ def coordinate(
         ("protocol", _done(ref, actual)),
     ]
     blocks = [
-        ("header", "Coordinate", [f"# Coordinate: {project.title}", "", f"Squad: {squad}", ""]),
+        (
+            "header",
+            "Coordinate",
+            [f"# Coordinate: {project.title}", "", f"Squad: {squad or 'yours to choose'}", ""],
+        ),
         *((origin, part.heading, section_lines(part)) for origin, part in parts),
     ]
     segments = tuple(
@@ -94,11 +121,32 @@ def coordinate(
     )
 
 
+def _choose(keys: Sequence[str], taken: Collection[str]) -> PromptPart:
+    running = f"Running now: {', '.join(sorted(taken))}." if taken else "No squad is running now."
+    lines = [
+        "Your squad has no word yet: it is yours to choose, and every callsign below reads"
+        f" `{UNCHOSEN}` until you have. Pick one concrete, friendly word with a little"
+        " whimsy — ideally two syllables, easy to say over a radio and easy to spell. People"
+        " read the net, so keep it professional: nothing alarming, no brand, no person and no"
+        " name out of a book or a film, no position or rank word (lead, first, alpha), and"
+        " nothing that reads like a step or review key. Lowercase letters only, never a"
+        " suffix or a number — DPlanner adds `-actual`, `-two` and the rest.",
+        f"It must be unique among the squads running now (`dplanner claim list`). {running}",
+        "Your first order, once `dplanner skill status` passes: take the selection's agent"
+        f" steps under it — `dplanner claim take {' '.join(quoted(key) for key in keys)}"
+        f" --callsign {UNCHOSEN}` with your word. If it refuses the word, another squad holds"
+        " it: pick another and take again.",
+    ]
+    return PromptPart("Choose your squad word", "\n\n".join(lines))
+
+
 def _before(
     squad: str,
     keys: Sequence[str],
     facts: RepositoryFacts | None,
     roles: Sequence[LocationRole],
+    *,
+    chosen: bool,
 ) -> PromptPart:
     lines = [
         "First, confirm you can drive DPlanner: run `dplanner skill status`. If the command is"
@@ -114,29 +162,43 @@ def _before(
         lines.append(plan_whereabouts(facts))
         if told := locations_told(facts, roles):
             lines.append(told)
+    if chosen:
+        lines.append(
+            "Take the selection before you start any of it:"
+            f" `dplanner claim take {' '.join(quoted(key) for key in keys)} --callsign {squad}`."
+        )
     lines += [
-        "Take the selection before you start any of it:"
-        f" `dplanner claim take {' '.join(quoted(key) for key in keys)} --callsign {squad}`."
-        " If it refuses a step, another squad holds it: leave that step out and say so —"
-        " never take it over by hand.",
+        "If `claim take` refuses a step, another squad holds it: leave that step out and say"
+        " so — never take it over by hand.",
+        f"Once the claim is yours, name yourself to DPlanner: `{CALLSIGN_ENV}={member(squad)}`"
+        " on every `dplanner` command you run — exported in your shell, or before each"
+        " command where your harness starts a fresh shell for every one — so your checks"
+        " renew your squad's claim and no other squad's on this machine.",
         NEVER_KILL,
     ]
     return PromptPart("Before you start", "\n\n".join(lines))
 
 
-def _squad(squad: str, steps: Sequence[Step], called: dict[str, str]) -> PromptPart:
+def _squad(
+    squad: str, steps: Sequence[Step], called: dict[str, str], *, chosen: bool
+) -> PromptPart:
     actual, watch = member(squad), f"{squad}-{WATCH}"
     roster = [f"- **{spoken(actual)}** (`{actual}`) — you, the coordinator"]
     roster += [
         f"- **{spoken(called[step.id])}** (`{called[step.id]}`) — works"
         f" {key_of(step) or step.title}, through every stage of its playbook"
         for step in steps
+        if step.id in called
     ]
+    unique = (
+        f"Squad {squad.capitalize()} is unique among the squads running now"
+        if chosen
+        else "Your squad is the word you chose, unique among the squads running now"
+    )
     roster.append(f"- **{spoken(watch)}** (`{watch}`) — your own verifier, when you send one")
     body = "\n".join(
         [
-            f"You are {spoken(actual)}. Squad {squad.capitalize()} is unique among the squads"
-            " running now; the roster is fixed for this selection:",
+            f"You are {spoken(actual)}. {unique}; the roster is fixed for this selection:",
             "",
             *roster,
             "",
@@ -161,14 +223,17 @@ def _selection(
 ) -> PromptPart:
     lines = []
     for step in steps:
-        waits = [key_of(each) or each.title for each in outstanding(library, step, status_for)]
         status = status_for(step)
-        moves = "ready" if status is Status.PENDING and not waits else ""
-        if waits:
-            moves = "waits on " + ", ".join(waits)
-        base = merges_into(step)
-        lands = f"PR into `{base}`" if base else "PR into the mainline, which a person merges"
-        facts = [status.value, moves, f"`{called[step.id]}`", lands]
+        if step.id in called:
+            waits = [key_of(each) or each.title for each in outstanding(library, step, status_for)]
+            moves = "ready" if status is Status.PENDING and not waits else ""
+            if waits:
+                moves = "waits on " + ", ".join(waits)
+            base = merges_into(step)
+            lands = f"PR into `{base}`" if base else "PR into the mainline, which a person merges"
+            facts = [status.value, moves, f"`{called[step.id]}`", lands]
+        else:
+            facts = [status.value, _unworked(step), "context only, no member"]
         lines.append(
             f"- **{key_of(step)}** {step.title} — " + " · ".join(fact for fact in facts if fact)
         )
@@ -178,6 +243,16 @@ def _selection(
         " in another project.",
     ]
     return PromptPart("The selection", "\n".join(lines))
+
+
+def _unworked(step: Step) -> str:
+    """What a step no agent of the squad works is: a wait, a cut, a milestone — or a
+    person's, which the squad waits on."""
+    if nobody := works_nobody(step):
+        return nobody
+    if kind := kind_word(step):
+        return f"a {kind}"
+    return "a person's step, which waits on a person"
 
 
 def _loop(project: str, actual: str, at_once: int) -> PromptPart:

@@ -66,18 +66,25 @@ def unpublished(claim_id: str, config: Path | None = None) -> bool:
     return _path(claim_id, UNPUBLISHED, config).exists()
 
 
-def renew(project_dir: Path, claim_id: str = "", config: Path | None = None) -> None:
+def renew(
+    project_dir: Path, claim_id: str = "", config: Path | None = None, squad: str = ""
+) -> None:
     """The heartbeat: ``claim_id`` — or, with none, every claim this machine holds in the
-    project — first stands down from the steps it no longer holds, then is renewed when due,
-    and published when this machine has not pushed it for ``PUSH_MINUTES``. Never raises: a
-    renewal that fails is made again at the next beat."""
+    project, only ``squad``'s when the caller names its squad — first stands down from the
+    steps it no longer holds, then is renewed when due, and published when this machine has
+    not pushed it for ``PUSH_MINUTES``. Never raises: a renewal that fails is made again at
+    the next beat."""
     here = ledger.machine_id(config)
     at = now_stamp()
     due = [
         claim
         for claim in claims.records(project_dir)
         if not claim.ended
-        and (claim.id == claim_id if claim_id else claim.worker.get("machine") == here)
+        and (
+            claim.id == claim_id
+            if claim_id
+            else claim.worker.get("machine") == here and squad in ("", claim.callsign)
+        )
     ]
     changed = False
     for claim in due:

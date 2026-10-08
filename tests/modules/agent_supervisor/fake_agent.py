@@ -5,6 +5,7 @@
 The script is a list of turns; the n-th run of this program plays the n-th entry (the last
 one again once they run out), counted in ``<script>.count``. An entry may:
 
+- ``environ``: write the value of ``DPLANNER_CALLSIGN`` there, "<unset>" when it is not set;
 - ``pidfile``: write this process's pid there; ``child``: start a child that ignores
   SIGTERM, as a test worker might, and write *its* pid there;
 - ``fence``: fence the ledger record at this path, as a takeover elsewhere would;
@@ -33,6 +34,8 @@ played = int(counter.read_text()) if counter.exists() else 0
 counter.write_text(str(played + 1))
 turn = turns[min(played, len(turns) - 1)]
 
+if "environ" in turn:
+    Path(turn["environ"]).write_text(os.environ.get("DPLANNER_CALLSIGN", "<unset>"))
 if "pidfile" in turn:
     Path(turn["pidfile"]).write_text(str(os.getpid()))
 if "child" in turn:

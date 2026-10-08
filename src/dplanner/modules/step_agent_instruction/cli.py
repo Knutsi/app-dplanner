@@ -7,8 +7,9 @@ the project's standing instruction prepended to every briefing. ``prompt`` print
 assembled briefing, which is also what Run Agent in the window launches with. ``coordinate``
 prints a squad coordinator's briefing over a selection (``agent_briefing.coordinator``),
 refusing a squad word a live or parked claim in the library answers to — two coordinators
-under one word would grow each other's claim. It writes nothing: ``claim take`` is the
-briefing's first order, and the coordinator's to give.
+under one word would grow each other's claim. With no ``--callsign`` the briefing leaves the
+word to the coordinator, naming the ones in use — what Autonomous work ▸ Local launches. It
+writes nothing: ``claim take`` is the briefing's first order, and the coordinator's to give.
 
 The briefing itself is ``agent_briefing.compose.brief``, the one assembly Run Agent uses.
 ``commands()`` takes the two facts the composition root collects — the location roles every
@@ -31,9 +32,13 @@ from dplanner.domain.repositories import RepositoryFacts, repository_facts
 from dplanner.domain.shelf import turn_off, turn_on
 from dplanner.domain.store import FilesFor
 from dplanner.modules.agent_briefing.compose import brief
-from dplanner.modules.agent_briefing.coordinator import coordinate, members
+from dplanner.modules.agent_briefing.coordinator import (
+    MOST_MEMBERS,
+    coordinate,
+    feature_branch,
+    members,
+)
 from dplanner.modules.agent_briefing.instructions import instruction
-from dplanner.modules.agent_briefing.worktree import mainline
 from dplanner.planning.agent import (
     MODULE_ID,
     enabled,
@@ -195,15 +200,20 @@ def commands(
         projects = {library.project_of(step.id).id for step in steps}
         if len(projects) > 1:
             raise CliError("a squad coordinates one project at a time — select from one")
-        squad = args.callsign.strip().lower()
-        if not _SQUAD_WORD.fullmatch(squad):
+        workers = sum(1 for step in steps if enabled(step))
+        if not workers:
+            raise CliError("a squad works agent steps — the selection holds none")
+        if workers > MOST_MEMBERS:
+            raise CliError(f"a squad works at most {MOST_MEMBERS} agent steps")
+        squad = args.callsign.strip().lower() if args.callsign else None
+        if squad is not None and not _SQUAD_WORD.fullmatch(squad):
             raise CliError(f"a squad word is one lowercase word, like kettle — not {squad!r}")
         if args.at_once < 1:
             raise CliError("--at-once is at least 1")
         held = claims.squads_holding(
             (context.store.project_dir(project.id) for project in library.projects), now_stamp()
         )
-        if squad in held:
+        if squad is not None and squad in held:
             taken = ", ".join(sorted(held))
             raise CliError(
                 f"squad {squad} is running already ({held[squad].short}) — pick a word"
@@ -220,17 +230,16 @@ def commands(
             files=context.store.files,
             facts=facts,
             roles=roles,
-            merges_into=lambda step: _feature_branch(
-                branch_plan(library, step, facts), facts, step
-            ),
+            merges_into=lambda step: feature_branch(branch_plan(library, step, facts), facts, step),
             status_for=readiness_of(status_on(library, context.clock.today())),
             at_once=args.at_once,
+            taken=held,
         )
-        called = members(squad, steps)
+        called = members(squad, steps) if squad else {}
         data = {
-            "callsign": claims.member(squad),
+            "callsign": claims.member(squad) if squad else "",
             "steps": [
-                {"step": step.id, "key": key_of(step), "callsign": called[step.id]}
+                {"step": step.id, "key": key_of(step), "callsign": called.get(step.id, "")}
                 for step in steps
             ],
             "prompt": assembled.text,
@@ -321,6 +330,7 @@ def commands(
             examples=(
                 "dplanner agent coordinate S3 S4 S7 --callsign kettle",
                 "dplanner agent coordinate S3 S4 --callsign anvil --at-once 2 --json",
+                "dplanner agent coordinate S3 S4 S7",
             ),
         ),
     ]
@@ -528,17 +538,12 @@ def _clear_instruction(context: CliContext, args: Namespace) -> int:
     return 0
 
 
-def _feature_branch(plan: BranchPlan, facts: RepositoryFacts, step: Step) -> str:
-    """The feature branch the step's PR merges into, "" when it goes to the mainline."""
-    return plan.pr_base if plan.pr_base != mainline(facts, step) else ""
-
-
 def _configure_coordinate(parser: ArgumentParser) -> None:
     parser.add_argument("steps", nargs="+", help="the selection, in the order to take it")
     parser.add_argument(
         "--callsign",
-        required=True,
-        help="your squad word (kettle): one no running squad uses",
+        help="your squad word (kettle): one no running squad uses — left out, the briefing"
+        " leaves it to the coordinator to choose",
     )
     parser.add_argument(
         "--at-once",
