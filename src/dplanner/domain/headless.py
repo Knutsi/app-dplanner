@@ -235,11 +235,12 @@ class Headless:
         return Ending(TurnEnd.DONE)
 
 
-# The machine-readable reasons a CLI gives with an error (Claude's assistant ``error``), and
-# the ending each means — read before the wording, which differs between a subscription's
-# "You've hit your limit" and an API key's "rate limit".
+# The machine-readable reasons a CLI gives with an error (Claude's assistant ``error``, Codex's
+# ``codex_error_info``), and the ending each means — read before the wording, which differs
+# between a subscription's "You've hit your limit" and an API key's "rate limit".
 ERROR_CODES = {
     "rate_limit": "limit",
+    "usage_limit_exceeded": "limit",
     "authentication_failed": "login",
     "billing_error": "billing",
     "server_error": "transient",

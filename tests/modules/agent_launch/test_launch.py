@@ -9,17 +9,19 @@ import json
 import subprocess
 import sys
 from dataclasses import replace
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
-from dplanner.domain import ledger
+from dplanner.domain import ledger, questions
+from dplanner.domain.headless import LimitWindow, TurnEnd
 from dplanner.domain.ledger import LedgerRecord, Turn
 from dplanner.domain.model import Step
+from dplanner.modules.agent_claude import harness as claude
 from dplanner.modules.agent_launch import launcher
 from dplanner.modules.agent_launch.workflows import run_agent
-from dplanner.modules.agent_supervisor import supervisor
+from dplanner.modules.agent_supervisor import limits, supervisor
 from dplanner.planning.status import MODULE_ID as STATUS_ID
 from dplanner.planning.status import Status, stored, write
 
@@ -600,3 +602,43 @@ def test_a_relative_library_reaches_every_turn_as_an_absolute_path(
     monkeypatch.chdir(tmp_path)
     rig.supervise(library=Path("mine.json"))
     assert seen == [str(tmp_path.resolve() / "mine.json")]
+
+
+def test_an_account_near_its_limit_holds_a_headless_launch_with_the_reason(cli, plan, started):
+    soon = datetime.now(UTC) + timedelta(hours=2)
+    key = limits.account_of(claude.HARNESS)
+    window = LimitWindow("five_hour", 0.97, soon)
+    limits.record_turn(key, "earlier", [window], TurnEnd.DONE, None, datetime.now(UTC))
+    said = cli("agent", "run", "Build it", expect=1)
+    assert "Claude Code is at 97% of its five-hour window" in said
+    assert started == [] and _status(cli, "Build it") != "in-progress"
+    limits.set_hold_at(0.98)  # The person's threshold, not the default, decides.
+    assert json.loads(cli("agent", "run", "Build it", "--json"))["mode"] == "headless"
+
+
+def test_a_machine_picks_up_its_runs_waiting_for_a_reset_or_holding_an_answer(tmp_path, started):
+    """A run waiting for its reset, and one parked on an answer nobody delivered — the
+    clock's or a person's, of any kind — get a supervisor again; a park still waiting on a
+    person does not."""
+    plan = tmp_path / "plan"
+    reset = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
+    parks = (
+        ("20261007T101500Z-00000011", questions.LIMIT, "limit", reset, "open"),
+        ("20261007T101500Z-00000012", questions.LIMIT, "limit", reset, "answered"),
+        ("20261007T101500Z-00000013", questions.LIMIT, "limit", "", "open"),  # A person's.
+        ("20261007T101500Z-00000014", questions.DECISION, "asked", "", "answered"),
+        ("20261007T101500Z-00000015", questions.DECISION, "asked", "", "open"),  # A person's.
+    )
+    for run, kind, end, resets, state in parks:
+        question = replace(
+            questions.asked("p1", "s1", "2026-10-07T10:16:00+00:00", [questions.one("Out?")],
+                            kind=kind, run=run, resets=resets),
+            state=state,
+        )  # fmt: skip
+        questions.write(plan, question)
+        turn = Turn(n=1, prompt="launch", started="…", end=end, ended="…", resets=resets,
+                    question=question.id)  # fmt: skip
+        ledger.write(plan, _headless(run, turn))
+    woken = ["20261007T101500Z-00000011", "20261007T101500Z-00000012", "20261007T101500Z-00000014"]
+    assert supervisor.revive([plan]) == woken
+    assert started == [(plan, run) for run in woken]

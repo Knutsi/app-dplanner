@@ -28,6 +28,7 @@ Four places, and the choice is not stylistic:
 | Per user, per machine (Qt-free) | what happened and how long it took: the telemetry journal, and a native crash's stack | `core/telemetry.py` under `config_dir()/telemetry/` — see *The telemetry journal* | no — it is this machine's diagnostics |
 | Per user, per machine (Qt-free) | who is working on a plan right now: an agent's *at work* claim | `domain/at_work.py` under `config_dir()/at-work/` — see *An agent's at-work claim* | no — it is a process that is running here, now |
 | Per user, per machine (Qt-free) | a headless run's working files: its briefing, each turn's stream (`turn-<n>.jsonl`) and stderr, DPlanner's copy of a plan the agent wrote (`plan.md`), the supervisor's and the record's locks (`supervisor.lock`, `record.lock`: OS locks on files never deleted) | `config_dir()/runs/<run id>/` (`ledger.run_dir`), named by the run's ledger record and never stored on it; not swept yet | no — only the launching machine can resume the run, and it needs them across a reboot, which is why they are not in `/tmp` |
+| Per user, per machine (Qt-free) | what each agent account last said about its usage — its windows, whether it ran out and until when — and the share a new headless launch waits at | `modules/agent_supervisor/limits.py` in `config_dir()/usage-limits.json` — see *An agent account's usage* | no — an account is a login on this machine |
 | Per user, per machine (Qt-free) | a read-only location's managed clone, and a git spec source's: blobless, shallow, sparse to one folder | `core/storage/sparse.py` under `config_dir()/spec-git/<digest of remote, ref and folder>` | no — disposable: wipe it and the next read pays one tree fetch |
 | Per user, per machine (Qt-free) | the agent launch profiles: `{"format": 1, "profiles": [{"name", "agent", "terminal"}…], "seeded": bool}`, the first the default | `agent_launch/profiles.py` at `config_dir()/agent-profiles.json`, because `dplanner agent run --profile` reads them with no Qt; the window adopts what QSettings held before, once | no — which terminal a person prefers is not the project's business |
 | Per user, per machine (Qt-free) | a working clone DPlanner keeps for a verb that needed the repository here and nobody had checked out — Run Agent's code, a report's destination — under the default clone policy | `core/storage/kept.py` under `config_dir()/checkouts/<name>-<digest of remote>`, one per repository; recorded in the library file's `checkouts` map like any checkout | it is a checkout: commits an agent made there and never pushed are in it and nowhere else, so it is not wiped by the application |
@@ -169,6 +170,45 @@ It is not the **claim** in a project's `claims/` directory (below), and neither 
 other: this one says *a process here is editing the plan right now* and lapses in minutes;
 that one says *this work is taken by a squad*, is renewed every ten minutes, holds for an
 hour and a half, and is committed so other machines see it.
+
+## An agent account's usage
+
+`config_dir()/usage-limits.json` is what every supervised turn writes and every headless
+launch reads (`modules/agent_supervisor/limits.py`). **An account is a harness and the home
+its login is in** — `<harness id>:<home>`, the home `$CLAUDE_CONFIG_DIR` or `~/.claude`,
+`$CODEX_HOME` or `~/.codex`, OpenCode's data directory (`AgentHarness.home`) — resolved alike
+by a launch and the supervisor it starts, so two logins are two accounts.
+
+```json
+{
+  "format": 1,
+  "hold_at": 0.95,
+  "accounts": {
+    "claude:/home/knut/.claude": {
+      "seen": "2026-10-07T17:42:10+00:00", "run": "20261007T150000Z-1a2b3c4d",
+      "windows": [{"name": "five_hour", "used": 1.0, "resets": "2026-10-07T18:10:00+00:00"},
+                  {"name": "seven_day", "used": 0.34, "resets": "2026-10-09T09:00:00+00:00"}],
+      "out_until": "2026-10-07T18:10:00+00:00", "out_at": "2026-10-07T17:42:10+00:00"
+    }
+  }
+}
+```
+
+- **`hold_at`** is the setting (*Settings ▸ Agent profiles ▸ Hold new headless launches at*,
+  95 % when absent): a new headless launch waits while any window is at or above it, until
+  that window resets.
+- **`windows`** are the vendor's own — Claude's `rate_limit_event`, Codex's rollout
+  `rate_limits` — `used` a share from 0 to 1, as reported by the turn that ended at `seen`;
+  a turn that ended earlier never replaces them, whatever order the supervisors write in.
+- **`out_until`** is set when a turn ended `limit` with a known reset, the turn's end in
+  `out_at`, and removed only by a turn that ended `done`, `asked` or `denied` after `out_at` —
+  a failure, or an answer older than the exhaustion, says nothing. While it stands, no turn
+  starts on the account except one carrying an answer — the supervisor parks it
+  `limit`/`held` instead.
+
+It is read-modify-written under an OS lock on `usage-limits.lock` beside it, because every
+supervisor writes it. It is advice, so a file this build cannot read reads as nothing known,
+and a turn never fails for want of writing it.
 
 ## The project format
 
@@ -476,7 +516,8 @@ A review run carries its `verdict`, and the fix run after it what it `declined`:
   overrides}` — on the pass's first record only: its first run, or its first gate question
   when the pass begins at a `person` or `coordinator` gate. `playbooks.md` says what each holds.
 - **`prompt`** is why the turn began: `launch` for every run's first turn, whether its session
-  is fresh or resumed for a loop-back, then `answer`, `continue`, `reset` or `retry`.
+  is fresh or resumed for a loop-back, then `answer`, `continue`, `reset` or `retry` — a turn
+  resumed on the clock's answer to a limit is `reset`, on *Retry now* `retry`.
 - **`verdict`** is on a review run: its typed final message (`--json-schema`,
   `--output-schema`), recorded by the supervisor and never posted by the agent — `outcome`
   `pass` or `changes`, a `summary`, and `findings`, each with `severity`, `file`, `line`,
@@ -493,7 +534,7 @@ A review run carries its `verdict`, and the fix run after it what it `declined`:
   | `done` | the agent finished its stage | is over |
   | `asked` | it asked through `dplanner question ask`, or ended on a question in prose; `question` names the record | parks until the question is answered |
   | `denied` | a permission was denied or auto-rejected | parks on a `permission` question |
-  | `limit` | the account ran out; `resets` is when it comes back | parks on a `limit` question |
+  | `limit` | the account ran out; `resets` is when it comes back, `why: held` when the supervisor parked the turn without starting it, its account being out, `why: past-reset` when the reset had already passed as the turn ended (waited for once, the grace only; a second in a row has no `resets`) | parks on a `limit` question: with a `resets`, its supervisor waits, and the clock answers it then; with none, a person does |
   | `failed` | a crash, a hang, a runaway, a dead login; `why` says which — `headless.Ending.why`'s words, or the supervisor's own `hang`, `runaway`, `timeout`, `lost` and `lost-at-spawn` | retries with backoff, then parks on a `blocked` question; a runaway, a `lost-at-spawn` and a failure no retry mends park at once |
   | `stopped` | a person or the coordinator ended it, or its step went away | is over, and is never retried |
 

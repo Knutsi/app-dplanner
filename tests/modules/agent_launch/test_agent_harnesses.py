@@ -647,3 +647,27 @@ def test_the_window_adopts_the_profiles_qsettings_kept_into_the_config_file(app,
     assert not profiles_file().exists()
     request.getfixturevalue("services")
     assert read_profiles() == [mine] and seeded()
+
+
+def test_the_launch_hold_is_a_preset_over_an_editable_percentage(app):
+    """95 % works untouched; the presets are laid out; a typed share is kept and a slip is
+    shown back as what is stored."""
+    from dplanner.modules.agent_launch.settings_page import build_page
+    from dplanner.modules.agent_supervisor import limits
+
+    page = build_page(None, platform="linux", harnesses=HARNESSES)
+    combo = page.findChild(QComboBox, "AgentHoldAtCombo")
+    edit = page.findChild(QLineEdit, "AgentHoldAtEdit")
+    assert isinstance(combo, QComboBox) and isinstance(edit, QLineEdit)
+    assert (edit.text(), combo.currentText()) == ("95", "95% (default)")
+    assert [combo.itemText(i) for i in range(combo.count())][-1] == "Custom"
+
+    combo.activated.emit(combo.findData("80"))
+    assert (edit.text(), limits.hold_at()) == ("80", 0.8)
+    edit.setText("97")
+    edit.editingFinished.emit()
+    assert (combo.currentText(), limits.hold_at()) == ("Custom", 0.97)
+    edit.setText("lots")
+    edit.editingFinished.emit()
+    assert (edit.text(), limits.hold_at()) == ("97", 0.97)
+    page.deleteLater()

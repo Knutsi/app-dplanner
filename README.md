@@ -550,7 +550,8 @@ src/dplanner/
 │   ├── agent_supervisor/    the run supervisor — no module.py: `dplanner agent supervise
 │   │                        <run>` drives a headless run turn by turn, guards each turn
 │   │                        (stall, runaway, wall clock), writes it into the ledger
-│   │                        record, then ends, parks or retries the run (supervisor.py)
+│   │                        record, then ends, parks or retries the run (supervisor.py);
+│   │                        each account's last-known usage and the launch hold (limits.py)
 │   ├── agent_questions/     the question door — no module.py: `dplanner question ask` from
 │   │                        a headless run, `question list|answer|escalate` over the
 │   │                        project's questions/ (`domain/questions.py`); answering resumes

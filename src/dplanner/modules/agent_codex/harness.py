@@ -370,6 +370,10 @@ def read_event(log: TurnLog, event: Mapping[str, object]) -> None:
         error = event.get("error")
         log.error = str(error.get("message", "")) if isinstance(error, dict) else str(error)
         log.error = log.error or "the turn failed"
+        # Codex's own reason, where it gives one: "usage_limit_exceeded" on a spent account.
+        code = error.get("codex_error_info") if isinstance(error, dict) else None
+        if isinstance(code, str):
+            log.code = code
 
 
 # Codex in a read-only sandbox does not fail: it says it could not and hands the change back
@@ -450,4 +454,5 @@ HARNESS = AgentHarness(
     binary="codex",
     headless=HEADLESS,
     sign_in=SignIn(probe=signed_in, command="codex login"),
+    home=codex_home,
 )
