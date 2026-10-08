@@ -262,6 +262,29 @@ def test_a_codex_limit_resets_when_the_rollout_says_its_fullest_window_does(tmp_
     assert codex.read_limits("no-such-thread") == ()
 
 
+def test_a_codex_turn_is_counted_on_the_model_its_rollout_names(tmp_path, monkeypatch):
+    # Codex's --json stream never names its model, so a headless turn read only from the
+    # stream was counted as "unknown" in Expenditure (the 2026-10-08 dogfood run).
+    folder = tmp_path / "sessions" / "2026" / "10" / "08"
+    folder.mkdir(parents=True)
+    contexts = [{"type": "turn_context", "payload": {"model": name}} for name in ("old", "gpt-x")]
+    (folder / f"rollout-2026-10-08T08-46-00-{THREAD}.jsonl").write_text(
+        "\n".join(json.dumps(line) for line in contexts), encoding="utf-8"
+    )
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    log = headless("codex").read_lines(
+        [json.dumps({"type": "thread.started", "thread_id": THREAD})]
+    )
+    assert log.model == ""
+    assert headless("codex").model(log) == "gpt-x"
+    assert codex.read_model("no-such-thread") == ""
+
+
+def test_a_claude_turn_is_counted_on_the_model_its_stream_names():
+    log = TurnLog(model="claude-opus-5-5")
+    assert headless("claude").model(log) == "claude-opus-5-5"
+
+
 def test_a_codex_limit_is_read_by_its_code_before_its_words():
     reader = headless("codex")
     error = {

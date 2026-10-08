@@ -145,6 +145,10 @@ def _streamed_limits(log: TurnLog) -> tuple[LimitWindow, ...]:
     return log.limits
 
 
+def _streamed_model(log: TurnLog) -> str:
+    return log.model
+
+
 def _no_denials(_stderr: str) -> list[str]:
     return []
 
@@ -185,6 +189,9 @@ class Headless:
     # The account's last-known limits after a turn: its stream's, unless the CLI keeps them
     # elsewhere (Codex: in the rollout file, never in ``--json``).
     limits: Callable[[TurnLog], tuple[LimitWindow, ...]] = _streamed_limits
+    # The model the turn ran on — its stream's, unless the CLI names it elsewhere (Codex: in the
+    # rollout's turn context; ``--json`` never says).
+    model: Callable[[TurnLog], str] = _streamed_model
     # Denials the CLI prints to stderr rather than its stream (opencode).
     stderr_denials: Callable[[str], list[str]] = _no_denials
     # How long the stream may be silent, no tool running, before the turn is a hang: none of

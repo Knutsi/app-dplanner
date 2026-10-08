@@ -741,7 +741,7 @@ class Session:
             reason=ending.question or ending.reason,
             exit=code,
             resets=ending.resets.isoformat() if ending.resets else "",
-            agents=usage_of(log),
+            agents=usage_of(log, self.headless.model(log)),
         )
         if not turn.question and self._parks(ending, _failures(_with_turn(self.record, turn))):
             # The card first: a crash after it leaves a card on a lost turn, which the next
@@ -975,12 +975,12 @@ class Session:
         self.record = update(self.project_dir, self.record.run, change, self.config)
 
 
-def usage_of(log: TurnLog) -> tuple[AgentUsage, ...]:
-    """A turn's own consumption, as its stream counted it: the turn's stream is exactly the
-    turn's window of the session, so it needs no cursor into the vendor's records."""
+def usage_of(log: TurnLog, model: str) -> tuple[AgentUsage, ...]:
+    """A turn's own consumption on ``model``, as its stream counted it: the turn's stream is
+    exactly the turn's window of the session, so it needs no cursor into the vendor's records."""
     if log.tokens == Tokens():
         return ()
-    return (AgentUsage("main", {log.model or ledger.UNKNOWN_MODEL: log.tokens}),)
+    return (AgentUsage("main", {model or ledger.UNKNOWN_MODEL: log.tokens}),)
 
 
 def waits_for_reset(project_dir: Path, last: Turn) -> bool:

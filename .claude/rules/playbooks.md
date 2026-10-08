@@ -102,6 +102,6 @@ paths:
   `--approve-for-me` or `--add-dir`, and does not keep the mode its thread began in.
 - **How a turn ended is `Headless.classify`, one function over the `TurnLog` the harness's
   reader filled** — never the exit alone, never a per-harness copy of the rules. A CLI's quirk
-  goes in its reader or one of the two hooks (`limits`, `stderr_denials`); a new ending shape
+  goes in its reader or one of its hooks (`limits`, `model`, `stderr_denials`); a new ending shape
   goes in as a recorded, scrubbed stream under `tests/fixtures/agent_turns/` with its expected
   end in `tests/modules/test_agent_turns.py`.
