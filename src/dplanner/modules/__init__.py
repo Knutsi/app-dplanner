@@ -206,8 +206,7 @@ class _Root:
         self.store = store
         self.roles = roles_by_id(default_location_roles())
         self.managed = managed_for(self.roles)
-        # Whether each agent CLI is usable here, read once and kept a minute: the checklist's
-        # rows probe into it and Run Playbook greys its entries from it.
+        # Whether each agent CLI is usable here: the checklist probes, Run Playbook greys.
         self.availability = Availability(agent_harnesses())
         # The tuple the CLI reports read (`_asset_sources`), so the Assets tab, the picker
         # and `dplanner asset list` can never disagree about what a project holds.
@@ -2056,8 +2055,7 @@ def _aspects(
                 harness_ids=tuple(harness.id for harness in agent_harnesses()),
                 actions=services.actions,
                 context=services.context,
-                # Run Playbook starts a pass through Run Agent's launch, greyed by its gates
-                # and by whether the playbook's agents are usable here.
+                # Run Playbook: Run Agent's launch and gates, and whether its agents work here.
                 launcher=agents.launch,
                 readings=root.availability,
                 parent=services.window,
@@ -2601,8 +2599,7 @@ def _machine_checks(
     the order they are listed; the group itself is ``cli/checklist.py``'s ``GROUPS``.
 
     ``files`` is the generated skill the installer's rows compare against — the same
-    closure the Install dialog is handed. ``availability`` is the window's one reading of the
-    agent CLIs, which Run Playbook reads too; the CLI's run makes its own.
+    closure the Install dialog is handed; ``availability`` the window's one agent reading.
     """
     from dplanner.modules.agent_launch import checks as agent_checks
     from dplanner.modules.checklist import checks as generic
