@@ -211,18 +211,23 @@ for days, and the step panel says so.
 ## The mark on the one card
 
 The card wears **one phrase** derived from the step's latest runs and questions: *Planning*,
-*Working*, *Review 1/2*, *Fixing (round 1)*, *Waits for you*, *Parked until 21:30*,
-*Escalated*. It is never stored — a stored phrase could disagree with the runs it summarises —
-and it is the canvas's to render under its own rules on marks; the research's
-`round_label(due(...))` is the shape of the derivation. Stages are read in the step panel's
-Playbook section and the run conversation, never as cards.
+*Executing*, *Review 1/2*, *Fixing (round 1)*, *Waits for you · plan approval*, *Parked until
+21:30*, *Escalated*, *Stopped*, *Done*. It is never stored — a stored phrase could disagree with
+the runs it summarises — and it is `passes.standing`'s, beside `due` and reading the same
+records, so the card's strip and `playbook show` say the same words. It rides **a strip of its
+own under the card**, below the branch strip, with the stages behind it in the strip's tooltip
+— not the agent run's chip, as first written: the chip says a run is live and a pass spends
+most of its life parked, waiting or between stages, when no run is. A pass that ended shows
+for a day after its last record (`engine.ENDED_SHOWN`). Stages are read in the step panel's
+Playbook section and the run conversation, never as cards; `canvas.md`'s *A card running a
+playbook says where its pass stands* has the canvas's half.
 
 **Until a pass has records, the mark is a medallion.** Nothing derives a phrase before the
 engine writes runs with a `pass`, and a card carries no words (`canvas.md`), so S15 gives a
 step whose **own** aspect names a playbook the `playbook` glyph among its medallions. An
 inherited default is not marked: every landing would wear it beside its `merge` medallion,
-and a project default would mark every card. The phrase, when the engine brings it, rides the
-agent run's chip.
+and a project default would mark every card. The phrase, once a pass has records, rides the
+playbook strip beside it.
 
 ## A failure is never a verdict
 
@@ -475,7 +480,6 @@ work* runs. A *Remote ▸* entry waits for workers to exist.
 **Not yet:**
 - **the context ceiling's fresh run.** A turn's summed usage counts the context once per
   call, so it is no reading of the context's size.
-- **the card's phrase**, which `passes.due` makes derivable.
 - **fetching and pushing** around consuming an answer.
 
 ## Each stage is one headless turn per harness

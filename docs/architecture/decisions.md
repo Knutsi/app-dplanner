@@ -699,3 +699,13 @@ that stops its worker, both surfaces check ownership in the one launch and again
 start, and a claim publish commits by pathspec under the repository's sync lock and never
 fetches. Arbitration between machines waits for multiplayer. Now: `agents.md`'s *Runs,
 questions and claims are three records in the plan*.
+
+## 2026-10-08 — A pass's phrase rides a strip of its own, not the agent chip
+
+*The mark on the one card* had the phrase riding the agent run's chip. Built, the chip was the
+wrong carrier: it says a run is live, and a pass spends most of its life parked, waiting on a
+gate or between stages, when no run is. It became a second strip under the card, after the
+branch strip's pattern, but kept out of the footprint — a pass lasts hours, and counting it
+would have moved the ambient layout whenever one started. The card's foot grows to it on the
+motion clock, which now measures motion in time. Now: `canvas.md`'s *A card running a playbook
+says where its pass stands* and `playbooks.md`'s *The mark on the one card*.

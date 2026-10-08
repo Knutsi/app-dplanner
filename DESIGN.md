@@ -860,7 +860,15 @@ and one stylesheet rule for the progress bar:
   the slot it would drop into, and close up behind one dragged out. It is allowed because
   it is a fact moving, not an ornament — the drop is visible before it happens, which a
   jump would show too, but a jump of four cards under the hand loses which card went
-  where. It follows the hand and ends with the gesture; nothing slides on its own.
+  where. It follows the hand and ends with the gesture.
+  **The one grow** is a card's foot making room for its playbook strip
+  (`playbook-strip/growing-*`): when a pass starts on a step the card's bottom edge eases
+  down over a fifth of a second and the strip saying where the pass stands is uncovered,
+  and it folds back the same way when the pass is no longer shown. It may move because a
+  status arriving on a card nobody is looking at is a fact arriving, and a card that jumped
+  taller would read as a card that was always that tall; nothing else on the canvas moves
+  with it, and a tab that opens on a pass shows the strip at once. *Graph ▸ Reduce
+  Motion* makes it appear and go at once, as every motion added after it must allow.
 - **Selection follows the keyboard**: arrows move the row edge and whatever follows the
   selection follows it, as a click would.
 
@@ -925,8 +933,9 @@ from the code or a screenshot, and Debug ▸ Design Examples is what *yes* looks
 14. Is every busy, ok and error a `StatusLine` in place, and every rewritten `QLabel` gone?
 15. Is any progress bar 4 px, accent and determinate?
 16. Does nothing fade, slide or animate except the ring, the pulse, the indicator, a working
-    button's glyph and Home's garden — and
-    does that button carry a glyph, so nothing moves when it turns?
+    button's glyph, Home's garden, the restack's slide and a card's foot growing to its
+    playbook strip (which *Reduce Motion* stills) — and does that button carry a glyph, so
+    nothing moves when it turns?
 
 **The surfaces, as audited when the system was written (September 2026)** — what makes
 each read as Qt, and so what its pass has to change. A surface not named here was not

@@ -16,6 +16,8 @@
         --out docs/screenshots/branch-stretches
     uv run python scripts/render_graph_editor.py --waves \
         --out docs/screenshots/f28-wave-view
+    uv run python scripts/render_graph_editor.py --playbooks \
+        --out docs/screenshots/playbook-strip
 
 What S7 reworked: the strip of verbs over the canvas as glyphs in named bands, folding
 whole bands into its ``…`` menu; the *Find* picker, which opens on the plan's landmarks
@@ -39,7 +41,9 @@ height of a breath, at rest, and with a step picked; since F28, with
 column of its wave under the ruler, the strip's *Free | Waves* lit on Waves; and with
 ``--branches``, a stretch put on a feature branch — the right-click that puts it there, then
 its cut and landing, the lane under its arrows and the strip under its cards, planned, in
-flight and landed. A
+flight and landed; and with ``--playbooks``, where each step's playbook pass stands in the
+strip under its card — every phrase, under a branch strip and alone, one card's foot halfway
+down as its strip grows, and the stages a hover on the strip shows. A
 whole application is built over a throwaway library — the tab is the tab host's, so nothing
 here hand-wires a surface the window would build differently — and torn down per theme.
 """
@@ -892,6 +896,118 @@ def render_branches(app: QApplication, theme: Theme, out: Path, workspace: Path)
     discard(page)
 
 
+# Every phrase a playbook strip says, on a card each: (title, phrase, tone, stage index).
+PLAYBOOK_CARDS = (
+    ("Sketch the importer", "Planning", "busy", 0),
+    ("Parse the columns", "Executing", "busy", 1),
+    ("Map the legacy ids", "Review 1/2", "busy", 2),
+    ("Batch the inserts", "Fixing (round 1)", "busy", 1),
+    ("Choose the schema", "Waits for you · plan approval", "warn", 0),
+    ("Retry the dump", "Parked until 14:20", "", 1),
+    ("Rename the flags", "Escalated", "warn", 2),
+    ("Drop the old table", "Stopped", "bad", 1),
+    ("Ship the importer", "Done", "good", -1),
+)
+# The first three stand on a feature branch, so both strips show, in their order.
+ON_PLAYBOOK_BRANCH = (0, 1, 2)
+PLAYBOOK_SIZE = (1180, 620)
+
+
+def render_playbooks(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
+    """Where each step's playbook pass stands, in the strip under its card: every phrase, the
+    first row under a branch strip, one card's foot halfway down as its strip grows, and the
+    stages its tooltip names. The standings are handed to the window's own reading, so the
+    card, the root's translation and the painter are the application's."""
+    from PySide6.QtWidgets import QToolTip
+
+    from dplanner.modules.branches.edits import put_command
+    from dplanner.modules.branches.plan import branch_births
+    from dplanner.modules.step_playbook.passes import Standing
+    from dplanner.modules.step_playbook.presets import preset
+
+    QSettings().clear()
+    apply_theme(app, theme)
+    library_file = workspace / f"playbook-library-{theme.name}.json"
+    create_library(library_file)
+    init_repo(workspace)
+    session = new_session()
+    assert session.open_initial(library_file)
+    services = session.services
+    assert services is not None
+    services.debounce.set_immediate(True)
+    library = services.document
+    directory = seed_project(workspace / f"playbook-{theme.name}", "Importer")
+    project = services.repo.attach(directory)
+    library.add_child(library.id, project)
+    made: list[StepId] = []
+    for index, (title, *_rest) in enumerate(PLAYBOOK_CARDS):
+        step = Step(title=title)
+        AddNodeCommand(project.id, step).redo(library)
+        x, y = 280 + 320 * (index % 3), 80 + 160 * (index // 3)
+        SetModuleDataCommand(step.id, POSITION_KEY, write_position(x, y)).redo(library)
+        SetModuleDataCommand(step.id, "estimation", estimate_write(0.25)).redo(library)
+        SetModuleDataCommand(step.id, AGENT_ID, agent_write(True)).redo(library)
+        library.set_text(step.id, "step_description", f"{title}, in full.")
+        # One line through every card, so nothing in the shot is a problem but the strips.
+        if made:
+            SetEdgesCommand(step.id, "requires", [made[-1]]).redo(library)
+        made.append(step.id)
+    cut, land = branch_births(project, "feature/importer")
+    seats = [
+        SetModuleDataCommand(cut.id, POSITION_KEY, write_position(0, 80)),
+        SetModuleDataCommand(land.id, POSITION_KEY, write_position(1240, 80)),
+    ]
+    picked = [made[index] for index in ON_PLAYBOOK_BRANCH]
+    put_command(library, picked, cut, land, carrying=seats).redo(library)
+    playbook = preset("plan-execute-review-other")
+    assert playbook is not None
+    labels = tuple(stage.label for stage in playbook.stages)
+    held = {
+        step_id: Standing(
+            "4f1c", playbook.name, phrase, tone, labels, stage, phrase in ("Stopped", "Done"), ""
+        )
+        for step_id, (_title, phrase, tone, stage) in zip(made, PLAYBOOK_CARDS, strict=True)
+    }
+    standings = next(m for m in services.modules if m.id == "step_playbook")._deps.standings
+    tab = services.tabs.open("project", project.id)
+    assert isinstance(tab, ProjectActivity)
+    page = tab.widget
+    # Out of the window, which the offscreen screen holds to 800 by 600.
+    page.setParent(None)
+    page.resize(*PLAYBOOK_SIZE)
+    page.show()
+    settle(app)
+
+    def stand(found: dict[StepId, Standing]) -> None:
+        standings._held[project.id] = found
+        standings.changed.emit(project.id)
+
+    # One card's strip a third of the way through its grow: the foot on its way down.
+    stand({made[1]: held[made[1]]})
+    for _ in range(3):
+        tab._scene.advance_motion(0.016)
+    tab.frame()
+    save(page, out, "growing", theme, app)
+    # Every phrase, settled.
+    stand(held)
+    for _ in range(20):
+        tab._scene.advance_motion(0.016)
+    tab.frame()
+    save(page, out, "strips", theme, app)
+    # A hover on a strip: its stages, the one it stands at marked.
+    node = tab._scene._nodes[made[2]]
+    tip = node.playbook_tip_at(node.mapToScene(node.body_rect().bottomLeft() + QPointF(40, -4)))
+    view = tab._view
+    QToolTip.showText(view.viewport().mapToGlobal(QPoint(0, 0)), tip, view)
+    settle(app)
+    label = next(w for w in app.topLevelWidgets() if w.inherits("QTipLabel") and w.isVisible())
+    save(label, out, "stages", theme, app)
+    QToolTip.hideText()
+    page.setParent(None)
+    session.close()
+    discard(page)
+
+
 def render_waves(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
     """One plan as its author left it, then in Wave view: the ruler naming each wave and when
     it runs, the band behind every other column, the stack one tall card in its wave,
@@ -996,6 +1112,11 @@ def main(argv: list[str]) -> int:
     parser.add_argument(
         "--waves", action="store_true", help="only a plan in Free and in Wave view (F28)"
     )
+    parser.add_argument(
+        "--playbooks",
+        action="store_true",
+        help="only the strip saying where a step's playbook pass stands, every phrase (S27)",
+    )
     args = parser.parse_args(argv)
     args.out.mkdir(parents=True, exist_ok=True)
     app = QApplication.instance() or QApplication([])
@@ -1034,6 +1155,9 @@ def main(argv: list[str]) -> int:
                 continue
             if args.waves:
                 render_waves(app, theme, args.out, Path(tmp))
+                continue
+            if args.playbooks:
+                render_playbooks(app, theme, args.out, Path(tmp))
                 continue
             render(app, theme, args.out, Path(tmp))
             render_cards(app, theme, args.out, Path(tmp))

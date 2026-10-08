@@ -252,6 +252,11 @@ class NodeAccent:
     # The card is ``STRIP_H`` taller for it; the scene is handed that size.
     strip: str = ""  # "" → none.
     strip_tone: str = ""
+    # Where the playbook pass running on this step stands, in a strip under the branch strip:
+    # its words ("Review 1/2"), their tone ("" quiet | "busy" | "warn" | "good" | "bad") and
+    # the stages behind them for the tooltip. ("", "", "") → none. Transient, so not in the
+    # card's footprint: the card grows by it on the motion clock (``NodeState.grow``).
+    playbook: tuple[str, str, str] = ("", "", "")
 
 
 @dataclass(frozen=True)
@@ -284,6 +289,8 @@ class NodeState:
     # Whether this card offers a link handle at all: a stack's links leave from its last
     # card, so the cards above it have none, whatever the mode's hints say.
     handle: bool = True
+    # How far the playbook strip has grown out of the card's foot, 0 to 1.
+    grow: float = 0.0
 
 
 def paint_node(
@@ -303,9 +310,10 @@ def paint_node(
     the card.
 
     ``body`` is the whole card. A card wearing a branch strip keeps the strip's
-    :data:`STRIP_H` at its bottom: the shadow, the fill and border, the ring, the pulse,
-    the squiggle and the chip go round the whole card, and the key block, the text and the
-    sockets stay in the part above it, where the arrows meet.
+    :data:`STRIP_H` at its bottom, and under it as much of the playbook strip as has grown
+    (``state.grow``): the shadow, the fill and border, the ring, the pulse, the squiggle and
+    the chip go round the whole card, and the key block, the text and the sockets stay in
+    the part above them, where the arrows meet.
     """
     text_colour = QColor(palette.text().color())
     if accent.muted:
@@ -313,7 +321,8 @@ def paint_node(
     faded = QColor(palette.text().color())
     faded.setAlpha(MUTED_SECONDARY_ALPHA if accent.muted else SECONDARY_ALPHA)
     card = body
-    body = card.adjusted(0.0, 0.0, 0.0, -STRIP_H) if accent.strip else card
+    grown = STRIP_H * state.grow if accent.playbook[0] else 0.0
+    body = card.adjusted(0.0, 0.0, 0.0, -(grown + (STRIP_H if accent.strip else 0.0)))
 
     paint_shadow(painter, card, LIFTED_SHADOW if state.selected else RESTING_SHADOW)
     painter.save()
@@ -324,7 +333,10 @@ def paint_node(
         paint_pulse(painter, card, accent.key_tone, state.phase)
     paint_body(painter, palette, card, accent, state)
     if accent.strip:
-        paint_strip(painter, palette, card, accent.strip, accent.strip_tone, faded)
+        paint_strip(painter, palette, card, body.bottom(), accent.strip, accent.strip_tone, faded)
+    if grown:
+        top = card.bottom() - grown
+        paint_playbook_strip(painter, palette, card, top, *accent.playbook[:2])
     paint_key_block(
         painter,
         palette,
@@ -360,38 +372,99 @@ def paint_node(
 
 
 def paint_strip(
-    painter: QPainter, palette: QPalette, card: QRectF, name: str, tone: str, faded: QColor
+    painter: QPainter,
+    palette: QPalette,
+    card: QRectF,
+    top: float,
+    name: str,
+    tone: str,
+    faded: QColor,
 ) -> None:
-    """The branch strip across the card's foot: a band of the lane's colour inside the
-    card's own rounded corners, a rule over it, and the fork and the branch's name.
+    """The branch strip across the card's foot, from ``top``: a band of the lane's colour,
+    the fork and the branch's name.
 
     ``tone`` "" is a branch that has landed: the band goes quiet and the name stays, the
     record of where the work went."""
-    strip = QRectF(card.left(), card.bottom() - STRIP_H, card.width(), STRIP_H)
+    lane = QColor(tone) if tone else QColor(palette.text().color())
+    paint_band(
+        painter,
+        card,
+        top,
+        lane,
+        STRIP_FILL_ALPHA if tone else STRIP_QUIET_ALPHA,
+        STRIP_RULE_ALPHA if tone else STRIP_QUIET_ALPHA * 2,
+        "branch",
+        QColor(tone) if tone else faded,
+        name,
+        QColor(palette.text().color()) if tone else faded,
+        mono_font(max(6.0, painter.font().pointSizeF() - 1.0)),
+    )
+
+
+def paint_playbook_strip(
+    painter: QPainter, palette: QPalette, card: QRectF, top: float, phrase: str, tone: str
+) -> None:
+    """The playbook strip under everything else on the card, from ``top``: a band of the
+    status tone the pass stands in, the playbook glyph and the phrase saying where."""
+    ink = QColor(palette.text().color())
+    tint = STATUS_TONES.get(tone)
+    colour = QColor(tint.red(), tint.green(), tint.blue()) if tint is not None else ink
+    font = painter.font()
+    font.setPointSizeF(max(6.0, font.pointSizeF() - 1.0))
+    paint_band(
+        painter,
+        card,
+        top,
+        colour,
+        STRIP_FILL_ALPHA if tint is not None else STRIP_QUIET_ALPHA * 2,
+        STRIP_RULE_ALPHA if tint is not None else STRIP_QUIET_ALPHA * 3,
+        "playbook",
+        colour,
+        phrase,
+        ink,
+        font,
+    )
+
+
+def paint_band(
+    painter: QPainter,
+    card: QRectF,
+    top: float,
+    colour: QColor,
+    fill_alpha: float,
+    rule_alpha: float,
+    glyph: str,
+    glyph_ink: QColor,
+    text: str,
+    ink: QColor,
+    font: QFont,
+) -> None:
+    """A :data:`STRIP_H` band across the card from ``top``, clipped to the card's rounded
+    corners — so a band the card's foot has only half uncovered shows only that half: its
+    colour, the rule that parts it from what is above, a glyph and one line of words."""
+    band = QRectF(card.left(), top, card.width(), STRIP_H)
     shape = QPainterPath()
     shape.addRoundedRect(card, RADIUS, RADIUS)
-    band = QPainterPath()
-    band.addRect(strip)
-    lane = QColor(tone) if tone else QColor(palette.text().color())
-    fill = QColor(lane)
-    fill.setAlphaF(STRIP_FILL_ALPHA if tone else STRIP_QUIET_ALPHA)
+    painter.save()
+    painter.setClipPath(shape, Qt.ClipOperation.IntersectClip)
+    fill = QColor(colour)
+    fill.setAlphaF(fill_alpha)
     painter.setPen(Qt.PenStyle.NoPen)
     painter.setBrush(fill)
-    painter.drawPath(shape.intersected(band))
-    rule = QColor(lane)
-    rule.setAlphaF(STRIP_RULE_ALPHA if tone else STRIP_QUIET_ALPHA * 2)
+    painter.drawRect(band)
+    rule = QColor(colour)
+    rule.setAlphaF(rule_alpha)
     painter.setPen(QPen(rule, 1.0))
-    painter.drawLine(QPointF(strip.left(), strip.top()), QPointF(strip.right(), strip.top()))
-    glyph = QRectF(strip.left() + PAD_Y, strip.top() + 3.0, STRIP_H - 6.0, STRIP_H - 6.0)
-    paint_glyph(painter, glyph, "branch", QColor(tone) if tone else faded)
-    base = painter.font()
-    painter.setFont(mono_font(max(6.0, base.pointSizeF() - 1.0)))
-    text = QRectF(glyph.right() + GLYPH_GAP, strip.top(), 0.0, STRIP_H)
-    text.setRight(strip.right() - PADDING)
-    shown = painter.fontMetrics().elidedText(name, Qt.TextElideMode.ElideRight, int(text.width()))
-    painter.setPen(QColor(palette.text().color()) if tone else faded)
-    painter.drawText(text, int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter), shown)
-    painter.setFont(base)
+    painter.drawLine(QPointF(band.left(), band.top()), QPointF(band.right(), band.top()))
+    mark = QRectF(band.left() + PAD_Y, band.top() + 3.0, STRIP_H - 6.0, STRIP_H - 6.0)
+    paint_glyph(painter, mark, glyph, glyph_ink)
+    painter.setFont(font)
+    room = QRectF(mark.right() + GLYPH_GAP, band.top(), 0.0, STRIP_H)
+    room.setRight(band.right() - PADDING)
+    shown = painter.fontMetrics().elidedText(text, Qt.TextElideMode.ElideRight, int(room.width()))
+    painter.setPen(ink)
+    painter.drawText(room, int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter), shown)
+    painter.restore()
 
 
 def tone_of(accent: NodeAccent) -> tuple[QColor, QColor] | None:
