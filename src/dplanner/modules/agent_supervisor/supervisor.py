@@ -10,6 +10,10 @@ what the ending says — and **never waits for a person**:
 - ``asked``, ``denied``, ``limit`` and a failure no retry mends (a dead login, an empty
   balance, a runaway) **park** it: the process exits, the run keeps its session, and
   whoever answers starts the supervisor again with ``--prompt``.
+- a ``limit`` whose reset is known **waits** for it instead: at the reset the clock answers
+  the run's ``limit`` question and the session resumes, and *Retry now* — a person's answer
+  to the same question — resumes it sooner. Nothing else starts on an account that ran out
+  (``limits.py``): a turn carrying no answer is parked ``limit``/``held``, unstarted.
 - any other failure — a crash, a hang, an overrun, a lost turn — **retries** after 30 s,
   2 min and 10 min, resuming the session when the stream named one; a fourth failure in a
   row parks it for a person. A turn that ended waiting on its own background work is
@@ -61,7 +65,7 @@ import uuid
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import ExitStack, contextmanager, suppress
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import IO
 
@@ -99,6 +103,7 @@ from dplanner.domain.model import now_stamp
 from dplanner.domain.questions import Question
 from dplanner.domain.store import LibraryStore
 from dplanner.modules.agent_briefing.protocol import opening_prompt
+from dplanner.modules.agent_supervisor import limits
 from dplanner.planning.status import Status, stored
 
 # Why a turn after the first began, and what it is told when nobody wrote the words.
@@ -133,6 +138,11 @@ OVER = (TurnEnd.DONE, TurnEnd.STOPPED)
 LOST_AT_SPAWN = "lost-at-spawn"
 # Failures no wait mends, beside the ones Ending.needs_person names: they park at once.
 PARK_AT_ONCE = ("runaway", LOST_AT_SPAWN)
+# A turn the supervisor parked without starting it: its account had run out.
+HELD = "held"
+# A limit whose reset had already passed when its turn ended — the turn's cleanup crossed it,
+# or this clock runs ahead: waited for once, the grace only, and never twice in a row.
+PAST_RESET = "past-reset"
 
 
 class RefusedError(Exception):
@@ -158,6 +168,11 @@ class Guards:
     backoff: tuple[float, ...] = (30.0, 120.0, 600.0)
     grace: float = 10.0  # Between SIGTERM and SIGKILL.
     poll: float = 1.0  # How often a silent turn is looked at.
+    # How often a run parked on a limit looks for Retry now while it waits for the reset.
+    wake: float = 5.0
+    # How long after the reset the clock resumes it: a reset is the vendor's word to the
+    # second, and a turn a moment early would only park again.
+    reset_grace: float = 60.0
 
 
 def supervise(
@@ -306,6 +321,10 @@ class Session:
         assert kind is not None  # _record refuses a run whose stage is no agent stage.
         return kind
 
+    @property
+    def account(self) -> str:
+        return limits.account_of(self.harness)
+
     # -- deciding ---------------------------------------------------------------------------
 
     def opening(self, prompt: str, text: str, stop: threading.Event) -> tuple[str, str]:
@@ -341,6 +360,9 @@ class Session:
             and (prompt == "answer" or (not prompt and self._answered(last) is not None))
         ):
             return self._claim(last)
+        if not prompt and not text and self._waits_for_reset(last):
+            # Picked up again after a reboot, or by hand: the clock still resumes it.
+            return self._await_reset(last, stop)
         if prompt not in PROMPTS:
             raise RefusedError(
                 f"run {record.run} is parked ({_said(last)}); resume it with --prompt "
@@ -376,6 +398,8 @@ class Session:
                     return self._claim(last)
                 except RefusedError as refused:
                     return "", f"{parked}; {refused}"
+            if self._waits_for_reset(last):
+                return self._await_reset(last, stop)
             return "", f"{parked}, on {questions.short(last.question)}"
         # Going on by itself: nothing the run asked before it failed stands any more, an
         # answer not yet acted on included — no turn will consume it now.
@@ -399,6 +423,13 @@ class Session:
     def turn(self, kind: str, words: str, stop: threading.Event) -> Ending:
         claimed, self.claimed = self.claimed, None
         n = claimed.n if claimed is not None else len(self.record.turns) + 1
+        out = limits.exhausted(self.account, config=self.config)
+        if claimed is None and out is not None:
+            # Nothing else starts on an account that ran out; an answer always goes, since
+            # it was consumed for this turn, and Retry now is a person saying go.
+            said = f"{self.harness.label} is out of usage until {limits.clock(out)}"
+            held = Turn(n=n, prompt=kind, started=now_stamp())
+            return self._finish(held, TurnLog(), None, Ending(TurnEnd.LIMIT, HELD, said, out))
         spec = self._spec(kind, words)
         env = scrubbed_environment(os.environ, (self.harness,))
         # Every `dplanner` call the turn makes reaches the plan its run was launched from:
@@ -449,6 +480,8 @@ class Session:
             )
             if recorded is not None and ending.end is TurnEnd.ASKED:
                 turn = replace(turn, question=recorded.id)
+            if ending.end is TurnEnd.LIMIT:
+                ending = self._with_reset(ending, turn.n)
             if self._owes_verdict(kind, ending, log):
                 ending = Ending(TurnEnd.FAILED, NO_VERDICT, "the review ended without its verdict")
         return self._finish(turn, log, code, ending)
@@ -464,6 +497,20 @@ class Session:
             and log.typed is None
             and not nudged
         )
+
+    def _with_reset(self, ending: Ending, n: int) -> Ending:
+        """When a limit lifts: as its own turn said, else as the account last said — a CLI
+        may stop on its error before it reports the windows. A reset already past is kept as
+        the deadline, marked :data:`PAST_RESET`, so the run resumes once after the grace; the
+        turn before this one marked so too, and it is unknown — a person's, never a loop."""
+        now = datetime.now(UTC)
+        reset = ending.resets or limits.last_reset(self.account, now, self.config)
+        if reset is None or reset > now:
+            return replace(ending, resets=reset)
+        earlier = [t for t in self.record.turns if t.n < n]
+        if earlier and earlier[-1].why == PAST_RESET:
+            return replace(ending, resets=None)
+        return replace(ending, resets=reset, why=PAST_RESET)
 
     def _spec(self, kind: str, words: str) -> TurnSpec:
         stage = self.kind
@@ -586,9 +633,19 @@ class Session:
     def _finish(self, turn: Turn, log: TurnLog, code: int | None, ending: Ending) -> Ending:
         """Write how the turn ended — and, when it ended the run, the run's end in the same
         write, so no crash can leave a finished turn on a run that reads as parked."""
+        ended = now_stamp()
+        limits.record_turn(
+            self.account,
+            self.record.run,
+            self.headless.limits(log),
+            ending.end,
+            ending.resets,
+            limits.parse(ended) or datetime.now(UTC),
+            self.config,
+        )
         turn = replace(
             turn,
-            ended=now_stamp(),
+            ended=ended,
             end=ending.end.value,
             why=ending.why,
             reason=ending.question or ending.reason,
@@ -705,9 +762,10 @@ class Session:
             )
             if refusal or question is None or latest is None:
                 raise RefusedError(f"run {run} cannot resume on its answer: {refusal}")
+            kind, words = resumed_by(question)
             claimed = Turn(
                 n=latest.n + 1,
-                prompt="answer",
+                prompt=kind,
                 started=now_stamp(),
                 consumed={"question": question.id, "answer": str(question.answer.get("id", ""))},
             )
@@ -718,7 +776,7 @@ class Session:
         self.record = _record(self.project_dir, run)
         self.claimed = claimed
         self._settle("the run resumed on another answer")
-        return "answer", questions.answer_text(question)
+        return kind, words
 
     def _recover(self, claimed: Turn, stop: threading.Event) -> tuple[str, str]:
         """A turn claimed on an answer whose process has no pid. If it was never about to
@@ -755,8 +813,55 @@ class Session:
                 self.config,
             )
         self.claimed = claimed
-        words = questions.answer_text(found) if found is not None else PROMPTS["continue"]
-        return "answer", words
+        words = resumed_by(found)[1] if found is not None else PROMPTS["continue"]
+        return claimed.prompt, words
+
+    def _waits_for_reset(self, last: Turn) -> bool:
+        return waits_for_reset(self.project_dir, last)
+
+    def _await_reset(self, last: Turn, stop: threading.Event) -> tuple[str, str]:
+        """Wait for the limit's reset, then answer its question for the clock and resume —
+        or resume at once on Retry now, or stop for a fence, a SIGTERM or a question that no
+        longer stands. A clock is no person: nothing here waits on anybody, and Retry now is
+        an answer the supervisor finds, never a process it needs."""
+        reset = limits.parse(last.resets) or datetime.now(UTC)
+        due = reset + timedelta(seconds=self.guards.reset_grace)
+        run = self.record.run
+        while True:
+            question = questions.find(self.project_dir, last.question)
+            if question is None or question.state not in questions.UNSETTLED:
+                return "", f"run {run} is parked on {questions.short(last.question)}, which is gone"
+            if question.state == questions.ANSWERED:
+                try:
+                    return self._claim(last)
+                except RefusedError as refused:
+                    return "", f"run {run} is parked; {refused}"
+            record = _record(self.project_dir, run)
+            if record.over:
+                return "", f"run {run} is over"
+            if record.fence:
+                self.record = record
+                self._end(TurnEnd.STOPPED)
+                return "", f"run {run} was fenced"
+            left = (due - datetime.now(UTC)).total_seconds()
+            if left <= 0:
+                self._clock_answers(last.question)
+                continue
+            if stop.wait(min(self.guards.wake, left)):
+                # A shutdown, not a decision: the run stays parked on its limit, and the next
+                # supervisor `revive` starts waits on. Only a fence ends a waiting run.
+                return "", f"run {run} is parked on its limit; its supervisor was stopped"
+
+    def _clock_answers(self, question_id: str) -> None:
+        def answering(question: Question) -> Question:
+            if question.state not in (questions.OPEN, questions.ESCALATED):
+                return question
+            answers = questions.answers_for(question, "The usage limit has reset.")
+            return questions.answered(
+                question, answers, {"kind": questions.CLOCK, "name": "clock"}, now_stamp()
+            )
+
+        questions.update(self.project_dir, question_id, answering, self.config)
 
     def _reconcile(self) -> None:
         """Mend what a supervisor that died between two writes left: an ended run's cards
@@ -790,6 +895,33 @@ def usage_of(log: TurnLog) -> tuple[AgentUsage, ...]:
     if log.tokens == Tokens():
         return ()
     return (AgentUsage("main", {log.model or ledger.UNKNOWN_MODEL: log.tokens}),)
+
+
+def waits_for_reset(project_dir: Path, last: Turn) -> bool:
+    """Whether a run whose last turn is ``last`` stands parked on a limit whose reset is
+    known, its question still unanswered: its supervisor waits for the clock to resume it,
+    and only Retry now comes sooner."""
+    if last.end != TurnEnd.LIMIT or not last.resets or not last.question:
+        return False
+    question = questions.find(project_dir, last.question)
+    return question is not None and question.state in (questions.OPEN, questions.ESCALATED)
+
+
+# The questions Retry now answers: a run held for its account, or one that cannot go on alone.
+RETRYABLE = (questions.LIMIT, questions.BLOCKED)
+
+
+def resumed_by(question: Question) -> tuple[str, str]:
+    """Why a turn resumes on the answer, and the words it resumes with: the clock's answer is a
+    reset and Retry now a retry — each the session's own short prompt — and anything else
+    is the answer itself."""
+    if question.answer.get("by", {}).get("kind") == questions.CLOCK:
+        return "reset", PROMPTS["reset"]
+    if question.kind in RETRYABLE and list(question.answer.get("answers", {}).values()) == [
+        questions.RETRY_NOW
+    ]:
+        return "retry", PROMPTS["retry"]
+    return "answer", questions.answer_text(question)
 
 
 def start_detached(
@@ -845,7 +977,11 @@ def revive(
       started when its step is still claimed in progress, and its record
       deleted when it is not and the run is past ``grace``; :func:`_settle` has the rest.
 
-    A parked run (its last turn ended) waits for a person and is never touched here."""
+    - a run parked on a limit whose reset is known (:func:`waits_for_reset`) is supervised
+      again, and the new supervisor waits for the reset — or resumes at once when it has
+      passed.
+
+    Any other parked run waits for a person and is never touched here."""
     here = ledger.machine_id(config)
     if claimed is None and library is not None:
         claimed = claimed_on_disk(library)
@@ -853,7 +989,14 @@ def revive(
     for project_dir in project_dirs:
         for record in ledger.records(project_dir):
             last = record.last_turn
-            if not record.headless or record.over or (last is not None and last.end):
+            if not record.headless or record.over:
+                continue
+            if (
+                last is not None
+                and last.end
+                and not waits_for_reset(project_dir, last)
+                and not answer_waiting(project_dir, record.run)
+            ):
                 continue
             if record.machine != here or supervised(ledger.run_dir(record.run, config)):
                 continue
@@ -1003,18 +1146,22 @@ def _question_for(record: LedgerRecord, turn: Turn, ending: Ending) -> Question:
         TurnEnd.LIMIT: (
             questions.LIMIT,
             "Usage limit",
-            "The account ran out of usage. Resume when it resets?",
+            f"The account ran out of usage. The run resumes by itself at {limits.clock(reset)}."
+            if (reset := limits.parse(turn.resets)) is not None
+            else "The account ran out of usage, and when it resets is unknown."
+            " Retry the run once it has.",
             said,
         ),
     }.get(
         ending.end,
         (questions.BLOCKED, "Blocked", f"The run cannot go on alone: {said}", ""),
     )
+    options = [(questions.RETRY_NOW, "Resume the run now")] if ending.end is TurnEnd.LIMIT else []
     return questions.asked(
         record.project,
         record.step,
         now_stamp(),
-        [questions.one(text, header)],
+        [questions.one(text, header, options)],
         kind=kind,
         run=record.run,
         by={

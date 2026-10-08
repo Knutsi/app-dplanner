@@ -56,6 +56,18 @@ def commands(*, in_agent_shell: Callable[[], bool]) -> list[CliCommand]:
         context.report({**done.question.to_json(), "said": done.said}, done.said)
         return 0
 
+    def _retry(context: CliContext, args: Namespace) -> int:
+        project_dir = context.store.project_dir(context.project.id)
+        run = _run_of(context, project_dir, args.target)
+        try:
+            done = inbox.retry_now(
+                project_dir, run, by(args), caller_run=os.environ.get(RUN_ENV, "")
+            )
+        except (LookupError, ValueError) as error:
+            raise CliError(str(error)) from error
+        context.report({**done.question.to_json(), "said": done.said}, done.said)
+        return 0
+
     def _escalate(context: CliContext, args: Namespace) -> int:
         project_dir, question = _question(context, args.question)
         try:
@@ -94,6 +106,13 @@ def commands(*, in_agent_shell: Callable[[], bool]) -> list[CliCommand]:
             configure=_configure_answer,
             run=_answer,
             examples=("dplanner question answer Q-e1f2 'Keep both'",),
+        ),
+        CliCommand(
+            path=("agent", "retry"),
+            summary="Retry now: resume a run held on a usage limit, or blocked, at once.",
+            configure=_configure_retry,
+            run=_retry,
+            examples=("dplanner agent retry S12", "dplanner agent retry 20261007T101500Z-9c1e44ab"),
         ),
         CliCommand(
             path=("question", "escalate"),
@@ -197,6 +216,22 @@ def _configure_answer(parser: ArgumentParser) -> None:
     parser.add_argument("question", help="Q-e1f2, or the question's id")
     parser.add_argument("answer", nargs="+", help="a choice's label, or your own words")
     _configure_by(parser)
+
+
+def _configure_retry(parser: ArgumentParser) -> None:
+    parser.add_argument("target", help="the run's id, or a step whose headless run is parked")
+    _configure_by(parser)
+
+
+def _run_of(context: CliContext, project_dir: Path, target: str) -> str:
+    """The run ``target`` names: a run of the project by its id, else the step's latest
+    headless run that is parked."""
+    if ledger.find(project_dir, target) is not None:
+        return target
+    step = find_step(context.library, target, context.current)
+    if not (run := inbox.parked_run(project_dir, step.id)):
+        raise CliError(f"{key_of(step) or step.title} has no parked headless run")
+    return run
 
 
 def _configure_escalate(parser: ArgumentParser) -> None:

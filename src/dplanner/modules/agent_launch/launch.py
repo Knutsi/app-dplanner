@@ -41,7 +41,7 @@ from dplanner.modules.agent_briefing.instructions import instruction
 from dplanner.modules.agent_briefing.prompt import AssembledPrompt, PromptPart
 from dplanner.modules.agent_launch import launcher
 from dplanner.modules.agent_launch.profiles import Profile, agent_command, read_profiles
-from dplanner.modules.agent_supervisor import supervisor
+from dplanner.modules.agent_supervisor import limits, supervisor
 from dplanner.modules.agent_usage.aspect import launch_record
 from dplanner.planning.agent import enabled, no_agent, read_project, uses_worktree, workplace
 from dplanner.planning.branches import BranchPlan
@@ -148,7 +148,8 @@ def unfinished_run(project_dir: Path | None, step_id: str) -> str:
 
 
 def headless_refusal(profile: Profile, harnesses: tuple[AgentHarness, ...]) -> str:
-    """Why this profile's agent cannot run headless; "" when it can."""
+    """Why this profile's agent cannot run headless now; "" when it can — its account's usage
+    included, which holds a new launch near or past its limit until the reset."""
     harness = launcher.harness_of(agent_command(harnesses, profile), harnesses)
     if harness is None:
         return (
@@ -156,7 +157,7 @@ def headless_refusal(profile: Profile, harnesses: tuple[AgentHarness, ...]) -> s
         )
     if harness.headless is None:
         return f"{harness.label} has no headless mode here"
-    return ""
+    return limits.hold(limits.account_of(harness), harness.label)
 
 
 def profile_for(harness_id: str, harnesses: tuple[AgentHarness, ...]) -> Profile | None:

@@ -62,6 +62,7 @@ reached — on PATH, a version, signed in. The probe talks to the CLI only throu
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import IntEnum
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # domain.headless reads Tokens from here.
@@ -250,6 +251,10 @@ class AgentHarness:
     # How to ask whether it is signed in; None for a CLI this build cannot ask, which counts
     # as usable once it says its version.
     sign_in: SignIn | None = None
+    # Where the CLI keeps its login and state under this process's environment
+    # (``$CLAUDE_CONFIG_DIR``, ``$CODEX_HOME``…): with the id, the account a usage limit is
+    # held on — two homes are two logins. None for one this build does not know.
+    home: Callable[[], Path] | None = None
 
     def marks(self, name: str) -> bool:
         """Whether an environment variable of this name marks one of this CLI's shells."""

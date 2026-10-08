@@ -667,3 +667,12 @@ could both pass the "no run yet" check. Now a launch holds the step's OS launch 
 its first check to its start, saves its record and its claim first and starts the run as
 the follow-up, withdrawing the claim when the start fails; `revive` settles a launch cut off
 in between. Now: `agents.md`'s *One launch under both surfaces*.
+
+## 2026-10-07 — A limit waits in its supervisor instead of exiting
+
+The supervisor parked a run on a usage limit and exited, like every other park, and the run
+stood until somebody resumed it with `--prompt reset`. A limit is the one park no person is
+needed for — the vendor says when it ends — so its supervisor now waits for the reset and the
+clock answers the question, and *Retry now* is a person answering it sooner. Now:
+`agents.md`'s *A headless run is driven by its supervisor* and `docs/architecture/agents.md`'s
+*A usage limit waits in its supervisor, and Retry now is an answer*.

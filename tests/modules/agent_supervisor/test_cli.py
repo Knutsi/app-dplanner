@@ -2,12 +2,16 @@
 finds a run's project from the library when it is not told."""
 
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from tests.platforms import set_home
 
 from dplanner.domain import ledger
+from dplanner.domain.headless import LimitWindow, TurnEnd
 from dplanner.domain.ledger import LedgerRecord, Turn
+from dplanner.modules.agent_claude import harness as claude
+from dplanner.modules.agent_supervisor import limits
 
 RUN = "20261007T101500Z-9c1e44ab"
 
@@ -41,3 +45,17 @@ def test_a_parked_run_waits_for_its_prompt_and_an_over_one_is_refused(cli, tmp_p
     ledger.write(project_dir, replace(record, ended="2026-10-07T11:00:00+00:00"))
     assert "is over" in cli("agent", "supervise", RUN, expect=1)
     assert "no project in the library has a run" in cli("agent", "supervise", "nope", expect=1)
+
+
+def test_agent_limits_shows_each_accounts_windows_and_its_hold(cli, tmp_path, monkeypatch):
+    set_home(monkeypatch, tmp_path / "home")
+    assert "Claude Code: nothing reported yet" in cli("agent", "limits")
+    soon = datetime.now(UTC) + timedelta(hours=2)
+    windows = [LimitWindow("five_hour", 0.97, soon)]
+    limits.record_turn(
+        limits.account_of(claude.HARNESS), RUN, windows, TurnEnd.DONE, None, datetime.now(UTC)
+    )
+    said = cli("agent", "limits")
+    assert "new headless launches wait at 95% of a window" in said
+    assert f"Claude Code: five-hour 97% until {limits.clock(soon)}" in said
+    assert "held — Claude Code is at 97%" in said

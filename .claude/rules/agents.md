@@ -105,7 +105,9 @@ paths:
   deleted only when no supervisor holds the run, its step reads unclaimed and it is older than
   `LAUNCH_GRACE` (two minutes) — a supervisor just started may not hold its lock yet. The
   window calls it once at start (`agent_usage`'s module); `agent run` before its own lock.
-  A parked run is a person's, never touched. A failed start's rollback — the record deleted,
+  A parked run is a person's, never touched — except one waiting for its reset
+  (`waits_for_reset`) or holding an answer nobody delivered (`answer_waiting`), whose
+  supervisor is started again. A failed start's rollback — the record deleted,
   the withdrawal written — happens under the launch lock too, and the window saves before
   every start, a claim it did not make included.
 - **A step names the code location it works in.** With several code rows in a project,
@@ -382,10 +384,25 @@ paths:
   stream — and then ends, parks or retries (a review done without its verdict is asked once
   more, prompt `verdict`; a playbook's run that ends `done` starts its pass's
   `playbook advance`, detached): `done`/`stopped` end it; `asked`, `denied`,
-  `limit`, a runaway and a failure no retry mends park it and the process exits; other
+  `limit`, a runaway and a failure no retry mends park it and the process exits (but for a
+  limit whose reset is known); other
   failures retry after 30 s, 2 min and 10 min, and a fourth in a row parks. A parked run
   resumes by `--prompt answer|continue|reset|retry`, or bare on an answered question. It
-  opens no library. **Its locks
+  opens no library. **A limit with a known reset waits in its supervisor**, which answers the
+  `limit` question for the clock (`answer.by.kind: clock`) at the reset and resumes with
+  `reset`; **Retry now** is a person's answer to the same question (`inbox.retry_now`, `dplanner
+  agent retry`, *Step ▸ Retry Now*), resumed with `retry`. A reset the turn did not report is
+  the account's last-known one (`limits.py`, `config_dir()/usage-limits.json`); with neither,
+  the run parks for a person; one already past is waited for once (`past-reset`), never
+  twice in a row. **A SIGTERM during the wait leaves the run parked** for `revive`; only a
+  fence ends a waiting run. *Retry now* is a retry only on a `limit` or `blocked` question
+  (`supervisor.RETRYABLE`) — on any other, the words are the answer. An account is the
+  harness and its config home (`limits.account_of`), and every observation carries its
+  turn's end: older windows never replace newer, and only a turn answered after the
+  exhaustion lifts it. **Nothing else starts on an account that ran out** — a turn
+  carrying no answer parks `limit`/`held` unstarted — and **a new headless launch waits** while
+  a window is at or above `limits.hold_at()` (95 %): `limits.hold`, which `launch.headless_refusal`
+  returns, so `agent run` and every headless launch refuse with its words. **Its locks
   are the OS's** (`supervisor.lock` for its life, `record.lock` across every read-modify-write
   of the record — `fence()` takes it too), never a file judged stale and deleted. **A kill
   ends the whole process group**, and every way out of a turn ends it, so nothing runs

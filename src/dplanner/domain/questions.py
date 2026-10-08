@@ -55,6 +55,11 @@ UNSETTLED = (OPEN, ESCALATED, ANSWERED)
 
 PERSON = "person"
 COORDINATOR = "coordinator"
+CLOCK = "clock"  # Answers a limit question when its reset has passed, and nothing else.
+
+# The answer that resumes a run parked on a limit or a block without waiting: the limit
+# card's one option, and what `agent retry` answers.
+RETRY_NOW = "Retry now"
 
 
 @dataclass(frozen=True)
