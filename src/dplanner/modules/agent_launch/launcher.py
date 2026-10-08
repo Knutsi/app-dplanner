@@ -111,7 +111,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from dplanner.cli.discovery import PROJECT_ENV, RUN_ENV
-from dplanner.core.process import spawn_detached
+from dplanner.core.process import detached_environment, spawn_detached
 from dplanner.domain.agents import AgentHarness, harness_for_command, scrubbed_environment
 from dplanner.domain.ledger import new_run_id
 from dplanner.modules.agent_briefing.protocol import opening_prompt
@@ -757,7 +757,7 @@ def spawn(command: list[str], workdir: Path, harnesses: tuple[AgentHarness, ...]
     fails, "" otherwise: a workspace that could not be created is no shell at all, and
     the caller must not record a run for it.
     """
-    env = scrubbed_environment(os.environ, harnesses)
+    env = detached_environment(scrubbed_environment(os.environ, harnesses))
     staged = stages(command)
     if len(staged) <= 1:
         spawn_detached(command, cwd=workdir, env=env)

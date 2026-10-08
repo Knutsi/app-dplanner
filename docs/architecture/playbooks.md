@@ -519,10 +519,19 @@ the turn's — its leader the very process recorded, or a member carrying the ru
 SIGTERM, then SIGKILL after the grace, and then confirms none is left. A recorded pid alone
 missed two cases: a child that outlives its leader, which the leader's dead stamp says nothing
 about; and a supervisor killed between the spawn and the pid's write, which leaves no pid at
-all. A process started detached from inside a turn — a supervisor an answer starts, an
-advance — is spawned without the run's variable, so a stop never ends a process that is not
-the run's. A run whose supervisor ended its turn is swept the same way, for a grandchild that
+all. A run whose supervisor ended its turn is swept the same way, for a grandchild that
 left the turn's group.
+
+The variable is how a process is found, never on its own the authority to signal it. A pid
+the scan found can be reused before the signal, so each one is held by a pidfd, its
+environment and stamp read again while it is held, and the signal sent through the pidfd
+(`supervisor._signal_carrier`): the signal reaches the process that was checked, or none.
+Without pidfds the stamp is checked just before the kill. The scan never finds the calling
+process or any ancestor of it, so a stop given from a shell that carries the run, a person's
+or a turn's own, does not end that shell. And **nothing started detached carries a run**
+(`core/process.py`'s `detached_environment`, applied by `spawn_detached`, by a terminal's
+launch and by the window's `dplanner` calls). A supervisor an answer starts, an advance, or a
+terminal a turn opens for another step is no part of the run, and a stop never ends it.
 
 A pass whose turn will not die stays under way, and stopping again finishes it: a run is over
 only once its turn is gone (agents.md). Once the stop is done, nothing of the pass can start
@@ -544,12 +553,14 @@ The other order, the plan first, would leave a moment in which a stage that ends
 the next one. A run that outlives the grace is reported, and the status is left as it was:
 *pending* would say nobody works a step a process still works. Stopping again finishes it.
 
-**A stop is idempotent.** When the pass already reads stopped — a run fenced or a question
-withdrawn with the stop's own reason (`engine.STOP_WHY`), and no run of the step launched
-since — a stop repeated finishes the plan: a step still *in progress* (a flush that lost a
+**A stop is idempotent.** When the pass has halted with nothing of it left to stop, and no run
+of the step has launched since (`engine.halted_pass`), a stop repeated finishes the plan. That
+holds whatever halted it. A run fenced before the stop, by a takeover, keeps that fence's
+reason, so asking whether *a stop* fenced the pass would leave its plan unfinishable: a step still *in progress* (a flush that lost a
 race) goes back to *pending*, a claim still held (a refused push) is released. Only when all
 of it is settled does it say *nothing to stop*. *Stop Playbook* stays enabled for a step
-that still reads in progress after a stop; a claim alone left held is the CLI's to finish.
+that still reads in progress after its pass halted; a claim alone left held is the CLI's to
+finish.
 
 **The window runs each stop on a task of its own.** A start or another stop running never
 refuses it; two stops of one step wait for each other on the step's launch lock, inside the
@@ -561,9 +572,10 @@ starts as any pass does: `agent run --playbook`. The stopped pass has reached it
 
 **Not yet:**
 - **finding a run's processes by identity on macOS and Windows.** Neither lets one process
-  read another's environment, so there a stop ends the recorded process group (macOS) or tree
-  (Windows) while its leader lives, and a child that outlived it, or a turn whose pid was
-  never written, is not found.
+  read another's environment, so a stop there finds only the recorded leader. It ends that
+  leader's process group (macOS) or tree (Windows) while the leader is still the process
+  recorded. **Two things escape it.** A child that outlived its leader is not found, nor is a
+  turn whose supervisor died before writing its pid. Both are found on Linux alone.
 - **the context ceiling's fresh run.** A turn's summed usage counts the context once per
   call, so it is no reading of the context's size.
 - **fetching and pushing** around consuming an answer.

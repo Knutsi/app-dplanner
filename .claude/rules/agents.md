@@ -95,7 +95,8 @@ paths:
   playbook's pass instead, through the same gate, lock and claim (`playbooks.md`). **A supervisor is
   `sys.executable -m dplanner --library <the launch's>`**, and every turn's environment
   carries `DPLANNER_LIBRARY`, `DPLANNER_PROJECT` and `DPLANNER_RUN` — which nothing started
-  detached inherits, since a stop ends every process carrying its run.
+  detached inherits (`core.process.detached_environment`: `spawn_detached`, a terminal's
+  launch, the window's `dplanner` calls), since a stop ends every process carrying its run.
   `docs/architecture/agents.md`'s *One launch under both surfaces* has the reasoning.
 - **A machine's start settles its headless runs.** `supervisor.revive(project_dirs,
   claimed=, library=)` starts a supervisor for each run of this machine whose last turn has

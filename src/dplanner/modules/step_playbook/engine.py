@@ -430,8 +430,7 @@ def active(project_dir: Path, step: Step) -> str:
     return f"has a playbook pass under way ({pass_.id}): {_under_way(next_)}"
 
 
-# Why a stop fences a pass's runs and withdraws its questions: how a later stop knows the
-# pass was a person's to end, and finishes what that stop left of the plan.
+# Why a stop fences a pass's runs and withdraws its questions, as the run and the card say.
 STOP_WHY = "the playbook was stopped"
 
 
@@ -441,13 +440,14 @@ def stoppable(project_dir: Path, step: Step) -> str:
     by pass id alone, so a pass whose preset this build does not know is stopped all the
     same: a run not over, a question not settled — an answer no advance has acted on yet
     included — or a stage done whose advance is still to come. A run still dying after an
-    earlier stop counts, so stopping again finishes it; so does a stop whose change to the
-    plan did not land, while the step still reads in progress."""
+    earlier stop counts, so stopping again finishes it; so does a halted pass whose step
+    still reads in progress — a stop whose change to the plan did not land, or a pass
+    something else halted."""
     entries = _latest_entries(project_dir, step.id)
     if said := _left(project_dir, step, entries):
         return said
-    if stopped_pass(project_dir, step.id) and stored(step) is Status.IN_PROGRESS:
-        return "its stop is unfinished: the step still reads in progress"
+    if halted_pass(project_dir, step) and stored(step) is Status.IN_PROGRESS:
+        return "it has halted, but the step still reads in progress"
     return ""
 
 
@@ -474,19 +474,20 @@ def _left(project_dir: Path, step: Step, entries: Sequence[passes.Entry]) -> str
     return f"its {latest.stage} stage is {_run_state(latest)}"
 
 
-def stopped_pass(project_dir: Path, step_id: str) -> str:
-    """The id of the step's latest pass when a stop ended it and nothing of the step has run
-    since — what a stop repeated may still finish in the plan — else ""."""
-    entries = _latest_entries(project_dir, step_id)
-    stopped = any(
-        (e.fence or {}).get("why") == STOP_WHY
-        if isinstance(e, LedgerRecord)
-        else e.withdrawn.get("why") == STOP_WHY
-        for e in entries
-    )
-    if not stopped:
+def halted_pass(project_dir: Path, step: Step) -> str:
+    """The id of the step's latest pass when it has halted — whoever fenced it, and why —
+    with nothing of it left to stop, and nothing of the step has run since: what a stop
+    repeated still finishes in the plan. "" otherwise, a completed pass included."""
+    entries = _latest_entries(project_dir, step.id)
+    if not entries or _left(project_dir, step, entries):
         return ""
-    others = [r for r in ledger.records(project_dir) if r.step == step_id and not r.pass_]
+    pass_ = _latest_pass(project_dir, step.id)
+    facts = _facts(step)
+    if not isinstance(pass_, str) and isinstance(
+        passes.due(pass_.playbook, pass_.settings, pass_.entries, facts), Complete
+    ):
+        return ""
+    others = [r for r in ledger.records(project_dir) if r.step == step.id and not r.pass_]
     runs = [e for e in entries if isinstance(e, LedgerRecord)]
     asked = [e for e in entries if isinstance(e, Question)]
     return entries[-1].pass_ if passes.in_order([*others, *runs], asked)[-1].pass_ else ""

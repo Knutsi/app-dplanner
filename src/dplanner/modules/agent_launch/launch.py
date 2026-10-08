@@ -29,7 +29,7 @@ from datetime import date
 from pathlib import Path
 
 from dplanner.cli.main import PROG
-from dplanner.core.process import detached_flags
+from dplanner.core.process import detached_environment, detached_flags
 from dplanner.domain import claims, ledger
 from dplanner.domain.agents import AgentHarness
 from dplanner.domain.headless import StageKind
@@ -483,6 +483,7 @@ def run_dplanner(argv: Sequence[str]) -> tuple[int, str]:
             text=True,
             timeout=START_TIMEOUT_S,
             check=False,
+            env=detached_environment(),
             start_new_session=True,
             creationflags=detached_flags(),
         )

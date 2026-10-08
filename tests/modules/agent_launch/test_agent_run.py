@@ -528,6 +528,28 @@ def test_the_spawned_environment_carries_no_session_markers(monkeypatch, tmp_pat
     assert "CLAUDECODE" not in options["env"] and "PATH" in options["env"]
 
 
+@pytest.mark.parametrize("command", [["term", "-e", "run.sh"], ["tmux", "new", "&&", "tmux", "x"]])
+def test_a_terminal_a_turn_opens_does_not_carry_the_turns_run(monkeypatch, tmp_path, command):
+    """A turn that launches another step's terminal must not hand it its run: stopping that
+    run ends every process carrying it."""
+    import subprocess
+
+    from dplanner.cli.discovery import RUN_ENV
+    from dplanner.modules.agent_launch import launcher
+
+    envs = []
+
+    def stage(*args, **kwargs):
+        envs.append(kwargs["env"])
+        return subprocess.CompletedProcess(args, 0, "%1", "")
+
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: envs.append(kw["env"]))
+    monkeypatch.setattr(subprocess, "run", stage)
+    monkeypatch.setenv(RUN_ENV, "the-turns-run")
+    assert launcher.spawn(command, tmp_path, HARNESSES) == ""
+    assert envs and all(RUN_ENV not in env and "PATH" in env for env in envs)
+
+
 def test_the_harnesses_cover_the_known_agents():
     """One provider module per agent CLI, and the capabilities are read off each record:
     Claude names its session up front, Codex and OpenCode are found afterwards, all

@@ -52,6 +52,7 @@ between leaves a turn to start, never an answer to consume twice.
 Qt-free: it is a CLI verb, and the run it drives must outlive every window.
 """
 
+import errno
 import json
 import os
 import queue
@@ -384,24 +385,73 @@ def end_orphaned_turn(record: LedgerRecord, grace: float) -> bool:
     return not _run_left(record.run, leader, group)
 
 
-def carrying_run(run: str) -> list[int]:
-    """Every process of this machine but this one whose environment names ``run`` — Linux
-    only; [] elsewhere, where no process may read another's environment."""
+def carrying_run(run: str) -> list[ProcessStamp]:
+    """Every process of this machine whose environment names ``run``, as it was when found —
+    never this one nor an ancestor of it, which a stop given from inside the run would
+    otherwise end, the person's own shell with it. Linux only; [] elsewhere, where no process
+    may read another's environment."""
     if sys.platform != "linux":
         return []
     else:
-        entry = f"{RUN_ENV}={run}".encode()
+        lineage = _lineage()
         found = []
         for proc in Path("/proc").iterdir():
-            if not proc.name.isdigit() or int(proc.name) == os.getpid():
+            if not proc.name.isdigit() or int(proc.name) in lineage:
                 continue
-            try:
-                environ = (proc / "environ").read_bytes()
-            except OSError:  # Gone meanwhile, or somebody else's.
-                continue
-            if entry in environ.split(b"\0"):
-                found.append(int(proc.name))
+            stamp = stamp_of(int(proc.name)) if _carries(int(proc.name), run) else None
+            if stamp is not None:
+                found.append(stamp)
         return found
+
+
+def _carries(pid: int, run: str) -> bool:
+    try:
+        environ = Path(f"/proc/{pid}/environ").read_bytes()
+    except OSError:  # Gone meanwhile, or somebody else's.
+        return False
+    return f"{RUN_ENV}={run}".encode() in environ.split(b"\0")
+
+
+def _lineage() -> set[int]:
+    """This process and every ancestor of it, by each one's parent in ``/proc/<pid>/stat``."""
+    pids, pid = set(), os.getpid()
+    while pid > 0 and pid not in pids:
+        pids.add(pid)
+        try:
+            stat = Path(f"/proc/{pid}/stat").read_text(encoding="ascii", errors="replace")
+        except OSError:
+            break
+        # The command name is in parentheses and may hold spaces; the parent is the second
+        # field after the closing one.
+        fields = stat.rpartition(")")[2].split()
+        pid = int(fields[1]) if len(fields) > 1 and fields[1].isdigit() else 0
+    return pids
+
+
+def _signal_carrier(found: ProcessStamp, run: str, sig: signal.Signals) -> None:
+    """Signal a process :func:`carrying_run` found only while it is still that process and
+    still carries the run — a pid can be reused between the scan and the signal. Linux holds
+    the process by a pidfd across the check and signals through it, so the signal reaches the
+    process checked or none; without pidfds the stamp is checked just before the kill."""
+    if sys.platform != "linux":
+        return
+    else:
+        try:
+            handle = os.pidfd_open(found.pid)
+        except OSError as error:
+            if error.errno != errno.ENOSYS:
+                return  # Gone already.
+            handle = -1  # A kernel without pidfds.
+        try:
+            if is_live(found) and _carries(found.pid, run):
+                with suppress(ProcessLookupError, PermissionError):
+                    if handle < 0:
+                        os.kill(found.pid, sig)
+                    else:
+                        signal.pidfd_send_signal(handle, sig)
+        finally:
+            if handle >= 0:
+                os.close(handle)
 
 
 def _turn_group(run: str, leader: ProcessStamp | None) -> int:
@@ -411,9 +461,9 @@ def _turn_group(run: str, leader: ProcessStamp | None) -> int:
     else:
         if is_live(leader):
             return leader.pid
-        for pid in carrying_run(run):
+        for found in carrying_run(run):
             with suppress(OSError):
-                if os.getpgid(pid) == leader.pid:
+                if os.getpgid(found.pid) == leader.pid:
                     return leader.pid
         return 0
 
@@ -441,9 +491,8 @@ def _end_run(run: str, leader: ProcessStamp | None, group: int, *, hard: bool) -
             )
     else:
         sig = signal.SIGKILL if hard else signal.SIGTERM
-        for pid in carrying_run(run):
-            with suppress(ProcessLookupError, PermissionError):
-                os.kill(pid, sig)
+        for found in carrying_run(run):
+            _signal_carrier(found, run, sig)
         if group:
             with suppress(ProcessLookupError, PermissionError):
                 os.killpg(group, sig)
@@ -1144,29 +1193,22 @@ def start_detached(
         argv += ["--prompt", prompt]
     if text:
         argv += ["--text", text]
-    _detached(argv)
+    spawn_detached(argv)
 
 
 def advance_detached(step: str, *, library: Path | None = None) -> None:
     """Start ``dplanner playbook advance <step>`` that outlives whoever started it: a pass's
     stage ended, or its gate was answered, and the engine decides what is due next. This
     interpreter, as :func:`start_detached` is."""
-    _detached(dplanner_argv(library, "playbook", "advance", step))
+    spawn_detached(dplanner_argv(library, "playbook", "advance", step))
 
 
 def wake_detached(project_dir: Path, question: str, *, library: Path | None = None) -> None:
     """Start ``dplanner playbook wake <question>``: a pass held on its account's usage waits
     for the reset in a process of its own, then answers the card for the clock and advances."""
-    _detached(
+    spawn_detached(
         dplanner_argv(library, "playbook", "wake", question, "--project-dir", str(project_dir))
     )
-
-
-def _detached(argv: list[str]) -> None:
-    """Start ``argv`` detached, never carrying the run of the shell that started it — an
-    answer or a launch given from inside a turn — since stopping that run ends every process
-    that carries it (:func:`end_orphaned_turn`)."""
-    spawn_detached(argv, env={k: v for k, v in os.environ.items() if k != RUN_ENV})
 
 
 def revive(

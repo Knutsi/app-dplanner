@@ -12,6 +12,7 @@ import threading
 import time
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 from tests.modules.agent_supervisor.test_supervisor import INIT, limit_at, result
@@ -396,3 +397,87 @@ def test_a_pass_whose_preset_revision_this_build_lacks_is_stopped(drive, cli_lib
         store.close()
     assert "execute attempt 1 was not started" in stop(drive)
     assert drive.latest().over and _status(drive.cli, STEP) == "pending"
+
+
+# -- the review's second round ---------------------------------------------------------------------
+
+
+@PROCESS_ENVIRONMENTS
+@pytest.mark.parametrize("pidfds", [True, False], ids=["pidfd", "stamp"])
+def test_a_process_whose_identity_changed_since_the_scan_is_not_signalled(
+    allow_spawn, monkeypatch, pidfds
+):
+    """Between the scan and the signal the pid found carrying the run may have been reused:
+    the stranger holding it now, or a process whose start no longer matches, is left alone."""
+    import errno
+    import os
+    import sys
+
+    from tests.launching import orphaned_turn
+
+    allow_spawn(Path(sys.executable))
+    if not pidfds:
+
+        def no_pidfds(_pid):
+            raise OSError(errno.ENOSYS, "no pidfds")
+
+        monkeypatch.setattr(os, "pidfd_open", no_pidfds)
+    run = "20261008T120000Z-reuse"
+    with orphaned_turn() as stranger, orphaned_turn(run) as carrier:
+        reused = replace(carrier, started=carrier.started + "0")
+        monkeypatch.setattr(supervisor, "carrying_run", lambda _run: [stranger, reused])
+        supervisor._end_run(run, None, 0, hard=True)
+        time.sleep(0.2)
+        assert is_live(stranger) and is_live(carrier)
+        monkeypatch.setattr(supervisor, "carrying_run", lambda _run: [carrier])
+        supervisor._end_run(run, None, 0, hard=False)
+        deadline = time.monotonic() + 5
+        while is_live(carrier) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert not is_live(carrier) and is_live(stranger)
+
+
+@PROCESS_ENVIRONMENTS
+def test_the_search_never_finds_the_caller_or_its_ancestors(allow_spawn):
+    """A stop given from a shell carrying the run — a person's, or a turn's own — ends that
+    run's other processes, never the shell it was given from."""
+    import os
+    import subprocess
+    import sys
+
+    from dplanner.core.process import RUN_ENV
+
+    allow_spawn(Path(sys.executable))
+    run = "20261008T120000Z-lineage"
+    search = (
+        "import json; from dplanner.modules.agent_supervisor.supervisor import carrying_run; "
+        f"print(json.dumps([s.pid for s in carrying_run({run!r})]))"
+    )
+    shell = (
+        "import json, os, subprocess, sys\n"
+        "sibling = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+        f"found = subprocess.run([sys.executable, '-c', {search!r}], capture_output=True,\n"
+        "                       text=True, check=True).stdout\n"
+        "sibling.kill()\n"
+        "print(json.dumps({'shell': os.getpid(), 'sibling': sibling.pid,\n"
+        "                  'found': json.loads(found)}))\n"
+    )
+    done = subprocess.run([sys.executable, "-c", shell], capture_output=True, text=True,
+                          check=True, env={**os.environ, RUN_ENV: run})  # fmt: skip
+    said = json.loads(done.stdout)
+    assert said["found"] == [said["sibling"]]
+
+
+def test_a_pass_something_else_fenced_is_finished_by_a_stop(drive):
+    """A run fenced for another reason before any stop — a takeover — keeps that reason, so a
+    stop's leftover reconciliation cannot ask why the pass halted, only whether it has."""
+    drive.cli("playbook", "set", STEP, "execute")
+    drive.cli("agent", "run", STEP, "--playbook")
+    run = drive.latest().run
+    supervisor.fence(drive.plan, run, "kettle-actual", "taken over")
+    assert supervisor.settle_fenced(drive.plan, run, 1.0)
+    assert drive.latest().over and _status(drive.cli, STEP) == "in-progress"
+    assert (drive.latest().fence or {}).get("why") == "taken over"
+    assert "finished stopping pass" in stop(drive)
+    assert _status(drive.cli, STEP) == "pending"
+    assert "nothing to stop" in stop(drive)

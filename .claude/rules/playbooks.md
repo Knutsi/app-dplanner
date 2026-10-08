@@ -90,12 +90,14 @@ paths:
   withdraws the pass's unsettled questions (an answer not yet acted on too) and fences and
   stops its unfinished runs and its latest run (`supervisor.stop_and_wait`, which ends
   **everything carrying the run's `DPLANNER_RUN`** and its provable process group, never a
-  pid alone), so the latest record reads `Halted` to `passes.due` — the stopped state every
+  pid alone: each held by a pidfd, rechecked, and signalled through it; never the caller or an
+  ancestor of it; on macOS and Windows the recorded leader alone), so the latest record reads `Halted` to `passes.due` — the stopped state every
   surface reads, and no new record kind; then, **only once no run of it is left here**, the
   plan as it stands after the lock (`workflows.stopped`): in progress back to pending, any
   other status standing, the at-work claim ended and the squad's released. A run that
-  survives leaves the status as it was. **A stop is idempotent**: a pass a stop ended
-  (`STOP_WHY`) with its plan unfinished is finished by the next. Nothing of a stopped pass
+  survives leaves the status as it was. **A stop is idempotent**: a halted pass with nothing
+  of it live has its plan finished by the next stop, whatever reason fenced it
+  (`engine.halted_pass`). Nothing of a stopped pass
   starts again — not an advance, `revive`, the clock or *Retry now*; nothing to stop exits 0
   and says so; the worktree and branch are kept, and the next `agent run --playbook` starts a
   new pass.

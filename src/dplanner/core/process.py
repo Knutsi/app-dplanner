@@ -24,6 +24,11 @@ from pathlib import Path
 DETACHED_PROCESS = 0x00000008
 CREATE_NEW_PROCESS_GROUP = 0x00000200
 
+# Names the run a process belongs to (``cli.discovery`` re-exports it). A stop ends every
+# process carrying it, and a detached process is nobody's turn — a terminal a turn opened for
+# another step, a supervisor, a window — so none ever inherits it.
+RUN_ENV = "DPLANNER_RUN"
+
 
 def detached_flags(platform: str = sys.platform) -> int:
     """The Windows half of ``start_new_session``; nothing anywhere else.
@@ -45,12 +50,18 @@ def spawn_detached(
     subprocess.Popen(
         list(argv),
         cwd=cwd,
-        env=env,
+        env=detached_environment(env),
         start_new_session=True,
         creationflags=detached_flags(),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
+
+
+def detached_environment(env: Mapping[str, str] | None = None) -> dict[str, str]:
+    """What a detached process starts with: ``env`` (this process's when None) less the run
+    marker (:data:`RUN_ENV`)."""
+    return {k: v for k, v in (os.environ if env is None else env).items() if k != RUN_ENV}
 
 
 @dataclass(frozen=True)

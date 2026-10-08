@@ -3,9 +3,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from dplanner.core.process import (
     CREATE_NEW_PROCESS_GROUP,
     DETACHED_PROCESS,
+    RUN_ENV,
     ProcessStamp,
     detached_flags,
     is_live,
@@ -30,6 +33,17 @@ def test_a_detached_spawn_leaves_the_session_and_keeps_no_pipes(monkeypatch, tmp
     assert options["start_new_session"] is True
     assert options["creationflags"] == detached_flags()
     assert options["stdout"] is subprocess.DEVNULL and options["stderr"] is subprocess.DEVNULL
+
+
+@pytest.mark.parametrize("given", [None, {"PATH": "/usr/bin", RUN_ENV: "r-1"}])
+def test_a_detached_spawn_never_carries_a_run(monkeypatch, given):
+    """A stop ends every process carrying its run; a detached one is nobody's turn."""
+    calls = []
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: calls.append(kw))
+    monkeypatch.setenv(RUN_ENV, "r-1")
+    monkeypatch.setenv("PATH", "/usr/bin")
+    spawn_detached(("dplanner", "playbook", "advance", "S1"), env=given)
+    assert RUN_ENV not in calls[0]["env"] and calls[0]["env"]["PATH"] == "/usr/bin"
 
 
 def test_this_process_is_live_and_a_changed_start_or_boot_is_not():

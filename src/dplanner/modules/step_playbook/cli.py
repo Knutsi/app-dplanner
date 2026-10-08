@@ -33,7 +33,7 @@ from dplanner.modules.step_playbook.aspect import (
     write,
     write_project,
 )
-from dplanner.modules.step_playbook.engine import standing_of, stop, stopped_pass, wake
+from dplanner.modules.step_playbook.engine import halted_pass, standing_of, stop, wake
 from dplanner.modules.step_playbook.passes import describe
 from dplanner.modules.step_playbook.presets import MAX_ROUNDS, PRESETS, ROUNDS, Playbook, preset
 from dplanner.modules.step_playbook.workflows import stopped
@@ -67,7 +67,8 @@ def commands(
         """The pass stopped first, then the plan — and the plan only once nothing of the pass
         runs: the other order would let a stage that ends in between launch the next one, or
         say nobody works a step a surviving process still works. A stop whose change to the
-        plan did not land is finished by the next. Nothing to stop is said, and is no error."""
+        plan did not land, or a pass something else halted, is finished by the next. Nothing to
+        stop is said, and is no error."""
         step = find_step(context.library, args.step, context.current)
         project = context.library.project_of(step.id).id
         project_dir = context.store.project_dir(project)
@@ -80,7 +81,7 @@ def commands(
         if adopted.deferred or adopted.rebuild_required:
             raise CliError(f"{step.title}: the plan was being written meanwhile — run it again")
         step = context.library.step(step.id)
-        pass_id = done.pass_ if done is not None else stopped_pass(project_dir, step.id)
+        pass_id = done.pass_ if done is not None else halted_pass(project_dir, step)
         nothing = f"{step.title}: nothing to stop — no playbook pass runs or waits on it"
         if not pass_id:
             context.report({"step": step.id, "stopped": False}, nothing)
