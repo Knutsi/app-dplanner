@@ -65,6 +65,7 @@ if TYPE_CHECKING:
     from dplanner.framework.undo import UndoService
     from dplanner.modules.agent_at_work.module import AgentAtWorkModule
     from dplanner.modules.agent_launch.module import AgentLaunchModule
+    from dplanner.modules.agent_questions.module import AgentQuestionsModule
     from dplanner.modules.agent_usage.module import AgentUsageModule
     from dplanner.modules.branches.module import BranchesModule
     from dplanner.modules.canvas.clipboard.clip import PastePolicy
@@ -138,7 +139,7 @@ def default_modules(
     agents = _agents(root, branches=branches, settings=settings, board=board)
     graph = _graph(root, branches=branches, launch=agents.launch)
     knowledge = _knowledge(root, editor=graph.editor)
-    tabs = _project_tabs(root)
+    tabs = _project_tabs(root, questions=agents.questions)
     return [
         *_shell(root, agents),
         *_assistants(root, settings),
@@ -166,6 +167,7 @@ def default_modules(
         graph.editor,
         tabs.step_order,
         agents.usage,
+        agents.questions,
         tabs.progression,
         tabs.time,
         # After every module whose report_source it renders; before Settings, whose dialog
@@ -495,6 +497,7 @@ class _Agents(NamedTuple):
     instruction: "StepAgentInstructionModule"
     launch: "AgentLaunchModule"
     usage: "AgentUsageModule"
+    questions: "AgentQuestionsModule"
 
 
 def _agents(
@@ -518,6 +521,7 @@ def _agents(
     from dplanner.modules.agent_launch.launch import read_absolute
     from dplanner.modules.agent_launch.module import AgentLaunchDeps, AgentLaunchModule
     from dplanner.modules.agent_questions import inbox
+    from dplanner.modules.agent_questions.module import AgentQuestionsDeps, AgentQuestionsModule
     from dplanner.modules.agent_usage.aspect import ledger_dir, step_usage_words
     from dplanner.modules.agent_usage.module import AgentUsageDeps, AgentUsageModule
     from dplanner.modules.branches.plan import branch_plan
@@ -548,13 +552,16 @@ def _agents(
         nothing ends before the build is up."""
         usage.sweep()
 
+    # Whoever answers in the window is the person at it.
+    person = {"kind": "person", "name": getuser()}
+
     def retry_now(step_id: str) -> str:
         """Step ▸ Retry Now: the step's parked run answered ``Retry now`` by the person here."""
         project_dir = ledger_of(step_id)
         run = inbox.parked_run(project_dir, step_id) if project_dir is not None else ""
         if project_dir is None or not run:
             raise ValueError("no headless run is parked on this step")
-        return inbox.retry_now(project_dir, run, {"kind": "person", "name": getuser()}).said
+        return inbox.retry_now(project_dir, run, person).said
 
     # Every launch is handed here, and this is the one place that keeps an eye on the shell
     # afterwards.
@@ -695,7 +702,23 @@ def _agents(
             pick_assets=root.pick_assets,
         )
     )
-    return _Agents(runs, at_work, checkouts, instruction, launch, usage)
+    # The question cards the Control Centre hosts: a person answering in the window, through
+    # the same inbox `question answer` uses, so the two cannot drift.
+    questions = AgentQuestionsModule(
+        AgentQuestionsDeps(
+            library=library,
+            status=services.window,
+            project_dir=lambda project_id: ledger_dir(store, project_id),
+            answer=lambda project_dir, question_id, given: (
+                inbox.answer(project_dir, question_id, given, person).said
+            ),
+            retry_now=lambda project_dir, run: inbox.retry_now(project_dir, run, person).said,
+            reveal=reveal_step,
+            harnesses=agent_harnesses(),
+            key_of=key_of,
+        )
+    )
+    return _Agents(runs, at_work, checkouts, instruction, launch, usage, questions)
 
 
 class _Graph(NamedTuple):
@@ -1094,7 +1117,7 @@ class _Tabs(NamedTuple):
     step_order: "StepOrderModule"
 
 
-def _project_tabs(root: _Root) -> _Tabs:
+def _project_tabs(root: _Root, *, questions: "AgentQuestionsModule") -> _Tabs:
     """The tabs a project's index rows open — each built ahead of the list because the
     projects index opens it — and the Time tab's simulator, over a world of its own."""
     from dplanner.core.storage.locations import find_repo_root, origin_url
@@ -1176,6 +1199,8 @@ def _project_tabs(root: _Root) -> _Tabs:
             key_of=key_of,
             # Who works the step, as its key block and Find's rows say it.
             glyph_of=lambda step: _primary_glyph(step)[0],
+            # The open questions, a card each, on top of the Control Centre.
+            question_cards=questions.create_cards,
         )
     )
     estimation = EstimationModule(

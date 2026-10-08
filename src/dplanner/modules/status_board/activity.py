@@ -70,7 +70,7 @@ from dplanner.theme.icons import glyph_painter, step_icon
 from dplanner.theme.tokens import FIELD_GAP, PANEL_MARGIN, SECONDARY_ALPHA, SECTION_GAP
 
 if TYPE_CHECKING:  # module.py imports this file, so the Deps arrive as a forward name.
-    from dplanner.modules.status_board.module import ProgressionDeps
+    from dplanner.modules.status_board.module import ProgressionDeps, QuestionLane
 
 PROGRESSION_KIND = "progression"
 CONTROL_CENTRE_KIND = "control_centre"
@@ -345,6 +345,7 @@ class StatusBoard(EntityActivity):
         layout.addWidget(self.empty, 1)
 
         self._widget = page
+        self._layout = layout  # The Control Centre puts its question cards under the strip.
         # After a quiet spell, not per signal: every row is rebuilt.
         self._refresh_soon = Debounced(self._refresh, parent=page, service=deps.debounce)
         self.updating.follow(self._refresh_soon)
@@ -514,6 +515,11 @@ class ControlCentreActivity(StatusBoard):
     the library has more than one: a project is added to it as it arrives, renamed with it,
     and hidden — and dropped from the pick — when it leaves, since a filter that stops
     listing what it is narrowing by hides rows for a reason nobody can see.
+
+    **The open questions sit on top**, a card each, above the board (``question_cards``):
+    narrowed by the same filter, and counted with the rows in the title. A headless run
+    parked on a question sets no agent state, so a card and a *Waits for you* row are
+    hardly ever the same step, and the plain sum is the honest count.
     """
 
     def __init__(self, deps: "ProgressionDeps") -> None:
@@ -533,6 +539,11 @@ class ControlCentreActivity(StatusBoard):
             )
         ]
         self._unsubscribes.append(self.projects.changed.connect(self._show))
+        self.questions: QuestionLane | None = None
+        if deps.question_cards is not None:
+            self.questions = deps.question_cards(self.widget)
+            self._layout.insertWidget(1, self.questions.widget)  # Under the strip.
+            self.questions.set_changed(lambda: deps.tabs.set_tab_title(self, self.title))
         self._refresh()
 
     @property
@@ -541,7 +552,13 @@ class ControlCentreActivity(StatusBoard):
 
     @property
     def title(self) -> str:
-        return f"{CONTROL_CENTRE} ({self._needing})" if self._needing else CONTROL_CENTRE
+        count = self._needing + (self.questions.count if self.questions is not None else 0)
+        return f"{CONTROL_CENTRE} ({count})" if count else CONTROL_CENTRE
+
+    def close(self) -> None:
+        if self.questions is not None:
+            self.questions.close()
+        super().close()
 
     def activity_nodes(self) -> tuple[ContextNode, ...]:
         """No project: the board is every project's, and a verb about one reads the picked
@@ -563,6 +580,13 @@ class ControlCentreActivity(StatusBoard):
         # board it re-shows must already be the one without that project.
         super()._refresh()
         self._sync_projects()
+        if self.questions is not None:
+            self.questions.refresh()  # A step renamed or a project gone says so on its card.
+
+    def _show(self) -> None:
+        super()._show()
+        if self.questions is not None:
+            self.questions.show_projects(self.projects.active())
 
     def _sync_projects(self) -> None:
         """The filter's entries against the library: one per project, in the words it has
