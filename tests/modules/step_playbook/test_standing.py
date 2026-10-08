@@ -126,16 +126,28 @@ def test_a_reset_today_is_a_time_and_another_day_carries_its_date():
 
 
 @pytest.mark.parametrize(
-    ("last", "phrase", "tone"),
+    ("last", "status", "phrase", "tone"),
     [
-        (run("execute", end="stopped"), "Stopped", "bad"),
-        (gate("person", STOP), "Stopped", "bad"),
-        (gate("person", PASS), "Done", "good"),
+        (run("execute", end="stopped"), "at_review", "Stopped", "bad"),
+        (gate("person", STOP), "at_review", "Stopped", "bad"),
+        (gate("person", PASS), "done", "Done", "good"),
     ],
 )
-def test_a_pass_that_ended_says_how(last, phrase, tone):
-    shown = stands("plan-execute-person", run("plan"), run("execute"), last)
+def test_a_pass_that_ended_says_how(last, status, phrase, tone):
+    shown = stands("plan-execute-person", run("plan"), run("execute"), last, **{status: True})
     assert (shown.phrase, shown.tone, shown.ended) == (phrase, tone, True)
+
+
+def test_a_pass_through_with_its_work_unmerged_waits_for_the_merge():
+    through = (run("plan"), run("execute"), gate("person", PASS))
+    waits = stands("plan-execute-person", *through, at_review=True)
+    assert (waits.phrase, waits.tone, waits.ended) == ("Waits for merge", "warn", False)
+    assert stands("plan-execute-person", *through, done=True).phrase == "Done"
+
+
+def test_a_pass_that_produced_nothing_to_merge_is_done_when_through():
+    shown = stands("spike", run("plan"), gate("person", PASS))
+    assert (shown.phrase, shown.ended) == ("Done", True)
 
 
 def test_changes_from_a_person_send_the_work_back():
@@ -160,21 +172,28 @@ def test_a_pass_that_ended_is_shown_for_a_day_and_one_under_way_always(tmp_path)
     from dplanner.domain import ledger
     from dplanner.domain.model import Step
     from dplanner.modules.step_playbook.engine import ENDED_SHOWN, standing_of, standings
+    from dplanner.planning import status
 
-    working, finished = Step(title="Working"), Step(title="Finished")
+    working = Step(title="Working")
+    finished = Step(title="Finished")
+    finished.module_data[status.MODULE_ID] = {"status": "done"}
+    unmerged = Step(title="Unmerged")
     pinned = settings(REVIEWED).to_json()
-    for step, verdict in ((working, None), (finished, PASSED)):
+    for step, verdict in ((working, None), (finished, PASSED), (unmerged, PASSED)):
         made = [replace(run("plan"), settings=pinned), run("execute")]
         made.append(run("review", verdict=PASSED) if verdict else run("review", end="", over=False))
         for record in made:
             ledger.write(tmp_path, replace(record, step=step.id, pass_=f"P-{step.title}"))
     ended_at = datetime.fromisoformat(ledger.records(tmp_path)[-1].launched)
     soon, later = ended_at + timedelta(hours=1), ended_at + ENDED_SHOWN + timedelta(hours=1)
-    assert {k: s.phrase for k, s in standings(tmp_path, [working, finished], soon).items()} == {
+    steps = [working, finished, unmerged]
+    assert {k: s.phrase for k, s in standings(tmp_path, steps, soon).items()} == {
         working.id: "Review 1/2",
         finished.id: "Done",
+        unmerged.id: "Waits for merge",
     }
-    assert list(standings(tmp_path, [working, finished], later)) == [working.id]
+    # A pass waiting on a person's merge is not over: its strip stays until the step is done.
+    assert list(standings(tmp_path, steps, later)) == [working.id, unmerged.id]
     # `playbook show` says how the last pass ended, however long ago.
     shown = standing_of(tmp_path, finished, later)
     assert shown is not None and shown.phrase == "Done"

@@ -571,7 +571,7 @@ class Standing:
     tone: str  # "" quiet | "busy" | "warn" | "good" | "bad": ``theme/tones``' words.
     stages: tuple[str, ...]  # The playbook's stage labels, in order.
     current: int  # The stage the pass stands at, by index; -1 for none.
-    ended: bool  # Done or stopped: nothing more is due.
+    ended: bool  # Done or stopped: nothing more is due, not even a person's merge.
     at: str  # The stamp of the pass's latest record.
 
 
@@ -589,7 +589,7 @@ def standing(
     reading = _Reading(playbook, settings, list(entries))
     next_ = reading.due(facts)
     last = entries[-1] if entries else None
-    phrase, tone, stage = _words(reading, next_, last, parks, now)
+    phrase, tone, stage = _words(reading, next_, last, parks, facts, now)
     return Standing(
         pass_id=last.pass_ if last is not None else "",
         playbook=playbook.name,
@@ -597,7 +597,7 @@ def standing(
         tone=tone,
         stages=tuple(stage.label for stage in playbook.stages),
         current=reading.ids.index(stage) if stage in reading.ids else -1,
-        ended=isinstance(next_, Complete | Halted),
+        ended=isinstance(next_, Halted) or phrase == DONE,
         at=_stamp(last) if last is not None else "",
     )
 
@@ -622,12 +622,24 @@ def until_words(reset: datetime, now: datetime) -> str:
     return f"{local.day} {local.strftime('%b %H:%M')}"
 
 
+DONE = "Done"
+
+
 def _words(
-    reading: _Reading, next_: Next, last: Entry | None, parks: Sequence[Question], now: datetime
+    reading: _Reading,
+    next_: Next,
+    last: Entry | None,
+    parks: Sequence[Question],
+    facts: Facts,
+    now: datetime,
 ) -> tuple[str, str, str]:
     """(phrase, tone, stage id) for what is due, read against the latest record."""
     if isinstance(next_, Complete):
-        return "Done", "good", ""
+        # A pass that produced work never merges it into the mainline: until somebody does
+        # and the step reads done, the work is not done, however through the pass is.
+        if facts.done or next_.set_done:
+            return DONE, "good", ""
+        return "Waits for merge", "warn", ""
     if isinstance(next_, Halted):
         return "Stopped", "bad", last.stage if last is not None else ""
     if isinstance(next_, Progress):

@@ -1113,7 +1113,8 @@ rule its own `body` — the Wave view's case — so there is never a second size
 
 A step with a playbook pass under way — or one that ended within the day — wears a second
 strip under the branch strip, saying in words where the pass stands: *Planning*, *Review
-1/2*, *Waits for you · plan approval*, *Parked until 14:20*, *Stopped*, *Done*. It is the
+1/2*, *Waits for you · plan approval*, *Parked until 14:20*, *Stopped*, *Waits for merge*,
+*Done*. It is the
 second exception to *nothing in words*, for the same reason as the branch: a medallion could
 say only *some* playbook, and the point of the strip is which stage and who it waits on. The
 words are `passes.standing`'s, one Qt-free reading of the pass's runs and questions that

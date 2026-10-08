@@ -219,14 +219,18 @@ for days, and the step panel says so.
 
 The card wears **one phrase** derived from the step's latest runs and questions: *Planning*,
 *Executing*, *Review 1/2*, *Fixing (round 1)*, *Waits for you · plan approval*, *Parked until
-21:30*, *Escalated*, *Stopped*, *Done*. It is never stored — a stored phrase could disagree with
+21:30*, *Escalated*, *Stopped*, *Waits for merge*, *Done*. It is never stored — a stored phrase could disagree with
 the runs it summarises — and it is `passes.standing`'s, beside `due` and reading the same
 records, so the card's strip and `playbook show` say the same words. It rides **a strip of its
 own under the card**, below the branch strip, with the stages behind it in the strip's tooltip
 — not the agent run's chip, as first written: the chip says a run is live and a pass spends
-most of its life parked, waiting or between stages, when no run is. A pass that ended shows
-for a day after its last record (`engine.ENDED_SHOWN`). Stages are read in the step panel's
-Playbook section and the run conversation, never as cards; `canvas.md`'s *A card running a
+most of its life parked, waiting or between stages, when no run is. **A pass through its
+stages is not *Done* until its step is**: one that produced work leaves a PR nobody has merged
+into the mainline yet, and DPlanner never merges there, so it reads *Waits for merge* (warn)
+until the step reads done — the dogfood run's card said *Done* on a Ready-for-review step a
+person still had to land. A pass that ended — done or stopped — shows for a day after its last
+record (`engine.ENDED_SHOWN`); one waiting for its merge has not ended and stays. Stages are
+read in the step panel's Playbook section, never as cards; `canvas.md`'s *A card running a
 playbook says where its pass stands* has the canvas's half.
 
 **Until a pass has records, the mark is a medallion.** Nothing derives a phrase before the

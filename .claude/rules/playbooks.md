@@ -116,6 +116,9 @@ paths:
   Qt-free reading of its runs, its questions and the questions its runs parked on, said by
   the card's playbook strip and by `playbook show` alike (`engine.standings` for a project,
   an ended pass shown for `ENDED_SHOWN`). A new phrase goes there, never in a surface.
+  **A pass through its stages reads *Done* only once its step does**; until then a pass that
+  produced work reads *Waits for merge* and has not ended (`playbooks.md`'s *The mark on the
+  one card*).
 - **Every stage is one headless turn**, with the invocation per harness in
   `docs/architecture/playbooks.md`'s *Each stage is one headless turn per harness*: the JSON stream,
   Claude's `--strict-mcp-config`, the plan repository and the run directory writable,
