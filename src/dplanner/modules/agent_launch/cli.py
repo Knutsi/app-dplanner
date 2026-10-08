@@ -23,13 +23,13 @@ from contextlib import ExitStack
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.lookup import find_step, step_arg
 from dplanner.core.storage.locations import remote_label
 from dplanner.domain import ledger
-from dplanner.domain.agents import AgentHarness
+from dplanner.domain.agents import AgentHarness, harness_by_id
 from dplanner.domain.headless import StageKind
 from dplanner.domain.ledger import LedgerRecord
 from dplanner.domain.locations import LocationRole
@@ -37,12 +37,13 @@ from dplanner.domain.model import Library, Step
 from dplanner.domain.repositories import RepositoryFacts, repository_facts
 from dplanner.domain.store import StaleWorkspaceError
 from dplanner.modules.agent_briefing.prompt import PromptPart
-from dplanner.modules.agent_briefing.worktree import WorktreeError, run_name_of
+from dplanner.modules.agent_briefing.worktree import WorktreeError, mainline, run_name_of
 from dplanner.modules.agent_launch import launcher
 from dplanner.modules.agent_launch.launch import (
     HEADLESS,
     TERMINAL,
     Briefed,
+    Prepared,
     headless_harnesses,
     headless_refusal,
     place,
@@ -64,7 +65,7 @@ from dplanner.modules.agent_launch.profiles import (
     read_profiles,
 )
 from dplanner.modules.agent_launch.workflows import run_agent, withdraw
-from dplanner.modules.agent_supervisor import supervisor
+from dplanner.modules.agent_supervisor import limits, supervisor
 from dplanner.planning.agent import uses_worktree
 from dplanner.planning.branches import BranchPlan
 from dplanner.planning.kinds import key_of
@@ -106,9 +107,42 @@ def _configure(parser: ArgumentParser) -> None:
     )
 
 
-# A playbook's pass on a step, checked and its settings pinned now — or CliError — and begun
-# in the placed worktree once the claim is saved: the playbook engine's, handed in by the root.
-StartPass = Callable[[CliContext, Step, str, str], Callable[[str], str]]
+class BegunPass(Protocol):
+    """A pass's first record on disk, nothing started: what the claim is saved beside."""
+
+    @property
+    def said(self) -> str: ...
+
+    def start(self) -> None:
+        """Start its first run — nothing for a gate — or ``CliError``, the record taken back."""
+
+    def discard(self) -> None:
+        """Take the first record back: the claim was never saved."""
+
+
+# A playbook's pass on a step, checked and its settings pinned now — or CliError — and begun in
+# the placed worktree under the launch lock: the playbook engine's, handed in by the root.
+StartPass = Callable[[CliContext, Step, str, str], Callable[[str], BegunPass]]
+
+
+@dataclass(frozen=True)
+class StagedRun:
+    """A playbook stage's run written and not yet started: its supervisor follows."""
+
+    prepared: Prepared
+    harnesses: tuple[AgentHarness, ...]
+    library: Path | None
+
+    @property
+    def run(self) -> str:
+        return self.prepared.record.run
+
+    def start(self) -> None:
+        if why := start_run(self.prepared, self.harnesses, self.library):
+            raise CliError(f"no run started — {why}")
+
+    def discard(self) -> None:
+        self.prepared.discard()
 
 
 @dataclass(frozen=True)
@@ -123,6 +157,20 @@ class StageLauncher:
     def runnable(self) -> tuple[str, ...]:
         return headless_harnesses(self.harnesses)
 
+    def merge_target(self, context: CliContext, step: Step) -> tuple[str, str]:
+        """Where the step's PR must go and come from as the plan stands now — its feature
+        branch, "" when its work goes to the mainline, and the step's own branch, "" when it
+        works in the checkout — or ``CliError`` when the plan refuses the step a run."""
+        project = context.library.project_of(step.id)
+        facts = repository_facts(
+            project, context.store.project_dir(project.id), context.store.checkouts()
+        )
+        plan = self.branch_plan(context.library, step, facts)
+        if plan.refusal:
+            raise CliError(plan.refusal)
+        base = plan.pr_base if plan.pr_base != mainline(facts, step) else ""
+        return base, plan.branch_for(run_name_of(step)) if uses_worktree(step) else ""
+
     def __call__(
         self,
         context: CliContext,
@@ -134,10 +182,16 @@ class StageLauncher:
         dress: Callable[[LedgerRecord], LedgerRecord],
         findings: Sequence[Mapping[str, Any]],
         directory: str,
-    ) -> str:
+    ) -> StagedRun:
+        """Write the stage's run — nothing started. ``limits.HeldError`` while its account is held,
+        ``CliError`` for anything else that refuses it."""
         profile = profile_for(harness, self.harnesses)
-        if profile is None:
+        known = harness_by_id(self.harnesses, harness)
+        if profile is None or known is None:
             raise CliError(f"no launch profile runs {harness} headless — Settings ▸ Agent profiles")
+        account = limits.account_of(known)
+        if why := limits.hold(account, known.label):
+            raise limits.HeldError(why, limits.held_until(account))
         library = context.library
         project = library.project_of(step.id)
         project_dir = context.store.project_dir(project.id)
@@ -147,27 +201,28 @@ class StageLauncher:
             workdir = Path(directory) if directory else place(*worktree_of(step, facts), branches)
         except WorktreeError as error:
             raise CliError(str(error)) from error
-        prepared = prepare_run(
-            library,
-            step,
-            Briefed(context.store.files, read_absolute, self.roles),
-            workdir=workdir,
-            facts=facts,
-            branches=branches,
-            project_dir=project_dir,
-            profile=profile,
-            harnesses=self.harnesses,
-            mode=HEADLESS,
-            stage=kind,
-            extra=extra,
-            dress=dress,
-        )
+        try:
+            prepared = prepare_run(
+                library,
+                step,
+                Briefed(context.store.files, read_absolute, self.roles),
+                workdir=workdir,
+                facts=facts,
+                branches=branches,
+                project_dir=project_dir,
+                profile=profile,
+                harnesses=self.harnesses,
+                mode=HEADLESS,
+                stage=kind,
+                extra=extra,
+                dress=dress,
+            )
+        except ValueError as error:
+            raise CliError(str(error)) from error
         if findings:
             handed = ledger.run_dir(prepared.record.run) / supervisor.FINDINGS_FILE
             handed.write_text(json.dumps(list(findings)), encoding="utf-8")
-        if why := start_run(prepared, self.harnesses, context.store.library_path):
-            raise CliError(f"{step.title!r}: no run started — {why}")
-        return prepared.record.run
+        return StagedRun(prepared, self.harnesses, context.store.library_path)
 
 
 def commands(
@@ -222,7 +277,7 @@ def commands(
         # What this machine lost or left half-launched is settled first, so a run it
         # restarts reads as running below.
         supervisor.revive([project_dir], library=context.store.library_path)
-        # Held from here until the run has started, or the run has written nothing.
+        # HeldError from here until the run has started, or the run has written nothing.
         held = ExitStack()
         try:
             held.enter_context(supervisor.launching(project.id, step.id))
@@ -311,14 +366,19 @@ def commands(
 def _begin_pass(
     context: CliContext,
     step: Step,
-    begin: Callable[[str], str],
+    begin: Callable[[str], BegunPass],
     workdir: Path,
     held: ExitStack,
     today: date,
 ) -> int:
-    """A playbook's pass instead of one run: the step claimed — unless it waits on review,
-    where the pass starts at its first gate and the work is not taken up again — and, once
-    the claim is on disk, the pass's first stage begun, under the launch lock still."""
+    """A playbook's pass instead of one run, in a plain run's order: the pass's first record
+    written, then the step claimed — unless it waits on review, where the pass starts at its
+    first gate and the work is not taken up again — and only once the claim is on disk, the
+    first run started, under the launch lock still. A crash between leaves a record with no
+    turn, which ``supervisor.revive`` starts while the claim stands and drops when it never
+    landed."""
+    begun = begin(str(workdir))
+    context.unwritten.append(begun.discard)
     before = step.module_data.get(STATUS_ID)
     at_review = stored(step) is Status.READY_FOR_REVIEW
     change = run_agent(step, today=today) if not at_review else None
@@ -328,12 +388,14 @@ def _begin_pass(
     def start() -> None:
         with held:
             try:
-                said, why = begin(str(workdir)), ""
+                begun.start()
+                why = ""
             except CliError as error:
-                said, why = "", str(error)
+                why = str(error)
             back = _withdrawn(context, step, before) if why and change is not None else ""
         if why:
-            raise CliError(f"{why}{back}")
+            raise CliError(f"{step.title!r}: {why}{back}")
+        said = begun.said
         context.report({"step": step.id, "key": key_of(step), "workdir": str(workdir)}, said)
 
     context.after_flush.append(start)

@@ -10,11 +10,13 @@ and what a person may run to see a pass take its next step; it acts once however
 from argparse import ArgumentParser, Namespace
 from collections.abc import Callable
 from dataclasses import replace
+from pathlib import Path
 
 from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.lookup import find_step, step_arg
 from dplanner.domain.agents import AgentHarness
 from dplanner.domain.commands import SetModuleDataCommand
+from dplanner.domain.library_file import resolve_library_path
 from dplanner.domain.model import Step
 from dplanner.modules.step_playbook.aspect import (
     MODULE_ID,
@@ -25,6 +27,7 @@ from dplanner.modules.step_playbook.aspect import (
     write,
     write_project,
 )
+from dplanner.modules.step_playbook.engine import wake
 from dplanner.modules.step_playbook.presets import MAX_ROUNDS, PRESETS, ROUNDS, Playbook, preset
 
 DEFAULT = "default"  # `set <step> default`: the step goes back to the project's choice.
@@ -100,6 +103,15 @@ def commands(
             ),
         ),
         CliCommand(
+            path=("playbook", "wake"),
+            summary="Wait for a held pass's usage reset, answer its card for the clock, and"
+            " advance it — what a held launch starts on its own.",
+            configure=_configure_wake,
+            run=_wake,
+            needs_library=False,
+            examples=("dplanner playbook wake Q-e1f2 --project-dir ~/plans/widget",),
+        ),
+        CliCommand(
             path=("playbook", "advance"),
             summary="Move a step's playbook pass on: launch the stage that is due, ask its gate,"
             " or accept the work — once, however often it is run.",
@@ -108,6 +120,18 @@ def commands(
             examples=("dplanner playbook advance S7",),
         ),
     ]
+
+
+def _configure_wake(parser: ArgumentParser) -> None:
+    parser.add_argument("question", help="the held pass's card, by its id")
+    parser.add_argument("--project-dir", required=True, help="the project directory it is in")
+
+
+def _wake(context: CliContext, args: Namespace) -> int:
+    """No library is held while it waits: it may be hours, and the advance opens its own."""
+    said = wake(Path(args.project_dir), args.question, library=resolve_library_path(args.library))
+    context.report({"question": args.question, "said": said}, said)
+    return 0
 
 
 def _list(context: CliContext, args: Namespace) -> int:

@@ -62,8 +62,7 @@ def review_part(history: Sequence[Mapping[str, Any]]) -> PromptPart:
     if history:
         body += (
             "\n\nEarlier rounds found these. Where the implementer declined one, its reason"
-            " follows: hold the finding again only if it still must change.\n\n"
-            + numbered(history)
+            " follows: hold the finding again only if it still must change.\n\n" + numbered(history)
         )
     return PromptPart("Review", body)
 

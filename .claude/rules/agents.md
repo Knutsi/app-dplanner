@@ -104,7 +104,9 @@ paths:
   disk** (`claimed_on_disk(library)`, never a model loaded earlier), and its record is
   deleted only when no supervisor holds the run, its step reads unclaimed and it is older than
   `LAUNCH_GRACE` (two minutes) — a supervisor just started may not hold its lock yet. The
-  window calls it once at start (`agent_usage`'s module); `agent run` before its own lock.
+  window calls it once at start (`agent_usage`'s module); `agent run` before its own lock. A
+  turnless run of a playbook's pass that is not its first record is started whatever the
+  step's status: its pass is its claim.
   A parked run is a person's, never touched — except one waiting for its reset
   (`waits_for_reset`) or holding an answer nobody delivered (`answer_waiting`), whose
   supervisor is started again. A failed start's rollback — the record deleted,

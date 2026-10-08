@@ -95,6 +95,7 @@ from dplanner.domain.headless import (
     TurnLog,
     TurnSpec,
     stage_kind,
+    verdict_of,
     write_schema,
 )
 from dplanner.domain.ledger import LedgerRecord, Turn
@@ -487,14 +488,15 @@ class Session:
         return self._finish(turn, log, code, ending)
 
     def _owes_verdict(self, kind: str, ending: Ending, log: TurnLog) -> bool:
-        """A review that ended done with no typed verdict, not nudged for one yet: it gets one
+        """A review that ended done with no verdict — none typed, or one that does not validate
+        against the schema — not nudged for one yet: it gets one
         more turn in its session. Nudged once already, it ends the run without one — which
         is a failure the pass escalates, never a pass."""
         nudged = kind == "verdict" or any(t.prompt == "verdict" for t in self.record.turns)
         return (
             self.kind is StageKind.REVIEW
             and ending.end is TurnEnd.DONE
-            and log.typed is None
+            and verdict_of(log.typed) is None
             and not nudged
         )
 
@@ -660,11 +662,7 @@ class Session:
             questions.write(self.project_dir, question)
             turn = replace(turn, question=question.id)
         done = ending.end is TurnEnd.DONE
-        verdict = (
-            dict(log.typed)
-            if done and log.typed and self.kind is StageKind.REVIEW
-            else None
-        )
+        verdict = verdict_of(log.typed) if done and self.kind is StageKind.REVIEW else None
         if done and self.kind is StageKind.PLAN and log.final:
             (self.directory / PLAN_FILE).write_text(log.final, encoding="utf-8")
         declined = (
@@ -676,7 +674,7 @@ class Session:
         def finished(record: LedgerRecord) -> LedgerRecord:
             record = _with_turn(record, turn)
             if verdict is not None:
-                record = replace(record, verdict=verdict)
+                record = replace(record, verdict=dict(verdict))
             if declined:
                 record = replace(record, declined=declined)
             if ending.end in OVER:
@@ -957,6 +955,14 @@ def advance_detached(step: str, *, library: Path | None = None) -> None:
     spawn_detached([sys.executable, "-m", "dplanner", *named, "playbook", "advance", step])
 
 
+def wake_detached(project_dir: Path, question: str, *, library: Path | None = None) -> None:
+    """Start ``dplanner playbook wake <question>``: a pass held on its account's usage waits
+    for the reset in a process of its own, then answers the card for the clock and advances."""
+    named = ["--library", str(library.expanduser().resolve())] if library is not None else []
+    argv = [sys.executable, "-m", "dplanner", *named, "playbook", "wake", question]
+    spawn_detached([*argv, "--project-dir", str(project_dir)])
+
+
 def revive(
     project_dirs: Iterable[Path],
     config: Path | None = None,
@@ -1037,7 +1043,10 @@ def _settle(
             return False
         if supervised(ledger.run_dir(fresh.run, config)):
             return False
-        if claimed(fresh):
+        # A pass's later stage is claimed by its pass, whatever the step's status says (a
+        # review runs on a step at Ready for review); only a pass's first record stands on
+        # the claim its launch saves after it.
+        if claimed(fresh) or (fresh.pass_ and fresh.settings is None):
             start_detached(project_dir, fresh.run, library=library)
             return True
         if _age(fresh) > grace:

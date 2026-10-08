@@ -630,7 +630,11 @@ git never conflicts:
   has no `run`, names no harness, and carries `pass`, `stage` and `attempt` beside the step,
   and `purpose` — `gate`, `round-cap` or `escalation` — so what it is for is never read from
   its place in the order. Its kind is `plan-approval` for a gate after a plan and `decision`
-  for everything else. An agent's own question has no `purpose`.
+  for everything else — but for an `escalation` the pass raises because it could not act (a
+  stage's launch refused, or `progress` unable to merge), which is `limit` with `resets` when
+  the account is held and `blocked` otherwise, answered *Retry now* or by the clock. An
+  agent's own question has no `purpose`. A `progress` gate, like a `person` gate, only a
+  person answers.
 - **`questions` is Claude's `AskUserQuestion` shape exactly** — question, header, options
   with descriptions, `multiSelect` — so a hosted Claude's own question is written through
   unchanged, and `dplanner question ask` writes a list of one. `answer.answers` is the shape Claude

@@ -289,3 +289,61 @@ def test_records_are_read_in_the_order_they_were_made():
     first, second = run("plan"), gate("person")
     assert in_order([first], [second]) == [first, second]
     assert in_order([], [second]) + in_order([first], []) == [second, first]
+
+
+# -- Kettle Watch round 1 ---------------------------------------------------------------------
+
+
+def test_a_verdict_that_does_not_validate_is_no_verdict():
+    """opencode, with no schema flag, ended on a bare outcome: that is no verdict."""
+    entries = [run("plan"), run("execute"), run("review", verdict={"outcome": "pass"})]
+    asked = next_of("plan-execute-review-self", *entries)
+    assert isinstance(asked, Ask) and asked.purpose == ESCALATION
+
+
+@pytest.mark.parametrize(
+    "said", ["Pass only after fixing the race", "pass, but rename it", "Approve", "Accept"]
+)
+def test_only_the_gates_own_pass_label_approves_and_other_words_are_changes(said):
+    plan = run("plan", session="s")
+    back = next_of("plan-person-execute", plan, gate("person", said))
+    assert isinstance(back, Launch) and back.stage == "plan"
+    assert back.findings[0]["text"] == said
+    for exactly in ("Pass", " pass. ", "PASS"):
+        assert isinstance(next_of("plan-person-execute", plan, gate("person", exactly)), Launch)
+        assert next_of("plan-person-execute", plan, gate("person", exactly)).stage == "execute"
+
+
+def test_one_more_round_after_a_persons_changes_carries_the_persons_note():
+    entries: list[Entry] = [run("plan"), run("execute"), gate("person", "Rename the flag")]
+    capped = next_of("plan-execute-person", *entries, rounds=1)
+    assert (
+        isinstance(capped, Ask) and capped.purpose == ROUND_CAP and "Rename the flag" in capped.body
+    )
+    fix = next_of("plan-execute-person", *entries, gate("person", ONE_MORE, ROUND_CAP), rounds=1)
+    assert isinstance(fix, Launch) and fix.stage == "execute"
+    (finding,) = fix.findings
+    assert finding["text"] == "Rename the flag" and "question" in finding["ref"]
+
+
+def test_a_refused_launch_is_retried_on_retry_now_or_the_clock_and_stopped_on_stop():
+    entries: list[Entry] = [run("plan", session="s")]
+    card = questions.asked(
+        "p1", "s1", _at(), [questions.one("?")], kind=questions.LIMIT,
+        pass_="P", stage="execute", attempt=1, purpose=ESCALATION,
+    )  # fmt: skip
+    assert isinstance(next_of("plan-execute-person", *entries, card), Wait)
+    retried = questions.answered(card, {"?": questions.RETRY_NOW}, {"kind": "person"}, _at())
+    again = next_of("plan-execute-person", *entries, retried)
+    assert isinstance(again, Launch) and (again.stage, again.attempt) == ("execute", 1)
+    clocked = questions.answered(card, {"?": "reset"}, {"kind": questions.CLOCK}, _at())
+    assert isinstance(next_of("plan-execute-person", *entries, clocked), Launch)
+    stopped = questions.answered(card, {"?": STOP}, {"kind": "person"}, _at())
+    assert isinstance(next_of("plan-execute-person", *entries, stopped), Halted)
+
+
+def test_the_coordinator_may_not_answer_a_progress_gate():
+    progress = gate("progress")
+    assert questions.may_answer(progress, questions.COORDINATOR)
+    assert not questions.may_answer(progress, questions.PERSON)
+    assert not questions.may_answer(gate("coordinator"), questions.COORDINATOR)

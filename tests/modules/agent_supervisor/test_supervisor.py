@@ -609,6 +609,24 @@ def test_a_review_still_without_a_verdict_ends_without_one(tmp_path, allow_spawn
     assert review.record.verdict is None  # The pass escalates it: never a pass.
 
 
+def test_a_bare_outcome_is_no_verdict_as_opencode_ends_a_review(tmp_path, allow_spawn):
+    """opencode has no schema flag; its reader takes a JSON final text as typed, and a bare
+    ``{"outcome": "pass"}`` validates against nothing: nudged once, then no verdict at all."""
+    from dplanner.domain.headless import verdict_of
+    from dplanner.modules.agent_opencode import harness as opencode
+
+    bare = {"outcome": "pass"}
+    event = {"type": "text", "sessionID": "o-1", "part": {"text": json.dumps(bare)}}
+    log = opencode.HEADLESS.read_lines([json.dumps(event)])
+    assert log.typed == bare and verdict_of(log.typed) is None
+    allow_spawn(Path(sys.executable))
+    review = Rig(tmp_path, stage="review")
+    review.play({"lines": [INIT, result(typed=bare)]})
+    assert review.supervise() == f"run {RUN} is done"
+    assert review.ends() == [("failed", "no-verdict"), ("done", "")]
+    assert review.record.verdict is None
+
+
 def test_a_loop_back_resumes_the_session_an_earlier_run_of_its_pass_worked_in(rig):
     earlier = replace(rig.record, run="20261007T100000Z-00000000", pass_="P", session=SESSION)
     ledger.write(rig.plan, earlier)

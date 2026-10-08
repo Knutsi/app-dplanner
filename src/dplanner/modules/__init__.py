@@ -2875,8 +2875,8 @@ def default_cli_commands(
     harnesses = agent_harnesses()
     engine = PlaybookEngine(
         launch=launch_cli.StageLauncher(default_location_roles(), plan_branches, harnesses),
-        accept=lambda context, step: github_cli.accept_by_merge(
-            context, step, finish_merged=finish_merged
+        accept=lambda context, step, base, head: github_cli.accept_by_merge(
+            context, step, base=base, head=head, finish_merged=finish_merged
         ),
     )
     commands = [

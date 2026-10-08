@@ -10,6 +10,7 @@ agent CLI, never a model API: the fake plays recorded-shape streams through Clau
 import json
 import sys
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -22,6 +23,9 @@ from dplanner.modules.agent_claude import harness as claude
 from dplanner.modules.agent_supervisor import supervisor
 from dplanner.modules.github import cli as github_cli
 from dplanner.modules.step_playbook.passes import Settings
+from dplanner.planning.status import Status, stored
+
+HEAD = "agent/s1-build-it"
 
 CHANGES = {
     "outcome": "changes",
@@ -230,7 +234,8 @@ def test_a_parked_stage_does_not_move_its_pass(drive):
     assert len(drive.started) == 1
 
 
-def test_progress_accepts_on_its_branch_or_asks_a_person(drive, monkeypatch):
+def _to_progress(drive) -> None:
+    """A plan-execute-progress pass driven up to its progress stage."""
     drive.cli("playbook", "set", "Build it", "plan-execute-progress")
     drive.play(
         {"lines": [INIT, result("A plan", session="s")]}, {"lines": [INIT, result(typed=done())]}
@@ -239,13 +244,168 @@ def test_progress_accepts_on_its_branch_or_asks_a_person(drive, monkeypatch):
     drive.supervise()
     drive.advance()
     drive.supervise()
-    refusals = iter(["PR #4 goes into the default branch, which a person merges"])
-    monkeypatch.setattr(github_cli, "accept_by_merge", lambda *_a, **_k: next(refusals))
+
+
+def test_progress_on_the_mainline_is_a_gate_only_a_person_answers(drive, monkeypatch):
+    """The step is on no feature branch: the plan says its PR goes to the mainline, so nothing
+    is merged — gh is never asked — and the gate is a person's, keeping its stage."""
+    _to_progress(drive)
+    monkeypatch.setattr(github_cli, "view_pr", lambda *_: pytest.fail("gh was asked"))
     assert "progress asks" in drive.advance()
     gate = drive.asked()
-    assert gate.stage == "progress" and "default branch" in gate.text
+    assert (gate.stage, gate.purpose) == ("progress", "gate") and "mainline" in gate.text
+    monkeypatch.setenv("DPLANNER_RUN", "the-coordinators-run")
+    said = drive.cli("--project", "Widget", "question", "answer", gate.short, "Pass", expect=1)
+    assert "person gate" in said
+    monkeypatch.delenv("DPLANNER_RUN")
     drive.answer(gate, "Pass")
     assert "is through" in drive.advance()
+
+
+def test_progress_that_cannot_merge_asks_on_a_blocked_card(drive, monkeypatch):
+    _to_progress(drive)
+    monkeypatch.setattr(
+        github_cli, "accept_by_merge", lambda *_a, **_k: ("PR #4 goes into feature/y", False)
+    )
+    from dplanner.modules.agent_launch.cli import StageLauncher
+
+    monkeypatch.setattr(StageLauncher, "merge_target", lambda *_: ("feature/x", HEAD))
+    assert "could not go on" in drive.advance()
+    card = drive.asked()
+    assert (card.kind, card.purpose, card.stage) == ("blocked", "escalation", "progress")
+    monkeypatch.setattr(github_cli, "accept_by_merge", lambda *_a, **_k: ("", False))
+    drive.answer(card, "Retry now")
+    assert "accepted on its branch" in drive.advance()
+
+
+def test_a_held_account_parks_the_pass_on_a_limit_card_the_clock_answers(drive, monkeypatch):
+    from dplanner.modules.agent_supervisor import limits
+    from dplanner.modules.step_playbook import engine
+
+    drive.cli("playbook", "set", "Build it", "plan-execute-person")
+    drive.play(
+        {"lines": [INIT, result("A plan", session="s")]}, {"lines": [INIT, result(typed=done())]}
+    )
+    drive.cli("agent", "run", "Build it", "--playbook")
+    drive.supervise()
+    reset = datetime.now(UTC) + timedelta(hours=2)
+    monkeypatch.setattr(limits, "hold", lambda *_a, **_k: "Claude Code is at 97 %")
+    monkeypatch.setattr(limits, "held_until", lambda *_a, **_k: reset)
+    drive.advanced.clear()
+    assert "could not go on" in drive.advance()
+    card = drive.asked()
+    assert (card.kind, card.purpose, card.stage) == ("limit", "escalation", "execute")
+    assert card.resets == reset.isoformat() and len(drive.started) == 1
+    assert drive.advanced == [str(drive.plan)]  # `playbook wake` waits for the reset.
+    # The reset comes: the clock answers the card, and the pass advances on it.
+    monkeypatch.setattr(limits, "hold", lambda *_a, **_k: "")
+    monkeypatch.setattr(engine, "datetime", _Later(reset))
+    drive.advanced.clear()
+    said = engine.wake(drive.plan, card.id, sleep=lambda _s: None)
+    assert "has reset" in said and drive.advanced == [card.step]
+    answered = questions.find(drive.plan, card.id)
+    assert answered is not None and answered.answer["by"]["kind"] == "clock"
+    drive.advance()
+    assert (drive.latest().stage, drive.latest().attempt) == ("execute", 1)
+
+
+def test_a_role_no_profile_runs_any_more_blocks_until_retry_now(drive, monkeypatch):
+    from dplanner.modules.agent_launch import cli as launch_cli
+
+    drive.cli("playbook", "set", "Build it", "plan-execute-person")
+    drive.play(
+        {"lines": [INIT, result("A plan", session="s")]}, {"lines": [INIT, result(typed=done())]}
+    )
+    drive.cli("agent", "run", "Build it", "--playbook")
+    drive.supervise()
+    from dplanner.modules.agent_launch.launch import profile_for as real
+    monkeypatch.setattr(launch_cli, "profile_for", lambda *_: None)
+    assert "could not go on" in drive.advance()
+    card = drive.asked()
+    assert (card.kind, card.stage, card.resets) == ("blocked", "execute", "")
+    assert "no launch profile runs claude" in card.text
+    monkeypatch.setattr(launch_cli, "profile_for", real)
+    drive.answer(card, "Retry now")
+    drive.advance()
+    assert drive.latest().stage == "execute" and len(drive.started) == 2
+
+
+def test_a_step_with_a_pass_under_way_refuses_another(drive):
+    drive.cli("playbook", "set", "Build it", "spike")
+    drive.play({"lines": [INIT, result("A plan", session="s")]})
+    drive.cli("agent", "run", "Build it", "--playbook")
+    said = drive.cli("agent", "run", "Build it", "--playbook", expect=1)
+    assert "has a playbook pass under way" in said and "is not over" in said
+    drive.supervise()
+    drive.advance()  # The pass now waits on its person gate, with no run going.
+    said = drive.cli("agent", "run", "Build it", "--playbook", expect=1)
+    assert f"waits on {drive.asked().short}" in said
+    assert len(drive.started) == 1
+
+
+def test_the_first_record_is_on_disk_before_the_claim_and_both_before_the_start(
+    drive, cli_library, monkeypatch
+):
+    """S11's launch order: the run's record, then the claim saved, then the supervisor — so a
+    crash between the claim and the start leaves a record with no turn that revive starts."""
+    from dplanner.domain.store import LibraryStore
+
+    seen: list[tuple[int, str]] = []
+
+    def start_detached(project_dir, run, **_kw):
+        plan_now = LibraryStore(cli_library).load()
+        step = next(s for p in plan_now.projects for s in p.steps if s.title == "Build it")
+        seen.append((len(ledger.records(project_dir)), str(stored(step))))
+
+    monkeypatch.setattr(supervisor, "start_detached", start_detached)
+    drive.cli("playbook", "set", "Build it", "spike")
+    drive.cli("agent", "run", "Build it", "--playbook")
+    assert seen == [(1, str(Status.IN_PROGRESS))]
+    # The crash: a record, its claim, no start. A machine's start picks it up.
+    (record,) = ledger.records(drive.plan)
+    assert not record.turns and record.settings
+    monkeypatch.setattr(supervisor, "start_detached", lambda d, run, **_k: seen.append((0, run)))
+    assert supervisor.revive([drive.plan], library=cli_library) == [record.run]
+
+
+def test_a_refused_flush_takes_the_passs_first_record_back(drive, monkeypatch):
+    from dplanner.domain.store import LibraryStore, StaleWorkspaceError
+
+    def stale(self, marks):
+        raise StaleWorkspaceError("the plan changed underneath")
+
+    drive.cli("playbook", "set", "Build it", "spike")
+    monkeypatch.setattr(LibraryStore, "flush", stale)
+    assert "nothing was written" in drive.cli("agent", "run", "Build it", "--playbook", expect=1)
+    assert ledger.records(drive.plan) == [] and not drive.started
+
+
+def test_a_later_stages_record_with_no_turn_is_started_by_revive_whatever_the_status(
+    drive, cli_library, monkeypatch
+):
+    drive.cli("playbook", "set", "Build it", "review-only")
+    drive.cli("status", "set", "Build it", "ready-for-review")
+    drive.play({"lines": [INIT, result(typed=CHANGES, session="r1")]})
+    drive.cli("agent", "run", "Build it", "--playbook")
+    drive.supervise()
+    drive.advance()  # The fix's record is written; say its supervisor never started.
+    fix = drive.latest()
+    assert fix.stage == "fix" and not fix.turns and fix.settings is None
+    restarted: list[str] = []
+    monkeypatch.setattr(supervisor, "start_detached", lambda _d, run, **_k: restarted.append(run))
+    monkeypatch.setattr(supervisor, "_age", lambda _record: 10_000.0)
+    supervisor.revive([drive.plan], library=cli_library)
+    assert restarted == [fix.run] and ledger.find(drive.plan, fix.run) is not None
+
+
+class _Later:
+    """``datetime`` as the engine reads it, a moment past ``reset``."""
+
+    def __init__(self, reset: datetime) -> None:
+        self._now = reset + timedelta(minutes=5)
+
+    def now(self, tz=None) -> datetime:
+        return self._now
 
 
 def test_a_pass_needs_its_roles_runnable_and_a_playbook_to_run(drive):

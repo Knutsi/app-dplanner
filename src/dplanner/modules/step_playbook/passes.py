@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from dplanner.domain import questions
-from dplanner.domain.headless import StageKind, TurnEnd, stage_kind
+from dplanner.domain.headless import StageKind, TurnEnd, stage_kind, verdict_of
 from dplanner.domain.ledger import LedgerRecord
 from dplanner.domain.questions import Question
 from dplanner.modules.agent_briefing.stages import numbered
@@ -154,6 +154,7 @@ class Ask:
     options: tuple[tuple[str, str], ...]
     body: str = ""
     plan: LedgerRecord | None = None  # A plan-approval's plan, which becomes its body.
+    resets: str = ""  # For a held launch's card: when the account comes back.
 
 
 @dataclass(frozen=True)
@@ -203,10 +204,37 @@ def due(playbook: Playbook, settings: Settings, entries: Sequence[Entry], facts:
     return _Reading(playbook, settings, list(entries)).due(facts)
 
 
+# What a pass asks when it could not act: an account held, or a launch or a merge refused.
+REFUSED = (questions.LIMIT, questions.BLOCKED)
+REFUSED_OPTIONS = (
+    (questions.RETRY_NOW, "Try again now"),
+    (STOP, "End the pass here"),
+)
+
+
+def retried(question: Question) -> bool:
+    """Whether a refusal the pass asked about was answered *Retry now*, or by the clock."""
+    by = question.answer.get("by", {})
+    return (
+        question.purpose == ESCALATION
+        and question.kind in REFUSED
+        and question.state in (questions.ANSWERED, questions.CONSUMED)
+        and (
+            (isinstance(by, dict) and by.get("kind") == questions.CLOCK)
+            or _is(answer_word(question), questions.RETRY_NOW)
+        )
+    )
+
+
 def answer_word(question: Question) -> str:
     """The answer given, as one text: the chosen label, or the words."""
     given = question.answer.get("answers", {})
     return str(next(iter(given.values()), "")).strip() if isinstance(given, dict) else ""
+
+
+def _verdict(run: LedgerRecord) -> Mapping[str, Any]:
+    """The run's verdict when it is one (``headless.verdict_of``), else nothing at all."""
+    return verdict_of(run.verdict) or {}
 
 
 def _stamp(entry: Entry) -> str:
@@ -214,7 +242,10 @@ def _stamp(entry: Entry) -> str:
 
 
 def _is(word: str, *labels: str) -> bool:
-    return any(word.lower().startswith(label.lower()) for label in labels)
+    """Whether an answer is one of these choices, exactly — case, spacing and a closing stop
+    aside. Anything more is words: "Pass only after fixing X" is not *Pass*."""
+    said = " ".join(word.casefold().split()).rstrip(".!")
+    return any(said == label.casefold() for label in labels)
 
 
 @dataclass
@@ -244,6 +275,9 @@ class _Reading:
                 return Halted(f"run {last.run} ended {end or 'without a turn'}")
         elif last.state in (questions.OPEN, questions.ESCALATED):
             return Wait(f"{last.short} waits for an answer")
+        elif retried(last):
+            # A launch or a merge the pass could not make: on its retry, what was due is.
+            return _Reading(self.playbook, self.settings, self.entries[:-1]).due(facts)
         elif last.state == questions.WITHDRAWN:
             return Halted(f"{last.short} was withdrawn")
         if facts.done:
@@ -253,11 +287,11 @@ class _Reading:
     def _after_run(self, run: LedgerRecord) -> Next:
         if stage_kind(run.stage) is not StageKind.REVIEW:
             return self._after(run.stage)
-        outcome = (run.verdict or {}).get("outcome")
+        outcome = _verdict(run).get("outcome")
         if outcome == "pass":
             return self._after(run.stage)
         if outcome == "changes":
-            findings = (run.verdict or {}).get("findings")
+            findings = _verdict(run).get("findings")
             listed = findings if isinstance(findings, list) else []
             return self._changes(
                 run.stage,
@@ -280,15 +314,11 @@ class _Reading:
     def _answered(self, question: Question) -> Next:
         word, stage = answer_word(question), question.stage
         if question.purpose == GATE:
-            if _is(word, PASS, "approve", "accept"):
+            if _is(word, PASS):
                 return self._after(stage)
             if _is(word, STOP):
                 return Halted(f"{question.short} stopped the pass")
-            note = word[len(CHANGES) :].lstrip(" :—-") if _is(word, CHANGES) else word
-            finding = {"text": note or "Changes were asked for, with no note"}
-            return self._changes(
-                stage, ({**finding, "ref": {"question": question.id, "index": 0}},)
-            )
+            return self._changes(stage, (_note(question),))
         if _is(word, ACCEPT):
             return self._after(stage)
         if question.purpose == ROUND_CAP and _is(word, ONE_MORE):
@@ -426,9 +456,7 @@ class _Reading:
     def _verdicts(self, gate: str) -> int:
         """The verdicts the gate gave in the pass — rounds spent; a failure spent none."""
         given = sum(
-            1
-            for r in self._run_list(gate)
-            if (r.verdict or {}).get("outcome") in ("pass", "changes")
+            1 for r in self._run_list(gate) if _verdict(r).get("outcome") in ("pass", "changes")
         )
         return given + sum(1 for word in self._settled_answers(gate, GATE) if not _is(word, STOP))
 
@@ -437,11 +465,9 @@ class _Reading:
         return self.settings.rounds + more
 
     def _passed(self, gate: str) -> bool:
-        if any((r.verdict or {}).get("outcome") == "pass" for r in self._run_list(gate)):
+        if any(_verdict(r).get("outcome") == "pass" for r in self._run_list(gate)):
             return True
-        return any(
-            _is(w, PASS, "approve", "accept") for w in self._settled_answers(gate, GATE)
-        ) or any(
+        return any(_is(w, PASS) for w in self._settled_answers(gate, GATE)) or any(
             _is(w, ACCEPT)
             for purpose in (ROUND_CAP, ESCALATION)
             for w in self._settled_answers(gate, purpose)
@@ -458,17 +484,25 @@ class _Reading:
         return found
 
     def _open_findings(self, gate: str) -> tuple[Mapping[str, Any], ...]:
-        """The gate's latest findings: what one more round acts on."""
-        reviews = [r for r in self._run_list(gate) if (r.verdict or {}).get("findings")]
-        if not reviews:
-            return ()
-        latest = reviews[-1]
-        listed = (latest.verdict or {}).get("findings")
-        return tuple(
-            {**f, "ref": {"run": latest.run, "index": i}}
-            for i, f in enumerate(listed if isinstance(listed, list) else [])
-            if isinstance(f, dict)
-        )
+        """The gate's latest findings — its last review's, or the note its last answer of
+        *changes* gave: what one more round acts on."""
+        for entry in reversed(self.entries):
+            if entry.stage != gate:
+                continue
+            if isinstance(entry, LedgerRecord) and _verdict(entry).get("outcome") == "changes":
+                listed = _verdict(entry).get("findings")
+                return tuple(
+                    {**f, "ref": {"run": entry.run, "index": i}}
+                    for i, f in enumerate(listed if isinstance(listed, list) else [])
+                    if isinstance(f, dict)
+                )
+            if isinstance(entry, Question) and entry.purpose == GATE:
+                word = answer_word(entry)
+                if entry.state in (questions.ANSWERED, questions.CONSUMED) and not _is(
+                    word, PASS, STOP
+                ):
+                    return (_note(entry),)
+        return ()
 
     def _history(self, gate: str) -> tuple[Mapping[str, Any], ...]:
         """What the gate found in earlier rounds, with the implementer's reason where it
@@ -476,12 +510,23 @@ class _Reading:
         declined = self._declines()
         found = []
         for run in self._run_list(gate):
-            listed = (run.verdict or {}).get("findings")
+            listed = _verdict(run).get("findings")
             for index, finding in enumerate(listed if isinstance(listed, list) else []):
                 if isinstance(finding, dict):
                     ref = {"run": run.run, "index": index}
                     found.append({**finding, "declined": declined.get(_ref({"ref": ref}), "")})
         return tuple(found)
+
+
+def _note(question: Question) -> Mapping[str, Any]:
+    """A gate's answer of *changes* as the finding it is: its words, by its question."""
+    word = answer_word(question)
+    said = word.split(":", 1)[1].strip() if word.casefold().startswith("changes:") else word
+    text = "" if _is(said, CHANGES) else said
+    return {
+        "text": text or "Changes were asked for, with no note",
+        "ref": {"question": question.id, "index": 0},
+    }
 
 
 def _ref(finding: Mapping[str, Any]) -> tuple[str, str, int]:

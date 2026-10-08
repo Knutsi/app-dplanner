@@ -356,19 +356,36 @@ it; another machine's advance says so and does nothing.
 | a review with a verdict of *pass* | the next stage |
 | a review with *changes* | a loop-back, or a `round-cap` question on the last round |
 | a review done with no verdict | an `escalation` question: *Retry*, *Accept as is*, *Stop* |
-| an open gate question | nothing — somebody answers it |
+| an open question of the pass | nothing — somebody answers it |
 | an answered gate question | what the answer says |
+| a refusal card answered *Retry now*, or by the clock | what was due before the card |
 
 A step that reads done completes its pass whatever is left. The end of the list completes the
 pass too. A playbook with nothing to merge — no `execute`, no `review`: the *Spike* — sets its
 step done there, since its approval was the point.
 
-**Answers are words.** A gate offers *Pass*, *Changes* and *Stop*. Any other words are
-*changes*, and the words are the finding the work is sent back with. A round cap offers
-*Accept as is*, *One more round*, *Take over* and *Stop*; each *One more round* raises that
-gate's cap for the pass by one. Nothing reads where an answer came from: the coordinator and a
-person answer through the same door, and `may_answer` already keeps the coordinator off a
-`person` gate.
+**Answers are labels, or words.** A gate offers *Pass*, *Changes* and *Stop*, and only the
+label itself — case, spacing and a closing stop aside — means it. Any other words are
+*changes*, and the words are the finding the work is sent back with: "Pass only after fixing
+X" sends the work back to fix X. Reading the start of an answer would have let a condition
+read as an approval. A round cap offers *Accept as is*, *One more round*, *Take over* and
+*Stop*; each *One more round* raises that gate's cap for the pass by one, and the fix it buys
+is handed the gate's latest findings — a review's, or a person's note. Nothing reads where an
+answer came from: the coordinator and a person answer through the same door, and
+`may_answer` keeps the coordinator off a `person` gate and off a `progress` gate
+(`questions.PERSON_ONLY`).
+
+**A pass that cannot act asks, rather than stopping silently.** When the next stage's launch
+is refused — its account held (`limits.hold`), no profile running its harness any more,
+anything `prepare_run` or the spawn refuses — or `progress` cannot merge, the advance writes
+a card on the pass: purpose `escalation`, at the stage it could not run. A held account's
+card is `limit`, with the hold's reset, and a detached `playbook wake` waits for that reset,
+answers the card for the clock and advances (`engine.wake`). Any later advance answers a
+lapsed one too, which covers a waker that died with its machine. Every other refusal is
+`blocked`. *Retry now* — the label `inbox.retry_now` writes — answers either kind, and the
+pass does again what it could not; *Stop* halts it. The alternative was a pass whose advance
+exited with nothing written: no run parked, no card shown, and no reset or answer that could
+ever wake it.
 
 **A session continues by being named, never by a flag.** A run's launch resumes a session
 exactly when an earlier run of its pass names the same one (`Session._continues`). The
@@ -382,11 +399,13 @@ one was told: this is the design's fresh fallback, with nothing added. A plan an
 close with their own words, in place of the work's *ready for review*: answer in the final
 message, and touch neither the status, a commit nor a PR.
 
-**A review owes its verdict, once more.** A review that ends `done` with no typed verdict is
-asked for it again in its own session: one turn, prompt `verdict`, which spends no round. If
-it still gives none, the run ends without a verdict, and the pass escalates. opencode has no
-schema flag, so this will happen; one nudge is cheap, and a loop of nudges is the silent
-extra round the design refuses.
+**A review owes its verdict, once more.** A verdict is the review's typed final message only
+when it validates against `VERDICT_SCHEMA` whole (`headless.verdict_of`). opencode has no
+schema flag, and its reader takes any JSON final text as typed, so a bare
+`{"outcome": "pass"}` would otherwise have passed the gate. A review that ends `done` without
+one is asked for it again in its own session: one turn, prompt `verdict`, which spends no
+round. If it still gives none, the run ends without a verdict, and the pass escalates. One
+nudge is cheap; a loop of nudges is the silent extra round the design refuses.
 
 **A fix declines by number.** The findings are handed to a fix numbered in its briefing. Its
 typed final message (`TURN_SCHEMA`'s `declined`) names the ones it will not act on by those
@@ -395,21 +414,34 @@ numbers. The engine writes what each number refers to into the run directory's
 the question for a person's note. The next round reads each finding with its reason beside it,
 and so does the round cap's question.
 
-**`progress` merges only into a feature branch.** `github`'s `accept_by_merge` asks `gh` for
-the PR and the repository's default branch at run time. It merges with a merge commit (`gh pr
-merge --merge`, the history this project keeps) only when the PR's base is not the default
-branch. It records the PR as `github refresh` would, and accepts the step through the same
-`finish_merged`. In every other case — the mainline, no PR, a merge `gh` refused — it asks a
-`gate` question at the stage `progress`, naming why. That is the *person* gate the mainline
-gets, and an answer of *Pass* completes the pass.
+**`progress` checks everything before it merges, because a merge cannot be taken back.** The
+launch reads the step's `BranchPlan` as it stands now (`StageLauncher.merge_target`): the
+feature branch the PR must go into, and the step's own branch it must come from. A step moved
+off its stretch while its pass ran reads as the mainline. Then `github`'s `accept_by_merge`
+merges with a merge commit (`gh pr merge --merge`, the history this project keeps) only when
+all of these hold:
+- the branch is not the repository's default;
+- the PR goes from exactly the step's branch into exactly that branch;
+- the step waits on review or its merge.
+
+It then records the PR as `github refresh` would and accepts the step through the same
+`finish_merged`. When the work goes to the mainline it merges nothing — `gh` is not even
+asked — and the stage becomes a person-only `gate`. Any other mismatch is a `blocked` card.
 
 **One verb starts a pass: `agent run <step> --playbook [<preset>]`.** It is Run Agent's
-launch: the same gate, lock, worktree and in-progress claim, saved before anything starts.
-The profile's agent is the implementer, and the pass's settings are pinned
-(`passes.pinned`). A role that no launch profile runs headless is refused before anything is
-written. On a step at Ready for review, the pass starts at its first gate and claims nothing,
-because the work is not taken up again. A separate `playbook run` would have been a second
-launch flow, with the gates written twice.
+launch, in Run Agent's order: the gate and the lock; the worktree; the pass's first record
+(its first run, nothing started, or its first gate's question); the in-progress claim, saved;
+and only then the start. A crash between the claim and the start leaves a record with no
+turn, which `supervisor.revive` starts while the claim stands. A flush that fails takes the
+record back. A pass's later stage is claimed by its pass rather than by the step's status, so
+revive starts that one whatever the step reads. The profile's agent is the implementer, and
+the pass's settings are pinned (`passes.pinned`). A role that no launch profile runs headless
+is refused before anything is written. On a step at Ready for review, the pass starts at its
+first gate and claims nothing, because the work is not taken up again. **A step has one pass
+at a time**: while any run of a pass is not over, or any of its questions is unsettled,
+another `--playbook` is refused with the reason (`engine.active`). Replacing a pass is a verb
+for later. A separate `playbook run` would have been a second launch flow, with the gates
+written twice.
 
 **Not yet:**
 - **the context ceiling's fresh run.** A turn's summed usage counts the context once per

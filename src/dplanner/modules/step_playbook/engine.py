@@ -14,6 +14,7 @@ hands both in (:class:`StageLauncher`, :data:`Accept`), since a module reaches a
 effects only that way.
 """
 
+import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -24,16 +25,18 @@ from dplanner.cli import CliContext, CliError
 from dplanner.domain import ledger, questions
 from dplanner.domain.headless import StageKind
 from dplanner.domain.ledger import LedgerRecord
-from dplanner.domain.model import Step
+from dplanner.domain.model import Step, now_stamp
 from dplanner.domain.questions import Question
 from dplanner.modules.agent_briefing.prompt import PromptPart
 from dplanner.modules.agent_briefing.stages import approved_part, findings_part, review_part
-from dplanner.modules.agent_supervisor import supervisor
+from dplanner.modules.agent_supervisor import limits, supervisor
 from dplanner.modules.step_playbook import passes
 from dplanner.modules.step_playbook.aspect import read, resolve
 from dplanner.modules.step_playbook.passes import (
+    ESCALATION,
     GATE,
     GATE_OPTIONS,
+    REFUSED_OPTIONS,
     Ask,
     Complete,
     Facts,
@@ -49,11 +52,29 @@ from dplanner.modules.step_playbook.workflows import approved
 from dplanner.planning.status import Status, stored
 
 
+class Staged(Protocol):
+    """A stage's run written and not yet started."""
+
+    @property
+    def run(self) -> str: ...
+
+    def start(self) -> None:
+        """Start its supervisor, or ``CliError`` — its record taken back."""
+
+    def discard(self) -> None:
+        """Take its record back."""
+
+
 class StageLauncher(Protocol):
-    """What the engine needs of the launch: who can run here, and a stage's run started."""
+    """What the engine needs of the launch: who can run here, and a stage's run written."""
 
     def runnable(self) -> tuple[str, ...]:
         """The harnesses some launch profile runs headless: what a role may name."""
+        ...
+
+    def merge_target(self, context: CliContext, step: Step) -> tuple[str, str]:
+        """Where the step's PR must go and come from as the plan stands now: its feature
+        branch ("" for the mainline) and its own branch. ``CliError`` when the plan refuses."""
         ...
 
     def __call__(
@@ -67,14 +88,16 @@ class StageLauncher(Protocol):
         dress: Callable[[LedgerRecord], LedgerRecord],
         findings: Sequence[Mapping[str, Any]],
         directory: str,
-    ) -> str:
-        """Write the stage's run and start its supervisor; its id. Raises ``CliError``."""
+    ) -> Staged:
+        """Write the stage's run, nothing started. ``limits.HeldError`` while its account is held,
+        ``CliError`` for any other refusal."""
         ...
 
 
-# `progress`: merge the step's PR into its feature branch and accept it — "" when it was
-# accepted, else why not (the mainline, no PR, a merge gh refused).
-Accept = Callable[[CliContext, Step], str]
+# `progress`: merge the step's PR from its own branch into its feature branch — both as the
+# plan says now — and accept it. ("", False) when it was accepted; else why not, and whether
+# the work goes to the mainline, which a person merges.
+Accept = Callable[[CliContext, Step, str, str], tuple[str, bool]]
 
 
 @dataclass(frozen=True)
@@ -87,6 +110,25 @@ class Planned:
 
 
 @dataclass(frozen=True)
+class Begun:
+    """What acting wrote, and what follows it: a run to start, or nothing."""
+
+    said: str
+    staged: Staged | None = None
+    question: Path | None = None  # A question it wrote, which discard takes back.
+
+    def start(self) -> None:
+        if self.staged is not None:
+            self.staged.start()
+
+    def discard(self) -> None:
+        if self.staged is not None:
+            self.staged.discard()
+        if self.question is not None:
+            self.question.unlink(missing_ok=True)
+
+
+@dataclass(frozen=True)
 class Engine:
     launch: StageLauncher
     accept: Accept
@@ -95,6 +137,8 @@ class Engine:
         """A new pass of ``chosen`` (or the step's own playbook) on ``step``, the work stages
         run by ``implementer``'s harness — or ``CliError`` saying why it cannot begin."""
         project = context.library.project_of(step.id)
+        if why := active(context.store.project_dir(project.id), step.id):
+            raise CliError(f"{step.title!r} {why}")
         playbook = preset(chosen) if chosen else resolve(step, project).playbook
         if playbook is None:
             raise CliError(
@@ -110,17 +154,25 @@ class Engine:
 
     def start(
         self, context: CliContext, step: Step, chosen: str, implementer: str
-    ) -> Callable[[str], str]:
+    ) -> Callable[[str], Begun]:
         """``agent run --playbook``'s half: :meth:`plan` now, and :meth:`begin` — handed the
-        worktree — once the launch has saved its claim."""
+        worktree, under the launch lock — before the claim is saved."""
         planned = self.plan(context, step, chosen, implementer)
         return lambda directory: self.begin(context, step, planned, directory)
 
-    def begin(self, context: CliContext, step: Step, planned: Planned, directory: str) -> str:
-        """Act the pass's first stage. The caller holds the step's launch lock and has
-        saved its claim; ``directory`` is the worktree it placed."""
+    def begin(self, context: CliContext, step: Step, planned: Planned, directory: str) -> Begun:
+        """Write the pass's first record — its first run, or its first gate's question — and
+        start nothing: the caller saves its claim, then starts it (S11's launch order). The
+        caller holds the step's launch lock. A refusal here refuses the launch."""
+        project_dir = context.store.project_dir(context.library.project_of(step.id).id)
+        if why := active(project_dir, step.id):
+            raise CliError(f"{step.title!r} {why}")
         pass_ = _Pass(planned.pass_, planned.playbook, planned.settings, [], directory)
-        return self._act(context, step, pass_, _facts(step))
+        next_ = passes.due(pass_.playbook, pass_.settings, [], _facts(step))
+        try:
+            return self._do(context, step, pass_, next_)
+        except limits.HeldError as held:
+            raise CliError(str(held)) from held
 
     def advance(self, context: CliContext, step: Step) -> str:
         """Do what the step's latest pass needs next, once; what was done, in a sentence."""
@@ -133,30 +185,45 @@ class Engine:
             here = ledger.machine_id()
             if pass_.machine and pass_.machine != here:
                 return f"{step.title}: pass {pass_.id} advances on the machine that launched it"
-            return self._act(context, step, pass_, _facts(step))
+            if _lapsed(project_dir, pass_):
+                pass_ = _latest_pass(project_dir, step.id)
+                assert not isinstance(pass_, str)
+            next_ = passes.due(pass_.playbook, pass_.settings, pass_.entries, _facts(step))
+            said = self._act(context, step, pass_, next_)
+            if not isinstance(next_, Wait):
+                _settle_answers(project_dir, pass_)
+            return f"{step.title}: {said}"
 
     # -- acting -----------------------------------------------------------------------------
 
-    def _act(self, context: CliContext, step: Step, pass_: "_Pass", facts: Facts) -> str:
-        next_ = passes.due(pass_.playbook, pass_.settings, pass_.entries, facts)
-        said = self._do(context, step, pass_, next_)
-        if not isinstance(next_, Wait):
-            _settle_answers(context, step, pass_)
-        return f"{step.title}: {said}"
+    def _act(self, context: CliContext, step: Step, pass_: "_Pass", next_: Next) -> str:
+        """Do it, and start what it wrote — or, when the pass could not, ask about it on a
+        card the pass waits on: a held account until its reset, anything else until a
+        person's *Retry now*."""
+        stage = next_.stage if isinstance(next_, Launch | Progress) else ""
+        attempt = next_.attempt if isinstance(next_, Launch) else 1
+        try:
+            begun = self._do(context, step, pass_, next_)
+            begun.start()
+            return begun.said
+        except limits.HeldError as held:
+            return _refused(context, step, pass_, stage, attempt, str(held), held.until)
+        except CliError as error:
+            return _refused(context, step, pass_, stage, attempt, str(error), None)
 
-    def _do(self, context: CliContext, step: Step, pass_: "_Pass", next_: Next) -> str:
+    def _do(self, context: CliContext, step: Step, pass_: "_Pass", next_: Next) -> Begun:
         match next_:
             case Wait(why) | Halted(why):
-                return why
+                return Begun(why)
             case Complete(why, set_done):
                 if set_done:
                     change = approved(step, today=context.clock.today())
                     if change.command is not None:
                         context.apply(change.command)
-                        return f"{why} — the step is done"
-                return why
+                        return Begun(f"{why} — the step is done")
+                return Begun(why)
             case Launch():
-                run = self.launch(
+                staged = self.launch(
                     context,
                     step,
                     kind=next_.kind,
@@ -166,26 +233,30 @@ class Engine:
                     findings=[f["ref"] for f in next_.findings if "ref" in f],
                     directory=pass_.directory,
                 )
-                return f"{next_.stage} (attempt {next_.attempt}) launched as run {run}"
+                said = f"{next_.stage} (attempt {next_.attempt}) launched as run {staged.run}"
+                return Begun(said, staged=staged)
             case Ask():
-                return _ask(context, step, pass_, next_)
+                return _asked(context, step, pass_, next_)
             case Progress(stage):
-                why = self.accept(context, step)
+                why, mainline = self.accept(context, step, *self.launch.merge_target(context, step))
                 if not why:
-                    return "accepted on its branch"
-                attempt = 1 + sum(
-                    1 for e in pass_.entries if isinstance(e, Question) and e.stage == stage
-                )
-                return _ask(
+                    return Begun("accepted on its branch")
+                if not mainline:
+                    raise CliError(f"progress could not accept the work: {why}")
+                # On the mainline the stage is a person's gate: only a person merges there.
+                return _asked(
                     context,
                     step,
                     pass_,
                     Ask(
                         stage,
-                        attempt,
+                        1
+                        + sum(
+                            1 for e in pass_.entries if isinstance(e, Question) and e.stage == stage
+                        ),
                         GATE,
                         questions.DECISION,
-                        f"Progress could not accept the work: {why}. Does it pass?",
+                        f"Progress does not merge this: {why}. Does the work pass?",
                         GATE_OPTIONS,
                     ),
                 )
@@ -254,7 +325,8 @@ def _plan_text(run: LedgerRecord) -> str:
         return ""
 
 
-def _ask(context: CliContext, step: Step, pass_: _Pass, ask: Ask) -> str:
+def _ask(context: CliContext, step: Step, pass_: _Pass, ask: Ask) -> Question:
+    """Write the pass's question; it."""
     project = context.library.project_of(step.id)
     project_dir = context.store.project_dir(project.id)
     question = questions.asked(
@@ -270,15 +342,54 @@ def _ask(context: CliContext, step: Step, pass_: _Pass, ask: Ask) -> str:
         attempt=ask.attempt,
         purpose=ask.purpose,
         settings=pass_.settings.to_json() if pass_.first() else None,
+        resets=ask.resets,
     )
     questions.write(project_dir, question)
-    return f"{ask.stage} asks {question.short} ({ask.purpose})"
+    return question
 
 
-def _settle_answers(context: CliContext, step: Step, pass_: _Pass) -> None:
+def _refused(
+    context: CliContext,
+    step: Step,
+    pass_: _Pass,
+    stage: str,
+    attempt: int,
+    why: str,
+    until: datetime | None,
+) -> str:
+    """The card a pass waits on when it could not act: ``limit`` with the reset for a held
+    account — the clock answers it then (:func:`wake`) — else ``blocked``; *Retry now*
+    answers either, and the pass does again what it could not."""
+    asked = _ask(
+        context,
+        step,
+        pass_,
+        Ask(
+            stage,
+            attempt,
+            ESCALATION,
+            questions.LIMIT if until is not None else questions.BLOCKED,
+            f"The pass could not go on: {why}",
+            REFUSED_OPTIONS,
+            resets=until.isoformat() if until is not None else "",
+        ),
+    )
+    if until is not None:
+        project_dir = context.store.project_dir(asked.project)
+        supervisor.wake_detached(project_dir, asked.id, library=context.store.library_path)
+    return f"{stage} could not go on, and asks {asked.short}: {why}"
+
+
+def _asked(context: CliContext, step: Step, pass_: _Pass, ask: Ask) -> Begun:
+    """The pass's question written, as an act: discarding it takes the file back."""
+    asked = _ask(context, step, pass_, ask)
+    path = questions.path_for(context.store.project_dir(asked.project), asked)
+    return Begun(f"{ask.stage} asks {asked.short} ({ask.purpose})", question=path)
+
+
+def _settle_answers(project_dir: Path, pass_: _Pass) -> None:
     """Mark consumed every answer of the pass that has been acted on — after the act, so a
     crash between leaves an answer to act on again, never one lost."""
-    project_dir = context.store.project_dir(context.library.project_of(step.id).id)
     for entry in pass_.entries:
         if isinstance(entry, Question) and entry.state == questions.ANSWERED:
             questions.update(
@@ -290,6 +401,69 @@ def _settle_answers(context: CliContext, step: Step, pass_: _Pass) -> None:
                     else q
                 ),
             )
+
+
+def active(project_dir: Path, step_id: str) -> str:
+    """Why a pass on the step is still under way — a run not over, or a question of its own
+    not yet settled — or "": a step has one pass at a time, and a new one never quietly
+    replaces it."""
+    for record in ledger.records(project_dir):
+        if record.step == step_id and record.pass_ and not record.over:
+            return f"has a playbook pass under way: run {record.run} is not over"
+    for question in questions.records(project_dir):
+        if question.step == step_id and question.pass_ and not question.settled:
+            return f"has a playbook pass under way: it waits on {question.short}"
+    return ""
+
+
+def _lapsed(project_dir: Path, pass_: _Pass) -> bool:
+    """Answer for the clock a held launch whose reset has passed — what :func:`wake` does,
+    for a pass whose waker died with its machine. True when it answered one."""
+    last = pass_.entries[-1] if pass_.entries else None
+    if not isinstance(last, Question) or last.kind != questions.LIMIT or last.settled:
+        return False
+    reset = limits.parse(last.resets)
+    if reset is None or reset > datetime.now(UTC):
+        return False
+    _clock_answers(project_dir, last.id)
+    return True
+
+
+def _clock_answers(project_dir: Path, question_id: str) -> None:
+    def answering(question: Question) -> Question:
+        if question.state not in (questions.OPEN, questions.ESCALATED):
+            return question
+        answers = questions.answers_for(question, "The usage limit has reset.")
+        return questions.answered(
+            question, answers, {"kind": questions.CLOCK, "name": "clock"}, now_stamp()
+        )
+
+    questions.update(project_dir, question_id, answering)
+
+
+def wake(
+    project_dir: Path,
+    question_id: str,
+    *,
+    library: Path | None = None,
+    sleep: Callable[[float], None] = time.sleep,
+    grace: float = 60.0,
+) -> str:
+    """Wait for a held launch's reset, answer its card for the clock, and advance its pass —
+    ``playbook wake``, started detached when the card is written (``supervisor.wake_detached``).
+    A clock is no person: it waits on a time, never on anybody, and stops as soon as the card
+    is answered or gone."""
+    while True:
+        question = questions.find(project_dir, question_id)
+        if question is None or question.state not in (questions.OPEN, questions.ESCALATED):
+            return f"{questions.short(question_id)} no longer waits for the clock"
+        reset = limits.parse(question.resets)
+        left = 0.0 if reset is None else (reset - datetime.now(UTC)).total_seconds() + grace
+        if left <= 0:
+            _clock_answers(project_dir, question_id)
+            supervisor.advance_detached(question.step, library=library)
+            return f"{question.short}: the limit has reset; its pass advances"
+        sleep(min(left, 60.0))
 
 
 def _latest_pass(project_dir: Path, step_id: str) -> "_Pass | str":

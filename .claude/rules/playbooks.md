@@ -61,9 +61,19 @@ paths:
   Ready for review, which starts at its first gate). **A launch resumes a session exactly when
   an earlier run of its pass names it** — no flag; every stage's `prompt.md` is the whole
   briefing plus the stage's parts (`agent_briefing/stages.py`), so a fresh fallback knows what
-  a resume knew. A review done without its verdict gets one `verdict` turn, then escalates. A
-  fix declines findings by their number, recorded through `findings.json`. `progress` merges
-  (`--merge`) only into a non-default branch, else asks a `gate` question.
+  a resume knew. **A verdict is one only when it validates against `VERDICT_SCHEMA`**
+  (`headless.verdict_of`); a review done without one gets one `verdict` turn, then escalates.
+  **An answer is a label exactly** (case and a closing stop aside) — other words are *changes*,
+  the words the finding. A fix declines findings by their number, recorded through
+  `findings.json`. **A pass that cannot act writes a card on itself** — `limit` with the reset
+  for a held account (`playbook wake` answers it for the clock), else `blocked` — and *Retry
+  now* re-runs what was due; never an advance that exits with nothing written. **`progress`
+  checks before it merges** — the plan's feature branch now (`merge_target`), the PR's base
+  and head, the step under review — merges (`--merge`) only into a non-default branch, makes
+  the mainline a person-only gate (`questions.PERSON_ONLY`) and anything else a `blocked`
+  card. **One pass at a time**: a step with a run of a pass not over or a question of it
+  unsettled refuses another `--playbook`. The first record is written before the claim is
+  saved, and started after it.
   `docs/architecture/playbooks.md`'s *How the engine drives a pass* has the reasoning.
 - **A role names a harness, never a profile or a path**, and maps at launch to the first
   profile running it; an unrunnable role is refused, never swapped for the default. Whether

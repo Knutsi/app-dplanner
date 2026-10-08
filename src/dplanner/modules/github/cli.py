@@ -51,6 +51,7 @@ from dplanner.modules.github.gh import (
     view_pr,
     which_gh,
 )
+from dplanner.planning.status import Status, Unknown, stored
 
 FinishMerged = Callable[[CliContext, Step], bool]
 
@@ -277,33 +278,59 @@ def _refresh(context: CliContext, args: Namespace, finish_merged: FinishMerged) 
     return 0
 
 
-def accept_by_merge(context: CliContext, step: Step, *, finish_merged: FinishMerged) -> str:
+def accept_by_merge(
+    context: CliContext,
+    step: Step,
+    *,
+    base: str,
+    head: str,
+    finish_merged: FinishMerged,
+) -> tuple[str, bool]:
     """A playbook's ``progress``: merge the step's PR into its feature branch, record it, and
-    accept the step by the merge — "" when it was accepted, else why not. Never into the
-    repository's default branch, which a person merges."""
+    accept the step by the merge. ``("", False)`` when it was accepted; else why not, and
+    whether that is because the work goes to the mainline — which a person merges — rather
+    than something to put right.
+
+    ``base`` and ``head`` are where the plan, as it stands now, says the PR goes and comes from
+    — the step's feature branch, "" when its work goes to the mainline, and the step's own
+    branch, "" when it has none. Everything that makes the merge right is checked **before**
+    it, because a merge cannot be taken back: a feature branch that is not the repository's
+    default, a PR from exactly ``head`` into exactly ``base``, and a step waiting on review or
+    its merge."""
+    if not base:
+        return "the step's work goes to the mainline, which a person merges", True
+    if (status := stored(step)) not in (Status.READY_FOR_REVIEW, Status.READY_TO_MERGE):
+        said = status.word if isinstance(status, Unknown) else status.value
+        return f"the step is {said}, not waiting on review or its merge", False
     refs = read(step)
     if refs is None or refs.pr_number is None:
-        return "the step has no pull request recorded"
+        return "the step has no pull request recorded", False
     number = refs.pr_number
     repo = _step_repo(context, step)
     if repo is None:
-        return _NO_REPOSITORY
+        return _NO_REPOSITORY, False
     try:
         info = view_pr(repo, number)
         if info is None:
-            return f"{repo} has no PR #{number}"
+            return f"{repo} has no PR #{number}", False
         if info.state == PR_OPEN:
-            if info.base_ref in ("", default_branch(repo)):
-                return f"PR #{number} goes into the default branch, which a person merges"
+            if base == default_branch(repo):
+                return f"{base} is {repo}'s default branch, which a person merges", True
+            if info.base_ref != base or (head and info.head_ref != head):
+                return (
+                    f"PR #{number} goes from {info.head_ref} into {info.base_ref}; the plan"
+                    f" expects {head or 'the step' + chr(39) + 's branch'} into {base}",
+                    False,
+                )
             merge_pr(repo, number)
             info = view_pr(repo, number) or info
     except GhError as error:
-        return f"gh: {error}"
+        return f"gh: {error}", False
     if _recorded(context, step, refs, info).pr_state != PR_MERGED:
-        return f"PR #{number} is {info.state}, not merged"
+        return f"PR #{number} is {info.state}, not merged", False
     if not finish_merged(context, context.library.step(step.id)):
-        return f"PR #{number} merged into {info.base_ref}, but that did not accept the step"
-    return ""
+        return f"PR #{number} merged into {info.base_ref}, but that did not accept the step", False
+    return "", False
 
 
 def _recorded(context: CliContext, step: Step, refs: GithubRefs, info: PrInfo) -> GithubRefs:

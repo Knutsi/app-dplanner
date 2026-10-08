@@ -477,6 +477,41 @@ VERDICT_SCHEMA: Mapping[str, object] = {
 }
 
 
+def conforms(value: object, schema: Mapping[str, object]) -> bool:
+    """Whether ``value`` is what ``schema`` says — the strict subset the schemas here use:
+    ``type`` (object, array, string, integer), ``enum``, ``required``, ``properties``,
+    ``additionalProperties: false`` and ``items``. A CLI with no schema flag (opencode) can
+    still end on JSON shaped nearly right, and nearly right is no verdict."""
+    kind = schema.get("type")
+    if kind == "object":
+        properties = schema.get("properties")
+        fields = properties if isinstance(properties, Mapping) else {}
+        required = schema.get("required")
+        return (
+            isinstance(value, Mapping)
+            and all(key in value for key in (required if isinstance(required, list) else []))
+            and (schema.get("additionalProperties") is not False or set(value) <= set(fields))
+            and all(conforms(value[key], sub) for key, sub in fields.items() if key in value)
+        )
+    if kind == "array":
+        items = schema.get("items")
+        return isinstance(value, list) and (
+            not isinstance(items, Mapping) or all(conforms(item, items) for item in value)
+        )
+    if kind == "string":
+        allowed = schema.get("enum")
+        return isinstance(value, str) and (not isinstance(allowed, list) or value in allowed)
+    if kind == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    return True
+
+
+def verdict_of(typed: Mapping[str, object] | None) -> Mapping[str, object] | None:
+    """A review's typed final message when it is a verdict — :data:`VERDICT_SCHEMA` whole —
+    else None: what does not validate is no verdict, never a pass."""
+    return typed if typed is not None and conforms(typed, VERDICT_SCHEMA) else None
+
+
 def schema_for(stage: StageKind) -> Mapping[str, object] | None:
     """The final message a stage answers with; None for a plan, whose answer is its text."""
     return {StageKind.EXECUTE: TURN_SCHEMA, StageKind.REVIEW: VERDICT_SCHEMA}.get(stage)
