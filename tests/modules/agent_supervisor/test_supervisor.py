@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from dplanner.core.process import process_alive, stamp_of
+from dplanner.core.process import process_alive
 from dplanner.domain import ledger, questions
 from dplanner.domain.headless import LimitWindow, StageKind, TurnEnd, TurnSpec, stage_kind
 from dplanner.domain.ledger import LedgerRecord, Turn
@@ -155,6 +155,8 @@ def test_a_done_turn_ends_the_run_with_its_stream_teed_and_its_usage_counted(rig
     # The launch names a fresh session and points at the briefing, never carries it.
     (spec,) = rig.specs
     assert not spec.resume and spec.session  # Minted for Claude, which names its own.
+    # Where the code is and where `dplanner` writes, for a harness that sandboxes a reader.
+    assert (spec.checkout, spec.config) == (rig.record.directory, str(rig.config))
     assert (
         spec.prompt == f"Read your briefing in {rig.run_dir / 'prompt.md'} in full, then follow it."
     )
@@ -220,7 +222,10 @@ def test_a_question_asked_through_the_door_is_answered_consumed_and_resumes_the_
         config=rig.config,
         resume=lambda *args, **kwargs: resumed.append((*args, kwargs)),
     )
-    assert resumed == [(rig.plan, RUN, {"prompt": "answer"})] and "resumes with it" in done.said
+    assert (
+        resumed == [(rig.plan, RUN, {"prompt": "answer", "library": None})]
+        and "resumes with it" in done.said
+    )
 
     assert rig.supervise(prompt="answer") == f"run {RUN} is done"
     answered = stored(rig.plan, question.id)
@@ -596,13 +601,22 @@ def test_a_turn_the_machine_lost_ends_lost_and_is_retried(rig):
     assert rig.ends() == [("failed", "lost"), ("done", "")]
 
 
-def test_a_turn_still_running_is_refused(rig):
-    me = stamp_of(os.getpid())
-    assert me is not None
-    live = Turn(n=1, prompt="launch", started="…", pid=me.pid, boot=me.boot, pid_started=me.started)
-    ledger.write(rig.plan, rig.record.with_turns((live,)))
-    with pytest.raises(RefusedError, match="still running"):
-        rig.supervise()
+def test_a_turn_that_outlived_its_supervisor_is_ended_recorded_lost_and_retried(rig):
+    """``revive`` hands the run a supervisor while the killed one's worker still runs. It was
+    refused, and the worker, which nobody watched, never finished its turn nor advanced its
+    pass: it is ended by its recorded stamp, and the turn goes the way of any lost one."""
+    from tests.launching import orphaned_turn
+
+    from dplanner.core.process import is_live
+
+    with orphaned_turn() as stamp:
+        live = Turn(n=1, prompt="launch", started="…", pid=stamp.pid, boot=stamp.boot,
+                    pid_started=stamp.started)  # fmt: skip
+        ledger.write(rig.plan, rig.record.with_turns((live,)))
+        rig.play({"lines": [result()]})
+        assert rig.supervise() == f"run {RUN} is done"
+        assert not is_live(stamp)
+    assert rig.ends() == [("failed", "lost"), ("done", "")]
 
 
 def test_a_run_that_is_over_or_not_headless_is_refused(rig):

@@ -729,3 +729,19 @@ step a person still had to land. Such a pass now reads *Waits for merge* (warn) 
 reads done, and is not ended, so its strip outlives `ENDED_SHOWN`; a playbook with nothing to
 merge (*Spike*) still reads *Done* on its approval. Now: `playbooks.md`'s *The mark on the one
 card*.
+
+## 2026-10-08 — A Codex plan or review writes its run and DPlanner's records, not read-only
+
+A Codex plan and review ran `sandbox_mode="read-only"`, which kept the code safe and also
+refused the `dplanner agent-work start` its briefing opens with and the `dplanner question ask`
+door: a reviewer could neither say it had begun nor ask. They now run from the run directory
+(`-C`) in `workspace-write`, the plan repository and the config directory their only other
+writable roots, the checkout named in the prompt to read. Now: `playbooks.md`'s *Each stage is
+one headless turn per harness*.
+
+## 2026-10-08 — A turn that outlived its supervisor is ended, not refused
+
+A supervisor started on a run whose recorded turn was still live refused it — "still
+running" — on the theory that its own supervisor had it. Holding the run's lock proves that
+supervisor gone, so nothing would ever finish the turn or advance its pass. It is now ended by
+identity and retried as a lost turn. Now: `agents.md`'s *One supervisor per run*.

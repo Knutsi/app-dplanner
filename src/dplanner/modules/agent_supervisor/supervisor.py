@@ -40,7 +40,8 @@ while a turn runs is never overwritten by the supervisor's older copy.
 turn on a run that reads as parked; a supervisor that finds one anyway (an older build's)
 ends the run rather than resumes it. A turn records its process's stamp too, so a
 supervisor started after a reboot tells a turn still running from one the machine lost,
-and retries the lost one.
+and retries the lost one — after ending, by identity, whatever of it outlived the supervisor
+that started it, which nothing else would ever finish.
 
 **Every park stands on a question, and the supervisor delivers its answer**
 (``domain/questions.py``). The card is written before the parked ending; the answer, given
@@ -101,7 +102,7 @@ from dplanner.domain.headless import (
 )
 from dplanner.domain.ledger import LedgerRecord, Turn
 from dplanner.domain.library_file import LIBRARY_ENV
-from dplanner.domain.model import now_stamp
+from dplanner.domain.model import Step, now_stamp
 from dplanner.domain.questions import Question
 from dplanner.domain.store import LibraryStore
 from dplanner.modules.agent_briefing.protocol import opening_prompt
@@ -567,10 +568,13 @@ class Session:
         if not last.end:
             if not last.pid and last.consumed:
                 return self._recover(last, stop)
-            stamp = ProcessStamp(last.pid, last.boot, last.pid_started)
-            if last.pid and is_live(stamp):
+            # This supervisor holds the run's lock, so the one that started the turn is gone,
+            # and a worker still running has nobody to finish its turn or advance its pass:
+            # it is ended, by identity, before its turn is recorded lost and retried.
+            if not end_orphaned_turn(record, self.guards.grace):
                 raise RefusedError(
-                    f"run {record.run}: turn {last.n} is still running (pid {last.pid})"
+                    f"run {record.run}: turn {last.n} is still running (pid {last.pid}),"
+                    " and will not end"
                 )
             lost = Ending(TurnEnd.FAILED, "lost", "its process is gone")
             return self.next(self._finish(last, self._streamed(last.n), None, lost), stop)
@@ -741,7 +745,14 @@ class Session:
         stage = self.kind
         # The plan is written through `dplanner`, inside the project directory: the 10-04
         # run's 21 Codex sandbox prompts were that directory outside the writable roots.
-        spec = TurnSpec(stage, words, str(self.directory), writable=(str(self.project_dir),))
+        spec = TurnSpec(
+            stage,
+            words,
+            str(self.directory),
+            writable=(str(self.project_dir),),
+            checkout=self.record.directory,
+            config=str(self.config or config_dir()),
+        )
         opening = opening_prompt(self.directory / "prompt.md")
         if kind == "launch" and self._continues():
             # A loop-back, or an execute after its plan: the work stage's own session goes on.
@@ -1212,8 +1223,8 @@ def revive(
     does; the runs it started, by id. What a machine's start does:
 
     - a run whose last turn has no end — a reboot or a killed supervisor lost it — is
-      supervised again, and the new supervisor ends that turn ``failed``/``lost`` and
-      retries it;
+      supervised again, and the new supervisor ends whatever of that turn still runs, records
+      it ``failed``/``lost`` and retries it;
     - a run with no turn at all is a launch interrupted between writing its record and
       starting its supervisor. With ``claimed`` to ask — what the step's status says *on
       disk*: :func:`claimed_on_disk` over ``library`` unless a caller says otherwise — it is
@@ -1282,7 +1293,7 @@ def _settle(
             return False
         # A pass's later stage is claimed by its pass, whatever the step's status says (a
         # review runs on a step at Ready for review); only a pass's first record stands on
-        # the claim its launch saves after it.
+        # the step as its launch leaves it (launch_stands).
         if claimed(fresh) or (fresh.pass_ and fresh.settings is None):
             start_detached(project_dir, fresh.run, library=library)
             return True
@@ -1292,19 +1303,33 @@ def _settle(
 
 
 def claimed_on_disk(library: Path) -> Callable[[LedgerRecord], bool]:
-    """Whether a run's step reads in progress in the plan as it is on disk, read afresh each
-    time it is asked — a model loaded earlier may be older than the launch that has since
-    saved its claim. Only :func:`revive` asks, and only of a run with no turn."""
+    """Whether a run's step stands as its launch left it (:func:`launch_stands`) in the plan
+    as it is on disk, read afresh each time it is asked — a model loaded earlier may be older
+    than the launch that has since saved its claim. Only :func:`revive` asks, and only of a
+    run with no turn."""
 
     def claimed(record: LedgerRecord) -> bool:
         store = LibraryStore(library)
         try:
             plan = store.load()
-            return plan.has(record.step) and stored(plan.step(record.step)) is Status.IN_PROGRESS
+            return plan.has(record.step) and launch_stands(record, plan.step(record.step))
         finally:
             store.close()
 
     return claimed
+
+
+def launch_stands(record: LedgerRecord, step: Step) -> bool:
+    """Whether ``step`` stands as the launch of ``record``, a run with no turn, left it — so
+    the run is still owed its start. In progress, which a launch saves only after writing its
+    run; or Ready for review under a pass's run that reviews, which a pass begun at review
+    leaves as it is rather than take the work up again (``agent run``'s ``_begin_pass``)."""
+    status = stored(step)
+    return status is Status.IN_PROGRESS or (
+        bool(record.pass_)
+        and status is Status.READY_FOR_REVIEW
+        and stage_kind(record.stage) is StageKind.REVIEW
+    )
 
 
 def _age(record: LedgerRecord) -> float:

@@ -6,10 +6,12 @@ the one part of a workspace a person reads in a file browser.
 """
 
 import csv
+import errno
 import os
 import re
 import sys
 import tempfile
+import time
 import unicodedata
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
@@ -83,21 +85,35 @@ def write_csv(path: Path, rows: Sequence[Sequence[str]]) -> None:
         csv.writer(handle).writerows(rows)
 
 
+# What msvcrt.locking raises when another process holds the byte, as against a bad handle.
+_WINDOWS_LOCK_HELD = (errno.EACCES, errno.EDEADLK)
+_WINDOWS_LOCK_RETRY = 0.05
+
+
 @contextmanager
 def os_lock(path: Path, *, wait: bool) -> Iterator[IO[str]]:
     """An exclusive lock the operating system holds on ``path`` and drops when its holder
-    exits, however it exits. ``BlockingIOError`` when another holds it and ``wait`` is
-    False. The file is never deleted: a lock on a file somebody can unlink is no lock."""
+    exits, however it exits. ``wait`` waits as long as the holder holds it, on every platform;
+    ``BlockingIOError`` when another holds it and ``wait`` is False. The file is never
+    deleted: a lock on a file somebody can unlink is no lock."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a+", encoding="utf-8") as held:
         if sys.platform == "win32":
             import msvcrt
 
+            # LK_LOCK gives up after ten one-second tries, and a sync can hold a lock longer
+            # than that, so waiting is LK_NBLCK retried until the holder lets go.
             held.seek(0)
-            try:
-                msvcrt.locking(held.fileno(), msvcrt.LK_LOCK if wait else msvcrt.LK_NBLCK, 1)
-            except OSError as error:
-                raise BlockingIOError(str(error)) from error
+            while True:
+                try:
+                    msvcrt.locking(held.fileno(), msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError as error:
+                    if error.errno not in _WINDOWS_LOCK_HELD:
+                        raise
+                    if not wait:
+                        raise BlockingIOError(error.errno, str(error)) from error
+                time.sleep(_WINDOWS_LOCK_RETRY)
         else:
             import fcntl
 

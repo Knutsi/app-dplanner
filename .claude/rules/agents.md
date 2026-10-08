@@ -96,16 +96,21 @@ paths:
   repository not checked out here, a profile whose agent has no headless mode. It is
   headless by default (`--terminal` for a terminal) and always claims — `--playbook` starts a
   playbook's pass instead, through the same gate, lock and claim (`playbooks.md`). **A supervisor is
-  `sys.executable -m dplanner --library <the launch's>`**, and every turn's environment
+  `sys.executable -m dplanner --library <the launch's>`** — and one an answer, *Retry now* or
+  a pass's advance starts carries the library of the surface that acted (`store.library_path`,
+  in the CLI and the window alike), never the default — and every turn's environment
   carries `DPLANNER_LIBRARY`, `DPLANNER_PROJECT` and `DPLANNER_RUN` — which nothing started
   detached inherits (`core.process.detached_environment`: `spawn_detached`, a terminal's
   launch, the window's `dplanner` calls), since a stop ends every process carrying its run.
   `docs/architecture/agents.md`'s *One launch under both surfaces* has the reasoning.
 - **A machine's start settles its headless runs.** `supervisor.revive(project_dirs,
   claimed=, library=)` starts a supervisor for each run of this machine whose last turn has
-  no end and that no supervisor holds (`supervised`, the OS lock) — the supervisor ends the
-  turn `failed`/`lost` and retries — and for each run with **no turn** whose step is still
-  claimed (a launch interrupted between its record and its start). A turnless run is
+  no end and that no supervisor holds (`supervised`, the OS lock) — the supervisor ends
+  whatever of the turn still runs, by identity (`end_orphaned_turn`), records it
+  `failed`/`lost` and retries, never refusing a live worker nobody watches — and for each run
+  with **no turn** whose step still stands as its launch left it (`launch_stands`: in
+  progress, or Ready for review under a pass's first run that reviews; a launch interrupted
+  between its record and its start). A turnless run is
   settled **inside the step's launch lock, re-reading the record and the step's status from
   disk** (`claimed_on_disk(library)`, never a model loaded earlier), and its record is
   deleted only when no supervisor holds the run, its step reads unclaimed and it is older than

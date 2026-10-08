@@ -22,6 +22,7 @@ from dplanner.modules.agent_supervisor import supervisor
 from dplanner.modules.agent_supervisor.supervisor import advance_detached, start_detached
 
 Resume = Callable[..., None]
+NOT_PARKED = "no headless run is parked on this step"
 Advance = Callable[..., None]
 
 
@@ -47,7 +48,9 @@ def answer(
     """Record ``given`` as the answer, then nudge the supervisor of the run it parks when this
     machine launched it — or, for a playbook's own question, start its pass's advance, which
     acts on it on the machine that launched the pass. ``caller_run`` is the run the caller
-    works in (``$DPLANNER_RUN``); ``library`` is the one the advance must reach. Raises
+    works in (``$DPLANNER_RUN``); ``library`` is the one the resumed run or the advance must
+    reach — the default library when None, which is not the one a window or `--library`
+    chose. Raises
     ``ValueError`` with the reason when the caller may not answer it, or it is no longer open
     to an answer."""
 
@@ -72,7 +75,7 @@ def answer(
     if why_not:
         return Answered(question, f"{question.short} answered; {why_not}")
     try:
-        resume(project_dir, question.run, prompt="answer")
+        resume(project_dir, question.run, prompt="answer", library=library)
     except OSError as error:  # The run's supervisor finds the answer when it next starts.
         return Answered(question, f"{question.short} answered; could not start its run: {error}")
     return Answered(question, f"{question.short} answered; run {question.run} resumes with it")
@@ -87,6 +90,7 @@ def retry_now(
     machine: str | None = None,
     config: Path | None = None,
     resume: Resume = start_detached,
+    library: Path | None = None,
 ) -> Answered:
     """*Retry now*: resume a run parked on a usage limit or a block at once, by answering
     the question it stands on ``Retry now``. A supervisor waiting for the reset finds the
@@ -102,7 +106,18 @@ def retry_now(
         machine=machine,
         config=config,
         resume=resume,
+        library=library,
     )
+
+
+def retry_step(
+    project_dir: Path | None, step_id: str, by: Mapping[str, str], *, library: Path | None = None
+) -> Answered:
+    """:func:`retry_now` on the step's parked headless run, or ``ValueError`` saying why not."""
+    run = parked_run(project_dir, step_id) if project_dir is not None else ""
+    if project_dir is None or not run:
+        raise ValueError(NOT_PARKED)
+    return retry_now(project_dir, run, by, library=library)
 
 
 def retry_question(project_dir: Path, run: str) -> Question:
@@ -133,7 +148,7 @@ def retry_refusal(project_dir: Path | None, step_id: str) -> str:
     """Why Retry now does not apply to the step's headless run, or "" when it does."""
     run = parked_run(project_dir, step_id) if project_dir is not None else ""
     if project_dir is None or not run:
-        return "no headless run is parked on this step"
+        return NOT_PARKED
     try:
         retry_question(project_dir, run)
     except ValueError as refused:

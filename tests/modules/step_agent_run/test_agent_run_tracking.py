@@ -17,6 +17,7 @@ from dplanner.domain.commands import AddNodeCommand, SetModuleDataCommand
 from dplanner.domain.ledger import LedgerRecord, Turn
 from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
+from dplanner.modules.agent_supervisor import supervisor
 from dplanner.modules.step_agent_run import aspect, terminal
 from dplanner.modules.step_agent_run.runs import AgentRun, describe, new_run, read_shell, settle
 
@@ -642,3 +643,54 @@ def test_retry_now_resumes_a_run_held_on_its_usage_limit(services, step):
     assert answered.answer["answers"] == {"Out of usage.": questions.RETRY_NOW}
     state = spec.state(services.context.current())
     assert not state.enabled and "parked on no open question" in state.label
+
+
+def test_retry_now_and_an_answer_resume_with_the_windows_library(services, step, monkeypatch):
+    """The resumed supervisor resolved the default library, not the window's: its turns'
+    `dplanner` calls and its pass's advance then reached another plan."""
+    started: list[list[str]] = []
+    monkeypatch.setattr(supervisor, "spawn_detached", started.append)
+    project_dir = module(services)._deps.project_dir(step.id)
+    project = services.document.project_of(step.id)
+    question = questions.asked(
+        project.id,
+        step.id,
+        "2026-10-07T18:10:00+00:00",
+        [questions.one("Out of usage.", "Usage limit", [(questions.RETRY_NOW, "")])],
+        kind=questions.LIMIT,
+        run=RUN,
+    )
+    questions.write(project_dir, question)
+    held = Turn(n=1, prompt="launch", started="…", end="limit", question=question.id)
+    record = LedgerRecord(
+        run=RUN,
+        project=project.id,
+        step=step.id,
+        harness="claude",
+        launched="2026-10-07T18:00:00+00:00",
+        mode=ledger.HEADLESS,
+        stage="execute",
+    ).with_turns((held,))
+    ledger.write(project_dir, record)
+    select(services, step)
+
+    services.actions.spec("agent.retry_now").run(services.context.current())
+
+    gate = questions.asked(
+        project.id,
+        step.id,
+        "2026-10-07T18:20:00+00:00",
+        [questions.one("Approve?", "Review", [("Approve", ""), ("Send back", "")])],
+        kind=questions.DECISION,
+        pass_="20261007T180000Z-0a55a0c1",
+    )
+    questions.write(project_dir, gate)
+    cards = next(m for m in services.modules if m.id == "agent_questions")
+    cards._deps.answer(project_dir, gate.id, "Approve")
+
+    resumed, advanced = started
+    library = str(services.repo.library_path.expanduser().resolve())
+    assert resumed[resumed.index("supervise") + 1] == RUN
+    assert advanced[advanced.index("advance") + 1] == step.id
+    for argv in started:
+        assert argv[argv.index("--library") + 1] == library
