@@ -97,7 +97,7 @@ def test_a_rejected_push_leaves_the_checkout_as_it_was_and_waits_for_the_windows
 def test_a_publish_waits_for_the_repositorys_sync_lock_the_windows_save_takes(plan, tmp_path):
     import threading
 
-    from dplanner.core.storage.git import sync_lock
+    from dplanner.core.storage.locations import sync_lock
 
     _taken(plan)
     done = threading.Event()
@@ -160,8 +160,7 @@ def test_a_superseded_squad_stands_down_instead_of_renewing(plan, tmp_path):
 def test_the_windows_save_waits_on_the_same_lock_a_claim_publish_holds(plan):
     import threading
 
-    from dplanner.core.storage.git import sync_lock
-    from dplanner.core.storage.locations import repo_storage
+    from dplanner.core.storage.locations import repo_storage, sync_lock
     from dplanner.core.storage.provider import VersionedStorage
 
     storage = repo_storage(plan.parent)

@@ -5,7 +5,7 @@ Taking, releasing and ending a claim each :func:`publish`, and so does the heart
 every thirty minutes (:func:`renew`). **A publish never rewrites the checkout it runs in**:
 it commits ``claims/`` alone by pathspec — whatever else in the plan is unsaved stays the
 window's to Save — under the repository's sync lock, which the window's own Save and sync
-take too (``core/storage/git.py``'s ``sync_lock``), and pushes. It never fetches, rebases or
+take too (``core/storage``'s ``sync_lock``), and pushes. It never fetches, rebases or
 stashes: a push the remote refuses leaves the commit where it is, says the claims are not
 published yet, and the window's next sync — which does rebase, with a person watching —
 carries them. Ownership is decided locally from the files (``domain/claims.py``), so an
@@ -20,8 +20,7 @@ from pathlib import Path
 
 from dplanner.core.config_dir import config_dir
 from dplanner.core.fsio import write_atomic
-from dplanner.core.storage.git import sync_lock
-from dplanner.core.storage.locations import find_repo_root
+from dplanner.core.storage.locations import find_repo_root, sync_lock
 from dplanner.core.storage.provider import StorageError
 from dplanner.core.storage.sparse import REMOTE_S, GitError, run_git
 from dplanner.domain import claims, ledger
