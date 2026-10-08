@@ -59,6 +59,21 @@ def read(step: Step) -> str:
     return state if state in STATES else ""
 
 
+# The chip a card wears for each state, and its tone: at work, or waiting on a person.
+CHIPS: Final = {
+    LAUNCHED: ("launched", "info"),
+    WORKING: ("working", "info"),
+    PLAN_FOR_REVIEW: ("plan ready", "attention"),
+    PENDING_APPROVAL: ("needs approval", "attention"),
+    NEEDS_INPUT: ("needs input", "attention"),
+}
+
+
+def chip(step: Step) -> tuple[str, str]:
+    """The chip's words and tone for the step's run, ("", "") when none is recorded."""
+    return CHIPS.get(read(step), ("", ""))
+
+
 def launched(step: Step) -> str:
     """When the shell was launched (an ISO stamp), or "" when no run is recorded."""
     entry = step.module_data.get(MODULE_ID)

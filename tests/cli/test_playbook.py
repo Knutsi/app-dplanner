@@ -108,3 +108,32 @@ def test_the_project_default_reaches_a_step_that_never_chose(cli, cli_library):
 )
 def test_set_refuses_what_it_cannot_write(cli, argv, says):
     assert says in cli("--project", "Discovery", "playbook", "set", *argv, expect=1)
+
+
+def test_show_says_where_the_latest_pass_stands_in_the_cards_words(cli, cli_library, workspace):
+    from dataclasses import replace
+
+    from tests.modules.step_playbook.test_passes import run, settings
+
+    from dplanner.domain import ledger
+
+    assert json.loads(cli("playbook", "show", "build-it", "--json"))["pass"] is None
+    project = LibraryStore(cli_library).load().projects[0]
+    step = project.steps[0]
+    pinned = settings("plan-execute-review-other").to_json()
+    for record in (
+        replace(run("plan"), settings=pinned),
+        run("execute"),
+        run("review", end="", over=False),
+    ):
+        ledger.write(workspace / "discovery", replace(record, project=project.id, step=step.id))
+    shown = json.loads(cli("playbook", "show", "build-it", "--json"))
+    assert shown["pass"] == {
+        "id": "P",
+        "phrase": "Review 1/2",
+        "tone": "busy",
+        "stage": "review (other agent)",
+        "ended": False,
+    }
+    text = cli("playbook", "show", "build-it")
+    assert "Review 1/2 · " in text and "▸ review (other agent)" in text

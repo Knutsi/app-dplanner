@@ -252,6 +252,14 @@ not changed yet, and the release settles every glide before anything is written 
 is nothing for a preference to complete, and a test calls the gesture's `settle()` the way
 a render does. The list above still waits on both.
 
+**The second is a card's foot growing to its playbook strip** (S27, `canvas.md`'s *A card
+running a playbook says where its pass stands*), and it is the first motion that is not under
+the hand, so it brought the two pieces the list waited on in their smallest form: DESIGN.md
+names it as one more allowed motion, and *Reduce Motion* exists — as a field of the canvas's
+`Look`, since the canvas is the only surface it governs yet; a second surface that needs it is
+the moment to lift it to an application preference. It rides the canvas's own clock, which
+now measures motion in seconds and ticks at the display's rate only while something grows.
+
 **A well can be as tall as its rows.** The guide is a `RowWell`, which is a scroll area, and
 `QScrollArea` stops its size hint at twenty-four lines of text whatever its adjust policy —
 so five steps sat behind a scroll bar with half the page empty around them. The primitive

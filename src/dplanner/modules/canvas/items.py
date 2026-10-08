@@ -12,6 +12,8 @@ between a stack's cards is its own, drawn short and straight down the frame's mi
 (``docs/architecture/canvas.md``'s *A stack's frame is the stack's handle*).
 """
 
+from dataclasses import replace
+
 from PySide6.QtCore import QPointF, QRectF, QSizeF, Qt
 from PySide6.QtGui import (
     QColor,
@@ -26,11 +28,13 @@ from PySide6.QtWidgets import (
     QApplication,
     QGraphicsItem,
     QGraphicsPathItem,
+    QGraphicsSceneHoverEvent,
     QStyleOptionGraphicsItem,
     QWidget,
 )
 
 from dplanner.domain.model import StepId
+from dplanner.framework.motion.curves import out_cubic
 from dplanner.modules.canvas.layouts.positions import NODE_H, NODE_W, STRIP_H
 from dplanner.modules.canvas.marks import Marks
 from dplanner.modules.canvas.renderers import (
@@ -51,6 +55,10 @@ from dplanner.theme.tones import INVALID_TINT, VALID_TINT
 
 # How far a press may land from the handle's centre and still mean it.
 HANDLE_GRAB = 12.0
+
+# How long a playbook strip takes to grow out of a card's foot, or to fold back into it: long
+# enough to see the edge move, short enough never to be waited on.
+GROW_S = 0.2
 
 # The resize band round a card's border: this far inside it, and EDGE_REACH outside. A press
 # in the band grabs that edge — both bands at once grab the corner — and a press further in
@@ -138,6 +146,11 @@ class StepNodeItem(QGraphicsItem):
     default footprint, with a branch strip's height under it when the card wears one — and
     every rect below is measured from it, never from ``NODE_W``. The body is the card less
     that strip: arrows, the handle and the marks meet its middle, and a resize stores it.
+
+    Under all of it a running playbook's strip grows out of the card's foot on the scene's
+    motion clock, and folds back when the pass is no longer shown. It is no part of the
+    footprint the scene pushes (a pass is transient, and an arrangement must not move for
+    one): the card adds it to what it draws, hits and hands its stack as its :meth:`size`.
     """
 
     def __init__(self, step_id: StepId) -> None:
@@ -160,6 +173,11 @@ class StepNodeItem(QGraphicsItem):
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges, True)
         self.setAcceptHoverEvents(True)
         self._hovered = False
+        # The playbook strip: how far it has grown (0..1, in time), where it is going, and
+        # the accent it last showed — still painted while it folds away.
+        self._grow = 0.0
+        self._grow_to = 0.0
+        self._band = ("", "", "")
 
     def set_title(self, title: str) -> None:
         if title != self._title:
@@ -178,6 +196,11 @@ class StepNodeItem(QGraphicsItem):
                 scene.reflow_edges(self.step_id)
 
     def size(self) -> tuple[float, float]:
+        """The card as drawn: its footprint and as much playbook strip as has grown."""
+        return self._size[0], self._size[1] + self._grown()
+
+    def footprint(self) -> tuple[float, float]:
+        """The card as the scene sized it: the body and the branch strip, no playbook strip."""
         return self._size
 
     def body_size(self) -> tuple[float, float]:
@@ -199,19 +222,68 @@ class StepNodeItem(QGraphicsItem):
         if accent != self._accent:
             moved = bool(accent.strip) != bool(self._accent.strip)
             self._accent = accent
+            if accent.playbook[0]:
+                self._band = accent.playbook
+            self._grow_toward(1.0 if accent.playbook[0] else 0.0)
             self.update()
             scene = self.scene()
             if moved and scene is not None and hasattr(scene, "reflow_edges"):
                 scene.reflow_edges(self.step_id)  # A strip moves the body's middle.
+
+    def _grow_toward(self, target: float) -> None:
+        """Start the playbook strip growing or folding — at once for a card not on a canvas
+        yet (a tab opening animates nothing) and while the user has motion reduced."""
+        if target == self._grow_to:
+            return
+        self._grow_to = target
+        scene = self.scene()
+        if scene is None or getattr(scene, "motion_reduced", True):
+            self._set_grow(target)
+
+    def growing(self) -> bool:
+        return self._grow != self._grow_to
+
+    def advance(self, seconds: float) -> None:
+        """Move the playbook strip on by ``seconds`` of the scene's motion clock."""
+        if self.growing():
+            step = seconds / GROW_S
+            self._set_grow(
+                min(self._grow + step, 1.0) if self._grow_to else max(self._grow - step, 0.0)
+            )
+
+    def _set_grow(self, grow: float) -> None:
+        self.prepareGeometryChange()
+        self._grow = grow
+        self.update()
+        scene = self.scene()
+        if scene is not None and hasattr(scene, "reflow_edges"):
+            scene.reflow_edges(self.step_id)  # A stack's column makes room for it.
+
+    def _shown(self) -> float:
+        """The strip's growth as drawn: eased out both ways, so the edge arrives gently."""
+        if self._grow_to:
+            return out_cubic(self._grow)
+        return 1.0 - out_cubic(1.0 - self._grow)
+
+    def _grown(self) -> float:
+        return STRIP_H * self._shown() if self._grow else 0.0
+
+    def playbook_tip_at(self, scene_pos: QPointF) -> str:
+        """The playbook's stages, when ``scene_pos`` is on the strip that names its pass."""
+        if not self._accent.playbook[0] or not self._grow:
+            return ""
+        band = self.body_rect()
+        band.setTop(band.bottom() - self._grown())
+        return self._accent.playbook[2] if band.contains(self.mapFromScene(scene_pos)) else ""
 
     def wears_ring(self) -> bool:
         """Whether this node has a live agent run, and so wears the marching ring."""
         return bool(self._accent.chip_text)
 
     def moves(self) -> bool:
-        """Whether anything on this card moves — the ring or the pulse — which is what keeps
-        the scene's motion clock running."""
-        return self.wears_ring() or self._accent.pulse
+        """Whether anything on this card moves — the ring, the pulse or its playbook strip
+        growing — which is what keeps the scene's motion clock running."""
+        return self.wears_ring() or self._accent.pulse or self.growing()
 
     def set_phase(self, phase: float) -> None:
         """Where the scene's motion clock stands — the ring's dashes, the pulse's breath —
@@ -308,7 +380,7 @@ class StepNodeItem(QGraphicsItem):
 
     def body_rect(self) -> QRectF:
         """The card, in its own coordinates: the rect every painter measures from."""
-        return QRectF(0.0, 0.0, self._size[0], self._size[1])
+        return QRectF(0.0, 0.0, *self.size())
 
     def handle_scene_pos(self) -> QPointF:
         return self.mapToScene(QPointF(self._size[0], self._middle_y()))
@@ -336,7 +408,7 @@ class StepNodeItem(QGraphicsItem):
         if self._pinned:
             return ""
         local = self.mapFromScene(scene_pos)
-        w, h = self._size
+        w, h = self.size()
         reach = QRectF(-EDGE_REACH, -EDGE_REACH, w + 2 * EDGE_REACH, h + 2 * EDGE_REACH)
         if not reach.contains(local):
             return ""
@@ -397,12 +469,16 @@ class StepNodeItem(QGraphicsItem):
         _widget: QWidget | None = None,
     ) -> None:
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        # A strip folding away still says what it said until it is gone.
+        accent = self._accent
+        if not accent.playbook[0] and self._grow:
+            accent = replace(accent, playbook=self._band)
         paint_node(
             painter,
             live_palette(self),
             self.body_rect(),
             self._title,
-            self._accent,
+            accent,
             NodeState(
                 selected=self.isSelected(),
                 hovered=self._hovered,
@@ -412,12 +488,18 @@ class StepNodeItem(QGraphicsItem):
                 ports=self._ports,
                 marks=self._marks,
                 handle=self.has_handle(),
+                grow=self._shown() if self._grow else 0.0,
             ),
         )
 
     def hoverEnterEvent(self, event: object) -> None:  # noqa: N802 - Qt override
         self._hovered = True
         self.update()
+
+    def hoverMoveEvent(self, event: QGraphicsSceneHoverEvent) -> None:  # noqa: N802 - Qt override
+        # The playbook strip's stages, over the strip alone: the rest of the card is the step.
+        self.setToolTip(self.playbook_tip_at(event.scenePos()))
+        super().hoverMoveEvent(event)
 
     def hoverLeaveEvent(self, event: object) -> None:  # noqa: N802 - Qt override
         self._hovered = False

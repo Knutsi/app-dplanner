@@ -21,6 +21,7 @@ The rules are ``docs/architecture/playbooks.md``'s:
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 from dplanner.domain import questions
@@ -28,6 +29,7 @@ from dplanner.domain.headless import StageKind, TurnEnd, stage_kind, verdict_of
 from dplanner.domain.ledger import LedgerRecord
 from dplanner.domain.questions import Question
 from dplanner.modules.agent_briefing.stages import numbered
+from dplanner.modules.agent_supervisor import limits
 from dplanner.modules.step_playbook.aspect import Choice
 from dplanner.modules.step_playbook.presets import ROUNDS, Playbook, StageRole
 
@@ -543,3 +545,135 @@ def _ref(finding: Mapping[str, Any]) -> tuple[str, str, int]:
     kind = "run" if "run" in ref else "question"
     index = ref.get("index")
     return (kind, str(ref.get(kind, "")), index if isinstance(index, int) else 0)
+
+
+# -- where a pass stands, in words --------------------------------------------------------------
+
+# What a question waits for, by its kind — a round cap is a decision of its own purpose.
+_WAITS_FOR = {
+    questions.PLAN_APPROVAL: "plan approval",
+    questions.PERMISSION: "a permission",
+    questions.BLOCKED: "blocked",
+    questions.LIMIT: "a usage limit",
+}
+
+
+@dataclass(frozen=True)
+class Standing:
+    """Where a pass stands, in a person's words: what the card's playbook strip and ``playbook
+    show`` both say. Derived from the pass's records every time, never stored."""
+
+    pass_id: str
+    playbook: str  # The playbook's name.
+    phrase: str  # "Review 1/2", "Waits for you · plan approval", "Parked until 14:20".
+    tone: str  # "" quiet | "busy" | "warn" | "good" | "bad": ``theme/tones``' words.
+    stages: tuple[str, ...]  # The playbook's stage labels, in order.
+    current: int  # The stage the pass stands at, by index; -1 for none.
+    ended: bool  # Done or stopped: nothing more is due.
+    at: str  # The stamp of the pass's latest record.
+
+
+def standing(
+    playbook: Playbook,
+    settings: Settings,
+    entries: Sequence[Entry],
+    parks: Sequence[Question],
+    facts: Facts,
+    now: datetime,
+) -> Standing:
+    """Where the pass stands, from its records oldest first and the questions its runs parked
+    on (``parks``: a run's own question carries its run, not the pass). ``now`` says whether a
+    usage hold's reset is today."""
+    reading = _Reading(playbook, settings, list(entries))
+    next_ = reading.due(facts)
+    last = entries[-1] if entries else None
+    phrase, tone, stage = _words(reading, next_, last, parks, now)
+    return Standing(
+        pass_id=last.pass_ if last is not None else "",
+        playbook=playbook.name,
+        phrase=phrase,
+        tone=tone,
+        stages=tuple(stage.label for stage in playbook.stages),
+        current=reading.ids.index(stage) if stage in reading.ids else -1,
+        ended=isinstance(next_, Complete | Halted),
+        at=_stamp(last) if last is not None else "",
+    )
+
+
+def describe(standing: Standing) -> str:
+    """The stages of the pass with the one it stands at marked, under its phrase — the card's
+    tooltip and ``playbook show``'s lines alike."""
+    lines = [f"{standing.phrase} · {standing.playbook} (pass {standing.pass_id})"]
+    lines += [
+        f"{'▸' if index == standing.current else ' '} {label}"
+        for index, label in enumerate(standing.stages)
+    ]
+    return "\n".join(lines)
+
+
+def until_words(reset: datetime, now: datetime) -> str:
+    """When a held account comes back, on this machine's clock: the time, and the date too
+    when it is not today."""
+    local, today = reset.astimezone(), now.astimezone()
+    if local.date() == today.date():
+        return local.strftime("%H:%M")
+    return f"{local.day} {local.strftime('%b %H:%M')}"
+
+
+def _words(
+    reading: _Reading, next_: Next, last: Entry | None, parks: Sequence[Question], now: datetime
+) -> tuple[str, str, str]:
+    """(phrase, tone, stage id) for what is due, read against the latest record."""
+    if isinstance(next_, Complete):
+        return "Done", "good", ""
+    if isinstance(next_, Halted):
+        return "Stopped", "bad", last.stage if last is not None else ""
+    if isinstance(next_, Progress):
+        return "Merging", "busy", next_.stage
+    if isinstance(next_, Launch):
+        return _working(reading, next_.stage, next_.attempt), "busy", next_.stage
+    if isinstance(next_, Ask):
+        return _waiting(next_.kind, next_.purpose, next_.stage), "warn", next_.stage
+    if isinstance(last, LedgerRecord):
+        turn = last.last_turn
+        if not last.parked or turn is None:
+            return _working(reading, last.stage, last.attempt), "busy", last.stage
+        held = limits.parse(turn.resets) if turn.end == TurnEnd.LIMIT else None
+        if held is not None:
+            return f"Parked until {until_words(held, now)}", "", last.stage
+        asked = next((q for q in parks if q.id == turn.question), None)
+        phrase, tone = _asked(asked, now) if asked is not None else (_waiting("", "", ""), "warn")
+        return phrase, tone, last.stage
+    if isinstance(last, Question):
+        return (*_asked(last, now), last.stage)
+    return "", "", ""
+
+
+def _working(reading: _Reading, stage: str, attempt: int) -> str:
+    """A stage at work. A work stage's later attempts are the loop-backs a gate sent it."""
+    kind = stage_kind(stage)
+    if kind is StageKind.REVIEW:
+        cap = reading._cap(stage)
+        return f"Review {min(reading._verdicts(stage) + 1, cap)}/{cap}"
+    if stage == FIX:
+        return f"Fixing (round {attempt})"
+    if kind is StageKind.PLAN:
+        return "Planning" if attempt <= 1 else f"Replanning (round {attempt - 1})"
+    return "Executing" if attempt <= 1 else f"Fixing (round {attempt - 1})"
+
+
+def _asked(question: Question, now: datetime) -> tuple[str, str]:
+    held = limits.parse(question.resets) if question.kind == questions.LIMIT else None
+    if question.state == questions.ESCALATED:
+        return "Escalated", "warn"
+    if held is not None:
+        return f"Parked until {until_words(held, now)}", ""
+    return _waiting(question.kind, question.purpose, question.stage), "warn"
+
+
+def _waiting(kind: str, purpose: str, stage: str) -> str:
+    what = "round cap" if purpose == ROUND_CAP else _WAITS_FOR.get(kind, "a decision")
+    # A stage id is its role, numbered when the role repeats (``coordinator-2``).
+    coordinator = stage.partition("-")[0] == StageRole.COORDINATOR
+    who = "the coordinator" if purpose == GATE and coordinator else "you"
+    return f"Waits for {who} · {what}"

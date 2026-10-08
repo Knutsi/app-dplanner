@@ -1109,6 +1109,41 @@ unstriped one keeps its arrows level), what the painter lays the key block and t
 into, and what a resize stores. A view that draws every card at the default size hands the
 rule its own `body` — the Wave view's case — so there is never a second size rule.
 
+## A card running a playbook says where its pass stands
+
+A step with a playbook pass under way — or one that ended within the day — wears a second
+strip under the branch strip, saying in words where the pass stands: *Planning*, *Review
+1/2*, *Waits for you · plan approval*, *Parked until 14:20*, *Stopped*, *Done*. It is the
+second exception to *nothing in words*, for the same reason as the branch: a medallion could
+say only *some* playbook, and the point of the strip is which stage and who it waits on. The
+words are `passes.standing`'s, one Qt-free reading of the pass's runs and questions that
+`playbook show` prints too, so the card and the terminal cannot disagree; the stages behind
+them, the current one marked, are the strip's tooltip and what a click on it shows.
+
+**It is not in the footprint, and that is the one difference from the branch strip.** A
+branch is a fact of the plan that lasts the stretch; a pass lasts hours. Counted in
+`positions.footprint`, it would move every card under a step in the ambient layout the moment
+a pass started, and make what an explicit sort persists depend on whether a pass happened to
+be running. So the card adds it to what it draws and hits and hands its stack as its live
+size (the column makes room, as for a resize), and keeps it out of what the scene pushes,
+what a resize stores and where the arrows meet; a sort's row gap is wider than the strip.
+The order under the body is fixed: the branch strip, then the playbook strip at the very
+foot, so the lasting fact stays put and the transient one is what the moving edge uncovers.
+
+**The foot grows to it on the canvas's one motion clock.** A card that jumped taller would
+read as a card that was always that tall; the bottom edge easing down over `GROW_S` is the
+strip arriving. The clock ticks at the display's rate only while something grows (eighty
+milliseconds would show a fifth of a second as two frames), and advances the ring and the
+pulse by elapsed time so neither changes pace. A card a tab opens with is dressed before it
+joins the scene, so opening a project grows nothing, and *Graph ▸ Reduce Motion* — a field
+of the `Look` — shows and hides the strip at once.
+
+**The window polls for it**, as the claims and the inbox do: runs and questions are written
+by other processes and nothing watches their directories, so `PassStandings` compares each
+project's ledger and question fingerprints every two seconds, re-reads everything once a
+minute for the clock (a hold's reset passes, an ended pass stops being shown), and names the
+project when what it holds changed.
+
 ## The ground is a preference; snapping belongs to the gesture
 
 *Graph ▸ Background* (plain, dots, lines, crosses) and *Graph ▸ Snap to Grid* are two fields
