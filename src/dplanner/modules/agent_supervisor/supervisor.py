@@ -81,7 +81,8 @@ from dplanner.core.process import (
     spawn_detached,
     stamp_of,
 )
-from dplanner.domain import claim_sync, ledger, questions
+from dplanner.core.storage.locations import find_repo_root, main_checkout
+from dplanner.domain import claim_sync, claims, ledger, questions
 from dplanner.domain.agents import (
     AgentHarness,
     AgentUsage,
@@ -751,8 +752,10 @@ class Session:
             str(self.directory),
             writable=(str(self.project_dir),),
             checkout=self.record.directory,
-            config=str(self.config or config_dir()),
         )
+        if stage is not StageKind.EXECUTE:
+            config = self.config or config_dir()
+            spec = replace(spec, control=control_dirs(self.project_dir, config, spec.checkout))
         opening = opening_prompt(self.directory / "prompt.md")
         if kind == "launch" and self._continues():
             # A loop-back, or an execute after its plan: the work stage's own session goes on.
@@ -1341,6 +1344,28 @@ def _age(record: LedgerRecord) -> float:
     if launched.tzinfo is None:
         launched = launched.replace(tzinfo=UTC)
     return (datetime.now(UTC) - launched).total_seconds()
+
+
+def control_dirs(project_dir: Path, config: Path, checkout: str) -> tuple[str, ...]:
+    """What a plan or review turn writes beside its run directory, and no more: the project's
+    questions (`dplanner question ask`) and claims (a squad shell's renewal, on every
+    `dplanner` run), and the config directory (`dplanner agent-work`'s board, the records'
+    locks). One that is or holds the code — the step's checkout or the main checkout behind
+    it — is left out: a colocated plan sits inside the code's repository. Made here, since a
+    root that does not exist yet cannot be written into."""
+    code: set[Path] = set()
+    if checkout:
+        here = Path(checkout).resolve()
+        repo = find_repo_root(here)
+        code = {here, *([main_checkout(repo).resolve()] if repo is not None else [])}
+    roots = []
+    for root in (project_dir / questions.QUESTIONS_DIR, project_dir / claims.CLAIMS_DIR, config):
+        resolved = root.resolve()
+        if any(resolved == c or resolved in c.parents for c in code):
+            continue
+        root.mkdir(parents=True, exist_ok=True)
+        roots.append(str(root))
+    return tuple(roots)
 
 
 @contextmanager

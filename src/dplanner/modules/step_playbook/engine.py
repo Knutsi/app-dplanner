@@ -90,10 +90,13 @@ class StageLauncher(Protocol):
         findings: Sequence[Mapping[str, Any]],
         directory: str,
         member: str,
+        claim: str,
     ) -> Staged:
         """Write the stage's run, nothing started — run by ``member`` of the squad holding the
-        step when it is one of that squad's (``kettle-two``). ``limits.HeldError`` while its
-        account is held, ``CliError`` for any other refusal."""
+        step when it is one of that squad's (``kettle-two``), under ``claim``, the claim the
+        pass started under ("" for none). ``limits.HeldError`` while its account is held,
+        ``CliError`` for any other refusal — ``claim`` ended or no longer holding the step
+        among them."""
         ...
 
 
@@ -243,6 +246,7 @@ class Engine:
                     findings=[f["ref"] for f in next_.findings if "ref" in f],
                     directory=pass_.directory,
                     member=pass_.member,
+                    claim=pass_.claim,
                 )
                 said = f"{next_.stage} (attempt {next_.attempt}) launched as run {staged.run}"
                 return Begun(said, staged=staged)
@@ -282,6 +286,7 @@ class _Pass:
     directory: str  # Where its stages work: the worktree its first run was placed in.
     machine: str = ""  # The machine that launched it, the one that advances it.
     member: str = ""  # The squad member its runs go as, as its first run recorded it.
+    claim: str = ""  # The claim it runs under, as its first run recorded it: pinned.
 
     def first(self) -> bool:
         return not self.entries
@@ -700,8 +705,8 @@ def _pass_of(
         else ""
     )
     directory = next((r.directory for r in runs_of if r.directory), "")
-    member = runs_of[0].callsign if runs_of else ""
-    return _Pass(pass_id, playbook, settings, entries, directory, machine, member)
+    member, claim = (runs_of[0].callsign, runs_of[0].claim) if runs_of else ("", "")
+    return _Pass(pass_id, playbook, settings, entries, directory, machine, member, claim)
 
 
 # -- where each pass stands -----------------------------------------------------------------------

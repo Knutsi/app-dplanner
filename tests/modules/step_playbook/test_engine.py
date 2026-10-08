@@ -561,3 +561,36 @@ def test_a_landing_that_never_chose_lands_is_reviewed_and_waits_for_a_person_to_
     said = drive.advance("S3")
     assert "is through" in said and "the step is done" not in said
     assert _status(drive.cli, "S3") != "done"
+
+
+def test_a_claim_ended_while_an_advance_prepares_its_next_stage_launches_nothing(
+    drive, monkeypatch
+):
+    """The claim's ending finds the launch lock busy with the advance and leaves it to it: the
+    stage must then read the claim the pass started under as gone — a blocked card — never as
+    no claim at all, which would launch it solo."""
+    from dplanner.domain import claims
+    from dplanner.domain.model import now_stamp
+    from dplanner.modules.agent_supervisor import limits
+
+    drive.cli("playbook", "set", "Build it", "plan-execute-person")
+    drive.cli("claim", "take", "Build it", "--callsign", "kettle", "--project", "widget")
+    drive.play({"lines": [INIT, result("A plan", session="s")]})
+    drive.cli("agent", "run", "Build it", "--playbook", "--callsign", "kettle-two")
+    claim = drive.latest().claim
+    assert claim
+    drive.supervise()
+
+    def ended_meanwhile(*_a: object, **_k: object) -> str:
+        by = {"kind": "person", "name": "test"}
+        found = claims.find(drive.plan, claim)
+        if found is not None and not found.ended:
+            claims.update(drive.plan, claim, lambda c: claims.ended(c, by, "done", now_stamp()))
+        return ""
+
+    monkeypatch.setattr(limits, "hold", ended_meanwhile)
+    assert "could not go on" in drive.advance()
+    card = drive.asked()
+    assert (card.kind, card.stage) == ("blocked", "execute")
+    assert "has ended or no longer holds the step" in card.text
+    assert len(drive.started) == 1 and ledger.records(drive.plan)[-1].stage == "plan"

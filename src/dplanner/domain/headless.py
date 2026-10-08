@@ -104,7 +104,9 @@ class TurnSpec:
     session: str = ""
     resume: bool = False
     checkout: str = ""  # The code the turn works on: its process's working directory.
-    config: str = ""  # DPlanner's config directory, where `dplanner` records questions.
+    # All a plan or review turn may write beside its run directory where its CLI has no
+    # read-only mode with writable exceptions (Codex): never a directory holding the code.
+    control: tuple[str, ...] = ()
 
     def resumed(self, session: str, prompt: str) -> "TurnSpec":
         """The next turn of the same stage: the session continued with one prompt — an

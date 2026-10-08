@@ -375,17 +375,18 @@ def test_codex_states_the_stages_mode_as_overrides_fresh_and_resumed_alike():
 def test_a_codex_plan_or_review_writes_its_run_and_dplanners_records_but_only_reads_the_code():
     """Read-only, a reviewer could not run the `dplanner agent-work start` its briefing opens
     with, nor ask through `dplanner question ask`: both write. It works from the run
-    directory, writes the plan repository and the config directory, and is told where the
-    code is — which no writable root reaches."""
+    directory, writes only the control directories the supervisor names, and is told where
+    the code is — which no writable root reaches."""
     command = headless("codex").command
     checkout, config = str(Path("code") / "wt"), str(Path("config") / "dplanner")
+    control = (str(Path(PLAN_REPO) / "questions"), config)
     for stage in (StageKind.PLAN, StageKind.REVIEW):
-        turn = spec(stage, checkout=checkout, config=config)
+        turn = spec(stage, checkout=checkout, control=control)
         for argv in (command(turn), command(turn.resumed("t-1", "Answer: yes"))):
             assert overrides(argv) == {
                 "sandbox_mode": "workspace-write",
                 "approval_policy": "never",
-                "sandbox_workspace_write.writable_roots": [PLAN_REPO, config],
+                "sandbox_workspace_write.writable_roots": list(control),
             }
             assert argv[2:5] == ["-C", RUN_DIR, "--skip-git-repo-check"]
             assert checkout not in argv[:-1]
@@ -394,7 +395,7 @@ def test_a_codex_plan_or_review_writes_its_run_and_dplanners_records_but_only_re
         assert fresh[5] == "--json" and fresh[-1].startswith("Read your briefing")
         assert resumed[5:7] == ["resume", "--json"]
         assert resumed[-2] == "t-1" and resumed[-1].startswith("Answer: yes")
-    execute = command(spec(StageKind.EXECUTE, checkout=checkout, config=config))
+    execute = command(spec(StageKind.EXECUTE, checkout=checkout, control=control))
     assert "-C" not in execute and execute[-1] == "Read your briefing"
 
 

@@ -328,9 +328,10 @@ APPROVE_FOR_ME = {
 
 def headless_command(spec: TurnSpec) -> list[str]:
     """A plan or a review cannot edit the code yet must run `dplanner agent-work` and
-    `dplanner question ask`, which write: so it works from the run directory with the plan
-    repository and the config directory as its only other writable roots, and is told where
-    the code is to read. Codex has no read-only sandbox with writable exceptions."""
+    `dplanner question ask`, which write: so it works from the run directory with the
+    supervisor's control directories (``TurnSpec.control``) as its only other writable roots,
+    and is told where the code is to read. Codex has no read-only sandbox with writable
+    exceptions."""
     if spec.stage is StageKind.EXECUTE:
         roots = [spec.run_dir, *spec.writable]
         settings: dict[str, object] = {
@@ -339,7 +340,7 @@ def headless_command(spec: TurnSpec) -> list[str]:
         }
         root, prompt = [], spec.prompt
     else:
-        roots = [*spec.writable, *([spec.config] if spec.config else [])]
+        roots = list(spec.control)
         settings = {
             "sandbox_mode": "workspace-write",
             "approval_policy": "never",

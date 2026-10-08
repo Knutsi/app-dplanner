@@ -155,8 +155,8 @@ def test_a_done_turn_ends_the_run_with_its_stream_teed_and_its_usage_counted(rig
     # The launch names a fresh session and points at the briefing, never carries it.
     (spec,) = rig.specs
     assert not spec.resume and spec.session  # Minted for Claude, which names its own.
-    # Where the code is and where `dplanner` writes, for a harness that sandboxes a reader.
-    assert (spec.checkout, spec.config) == (rig.record.directory, str(rig.config))
+    # Where the code is; control directories are a reader's, and an execute writes its code.
+    assert (spec.checkout, spec.control) == (rig.record.directory, ())
     assert (
         spec.prompt == f"Read your briefing in {rig.run_dir / 'prompt.md'} in full, then follow it."
     )
@@ -644,6 +644,32 @@ def test_a_plan_keeps_dplanners_own_copy_and_a_review_its_verdict(tmp_path, allo
     review.supervise()
     verdict = review.record.verdict
     assert verdict is not None and verdict["outcome"] in ("pass", "changes")
+
+
+def test_a_codex_plan_or_review_on_a_plan_at_the_codes_root_has_no_writable_root_over_it(
+    tmp_path, allow_spawn
+):
+    """A plan colocated at the code checkout's root, its step working in that checkout: the
+    project directory is the code, so a plan or review stage is handed the project's questions
+    and claims and the config directory to write — never a root that is or holds the code."""
+    import tomllib
+
+    from dplanner.modules.agent_codex import harness as codex
+
+    allow_spawn(Path(sys.executable))
+    for stage, played in (("plan", "claude-plan"), ("review", "claude-review-typed")):
+        rig = Rig(tmp_path / stage, stage=stage)
+        code = rig.plan.resolve()
+        (code / ".git").mkdir()
+        ledger.write(rig.plan, replace(rig.record, directory=str(code)))
+        rig.play({"lines": recorded(played)})
+        rig.supervise()
+        argv = codex.headless_command(rig.specs[0])
+        pairs = [argv[i + 1].split("=", 1) for i, word in enumerate(argv) if word == "-c"]
+        settings = {key: tomllib.loads(f"v = {value}")["v"] for key, value in pairs}
+        roots = [Path(r).resolve() for r in settings["sandbox_workspace_write.writable_roots"]]
+        assert not any(root == code or root in code.parents for root in roots), roots
+        assert roots == [code / "questions", code / "claims", rig.config.resolve()]
 
 
 def test_a_review_without_its_verdict_is_asked_once_more_in_its_own_session(tmp_path, allow_spawn):

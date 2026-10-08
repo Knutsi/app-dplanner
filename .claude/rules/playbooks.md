@@ -104,7 +104,10 @@ paths:
   starts again — not an advance, `revive`, the clock or *Retry now*; nothing to stop exits 0
   and says so; the worktree and branch are kept, and the next `agent run --playbook` starts a
   new pass. **A step leaving its squad's claim halts the claim's pass the same way**
-  (`engine.halt_claimed`, under `ownership`), the plan left to whoever released it.
+  (`engine.halt_claimed`, under `ownership`), the plan left to whoever released it. **A pass
+  pins the claim its first run launched under**: a later stage launches only while that claim
+  still holds the step — ended or taken meanwhile, the stage is refused onto a `blocked` card,
+  never launched solo (`StageLauncher`, and `start_run` again under the launch lock).
   `docs/architecture/playbooks.md`'s *Stopping a pass* has the reasoning.
 - **A role names a harness, never a profile or a path**, and maps at launch to the first
   profile running it; an unrunnable role is refused, never swapped for the default. Whether
@@ -133,8 +136,11 @@ paths:
   overrides on every turn**, fresh and resumed alike — `exec resume` takes no `-s`,
   `--approve-for-me` or `--add-dir`, and does not keep the mode its thread began in. **A Codex
   plan or review is never `read-only`** — its `dplanner agent-work` and `question ask` write:
-  it works from the run directory (`-C`, before `resume`), the plan repository and the config
-  directory its only other writable roots, the checkout named in its prompt to read.
+  it works from the run directory (`-C`, before `resume`), the project's `questions/` and
+  `claims/` and the config directory its only other writable roots
+  (`supervisor.control_dirs`) — never the project directory, and never a root that is or holds
+  the code, which a plan colocated at the code's root is — the checkout named in its prompt to
+  read.
 - **How a turn ended is `Headless.classify`, one function over the `TurnLog` the harness's
   reader filled** — never the exit alone, never a per-harness copy of the rules. A CLI's quirk
   goes in its reader or one of its hooks (`limits`, `model`, `stderr_denials`); a new ending shape
