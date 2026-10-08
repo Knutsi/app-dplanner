@@ -1206,30 +1206,49 @@ squad while their workers still ran. *Clear* ends all of it. That is the one del
 second writer; the coordinator re-reads before every write, and in a merge the person's act
 wins.
 
-**As built, the verbs are the protocol.** `dplanner claim take` holds the project's taking
-lock, fetches, refuses a step another squad's live or parked claim holds, writes, commits
-`claims/` alone and pushes — and then reads the order the files reached the remote
-(`claim_sync.push_order`, one `git log --diff-filter=A`) and stands down from any step a
-rival pushed first. A push that fails lets go of what it took, since only a pushed claim
-launches work. The launch is the other check: `agent run --callsign kettle-two` records the
-claim on the run, and refuses a step another squad holds. **The heartbeat needs no verb**:
-every `dplanner` run from an agent's shell renews the claims this machine holds in the
-project — so a coordinator renews by working — and a live turn's supervisor renews its
-run's claim; a backoff wait or a park renews nothing, since nothing is running. Renewing
-what *this machine* holds rather than a named squad costs one thing: two squads on one
-machine keep each other alive. That waits for a `DPLANNER_CALLSIGN` the coordinator's launch
-can set, because a coordinator's shell calls do not keep an `export`.
-**Only a person's status releases a step**, through the status workflow's `Release`
-follow-up on both surfaces (`agent_claims/release.py`): a worker setting its own
-ready-for-review must not hand the step back before its coordinator has verified and merged.
-The release is written and not pushed — a window gesture must not wait on a two-minute push
-— and Save carries it, as it carries the status. A takeover fences the old squad's
-unfinished runs under the run's own record lock (`supervisor.fence`); a person's release
-also signals a live supervisor here (`supervisor.stop`), whose turn then ends `stopped`.
-The window polls `claims/` and `questions/` (the questions say whether a quiet squad is
-parked), re-reads once a minute for the clock alone, wears the squad as a still chip on the
-card's other bottom corner — the run chip marches, a claim is ownership — and names it in
-the Control Centre's *Squad* column; *End Squad Claim* is the window's *Clear*.
+**As built — one machine, simpler than the protocol above.** Version one decides ownership
+**locally, from the files, per step**, and leaves the arbitration between machines for
+multiplayer. Ranking claims by which file reached the remote first was the first version,
+and Kettle Watch found two ways it handed a step to two squads: a squad *growing* an old
+claim outranked one that had taken the step before it, because the file's age is not the
+step's; and a superseded squad that woke and renewed got its steps back, because the
+takeover was not part of the ranking. So each step a claim holds carries its own
+**`acquired`** stamp and the earliest wins, a tie by claim id; a takeover names in
+**`supersedes`**, step by step, the claim it took from, and that is final; and a claim
+**stands down before it renews** from any step it no longer holds. `claim take` checks under
+the project's taking lock, writes and publishes. **A publish never rewrites the person's
+checkout**: it commits `claims/` by pathspec under the repository's sync lock — the one the
+window's own Save and sync take — and pushes; a refused push is left for the window's next
+sync, never fetched, rebased or stashed under the person's unsaved plan, which is what a
+heartbeat racing autosave and the window's rebase did. Unpublished, a claim still holds
+here, since this machine decides. **The heartbeat needs no verb**: every `dplanner` run from
+an agent's shell renews the claims this machine holds in the project — a coordinator renews
+by working — and a live turn's supervisor renews its run's claim; a backoff wait or a park
+renews nothing. Renewing what *this machine* holds costs one thing: two squads on one
+machine keep each other alive, until the coordinator's launch can set a
+`DPLANNER_CALLSIGN`.
+
+**Ownership is checked inside the one launch, twice.** `launch.claim_for` refuses a step
+another squad holds on both surfaces — a person's Run Agent too, which the first version let
+straight through — and `start_run` asks again under the step's launch lock, just before
+anything starts: a worktree takes seconds to prepare, and a release or a takeover in that
+time must start nothing. **Every way a step leaves a squad stops its worker, through one
+function** (`agent_claims/ownership.py`): a takeover, `claim release`, `claim end`, *End
+Squad Claim* and a person's stopped status each fence the squad's unfinished runs on the step
+and signal their supervisor here, and a live turn reads its fence on every poll — so the
+first version's release and Clear, which changed the claim and left the worker running, are
+the same act as the override. A release takes the step's launch lock when it is free; when a
+launch holds it — the window's own, possibly, on its GUI thread — waiting would deadlock, and
+the launch's own re-read covers the gap, since its record already exists to be fenced. A
+fenced run counts as over for the next launch, and one still running here is stopped first.
+**Only a person's status releases a step** (the status workflow's `Release` follow-up): a
+worker setting its own ready-for-review must not hand the step back before its coordinator
+has verified and merged; the release is written, and Save carries it. The window polls
+`claims/` and `questions/` (the questions say whether a quiet squad is parked), re-reads once
+a minute for the clock alone, wears the squad as a still chip on the card's other bottom
+corner — the run chip marches, a claim is ownership — and names it in the Control Centre's
+*Squad* column. Not built — the second machine: which squad pushed first, a fence reaching
+the machine that runs the turn, and a claim file conflicting in a merge.
 
 ### What the window reads, and the one-writer rule across all three
 

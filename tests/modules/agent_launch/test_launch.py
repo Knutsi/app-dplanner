@@ -661,3 +661,113 @@ def test_a_machine_picks_up_its_runs_waiting_for_a_reset_or_holding_an_answer(tm
     woken = ["20261007T101500Z-00000011", "20261007T101500Z-00000012", "20261007T101500Z-00000014"]
     assert supervisor.revive([plan]) == woken
     assert started == [(plan, run) for run in woken]
+
+
+# -- Kettle Watch round 1 on S18: ownership in the one launch -------------------------------
+
+
+def _hold(project_dir: Path, project: str, step: str, squad: str) -> None:
+    """``squad``'s live claim on ``step``, as a coordinator's ``claim take`` writes it."""
+    from dplanner.domain import claims
+    from dplanner.domain.model import now_stamp
+
+    claims.write(project_dir, claims.claimed(project, squad, [step], now_stamp(), worker={}))
+
+
+def test_the_window_never_launches_a_step_another_squad_holds(services, step_of, monkeypatch):
+    spawned: list[Path] = []
+    monkeypatch.setattr(launcher, "resolve_command", lambda *_a, **_k: ["fake-term"])
+    monkeypatch.setattr(launcher, "spawn", lambda _cmd, cwd, **_kw: _noted(spawned, cwd))
+    step = step_of("Deploy")
+    project = services.document.project_of(step.id)
+    project_dir = services.repo.project_dir(project.id)
+    _hold(project_dir, project.id, step.id, "osprey")
+    services.actions.run("agent.run", services.context.current())
+    assert spawned == [] and ledger.records(project_dir) == []
+    assert stored(step) is not Status.IN_PROGRESS
+
+
+def test_the_window_rereads_ownership_just_before_it_starts(services, step_of, monkeypatch):
+    """A squad takes the step while its worktree is prepared: nothing starts."""
+    from dplanner.modules.agent_launch import launch
+
+    spawned: list[Path] = []
+    monkeypatch.setattr(launcher, "resolve_command", lambda *_a, **_k: ["fake-term"])
+    monkeypatch.setattr(launcher, "spawn", lambda _cmd, cwd, **_kw: _noted(spawned, cwd))
+    step = step_of("Deploy")
+    project = services.document.project_of(step.id)
+    project_dir = services.repo.project_dir(project.id)
+    real = launch.place
+
+    def taken_meanwhile(*args, **kwargs):
+        _hold(project_dir, project.id, step.id, "osprey")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(launch, "place", taken_meanwhile)
+    services.actions.run("agent.run", services.context.current())
+    assert spawned == [] and ledger.records(project_dir) == []
+
+
+def test_agent_run_rereads_ownership_under_the_lock_just_before_it_starts(
+    cli, plan, started, monkeypatch
+):
+    """The claim is released while the worktree is prepared: the launch refuses, and its
+    record is taken back."""
+    from dplanner.modules.agent_claims import ownership
+    from dplanner.modules.agent_launch import cli as launch_cli
+    from dplanner.modules.agent_launch import launch
+
+    cli("claim", "take", "Build it", "--callsign", "kettle", "--project", "widget")
+    real = launch.place
+
+    def released_meanwhile(*args, **kwargs):
+        ownership.release(plan, _step_id(cli), {"kind": "person", "name": "Knut"}, "changed mind")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(launch_cli, "place", released_meanwhile)
+    said = cli("agent", "run", "Build it", "--callsign", "kettle-two", expect=1)
+    assert "claim changed" in said
+    assert started == [] and ledger.records(plan) == []
+
+
+def test_a_fenced_run_does_not_hold_the_step_from_its_new_owner(cli, plan, started):
+    from dplanner.domain import claims
+
+    cli("claim", "take", "Build it", "--callsign", "osprey", "--project", "widget")
+    first = json.loads(cli("agent", "run", "Build it", "--callsign", "osprey-1", "--json"))
+    (old,) = claims.records(plan)
+    claims.write(plan, replace(old, heartbeat="2026-10-01T00:00:00+00:00"))  # Gone quiet.
+    started.clear()
+    cli("claim", "take", "Build it", "--callsign", "kettle", "--project", "widget")
+    old_run = ledger.find(plan, first["run"])
+    assert old_run is not None and old_run.fence  # Taken over: the old run is fenced.
+    again = json.loads(cli("agent", "run", "Build it", "--callsign", "kettle-two", "--json"))
+    # The new run starts; the fenced one may be handed a supervisor too, by `revive`, which
+    # reads the fence and ends it stopped — settled, never resumed.
+    assert started[-1] == (plan, again["run"])
+
+
+def test_a_fenced_run_still_live_here_is_stopped_before_the_step_launches(plan, cli, monkeypatch):
+    from dplanner.modules.agent_launch import launch
+
+    run = "20261007T101500Z-0000cccc"
+    ledger.write(plan, _headless(run, Turn(n=1, prompt="launch", started="…")))
+    supervisor.fence(plan, run, "kettle", "taken over")
+    live = {run}
+    signalled: list[str] = []
+    monkeypatch.setattr(supervisor, "supervised", lambda directory: directory.name in live)
+
+    def stop(project_dir, run_id, by, why, config=None):
+        signalled.append(run_id)
+        live.discard(run_id)  # The turn ends on SIGTERM; its supervisor lets go.
+
+    monkeypatch.setattr(supervisor, "stop", stop)
+    assert launch.stop_fenced(plan, "s1", wait=2) == "" and signalled == [run]
+    live.add(run)
+    monkeypatch.setattr(supervisor, "stop", lambda *_a, **_k: None)  # One that will not end.
+    assert "still stopping" in launch.stop_fenced(plan, "s1", wait=0.3)
+    assert launch.unfinished_run(plan, "s1") == ""  # Fenced: over, as far as a launch cares.
+
+
+def _step_id(cli) -> str:
+    return str(json.loads(cli("step", "show", "Build it", "--json", "--project", "widget"))["id"])

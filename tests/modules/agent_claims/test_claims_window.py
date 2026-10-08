@@ -85,7 +85,21 @@ def test_end_squad_claim_is_a_persons_clear_of_the_whole_claim(services, project
     claims.write(project_dir, _claim(project, step))
     module(services).refresh()
     assert end.state(services.context.current()).enabled
+    (held,) = claims.records(project_dir)
+    run = ledger.LedgerRecord(
+        run="20261007T101500Z-0000dddd",
+        project=project.id,
+        step=step.id,
+        harness="claude",
+        launched="2026-10-07T10:15:00+00:00",
+        mode=ledger.HEADLESS,
+        stage="execute",
+        claim=held.id,
+    )
+    ledger.write(project_dir, run)
     services.actions.run("agent.end_claim", services.context.current())
     (claim,) = claims.records(project_dir)
     assert claim.ended["by"]["kind"] == "person" and claim.ended["why"] == "cleared"
+    fenced = ledger.find(project_dir, run.run)
+    assert fenced is not None and fenced.fence is not None  # Its worker is stopped too.
     assert module(services).holding(project.id) == {}

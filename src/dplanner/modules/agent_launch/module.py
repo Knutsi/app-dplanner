@@ -545,7 +545,12 @@ class AgentLaunchModule:
                 held.enter_context(supervisor.launching(project_id, step.id))
             except BlockingIOError:
                 refused = "it is being launched right now"
-            if not refused and (live := launch.unfinished_run(deps.project_dir(step.id), step.id)):
+            project_dir = deps.project_dir(step.id)
+            if not refused:
+                refused = self._unowned(project_dir, step) or launch.stop_fenced(
+                    project_dir, step.id
+                )
+            if not refused and (live := launch.unfinished_run(project_dir, step.id)):
                 refused = f"its headless run {live} is not over — resume it instead"
             if refused:
                 held.close()
@@ -587,6 +592,15 @@ class AgentLaunchModule:
             deps.status.show_status("No agent launched — still preparing the last one", 6000)
             return
         deps.status.show_status(f"{label}…", 0)
+
+    @staticmethod
+    def _unowned(project_dir: Path | None, step: Step) -> str:
+        """Why a person may not launch the step: another squad's claim holds it — or ""."""
+        try:
+            launch.claim_for(project_dir, step.id)
+        except ValueError as error:
+            return str(error)
+        return ""
 
     def _launch_placed(
         self, jobs: Sequence["_Job"], placed: Mapping[StepId, Path | str], profile: Profile
@@ -666,6 +680,12 @@ class AgentLaunchModule:
                 mode=launch.TERMINAL,
             )
             span.detail["prompt_chars"] = len(prepared.text)
+            # Ownership again, under the launch lock: a squad may have taken the step while
+            # its worktree was prepared. Said as a refusal, never as a terminal that failed.
+            if moved := launch.claim_moved(prepared):
+                prepared.discard()
+                span.detail["refused"] = "claimed"
+                return None, moved
             before = step.module_data.get(STATUS_MODULE_ID)
             change = workflows.run_agent(step, today=deps.clock.today())
             command = change.command if claim else None

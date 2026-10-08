@@ -15,7 +15,13 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from dplanner.core.storage.git import DEFAULT_BRANCH, GitStorage, origin_url, remote_label
+from dplanner.core.storage.git import (
+    DEFAULT_BRANCH,
+    GitStorage,
+    origin_url,
+    remote_label,
+    sync_lock,
+)
 from dplanner.core.storage.provider import DivergedError, StorageError
 
 
@@ -94,13 +100,14 @@ class GitHubStorage(GitStorage):
         if not self.has_remote():
             return False
         branch = self.current_branch() or DEFAULT_BRANCH
-        before = self._head()
-        self._git("fetch", "origin", check=False, timeout=60)
-        self._rebase_onto(branch)
-        if before == self._head():
-            return False
-        self.worktree_changed.emit()
-        return True
+        with sync_lock(self.repo_root):
+            before = self._head()
+            self._git("fetch", "origin", check=False, timeout=60)
+            self._rebase_onto(branch)
+            arrived = before != self._head()
+        if arrived:
+            self.worktree_changed.emit()
+        return arrived
 
     def push(self) -> None:
         """Record the local commits on origin — after rebasing onto what arrived there
@@ -108,12 +115,17 @@ class GitHubStorage(GitStorage):
         if not self.has_remote():
             return
         branch = self.current_branch() or DEFAULT_BRANCH
-        before = self._head()
-        self._git("fetch", "origin", check=False, timeout=60)
-        self._rebase_onto(branch)
-        if before != self._head():
-            self.worktree_changed.emit()  # Their commits are in the tree now too.
-        self._git("push", "-u", "origin", branch, timeout=120)
+        arrived = False
+        try:
+            with sync_lock(self.repo_root):
+                before = self._head()
+                self._git("fetch", "origin", check=False, timeout=60)
+                self._rebase_onto(branch)
+                arrived = before != self._head()
+                self._git("push", "-u", "origin", branch, timeout=120)
+        finally:
+            if arrived:  # Their commits are in the tree now too — said once the lock is free.
+                self.worktree_changed.emit()
 
     def _head(self) -> str:
         return self._git("rev-parse", "HEAD", check=False).stdout.strip()

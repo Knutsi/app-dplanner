@@ -22,17 +22,18 @@ A launch interrupted between its record and its start is reconciled by
 ``supervisor.revive``: started while its step is still claimed, deleted once it is not.
 """
 
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import date
 from pathlib import Path
 
-from dplanner.domain import ledger
+from dplanner.domain import claims, ledger
 from dplanner.domain.agents import AgentHarness
 from dplanner.domain.headless import StageKind
 from dplanner.domain.ledger import LedgerRecord
 from dplanner.domain.locations import LocationRole
-from dplanner.domain.model import Library, Step
+from dplanner.domain.model import Library, Step, now_stamp
 from dplanner.domain.repositories import UNSET, RepositoryFacts
 from dplanner.domain.store import FilesFor
 from dplanner.modules.agent_briefing import worktree as where
@@ -134,17 +135,73 @@ def waiting_on(library: Library, step: Step, today: date) -> list[Step]:
 
 def unfinished_run(project_dir: Path | None, step_id: str) -> str:
     """The step's headless run that is not over yet — running or parked — or "": a run to
-    resume through ``agent supervise``, never to launch a second time."""
+    resume through ``agent supervise``, never to launch a second time. A fenced run counts as
+    over: its owner lost the step, and the new one may launch (:func:`stop_fenced` first)."""
     if project_dir is None:
         return ""
     return next(
         (
             record.run
             for record in ledger.records(project_dir)
-            if record.step == step_id and record.headless and not record.over
+            if record.step == step_id and record.headless and not record.over and not record.fence
         ),
         "",
     )
+
+
+# How long ``agent run`` waits for a fenced run's supervisor to end its turn: the guards'
+# grace between SIGTERM and SIGKILL, and a little more.
+STOPPING_S = 15.0
+
+
+def stop_fenced(project_dir: Path | None, step_id: str, wait: float = 0.0) -> str:
+    """Stop every fenced run of the step whose supervisor still lives on this machine, and wait
+    up to ``wait`` seconds for each to let go — "", or why the step cannot launch yet. A fence
+    on a run elsewhere is that machine's to obey."""
+    if project_dir is None:
+        return ""
+    live = [
+        record
+        for record in ledger.records(project_dir)
+        if record.step == step_id
+        and record.headless
+        and record.fence
+        and supervisor.supervised(ledger.run_dir(record.run))
+    ]
+    for record in live:
+        supervisor.stop(project_dir, record.run, "launch", "a new owner launches the step")
+    deadline = time.monotonic() + wait
+    still = [record.run for record in live if _still_supervised(record.run, deadline)]
+    if still:
+        return f"its fenced run {still[0]} is still stopping — run it again in a moment"
+    return ""
+
+
+def _still_supervised(run: str, deadline: float) -> bool:
+    while supervisor.supervised(ledger.run_dir(run)):
+        if time.monotonic() >= deadline:
+            return True
+        time.sleep(0.2)
+    return False
+
+
+def claim_for(project_dir: Path | None, step_id: str, callsign: str = "") -> str:
+    """The squad claim a run of ``callsign`` launches under — the one holding the step when it
+    is that member's squad's, "" when no squad holds it — or ``ValueError`` saying why not:
+    another squad holds it. Both surfaces ask before a launch, and :func:`start_run` asks
+    again under the launch lock, just before anything starts."""
+    if project_dir is None:
+        return ""
+    holding = claims.read_holdings(project_dir, now_stamp()).get(step_id)
+    if holding is None or holding.state not in claims.HOLDING:
+        return ""
+    if claims.squad_of(callsign) != holding.claim.callsign:
+        raise ValueError(
+            f"it is held by squad {holding.claim.callsign} ({holding.claim.short},"
+            f" {holding.state}) — launch as one of it with --callsign, or release the step"
+            " first (`dplanner claim release`)"
+        )
+    return holding.claim.id
 
 
 def headless_refusal(profile: Profile, harnesses: tuple[AgentHarness, ...]) -> str:
@@ -319,10 +376,24 @@ def start_run(
 ) -> str:
     """Start the prepared run — "" when it started, else why not, its record taken back.
     ``library`` is the library a headless run's turns must reach."""
-    why = _start(prepared, harnesses, library)
+    why = claim_moved(prepared) or _start(prepared, harnesses, library)
     if why:
         prepared.discard()
     return why
+
+
+def claim_moved(prepared: Prepared) -> str:
+    """Why the run must not start because the step's ownership changed since it was prepared
+    — released, ended, superseded or taken — or "". Read under the launch lock, which a
+    release takes too."""
+    record = prepared.record
+    try:
+        now = claim_for(prepared.project_dir, record.step, record.callsign)
+    except ValueError as error:
+        return str(error)
+    if now != record.claim:
+        return "the step's claim changed while it was prepared — run it again"
+    return ""
 
 
 def _start(prepared: Prepared, harnesses: tuple[AgentHarness, ...], library: Path | None) -> str:

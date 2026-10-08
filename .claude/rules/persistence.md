@@ -65,7 +65,11 @@ paths:
   reloaded the window on every edit anyone made. The usage `ledger/`, the `questions/` and
   the `claims/` beside them are outside on purpose — a file per run, question or claim, never
   flushed by the store — and `PLAN_ENTRIES` must not grow to take them in; Move Plan copies
-  them by name (`relocate.py`), and Save commits them with the project's scope.
+  them by name (`relocate.py`), and Save commits them with the project's scope. **Every git
+  operation that commits, fetches, rebases or pushes a checkout holds its `sync_lock`**
+  (`core/storage/git.py`, in the common git directory): `GitStorage.commit` and
+  `GitHubStorage.pull`/`push` take it, and so does a claim's publish from another process —
+  which never fetches or rebases at all, so nothing but the window rewrites the checkout.
 - **The window takes an outside change in place, entry by entry.** The same per-file
   record says *which* files changed, and each plan file is one entry of one node, so
   `LibraryStore.adopt_outside_changes` reads the change into the live model through the

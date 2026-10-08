@@ -1821,7 +1821,7 @@ def _aspects(
         SetModuleDataCommand,
     )
     from dplanner.domain.model import TextEdit
-    from dplanner.modules.agent_claims.release import release
+    from dplanner.modules.agent_claims.ownership import released_by_status
     from dplanner.modules.branches.module import LandingModule
     from dplanner.modules.branches.plan import merged_into_its_branch
     from dplanner.modules.docs.module import DocsCompiledModule, DocsDeps, DocsModule
@@ -2070,7 +2070,9 @@ def _aspects(
                 clock=services.clock,
                 workflow=_status_workflow(),
                 end_claim=lambda claim: board.end(claim.project, claim.step),
-                release=lambda follow_up: release(store.project_dir(follow_up.project), follow_up),
+                release=lambda follow_up: released_by_status(
+                    store.project_dir(follow_up.project), follow_up
+                ),
                 notices=services.window,
                 flush=services.autosave.saved,
             )
@@ -2816,7 +2818,7 @@ def default_cli_commands(
     from dplanner.modules.agent_at_work import cli as at_work_cli
     from dplanner.modules.agent_briefing.worktree import mainline
     from dplanner.modules.agent_claims import cli as claims_cli
-    from dplanner.modules.agent_claims.release import release
+    from dplanner.modules.agent_claims.ownership import released_by_status
     from dplanner.modules.agent_launch import cli as launch_cli
     from dplanner.modules.agent_questions import cli as questions_cli
     from dplanner.modules.agent_supervisor import cli as supervisor_cli
@@ -2895,7 +2897,9 @@ def default_cli_commands(
     def set_status(context: "CliContext", step: "Step", status: "Status") -> None:
         """A status written as `status set` writes it — refused as one line, its claim
         ended once the run is written."""
-        status_cli.write_status(context, workflow, end_claim, release, step, status, actor=actor())
+        status_cli.write_status(
+            context, workflow, end_claim, released_by_status, step, status, actor=actor()
+        )
 
     def finish_merged(context: "CliContext", step: "Step") -> bool:
         """A step waiting on its merge is done once its PR reads merged — written as
@@ -2979,7 +2983,7 @@ def default_cli_commands(
             workflow=workflow,
             in_agent_shell=lambda: bool(agent_shell_marker()),
             end_claim=end_claim,
-            release=release,
+            release=released_by_status,
         ),
         *milestone_cli.commands(),
         *wait_cli.commands(),

@@ -558,8 +558,9 @@ src/dplanner/
 │   │                        the parked run on this machine (inbox.py)
 │   ├── agent_claims/        which squad holds which steps: `dplanner claim take|list|
 │   │                        release|end` over claims/ (`domain/claims.py`, pushed by
-│   │                        `domain/claim_sync.py`), a person's status releasing one step
-│   │                        (release.py), and the squad chip and Squad column (module.py)
+│   │                        `domain/claim_sync.py`), every way a step leaves a squad
+│   │                        stopping its worker (ownership.py), and the squad chip and
+│   │                        Squad column (module.py)
 │   ├── step_agent_run/      where a launched agent stands — stamped at launch, moved by
 │   │                        `dplanner agent-state`, cleared when the shell ends (`runs.py`
 │   │                        reads the wrapper's report; `terminal.py` finds the window or

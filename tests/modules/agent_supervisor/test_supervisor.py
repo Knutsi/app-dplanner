@@ -513,6 +513,19 @@ def test_a_fence_written_during_a_turn_stops_the_run_instead_of_retrying_it(rig)
     assert rig.record.over and rig.record.fence and len(rig.specs) == 1
 
 
+def test_a_fence_read_while_the_turn_runs_stops_that_turn_at_once(rig):
+    """A takeover or a release fences the run mid-turn: the watch reads it on its next poll
+    and ends the turn stopped — no stall, no retry, no waiting the turn out."""
+    patient = replace(rig.harnesses[0].headless, stall=60.0)
+    rig.harnesses = (replace(rig.harnesses[0], headless=patient),)
+    path = ledger.path_for(rig.plan, rig.record)
+    rig.play({"lines": [INIT], "hold": 30, "fence": str(path)})
+    began = time.monotonic()
+    assert rig.supervise() == f"run {RUN} was fenced"
+    assert time.monotonic() - began < 15
+    assert rig.ends() == [("stopped", "")] and rig.record.over
+
+
 def test_being_told_to_stop_ends_the_turn_and_the_run_stopped(rig):
     rig.play({"lines": [INIT], "hold": 30})
     record = rig.record

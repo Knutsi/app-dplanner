@@ -355,6 +355,8 @@ class Session:
     def next(self, ending: Ending, stop: threading.Event) -> tuple[str, str]:
         """What follows a turn: the next turn's prompt and words, or ("", why it stopped)."""
         if ending.end in OVER:
+            if ending.end is TurnEnd.STOPPED and self._fenced():
+                return "", f"run {self.record.run} was fenced"
             return "", _over(self.record.run, ending.end)
         last = self.record.turns[-1]
         failures = _failures(self.record)
@@ -498,6 +500,12 @@ class Session:
             self._streamed(turn.n).session for turn in self.record.turns
         )
 
+    def _fenced(self) -> bool:
+        """Whether a takeover or a release fenced the run while its turn runs: read on every
+        poll, so the turn stops within a second wherever the fence was written here."""
+        record = ledger.find(self.project_dir, self.record.run)
+        return record is not None and bool(record.fence)
+
     def _watch(
         self,
         process: "subprocess.Popen[str]",
@@ -548,7 +556,7 @@ class Session:
                 renewing.start()
             killed = (
                 "stopped"
-                if stop.is_set()
+                if stop.is_set() or self._fenced()
                 else "runaway"
                 if log.idle >= self.guards.runaway
                 else "timeout"

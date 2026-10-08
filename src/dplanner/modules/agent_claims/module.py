@@ -6,12 +6,12 @@ coordinator's ``claim take`` writes beside the plan, and a lease lapses with no 
 so this module **polls**: every :data:`POLL_MS` a fingerprint of each project's claims and
 questions (the questions say whether a quiet squad is parked), and a full re-read once a
 minute for the clock alone. When what it holds for a project moves, :attr:`changed` names
-the project and every view of it re-reads. It reads files and never runs git — so of two
-live claims on one step it shows the one started first, where the CLI asks git which was
-pushed first; the two disagree only in a race, until the loser stands down.
+the project and every view of it re-reads. Who holds a step is ``claims.read_holdings``,
+the same reading every verb makes.
 
-The one write is a person's: *End Squad Claim* ends the claim holding the focused step — the
-window's *Clear*, the same act as ``dplanner claim end``. Not a plan edit and not undoable:
+The one write is a person's: *End Squad Claim* ends the claim holding the focused step and
+stops its workers — the window's *Clear*, the same act as ``dplanner claim end``
+(``ownership.end``). Not a plan edit and not undoable:
 the claim is not in the model, as the at-work banner's *Clear* is not.
 """
 
@@ -31,6 +31,7 @@ from dplanner.domain.claims import Holding
 from dplanner.domain.model import Library, ProjectId, StepId, now_stamp
 from dplanner.framework.action_registry import ENABLED, ActionRegistry, ActionSpec, ActionState
 from dplanner.framework.context import Context
+from dplanner.modules.agent_claims import ownership
 
 MODULE_ID = "agent_claims"
 POLL_MS = 2000
@@ -135,7 +136,5 @@ class AgentClaimsModule:
         directory = self._deps.project_dir(held.claim.project)
         by = {"kind": questions.PERSON, "name": getpass.getuser()}
         with suppress(LookupError, ValueError):  # Ended meanwhile: the refresh shows it.
-            claims.update(
-                directory, held.claim.id, lambda c: claims.ended(c, by, "cleared", now_stamp())
-            )
+            ownership.end(directory, held.claim.id, by, "cleared")
         self.refresh()

@@ -16,11 +16,15 @@ lease it reads as **abandoned**, unless every step it holds is parked on a quest
 nothing is ever deleted (:func:`standing`). It is not the at-work claim of
 ``domain/at_work.py``, which says a process here is editing the plan right now.
 
-Acquiring is a push, not a write — ``domain/claim_sync.py`` does the git half — and when a
-merge brings two claims onto one step, the one pushed first holds it (:func:`holdings`'s
-``order``). A person's override is the one deliberate second writer: it releases one step
-(:func:`released`), or ends the whole claim (:func:`ended`). Each change is a
-read-modify-write under an OS lock (:func:`update`).
+**Ownership is decided here, per step, from the files alone** (:func:`holdings`): each step
+a claim holds carries the moment it was ``acquired``, and of two claims holding a step the
+earlier acquisition wins — so growing an old claim never outranks a squad that took the step
+first. A takeover names, step by step, the claim it superseded, and that is final: the old
+claim never holds those steps again, even once it wakes and renews (:func:`stand_down`).
+Which squad pushed first across machines is not decided yet — one machine never meets it.
+``domain/claim_sync.py`` commits and pushes. A person's override is the one deliberate
+second writer: it releases one step (:func:`released`), or ends the whole claim
+(:func:`ended`). Each change is a read-modify-write under an OS lock (:func:`update`).
 """
 
 import json
@@ -68,7 +72,10 @@ class Claim:
     released: tuple[Mapping[str, Any], ...] = ()  # {step, at, by: {kind, name}, why}
     lease_minutes: int = LEASE_MINUTES
     max_park_hours: int = MAX_PARK_HOURS
-    supersedes: tuple[str, ...] = ()  # Abandoned claims whose steps this one took.
+    # When each step it holds was taken: what decides between two claims on one step.
+    acquired: Mapping[str, str] = field(default_factory=dict)
+    # The abandoned claims this one took steps from, one entry per step: {claim, step}.
+    supersedes: tuple[Mapping[str, str], ...] = ()
     ended: Mapping[str, Any] = field(default_factory=dict)  # {at, by: {kind, name}, why}
 
     @property
@@ -91,7 +98,8 @@ class Claim:
             "released": [dict(entry) for entry in self.released],
             "lease_minutes": self.lease_minutes if self.lease_minutes != LEASE_MINUTES else 0,
             "max_park_hours": self.max_park_hours if self.max_park_hours != MAX_PARK_HOURS else 0,
-            "supersedes": list(self.supersedes),
+            "acquired": dict(self.acquired),
+            "supersedes": [dict(entry) for entry in self.supersedes],
             "ended": dict(self.ended),
         }
         data.update({key: value for key, value in optional.items() if value})
@@ -119,7 +127,12 @@ class Claim:
             released=tuple(e for e in _list(raw, "released") if isinstance(e, dict)),
             lease_minutes=_count(raw, "lease_minutes") or LEASE_MINUTES,
             max_park_hours=_count(raw, "max_park_hours") or MAX_PARK_HOURS,
-            supersedes=_texts(raw, "supersedes"),
+            acquired={str(k): str(v) for k, v in _mapping(raw, "acquired").items()},
+            supersedes=tuple(
+                {"claim": str(e.get("claim", "")), "step": str(e.get("step", ""))}
+                for e in _list(raw, "supersedes")
+                if isinstance(e, dict)
+            ),
             ended=_mapping(raw, "ended"),
         )
 
@@ -141,22 +154,36 @@ def claimed(
     at: str,
     *,
     worker: Mapping[str, str],
-    supersedes: Sequence[str] = (),
+    supersedes: Sequence[Mapping[str, str]] = (),
     lease_minutes: int = LEASE_MINUTES,
     max_park_hours: int = MAX_PARK_HOURS,
 ) -> Claim:
-    """A new claim, its id minted as a run's is."""
-    return Claim(
+    """A new claim, its id minted as a run's is, every step acquired ``at``."""
+    blank = Claim(
         id=new_run_id(),
         project=project,
         callsign=squad_of(callsign),
         started=at,
         heartbeat=at,
         worker=dict(worker),
-        steps=tuple(dict.fromkeys(steps)),
         lease_minutes=lease_minutes,
         max_park_hours=max_park_hours,
-        supersedes=tuple(supersedes),
+    )
+    return grown(blank, steps, at, supersedes)
+
+
+def grown(
+    claim: Claim, steps: Sequence[str], at: str, supersedes: Sequence[Mapping[str, str]] = ()
+) -> Claim:
+    """The claim holding ``steps`` too, each new one acquired ``at`` — a step it already
+    holds keeps its first acquisition — and renewed."""
+    added = [step for step in dict.fromkeys(steps) if step not in claim.steps]
+    return replace(
+        claim,
+        steps=(*claim.steps, *added),
+        acquired={**claim.acquired, **dict.fromkeys(added, at)},
+        supersedes=(*claim.supersedes, *(dict(e) for e in supersedes)),
+        heartbeat=at,
     )
 
 
@@ -177,7 +204,8 @@ def released(claim: Claim, step: str, by: Mapping[str, str], why: str, at: str) 
         raise ValueError(f"{claim.short} does not hold that step")
     entry = {"step": step, "at": at, "by": dict(by), "why": why}
     rest = tuple(s for s in claim.steps if s != step)
-    changed = replace(claim, steps=rest, released=(*claim.released, entry))
+    acquired = {s: when for s, when in claim.acquired.items() if s != step}
+    changed = replace(claim, steps=rest, acquired=acquired, released=(*claim.released, entry))
     return changed if rest else replace(changed, ended={"at": at, "by": dict(by), "why": why})
 
 
@@ -228,36 +256,68 @@ def holder_words(holding: Holding) -> str:
     return holding.claim.callsign + ("" if state == LIVE else f" · {state}")
 
 
-def holdings(
-    claims: Iterable[Claim], now: str, parked: Mapping[str, str], order: Sequence[str] = ()
-) -> dict[str, Holding]:
-    """Who holds each claimed step: the live or parked claim pushed first — ``order`` is
-    claim ids in the order their files reached the remote, and one not in it yet comes after
-    — else, so a reader can say so, the most recent abandoned one."""
-    rank = {id_: index for index, id_ in enumerate(order)}
-
-    def first(claim: Claim) -> tuple[int, str, str]:
-        return (rank.get(claim.id, len(rank)), claim.started, claim.id)
-
+def holdings(claims: Iterable[Claim], now: str, parked: Mapping[str, str]) -> dict[str, Holding]:
+    """Who holds each claimed step: of the live or parked claims on it, the one that acquired
+    it first (ties by claim id) — never one a takeover superseded on that step — else, so a
+    reader can say so, the most recent abandoned one."""
+    claims = list(claims)
+    superseded = {(e.get("claim"), e.get("step")) for c in claims for e in c.supersedes}
     held: dict[str, Holding] = {}
-    for claim in sorted(claims, key=first):
+    for claim in claims:
         state = standing(claim, now, parked)
         if state == ENDED:
             continue
         for step in claim.steps:
+            if (claim.id, step) in superseded:
+                continue
             current = held.get(step)
-            if current is None or (
-                current.state == ABANDONED
-                and (state in HOLDING or claim.started > current.claim.started)
+            if (
+                current is None
+                or (
+                    current.state in HOLDING
+                    and state in HOLDING
+                    and _taken(claim, step) < _taken(current.claim, step)
+                )
+                or (
+                    current.state == ABANDONED
+                    and (state in HOLDING or _taken(claim, step) > _taken(current.claim, step))
+                )
             ):
                 held[step] = Holding(claim, state)
     return held
 
 
-def read_holdings(project_dir: Path, now: str, order: Sequence[str] = ()) -> dict[str, Holding]:
+def _taken(claim: Claim, step: str) -> tuple[str, str]:
+    """When ``claim`` acquired ``step``, then its id: the order ownership is decided in."""
+    return (claim.acquired.get(step) or claim.started, claim.id)
+
+
+def read_holdings(project_dir: Path, now: str) -> dict[str, Holding]:
     """:func:`holdings` over the project's claims as they are on disk, parked judged by its
     questions."""
-    return holdings(records(project_dir), now, parks(questions.records(project_dir)), order)
+    return holdings(records(project_dir), now, parks(questions.records(project_dir)))
+
+
+def stand_down(project_dir: Path, claim_id: str, config: Path | None = None) -> Claim:
+    """Hand back every step ``claim_id`` no longer holds — superseded by a takeover, or
+    acquired first by another squad — before it renews: a squad that lost a step stands down
+    from it rather than renewing its way back. A claim left with nothing has ended."""
+    at = now_stamp()
+    held = read_holdings(project_dir, at)
+
+    def standing_down(claim: Claim) -> Claim:
+        for step in claim.steps:
+            holder = held.get(step)
+            if holder is None or holder.claim.id != claim.id:
+                why = (
+                    f"held by {holder.claim.callsign} ({holder.claim.short})" if holder else "lost"
+                )
+                claim = released(
+                    claim, step, {"kind": "coordinator", "name": claim.callsign}, why, at
+                )
+        return claim
+
+    return update(project_dir, claim_id, standing_down, config)
 
 
 def release_step(

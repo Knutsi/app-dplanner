@@ -86,8 +86,8 @@ HEADLESS_ROLES = (
 # and a listed path that no longer exists fails the suite rather than silently leaving the rule.
 HEADLESS_FILES: dict[str, tuple[str, ...]] = {
     "agent_briefing": ("prompt.py",),
-    # A person's status override, releasing the step from its squad's claim.
-    "agent_claims": ("release.py",),
+    # A step leaving its squad, however it leaves: its worker stopped.
+    "agent_claims": ("ownership.py",),
     "agent_launch": ("availability.py", "launch.py", "launcher.py", "profiles.py"),
     # Answering a question and resuming its run: the `question answer` verb and the card.
     "agent_questions": ("inbox.py",),

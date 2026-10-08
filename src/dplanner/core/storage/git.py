@@ -16,11 +16,13 @@ Everything here blocks. Callers run it through ``TaskRunner``.
 
 import re
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from dplanner.core.fsio import os_lock
 from dplanner.core.signals import Signal
 from dplanner.core.storage.local import LocalStorage
 from dplanner.core.storage.provider import Revision, StorageError
@@ -53,6 +55,35 @@ def main_checkout(root: Path) -> Path:
     if gitdir.parent.name == "worktrees" and gitdir.parents[1].name == ".git":
         return gitdir.parents[2]
     return root
+
+
+# Held across every git operation that commits, fetches, rebases or pushes a checkout — the
+# window's Save and sync, and a claim's commit and push from the CLI or a supervisor — so no
+# two of them interleave. In the repository's common git directory, shared by its worktrees
+# and never committed.
+SYNC_LOCK = "dplanner-sync.lock"
+
+
+@contextmanager
+def sync_lock(repo_root: Path) -> Iterator[None]:
+    """The repository's sync lock, the operating system's, waited for. Never nested: a holder
+    calls no other method that takes it, and emits no signal while it holds it."""
+    with os_lock(git_common_dir(repo_root) / SYNC_LOCK, wait=True):
+        yield
+
+
+def git_common_dir(repo_root: Path) -> Path:
+    """The git directory a checkout and all its worktrees share — ``.git`` itself, or, in a
+    worktree, the one its ``.git`` file leads back to."""
+    dot = repo_root / ".git"
+    if not dot.is_file():
+        return dot
+    pointer = dot.read_text(encoding="utf-8").strip()
+    gitdir = (repo_root / pointer.partition(":")[2].strip()).resolve()
+    common = gitdir / "commondir"
+    if common.is_file():
+        return (gitdir / common.read_text(encoding="utf-8").strip()).resolve()
+    return gitdir
 
 
 def init_repo(path: Path) -> Path:
@@ -304,14 +335,15 @@ class GitStorage(LocalStorage):
         project index) and is deliberately not part of ``scopes``: the dirty count and the
         review diff stay about the plan.
         """
-        scopes = [scope for scope in (*self._scopes, *also) if self._matches(scope)]
-        if not scopes:
-            return False
-        self._git("add", "-A", "--", *scopes)
-        staged = self._git("diff", "--cached", "--quiet", "--", *scopes, check=False)
-        if staged.returncode == 0:
-            return False
-        self._git("commit", "-m", message or self._timestamped("Save"), "--", *scopes)
+        with sync_lock(self.repo_root):
+            scopes = [scope for scope in (*self._scopes, *also) if self._matches(scope)]
+            if not scopes:
+                return False
+            self._git("add", "-A", "--", *scopes)
+            staged = self._git("diff", "--cached", "--quiet", "--", *scopes, check=False)
+            if staged.returncode == 0:
+                return False
+            self._git("commit", "-m", message or self._timestamped("Save"), "--", *scopes)
         self.refresh_dirty()
         return True
 

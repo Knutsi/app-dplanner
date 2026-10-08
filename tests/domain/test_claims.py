@@ -39,6 +39,7 @@ def test_a_claim_round_trips_through_its_file_and_absence_is_the_default(tmp_pat
     raw = json.loads(path.read_text(encoding="utf-8"))
     assert raw["callsign"] == "kettle"  # The squad word, never a member's callsign.
     assert "lease_minutes" not in raw and "ended" not in raw and "supersedes" not in raw
+    assert raw["acquired"] == {"s1": AT, "s2": AT}
     assert claims.records(tmp_path) == [claim]
     assert _found(tmp_path, claim.id) == claim
     assert claims.resolve(tmp_path, claim.short) == claim
@@ -98,17 +99,55 @@ def test_a_step_waits_on_its_oldest_unsettled_question():
     assert parked == {"s1": _at(10)}
 
 
-def test_the_claim_pushed_first_holds_a_step_and_an_abandoned_one_yields():
-    early, late = _claim("s1", callsign="kettle"), _claim("s1", "s2", callsign="osprey")
-    held = claims.holdings([early, late], _at(1), {}, order=[late.id, early.id])
-    assert held["s1"].claim is late  # Pushed first, whatever the clock said.
-    assert held["s2"].claim is late
-    stale = _claim("s1", callsign="kettle", heartbeat=_at(-200))
-    held = claims.holdings([stale, late], _at(1), {}, order=[stale.id, late.id])
-    assert held["s1"].claim is late
+def test_the_earlier_acquisition_holds_a_step_and_growing_an_old_claim_never_outranks_it():
+    """The grow-a-claim race: kettle has held s1 since AT; osprey takes s2 at +5; kettle,
+    not having seen it, grows its old claim with s2 at +10. Osprey keeps s2."""
+    kettle = _claim("s1", callsign="kettle")
+    osprey = replace(_claim("s2", callsign="osprey"), acquired={"s2": _at(5)})
+    kettle = claims.grown(kettle, ["s2"], _at(10))
+    assert kettle.acquired == {"s1": AT, "s2": _at(10)}
+    held = claims.holdings([kettle, osprey], _at(11), {})
+    assert held["s1"].claim.id == kettle.id and held["s2"].claim.id == osprey.id
+
+
+def test_a_takeover_is_final_for_the_steps_it_names_even_when_the_loser_wakes():
+    stale = _claim("s1", "s2", callsign="kettle", heartbeat=_at(-200))
     alone = claims.holdings([stale], _at(1), {})
     assert alone["s1"].state == claims.ABANDONED
     assert claims.holder_words(alone["s1"]) == "kettle · abandoned"
+    taker = claims.claimed(
+        "p1",
+        "osprey",
+        ["s1"],
+        _at(1),
+        worker=WORKER,
+        supersedes=[{"claim": stale.id, "step": "s1"}],
+    )
+    woken = replace(stale, heartbeat=_at(2))  # The loser renews: it is live again.
+    held = claims.holdings([woken, taker], _at(3), {})
+    assert held["s1"].claim.id == taker.id  # Though kettle acquired s1 first.
+    assert held["s2"].claim.id == woken.id  # A step the takeover did not name stays.
+    gone = claims.released(taker, "s1", PERSON, "done", _at(4))
+    assert "s1" not in claims.holdings([woken, gone], _at(5), {})  # Never back to kettle.
+
+
+def test_a_returning_loser_stands_down_from_the_steps_it_lost(tmp_path):
+    stale = _claim("s1", "s2", callsign="kettle", heartbeat=_at(-200))
+    taker = claims.claimed(
+        "p1",
+        "osprey",
+        ["s1"],
+        now_stamp(),
+        worker=WORKER,
+        supersedes=[{"claim": stale.id, "step": "s1"}],
+    )
+    for claim in (stale, taker):
+        claims.write(tmp_path, claim)
+    kept = claims.stand_down(tmp_path, stale.id, tmp_path / "config")
+    assert kept.steps == ("s2",) and not kept.ended
+    assert kept.released[0]["why"] == f"held by osprey ({taker.short})"
+    rest = claims.stand_down(tmp_path, taker.id, tmp_path / "config")
+    assert rest.steps == ("s1",)  # The holder keeps what it holds.
 
 
 def test_release_step_releases_from_the_holder_or_the_claim_named(tmp_path):

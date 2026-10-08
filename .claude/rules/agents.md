@@ -348,12 +348,18 @@ paths:
   lease in `claims/`**: heartbeat at most every ten minutes, a heartbeat-only push at most
   every thirty, acquired by a push before anything spawns, abandoned past a ninety-minute lease
   unless parked, and a person's override releases one step from it, not the squad.
-  **Built as verbs** (`modules/agent_claims/`, over `domain/claims.py` and the git half
-  `domain/claim_sync.py`): `claim take` checks, commits `claims/` alone and pushes, then
-  stands down where a rival pushed first; `agent run --callsign` launches under the squad's
-  claim and refuses another squad's step; the heartbeat is every agent-shell `dplanner` run
-  (this machine's claims) and a **live** turn's supervisor, never a wait; only a *person's*
-  stopped status releases a step (the `Release` follow-up), written and never pushed.
+  **Built for one machine** (`modules/agent_claims/`, over `domain/claims.py` and the git half
+  `domain/claim_sync.py`): **ownership is decided locally, per step** — the earliest
+  `acquired` holds, a takeover's per-step `supersedes` is final, and a claim stands down from
+  what it lost before it renews. **A claim publish never rewrites the checkout**: `claims/` by
+  pathspec under `sync_lock` (which Save and sync take too), then a push — never a fetch,
+  rebase or stash; a refused push waits for the window's sync. **Ownership is checked in the
+  one launch** (`launch.claim_for`, both surfaces) and again under the launch lock in
+  `start_run`. **Every way a step leaves a squad goes through `ownership.py`**, which fences
+  and stops its runs; a live turn reads its fence each poll, and a fenced run is over for the
+  next launch. The heartbeat is every agent-shell `dplanner` run (this machine's claims) and
+  a **live** turn's supervisor, never a wait; only a *person's* stopped status releases a
+  step (the `Release` follow-up).
   It never absorbs the at-work claim, nor the at-work claim it: two clocks, two jobs.
   **An answer counts only once its run's machine has consumed it.**
   `docs/architecture/agents.md`'s *Runs, questions and claims are three records in the plan*

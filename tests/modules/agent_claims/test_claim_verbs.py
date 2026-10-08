@@ -11,7 +11,6 @@ import pytest
 
 from dplanner.domain import claims, ledger
 from dplanner.domain.ledger import LedgerRecord
-from dplanner.domain.model import now_stamp
 
 OLD = "2026-10-01T09:00:00+00:00"
 
@@ -24,6 +23,22 @@ def project(cli, workspace, monkeypatch) -> Path:
     for title in ("Read the spec", "Cut the graph", "Estimate it"):
         cli("step", "add", "Discovery", title)
     return Path(workspace) / "discovery"
+
+
+@pytest.fixture
+def stopped(monkeypatch) -> list[str]:
+    """Every run ``supervisor.stop`` was asked to stop — fenced as it really is."""
+    from dplanner.modules.agent_supervisor import supervisor
+
+    runs: list[str] = []
+    real = supervisor.stop
+
+    def stop(project_dir, run, by, why, config=None):
+        runs.append(run)
+        real(project_dir, run, by, why, config)
+
+    monkeypatch.setattr(supervisor, "stop", stop)
+    return runs
 
 
 def _fence(project: Path, run: str) -> Mapping[str, str]:
@@ -84,9 +99,9 @@ def test_the_claim_is_committed_and_nothing_else_is(cli, project, workspace):
     assert "discovery/project.dproj" not in tracked  # The plan is the window's to Save.
 
 
-def test_an_abandoned_claim_is_taken_over_and_its_unfinished_runs_fenced(cli, project):
+def test_an_abandoned_claim_is_taken_over_and_its_workers_stopped(cli, project, stopped):
     stale = claims.claimed(
-        "p", "osprey", [_id(cli, "Read the spec")], OLD, worker={"machine": "elsewhere"}
+        "p", "osprey", [_id(cli, "Read the spec")], OLD, worker={"machine": ledger.machine_id()}
     )
     claims.write(project, stale)
     run = _run(project, cli, "Read the spec", stale.id, "20261001T091500Z-0a0b0c0d")
@@ -94,25 +109,47 @@ def test_an_abandoned_claim_is_taken_over_and_its_unfinished_runs_fenced(cli, pr
     assert "osprey" in listed and "abandoned" in listed
     cli("claim", "take", "S1", "--callsign", "kettle")
     mine = next(c for c in claims.records(project) if c.callsign == "kettle")
-    assert mine.supersedes == (stale.id,)
+    assert mine.supersedes == ({"claim": stale.id, "step": _id(cli, "Read the spec")},)
+    assert stopped == [run.run]
     fence = _fence(project, run.run)
     assert fence["by"] == "kettle" and mine.short in fence["why"]
 
 
-def test_release_hands_one_step_back_and_end_closes_the_claim(cli, project):
+def test_the_squad_that_lost_a_step_stands_down_when_it_comes_back(cli, project):
+    """The returning loser: osprey's coordinator wakes after kettle took its step over, and
+    its next ``dplanner`` call renews — which hands the step back rather than reclaiming it."""
+    from dplanner.domain import claim_sync
+
+    stale = claims.claimed(
+        "p", "osprey", [_id(cli, "Read the spec")], OLD, worker={"machine": ledger.machine_id()}
+    )
+    claims.write(project, stale)
+    cli("claim", "take", "S1", "--callsign", "kettle")
+    claim_sync.renew(project)
+    back = next(c for c in claims.records(project) if c.callsign == "osprey")
+    assert back.ended and back.heartbeat == OLD
+    assert "kettle" in cli("claim", "list") and "osprey" not in cli("claim", "list")
+
+
+def test_release_hands_one_step_back_and_end_closes_the_claim(cli, project, stopped):
     cli("claim", "take", "S1", "S2", "--callsign", "kettle")
+    (taken,) = claims.records(project)
+    first = _run(project, cli, "Read the spec", taken.id, "20261007T101500Z-0000aaaa")
+    second = _run(project, cli, "Cut the graph", taken.id, "20261007T101500Z-0000bbbb")
     said = cli("claim", "release", "S1", "--why", "merged")
+    assert stopped == [first.run]
     (claim,) = claims.records(project)
     assert "S1 released" in said and claim.steps == (_id(cli, "Cut the graph"),)
     assert claim.released[0]["by"]["kind"] == "person"
     cli("claim", "end", claim.short)
     assert claims.records(project)[0].ended["why"] == "done"
+    assert stopped == [first.run, second.run]
     assert cli("claim", "list") == "no claims\n"
     assert "ended" in cli("claim", "list", "--all")
     assert "already ended" in cli("claim", "end", claim.short, expect=1)
 
 
-def test_a_persons_stopped_status_releases_the_step_and_stops_its_worker(cli, project):
+def test_a_persons_stopped_status_releases_the_step_and_stops_its_worker(cli, project, stopped):
     cli("claim", "take", "S1", "S2", "--callsign", "kettle")
     (claim,) = claims.records(project)
     run = _run(project, cli, "Read the spec", claim.id, "20261007T101500Z-1a2b3c4d")
@@ -122,6 +159,7 @@ def test_a_persons_stopped_status_releases_the_step_and_stops_its_worker(cli, pr
     assert claim.steps == (_id(cli, "Cut the graph"),)
     assert claim.released[0]["why"] == "set blocked by a person"
     assert _fence(project, run.run)["why"] == "set blocked by a person"
+    assert stopped == [run.run]
 
 
 def test_a_worker_reaching_review_releases_nothing(cli, project, monkeypatch):
@@ -150,41 +188,13 @@ def test_claim_verbs_need_a_squad_word(cli, project):
     assert "--callsign" in cli("claim", "take", "S1", "--callsign", " ", expect=1)
 
 
-def test_a_claim_take_whose_push_is_refused_lets_go_of_what_it_took(cli, project, monkeypatch):
-    from dplanner.core.storage.provider import StorageError
-    from dplanner.domain import claim_sync
-
-    def refused(*_args, **_kw):
-        raise StorageError("rejected")
-
-    monkeypatch.setattr(claim_sync, "publish", refused)
-    said = cli("claim", "take", "S1", "--callsign", "kettle", expect=1)
-    assert "could not be pushed" in said
-    (claim,) = claims.records(project)
-    assert claim.steps == () and claim.ended["why"] == "not pushed"
-
-
-def test_a_lost_race_stands_down_from_the_step_another_squad_pushed_first(
+def test_a_claim_whose_push_is_refused_still_holds_and_says_it_waits_for_a_sync(
     cli, project, monkeypatch
 ):
     from dplanner.domain import claim_sync
 
-    rival = claims.claimed(
-        "p", "osprey", [_id(cli, "Read the spec")], now_stamp(), worker={"machine": "elsewhere"}
-    )
-    order: list[str] = []
-    monkeypatch.setattr(claim_sync, "push_order", lambda _dir: list(order))
-    real = claim_sync.publish
-
-    def publish(project_dir, message, config=None):
-        """The push's rebase brings the rival in: it reached the remote first."""
-        claims.write(project, rival)
-        order[:] = [rival.id]
-        return real(project_dir, message, config)
-
-    monkeypatch.setattr(claim_sync, "publish", publish)
-    said = cli("claim", "take", "S1", "S2", "--callsign", "kettle")
-    assert "taken first by osprey" in said
-    mine = next(c for c in claims.records(project) if c.callsign == "kettle")
-    assert mine.steps == (_id(cli, "Cut the graph"),)
-    assert mine.released[0]["why"] == f"taken first by osprey ({rival.short})"
+    monkeypatch.setattr(claim_sync, "publish", lambda *_args, **_kw: claim_sync.UNPUBLISHED)
+    said = cli("claim", "take", "S1", "--callsign", "kettle")
+    assert "not published yet" in said
+    (claim,) = claims.records(project)
+    assert claim.steps == (_id(cli, "Read the spec"),) and not claim.ended

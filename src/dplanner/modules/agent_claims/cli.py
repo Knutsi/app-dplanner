@@ -1,17 +1,18 @@
 """``dplanner claim take|list|release|end`` — a squad's lease on its steps.
 
 The coordinator takes the steps it was given before it starts any of them: ``claim take``
-fetches, refuses a step another squad holds (naming the holder), writes the claim, commits
-and pushes it — and only a pushed claim launches work. A step whose holder has gone quiet
-past its lease is taken over: the new claim names the old one in ``supersedes`` and fences
-the old squad's unfinished runs on it. ``release`` hands one step back, ``end`` the whole
-claim — the coordinator when it is done, or a person's *Clear*. Each pushes as it goes; the
-heartbeat between is every ``dplanner`` run's (``claim_sync.renew``).
+refuses a step another squad holds (naming the holder), writes the claim — each new step
+acquired now — and commits and pushes it; a push the remote refuses is left for the window's
+next sync, since ownership is decided on this machine. A step whose holder has gone quiet
+past its lease is taken over: the new claim names the old one, step by step, in
+``supersedes``, and the old squad's workers on it are stopped. ``release`` hands one step
+back, ``end`` the whole claim — the coordinator when it is done, or a person's *Clear* —
+and both stop the workers they take steps from (``ownership.py``). The heartbeat between is
+every ``dplanner`` run's (``claim_sync.renew``).
 """
 
 from argparse import ArgumentParser, Namespace
 from collections.abc import Callable
-from dataclasses import replace
 from pathlib import Path
 
 from dplanner.cli import CliCommand, CliContext, CliError
@@ -21,7 +22,7 @@ from dplanner.core.storage.provider import StorageError
 from dplanner.domain import claim_sync, claims, ledger, questions
 from dplanner.domain.claims import Claim
 from dplanner.domain.model import now_stamp
-from dplanner.modules.agent_supervisor import supervisor
+from dplanner.modules.agent_claims import ownership
 from dplanner.planning.kinds import key_of
 
 
@@ -31,7 +32,7 @@ def commands(*, in_agent_shell: Callable[[], bool]) -> list[CliCommand]:
         step = find_step(context.library, args.step, context.current)
         by = acting(args.by, in_agent_shell())
         try:
-            claim = claims.release_step(project_dir, step.id, by, args.why)
+            claim = ownership.release(project_dir, step.id, by, args.why)
         except (LookupError, ValueError) as error:
             raise CliError(str(error)) from error
         if claim is None:
@@ -44,9 +45,8 @@ def commands(*, in_agent_shell: Callable[[], bool]) -> list[CliCommand]:
         project_dir = context.store.project_dir(context.project.id)
         by = acting(args.by, in_agent_shell())
         try:
-            claim = claims.resolve(project_dir, args.claim)
-            claim = claims.update(
-                project_dir, claim.id, lambda c: claims.ended(c, by, args.why, now_stamp())
+            claim = ownership.end(
+                project_dir, claims.resolve(project_dir, args.claim).id, by, args.why
             )
         except (LookupError, ValueError) as error:
             raise CliError(str(error)) from error
@@ -97,12 +97,8 @@ def _take(context: CliContext, args: Namespace) -> int:
     if not squad:
         raise CliError("name your squad with --callsign")
     with claims.acquiring(project.id):
-        try:
-            claim_sync.refresh(project_dir)
-        except StorageError as error:
-            raise CliError(f"could not fetch the plan, so nothing is claimed: {error}") from error
         now = now_stamp()
-        held = claims.read_holdings(project_dir, now, claim_sync.push_order(project_dir))
+        held = claims.read_holdings(project_dir, now)
         taken = [
             f"{keys.get(step.id, step.title)} is held by {holding.claim.callsign}"
             f" ({holding.claim.short}, {holding.state})"
@@ -114,33 +110,22 @@ def _take(context: CliContext, args: Namespace) -> int:
         if taken:
             raise CliError("; ".join(taken))
         wanted = [step.id for step in steps]
-        added = [
-            step
-            for step in wanted
-            if (holding := held.get(step)) is None
-            or holding.state not in claims.HOLDING
-            or holding.claim.callsign != squad
-        ]
-        abandoned = {
-            holding.claim.id
+        # An abandoned holder — another squad's, or this squad's own earlier claim — loses
+        # these steps for good: the takeover names it, step by step.
+        superseded = [
+            {"claim": holding.claim.id, "step": step}
             for step in wanted
             if (holding := held.get(step)) is not None and holding.state == claims.ABANDONED
-        }
-        claim = _written(project_dir, project.id, squad, wanted, abandoned, now, args)
-        try:
-            claim_sync.publish(project_dir, f"Claims: {squad} takes {_listed(wanted, keys)}")
-        except StorageError as error:
-            for step in added:
-                claims.release_step(project_dir, step, _squad(squad), "not pushed", claim.id)
-            raise CliError(f"the claim could not be pushed, so it was let go: {error}") from error
-        lost = _lost_race(project_dir, claim, added)
-        claim = claims.find(project_dir, claim.id) or claim
-    for run in ledger.records(project_dir):
-        if run.claim in abandoned and run.step in wanted and not run.over and not run.fence:
-            supervisor.fence(project_dir, run.run, squad, f"taken over by {squad} ({claim.short})")
-    lines = [f"{claim.short} {squad} holds {_listed(claim.steps, keys)}"]
-    lines += [f"{keys.get(step, step)}: {why}" for step, why in lost.items()]
-    context.report({**claim.to_json(), "lost": lost}, "\n".join(lines))
+        ]
+        claim = _written(project_dir, project.id, squad, wanted, superseded, now, args)
+        said = _published(project_dir, f"Claims: {squad} takes {_listed(wanted, keys)}")
+    why = f"taken over by {squad} ({claim.short})"
+    for old in dict.fromkeys(entry["claim"] for entry in superseded):
+        lost = [entry["step"] for entry in superseded if entry["claim"] == old]
+        ownership.stop_runs(project_dir, old, lost, squad, why)
+    context.report(
+        claim.to_json(), f"{claim.short} {squad} holds {_listed(claim.steps, keys)}{said}"
+    )
     return 0
 
 
@@ -149,12 +134,13 @@ def _written(
     project: str,
     squad: str,
     wanted: list[str],
-    abandoned: set[str],
+    superseded: list[dict[str, str]],
     now: str,
     args: Namespace,
 ) -> Claim:
     """The squad's claim with ``wanted`` added — one claim per squad, so a squad that already
-    holds steps here grows its claim rather than starting a second."""
+    holds steps here grows its live claim rather than starting a second; each new step is
+    acquired now, never at the old claim's start."""
     mine = next(
         (
             c
@@ -172,38 +158,13 @@ def _written(
             wanted,
             now,
             worker={"machine": ledger.machine_id(), "host": ledger.host_name()},
-            supersedes=sorted(abandoned),
+            supersedes=superseded,
             lease_minutes=args.lease,
             max_park_hours=args.max_park,
         )
         claims.write(project_dir, claim)
         return claim
-
-    def grown(claim: Claim) -> Claim:
-        return replace(
-            claim,
-            steps=tuple(dict.fromkeys((*claim.steps, *wanted))),
-            supersedes=tuple(dict.fromkeys((*claim.supersedes, *sorted(abandoned)))),
-            heartbeat=now,
-        )
-
-    return claims.update(project_dir, mine.id, grown)
-
-
-def _lost_race(project_dir: Path, claim: Claim, wanted: list[str]) -> dict[str, str]:
-    """The steps a rival pushed first, now that both are on the remote: ours stands down
-    from them — the order the claims arrived decides, never a clock."""
-    held = claims.read_holdings(project_dir, now_stamp(), claim_sync.push_order(project_dir))
-    lost: dict[str, str] = {}
-    for step in wanted:
-        holder = held.get(step)
-        if holder is not None and holder.claim.id != claim.id and holder.state in claims.HOLDING:
-            why = f"taken first by {holder.claim.callsign} ({holder.claim.short})"
-            claims.release_step(project_dir, step, _squad(claim.callsign), why, claim.id)
-            lost[step] = why
-    if lost:
-        _published(project_dir, f"Claims: {claim.callsign} stands down")
-    return lost
+    return claims.update(project_dir, mine.id, lambda c: claims.grown(c, wanted, now, superseded))
 
 
 def _configure_take(parser: ArgumentParser) -> None:
@@ -271,17 +232,15 @@ def _configure_by(parser: ArgumentParser) -> None:
 
 
 def _published(project_dir: Path, message: str) -> str:
-    """Push what changed; a failure is said, not raised — the change stands on disk, and the
-    next heartbeat pushes it."""
+    """Commit and push what changed, and say what did not happen — the change stands on disk
+    either way, and decides ownership on this machine."""
     try:
-        claim_sync.publish(project_dir, message)
+        said = claim_sync.publish(project_dir, message)
     except StorageError as error:
-        return f" (not pushed yet: {error})"
+        return f" (not committed yet: {error})"
+    if said == claim_sync.UNPUBLISHED:
+        return " (committed; not published yet — the window's next sync pushes it)"
     return ""
-
-
-def _squad(callsign: str) -> dict[str, str]:
-    return {"kind": "coordinator", "name": callsign}
 
 
 def _listed(steps: tuple[str, ...] | list[str], keys: dict[str, str]) -> str:
