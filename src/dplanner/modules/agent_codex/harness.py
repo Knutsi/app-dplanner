@@ -427,10 +427,31 @@ def read_limits(thread: str, home: Path | None = None) -> tuple[LimitWindow, ...
     return ()
 
 
+def read_model(thread: str, home: Path | None = None) -> str:
+    """The model the thread's rollout last ran on; "" when there is no rollout or it names
+    none."""
+    path = rollout_for(thread, home) if thread else None
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines() if path is not None else []
+    except OSError:
+        return ""
+    for line in reversed(lines):
+        if '"turn_context"' not in line:
+            continue
+        try:
+            payload = json.loads(line).get("payload")
+        except (ValueError, AttributeError):
+            continue
+        if isinstance(payload, dict) and isinstance(payload.get("model"), str):
+            return str(payload["model"])
+    return ""
+
+
 HEADLESS = Headless(
     command=headless_command,
     read=read_event,
     limits=lambda log: read_limits(log.session),
+    model=lambda log: read_model(log.session),
 )
 
 

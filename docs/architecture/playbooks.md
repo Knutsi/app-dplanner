@@ -531,9 +531,9 @@ in plain words; a denial (Claude's `permission_denials` under `success`, opencod
 "auto-rejecting" on stderr, a Codex sentence refusing an act *because* of its sandbox); the
 typed outcome; a wait on the agent's own background work (`failed` as `abandoned-wait`,
 because headless the work died with the process and nobody wakes the agent, so "continue"
-resumes it); a question in prose; done. A harness differs only in its reader and two hooks —
-where its limit telemetry lives (Codex: the rollout, never `--json`) and the denials it prints
-to stderr. **A schema-valid final message always wins; the prose heuristics run only on untyped text, read only what is still open at the very end, and when unsure park rather than say done** (`agents.md` has the accepted limits): the final
+resumes it); a question in prose; done. A harness differs only in its reader and three hooks —
+where its limit telemetry lives and where it names the model a turn ran on (Codex: both in the
+rollout, never `--json`), and the denials it prints to stderr. **A schema-valid final message always wins; the prose heuristics run only on untyped text, read only what is still open at the very end, and when unsure park rather than say done** (`agents.md` has the accepted limits): the final
 paragraph ends on the question, or asks for an answer ("Once you let me know, I'll…") with the
 question just above — so an answered FAQ heading is no question — and the final paragraph
 commits, in the agent's own unquoted words, to waiting on its work — so a finished fix "for the
