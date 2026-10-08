@@ -299,3 +299,28 @@ def test_a_plan_to_approve_is_shown_behind_its_own_button(services, alpha, faked
     plan, plain = cards.cards()
     assert plan.show_body is not None and plan.show_body.text() == "Show Plan…"
     assert plain.show_body is None
+
+
+def test_a_gate_says_whose_judgement_it_waits_for(services, alpha, faked) -> None:
+    # The engine asks a gate with no callsign or harness; the dogfood run's cards all read
+    # "An agent", and a person could not tell their own gate from the coordinator's.
+    project, step = alpha
+    for minutes, stage in enumerate(("person", "coordinator", "person-2")):
+        question = questions.asked(
+            project.id,
+            step.id,
+            (STAMP + timedelta(minutes=minutes)).isoformat(),
+            [questions.one("Does the work pass?", "", ())],
+            by={"host": "here"},
+            pass_="p1",
+            stage=stage,
+            purpose="gate",
+        )
+        questions.write(services.repo.project_dir(project.id), question)
+    cards, _recorder = faked
+    cards.refresh()
+    assert [card.agent.text() for card in cards.cards()] == [
+        "Waits for you",
+        "Waits for the coordinator — or you, when none drives the run",
+        "Waits for you",
+    ]

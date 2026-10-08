@@ -1,7 +1,8 @@
 """The question cards: one card per open question in the library, on a lane a host puts
 where a person looks — the Control Centre, on top of its board.
 
-A card says who asks (callsign and harness), about which step, what kind of question it is,
+A card says who asks (callsign and harness — or, for a playbook's own gate, whose judgement it
+waits for), about which step, what kind of question it is,
 the question, and the ways to answer it: a button per choice, a line in a person's own words,
 *Retry now* for a run that is held or blocked, and *Go to Step*. Nothing on it is
 decoration: DESIGN.md's *Cards*, a ``#ToolCard`` well on a ``#CardLane``, and no accent.
@@ -59,6 +60,13 @@ KIND_WORDS = {
     questions.PERMISSION: "Permission",
     questions.BLOCKED: "Blocked",
     questions.LIMIT: "Usage hold",
+}
+# Who a playbook's gate waits for, by the kind of stage it stands for: a gate is asked by the
+# engine, not an agent, and the person reading the card must see whether it is theirs.
+GATE_WORDS = {
+    questions.PERSON: "Waits for you",
+    "progress": "Waits for you",
+    questions.COORDINATOR: "Waits for the coordinator — or you, when none drives the run",
 }
 # The most height the lane takes: about two cards, so the host's surface keeps the page.
 LANE_HEIGHT_CAP = 320
@@ -214,6 +222,15 @@ class QuestionCard(QFrame):
 
     def refuse(self, reason: str) -> None:
         self.status.say(reason, "error")
+
+
+def _gate_words(question: Question) -> str:
+    """Who a question nobody's agent asked waits for: a playbook gate's judge, by its stage."""
+    if question.purpose == "round-cap":
+        return "The gate's rounds ran out — somebody decides"
+    if question.pass_:
+        return GATE_WORDS.get(questions.gate_role(question), "The playbook asks")
+    return "An agent"
 
 
 def _options(question: Question) -> list[tuple[str, str]]:
@@ -382,7 +399,7 @@ class QuestionCards:
         callsign = question.by.get("callsign", "")
         harness = question.by.get("harness", "")
         label = next((h.label for h in deps.harnesses if h.id == harness), harness)
-        agent = " · ".join(part for part in (callsign, label) if part) or "An agent"
+        agent = " · ".join(part for part in (callsign, label) if part) or _gate_words(question)
         has_step = library.has(question.step)
         if has_step:
             step = library.step(question.step)
