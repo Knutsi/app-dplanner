@@ -250,12 +250,10 @@ def render_question_cards(
         kind=questions.BLOCKED,
         callsign="Kettle Nine",
     )
-    path = questions.path_for(services.repo.project_dir(elsewhere.id), blocked)
     escalated = questions.escalated(
         blocked, {"kind": "coordinator"}, "only a person can say", blocked.asked
     )
     questions.write(services.repo.project_dir(elsewhere.id), escalated)
-    assert path.exists()
     reset = (datetime.now(UTC) + timedelta(hours=2)).isoformat()
     ask(
         services,

@@ -402,12 +402,9 @@ class QuestionCards:
             resets=limits.clock(moment) if moment is not None else "",
         )
 
-    def _directory(self, question: Question) -> Path | None:
-        return self._deps.project_dir(question.project)
-
     def _act(self, question: Question, act: Callable[[Path], str]) -> None:
         card = self._cards.get(question.id)
-        directory = self._directory(question)
+        directory = self._deps.project_dir(question.project)
         try:
             if directory is None:
                 raise LookupError("its project is no longer in the library")
