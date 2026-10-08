@@ -238,7 +238,7 @@ branch put S4 S5 S6 --branch feature/<name>`. A *cut* is born before the steps a
 and one way out. Each step's PR then merges into the feature branch, and merging there is
 what accepts it; the landing — an agent step — merges the mainline in and opens the
 branch's own PR. **Review the landing, not each step**: a person reviews the landing's PR —
-the whole branch at once — or, once playbooks run, the landing's *Review only* playbook does. Link work the stretch builds on into the cut, never into
+the whole branch at once — or, once playbooks run, the landing's *Land* playbook reviews it before a person merges. Link work the stretch builds on into the cut, never into
 its middle (`project lint` names it, `branch.late-entry`), and keep milestones outside it —
 a release whose work is not on the mainline yet is not a release. `dplanner branch show`
 says what is on each branch; `dplanner branch remove` takes one away again.

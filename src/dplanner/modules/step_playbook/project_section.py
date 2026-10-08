@@ -1,7 +1,7 @@
 """The Playbooks tab of *Project ▸ Settings…*: what a step that never chose runs.
 
 Two dropdowns over the project's entry — the default, which starts as no playbook (Run Agent),
-and the landing default, which starts as *Review only* — the same entry ``dplanner playbook
+and the landing default, which starts as *Land* — the same entry ``dplanner playbook
 set --project-default`` and ``--landing-default`` write.
 
 Not a ``ModuleDataSection``: that base is aimed at a step, and teaching it a second kind of

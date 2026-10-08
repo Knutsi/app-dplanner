@@ -88,7 +88,8 @@ paths:
 - **Presets are built-in data** (`modules/step_playbook/presets.py`), no playbook files in the
   plan repository yet; a preset's `revision` rises whenever its stage list changes. A step's
   choice is its aspect (absence encodes the default), then the project's landing default on a
-  landing, then the project default, then none (Run Agent) — `aspect.py`'s `resolve`, one
+  landing (*Land* unless it names another: the landing's work, a cross-vendor review, a
+  person who merges), then the project default, then none (Run Agent) — `aspect.py`'s `resolve`, one
   function every surface reads. **A stage's kind is a `StageRole`, never a second
   `StageKind`**; `agent_stage` maps it onto `domain/headless.py`'s. The `playbook` medallion
   marks a step's **own** choice only; **where a pass stands is `passes.standing`** — one

@@ -177,6 +177,22 @@ def test_a_gate_with_no_work_before_it_sends_the_work_to_a_fix():
     assert isinstance(again, Launch) and (again.stage, again.attempt) == ("review", 2)
 
 
+def test_a_landing_executes_is_reviewed_by_the_other_agent_and_ends_at_a_person_unmerged():
+    first = next_of("land")
+    assert isinstance(first, Launch) and (first.stage, first.kind) == ("execute", StageKind.EXECUTE)
+    execute = run("execute", session="land")
+    review = next_of("land", execute)
+    assert isinstance(review, Launch) and (review.stage, review.harness) == ("review", "codex")
+    back = next_of("land", execute, run("review", verdict=CHANGED, harness="codex"))
+    assert isinstance(back, Launch) and (back.stage, back.resume) == ("execute", execute)
+    passed = [execute, run("review", verdict=PASSED, harness="codex")]
+    person = next_of("land", *passed)
+    assert isinstance(person, Ask) and (person.stage, person.purpose) == ("person", GATE)
+    # The mainline is a person's to merge: the pass ends without a merge or a status of its own.
+    through = next_of("land", *passed, gate("person", PASS))
+    assert through == Complete("Land: execute ⇄ review (other agent) → human review is through")
+
+
 def test_a_person_sending_the_plan_back_reruns_the_plan_with_the_note():
     plan = run("plan", session="s")
     back = next_of("plan-person-execute", plan, gate("person", "Changes: split it in two"))

@@ -29,11 +29,13 @@ def entry_of(cli_library, title):
 
 def test_list_names_every_preset_with_its_stages_and_the_projects_defaults(cli):
     rows = json.loads(cli("--project", "Discovery", "playbook", "list", "--json"))
-    assert len(rows) == 9
+    assert len(rows) == 10
+    land = next(row for row in rows if row["playbook"] == "land")
+    assert land["defaults"] == ["landing default"]
+    assert [stage["id"] for stage in land["stages"]] == ["execute", "review", "person"]
+    assert land["stages"][1]["reviewer"] == "other"
     review_only = next(row for row in rows if row["playbook"] == "review-only")
-    assert review_only["defaults"] == ["landing default"]
-    assert [stage["id"] for stage in review_only["stages"]] == ["review", "person"]
-    assert review_only["stages"][0]["reviewer"] == "other"
+    assert review_only["defaults"] == []
     text = cli("playbook", "list")
     assert "plan-person-execute" in text and "plan, person, execute" in text
 
@@ -91,7 +93,7 @@ def test_the_project_default_reaches_a_step_that_never_chose(cli, cli_library):
         "--project-default",
         "none",
         "--landing-default",
-        "review-only",
+        "land",
     )
     assert entry_of(cli_library, None) == {}
 

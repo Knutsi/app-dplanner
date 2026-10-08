@@ -8,6 +8,7 @@ agent CLI, never a model API: the fake plays recorded-shape streams through Clau
 """
 
 import json
+import subprocess
 import sys
 from contextlib import ExitStack
 from dataclasses import replace
@@ -503,3 +504,40 @@ def test_every_stage_of_a_pass_runs_as_the_member_that_started_it(drive):
     execute = drive.latest()
     assert execute.stage == "execute" and execute.callsign == "kettle-two"
     assert "You are Kettle Two, of the squad Kettle Actual coordinates" in drive.prompt(execute)
+
+
+def test_a_landing_that_never_chose_lands_is_reviewed_and_waits_for_a_person_to_merge(
+    drive, code, tmp_path, monkeypatch
+):
+    """A landing runs *Land* by default: its execute is briefed with the landing's own work,
+    the other agent's review passes, and the person's pass ends the pass with nothing merged —
+    the mainline is a person's to merge, so gh is never asked."""
+    drive.cli("branch", "put", "Build it", "--branch", "feature/x")  # B2 cuts it, S3 lands it.
+    origin = tmp_path / "origin.git"  # The landing's worktree is cut from a remote.
+    for argv in (
+        ["init", "-q", "--bare", str(origin)],
+        ["-C", str(code), "remote", "add", "origin", str(origin)],
+        ["-C", str(code), "push", "-q", "origin", "HEAD:refs/heads/main"],
+        ["-C", str(code), "fetch", "-q", "origin"],
+        ["-C", str(code), "remote", "set-head", "origin", "main"],
+    ):
+        subprocess.run(["git", *argv], check=True, capture_output=True)
+    monkeypatch.setattr(github_cli, "view_pr", lambda *_: pytest.fail("gh was asked"))
+    monkeypatch.setattr(github_cli, "accept_by_merge", lambda *_a, **_k: pytest.fail("merged"))
+    drive.play(
+        {"lines": [INIT, result(typed=done(), session="land")]},
+        {"lines": [INIT, result(typed=PASSES, session="review")]},
+    )
+    drive.cli("agent", "run", "S3", "--playbook", "--anyway")
+    execute = drive.supervise()
+    assert (execute.stage, execute.settings["preset"]) == ("execute", "land")
+    assert "Land the feature branch `feature/x`" in drive.prompt(execute)
+    drive.advance("S3")
+    assert drive.supervise().stage == "review"
+    drive.advance("S3")
+    gate = drive.asked()
+    assert (gate.stage, gate.purpose) == ("person", "gate")
+    drive.answer(gate, "Pass")
+    said = drive.advance("S3")
+    assert "is through" in said and "the step is done" not in said
+    assert _status(drive.cli, "S3") != "done"

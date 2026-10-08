@@ -3,7 +3,7 @@
 A playbook is the alternative to Run Agent on one step — stages that plan the work, do it and
 decide whether it is good enough — and the step stays one card whatever its stages are. The
 stages are a list, never a graph: their order is the order they run in, and a gate's *changes*
-goes back to the nearest earlier work stage. There are no playbook files yet; these nine are
+goes back to the nearest earlier work stage. There are no playbook files yet; these ten are
 the whole vocabulary (``docs/architecture/playbooks.md``'s *The presets*).
 """
 
@@ -90,15 +90,15 @@ PLAN = Stage(StageRole.PLAN)
 EXECUTE = Stage(StageRole.EXECUTE)
 PERSON = Stage(StageRole.PERSON)
 
-REVIEW_ONLY = Playbook(
-    "review-only",
-    "Review only",
+LAND = Playbook(
+    "land",
+    "Land: execute ⇄ review (other agent) → human review",
     1,
-    (Stage(StageRole.REVIEW, "other"), PERSON),
-    "Reviews the whole PR against its base, cross-vendor, then a person decides — what a "
-    "branch landing runs by default.",
+    (EXECUTE, Stage(StageRole.REVIEW, "other"), PERSON),
+    "The landing's own work — the mainline merged in, the checks, the PR into it — reviewed "
+    "cross-vendor, then a person merges: DPlanner never merges into the mainline.",
 )
-LANDING_DEFAULT = REVIEW_ONLY  # What a branch landing runs when nobody chose.
+LANDING_DEFAULT = LAND  # What a branch landing runs when nobody chose.
 
 PRESETS: tuple[Playbook, ...] = (
     Playbook(
@@ -152,7 +152,14 @@ PRESETS: tuple[Playbook, ...] = (
         (PLAN, PERSON, EXECUTE),
         "A person approves the plan before any code is written: plan mode, headless.",
     ),
-    REVIEW_ONLY,
+    LAND,
+    Playbook(
+        "review-only",
+        "Review only",
+        1,
+        (Stage(StageRole.REVIEW, "other"), PERSON),
+        "Reviews an existing PR against its base, cross-vendor, then a person decides.",
+    ),
     Playbook(
         "spike",
         "Spike",

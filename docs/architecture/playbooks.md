@@ -143,7 +143,7 @@ DPlanner's own act, and its trace is the merge and the status it sets, both alre
 ## The presets
 
 Following *sane defaults, options laid out*, a step picks a playbook from a list; nothing is
-written by hand. Knut named seven, and two are added.
+written by hand. Knut named seven, and three are added.
 
 | Id | Name | Stages |
 |---|---|---|
@@ -154,6 +154,7 @@ written by hand. Knut named seven, and two are added.
 | `plan-execute-review-self` | Plan → execute ⇄ review (same agent) | plan, execute, review (same) |
 | `plan-execute-review-other` | Plan → execute ⇄ review (other agent) | plan, execute, review (other) |
 | `plan-person-execute` | Plan → human review → execute | plan, person, execute |
+| `land` | Land: execute ⇄ review (other agent) → human review | execute (the landing's own work), review (other), person |
 | `review-only` | Review only | review (other, the whole PR against its base), person |
 | `spike` | Spike | plan (research, read-only), person |
 
@@ -165,10 +166,16 @@ written by hand. Knut named seven, and two are added.
   records the plan (the run directory keeps DPlanner's copy) and execute resumes with *the plan
   is approved, implement it*. The plan is there to be read, by a person or the coordinator,
   and to be cheap to stop.
-- **Review only** is what review steps were used for on a branch landing. The landing's own
-  run opens the PR from the branch; the playbook then reviews the whole branch once,
-  cross-vendor, and ends at a person. That is the person gate paid for once per branch, where
-  the floor research puts it, instead of once per step.
+- **Land** is what a branch landing runs by default. Its execute is the landing's own work, as
+  its briefing says — the mainline merged into the feature branch, the checks, the PR into the
+  mainline — then a cross-vendor review of that PR, looping back to the landing's session, and
+  a person, who merges. DPlanner never merges into the mainline: the pass ends at the person's
+  *pass*, and the merge sets the step done. That is the person gate paid for once per branch,
+  where the floor research puts it, instead of once per step. It replaced *Review only* as the
+  default when the dogfood showed that one reviews the branch and never opens the landing's PR
+  (`decisions.md`, 2026-10-08).
+- **Review only** reviews a PR that already exists — the whole PR against its base,
+  cross-vendor — and ends at a person; with no work stage, its *changes* goes to a fix.
 - **Spike** is for research and design steps: nothing to execute, and the output — a plan, a
   report, a design — is for a person to read. The person's approval sets the step done.
 
@@ -176,7 +183,7 @@ written by hand. Knut named seven, and two are added.
 `modules/step_playbook/presets.py`; there are no playbook files in the plan repository. A file there would be the first
 hand-authored configuration in a JSON codebase, and a file an agent can edit on its branch is
 input to the next run, which needs its own rule (a worker reads playbooks from the mainline
-only). Nine presets cover the brief. Custom playbooks come later (*Decided at S4*, 1).
+only). Ten presets cover the brief. Custom playbooks come later (*Decided at S4*, 1).
 
 **A stage's kind is a `StageRole`**, never a second `StageKind`: `domain/headless.py`'s
 `StageKind` is the three turns a harness can run, and a playbook's six roles include three no
@@ -195,7 +202,7 @@ project's entry lives under the same id. `aspect.py`'s `resolve` is the order be
 **Which playbook a step runs:**
 1. its own aspect;
 2. else, on a landing (a step carrying `branch_land`), the project's landing default —
-   *Review only* unless the project names another;
+   *Land* unless the project names another;
 3. else the project's default, kept as project-level module data
    (`{"default": …, "landing": …}`);
 4. else none: the step has Run Agent, as today, and *Run Playbook ▸* still lists every preset.
@@ -564,9 +571,9 @@ them in that review.
 
 | # | Question | Decided | Why |
 |---|---|---|---|
-| 1 | **Custom playbooks in the plan repository now, or later?** | **Later.** | The nine presets cover the brief. A file an agent can edit on its branch needs a rule of its own (read playbooks from the mainline only), and the first hand-authored config in a JSON codebase needs a FORMAT.md line on why. |
+| 1 | **Custom playbooks in the plan repository now, or later?** | **Later.** | The presets cover the brief. A file an agent can edit on its branch needs a rule of its own (read playbooks from the mainline only), and the first hand-authored config in a JSON codebase needs a FORMAT.md line on why. |
 | 2 | **When `progress` accepts a step, does DPlanner start the next ready step itself?** | **No: the coordinator or a person does.** | DPlanner starting what became ready is the window's auto-launch under another name, which S5 removes for its races and its terminals nobody clicked for. The coordinator already holds the selection and its claims. |
-| 3 | **What does a step with no playbook get?** | **Nothing: Run Agent, as today; a landing defaults to *Review only*.** | A playbook spends tokens unattended. Making it the default for every agent step should be a project's choice, not a build's. |
-| 4 | **Should DPlanner run the tests itself as a gate, judging by exit codes?** | **Yes, in a later step.** | The evidence ranks a criteria gate first — a lying agent cannot fake an exit code — but none of the seven presets names one, and it needs the project's commands as data. |
+| 3 | **What does a step with no playbook get?** | **Nothing: Run Agent, as today; a landing defaults to *Review only*.** Superseded for landings 2026-10-08 (S29): Knut chose *Land*. | A playbook spends tokens unattended. Making it the default for every agent step should be a project's choice, not a build's. |
+| 4 | **Should DPlanner run the tests itself as a gate, judging by exit codes?** | **Yes, in a later step.** | The evidence ranks a criteria gate first — a lying agent cannot fake an exit code — but no preset names one, and it needs the project's commands as data. |
 | 5 | **Two rounds, then escalation, as every gate's default?** | **Yes**, overridable per step up to five. | Two rounds then a person is what the orchestration research settled; a third round between two agents is the debate the evidence advises against. |
 | 6 | **Does "same agent" mean the same harness and model, in a fresh session?** | **Yes.** | Reviewing in the implementer's own context measured worst; a fresh session is the control the evidence says to beat. |
