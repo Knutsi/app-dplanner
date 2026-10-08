@@ -594,20 +594,8 @@ def _lapsed(project_dir: Path, pass_: _Pass) -> bool:
     reset = limits.parse(last.resets)
     if reset is None or reset > datetime.now(UTC):
         return False
-    _clock_answers(project_dir, last.id)
+    questions.clock_answer(project_dir, last.id)
     return True
-
-
-def _clock_answers(project_dir: Path, question_id: str) -> None:
-    def answering(question: Question) -> Question:
-        if question.state not in (questions.OPEN, questions.ESCALATED):
-            return question
-        answers = questions.answers_for(question, "The usage limit has reset.")
-        return questions.answered(
-            question, answers, {"kind": questions.CLOCK, "name": "clock"}, now_stamp()
-        )
-
-    questions.update(project_dir, question_id, answering)
 
 
 def wake(
@@ -629,7 +617,7 @@ def wake(
         reset = limits.parse(question.resets)
         left = 0.0 if reset is None else (reset - datetime.now(UTC)).total_seconds() + grace
         if left <= 0:
-            _clock_answers(project_dir, question_id)
+            questions.clock_answer(project_dir, question_id)
             supervisor.advance_detached(question.step, library=library)
             return f"{question.short}: the limit has reset; its pass advances"
         sleep(min(left, 60.0))

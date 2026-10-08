@@ -558,7 +558,7 @@ src/dplanner/
 │   │                        run, `question list|answer|escalate` over the project's
 │   │                        questions/ (`domain/questions.py`); answering resumes the
 │   │                        parked run on this machine (inbox.py); the cards the Control
-│   │                        Centre shows on top, one per open question (panel.py)
+│   │                        Centre shows on top, one per open question (cards.py)
 │   ├── agent_claims/        which squad holds which steps: `dplanner claim take|list|
 │   │                        release|end` over claims/ (`domain/claims.py`, pushed by
 │   │                        `domain/claim_sync.py`), every way a step leaves a squad

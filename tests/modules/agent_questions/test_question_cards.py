@@ -14,8 +14,8 @@ from PySide6.QtWidgets import QWidget
 from dplanner.domain import questions
 from dplanner.domain.commands import AddNodeCommand
 from dplanner.domain.model import Step
+from dplanner.modules.agent_questions.cards import QuestionCards
 from dplanner.modules.agent_questions.module import AgentQuestionsDeps
-from dplanner.modules.agent_questions.panel import QuestionCards
 from dplanner.modules.agent_supervisor import limits
 from dplanner.modules.status_board.activity import CONTROL_CENTRE_KIND, ControlCentreActivity
 

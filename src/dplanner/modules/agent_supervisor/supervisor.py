@@ -1087,7 +1087,7 @@ class Session:
                 return "", f"run {run} was fenced"
             left = (due - datetime.now(UTC)).total_seconds()
             if left <= 0:
-                self._clock_answers(last.question)
+                questions.clock_answer(self.project_dir, last.question, self.config)
                 continue
             if stop.wait(min(self.guards.wake, left)):
                 if _record(self.project_dir, run).fence:  # Stopped by its fence's SIGTERM.
@@ -1095,17 +1095,6 @@ class Session:
                 # A shutdown, not a decision: the run stays parked on its limit, and the next
                 # supervisor `revive` starts waits on. Only a fence ends a waiting run.
                 return "", f"run {run} is parked on its limit; its supervisor was stopped"
-
-    def _clock_answers(self, question_id: str) -> None:
-        def answering(question: Question) -> Question:
-            if question.state not in (questions.OPEN, questions.ESCALATED):
-                return question
-            answers = questions.answers_for(question, "The usage limit has reset.")
-            return questions.answered(
-                question, answers, {"kind": questions.CLOCK, "name": "clock"}, now_stamp()
-            )
-
-        questions.update(self.project_dir, question_id, answering, self.config)
 
     def _reconcile(self) -> None:
         """Mend what a supervisor that died between two writes left: an ended run's cards

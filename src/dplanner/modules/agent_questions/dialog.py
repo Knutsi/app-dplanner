@@ -1,5 +1,5 @@
-"""The whole of what a card shows the start of: a plan to approve, the denials of a
-permission — read-only, Close alone."""
+"""The full text a question card abbreviates — a plan to approve, a permission's denials —
+read-only, Close alone."""
 
 from PySide6.QtWidgets import QWidget
 

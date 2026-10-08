@@ -390,6 +390,18 @@ def update(
         return changed
 
 
+def clock_answer(project_dir: Path, id_: str, config: Path | None = None) -> None:
+    """Answer a limit question as :data:`CLOCK`, its reset passed — unless it is settled."""
+
+    def answering(question: Question) -> Question:
+        if question.state not in (OPEN, ESCALATED):
+            return question
+        answers = answers_for(question, "The usage limit has reset.")
+        return answered(question, answers, {"kind": CLOCK, "name": "clock"}, now_stamp())
+
+    update(project_dir, id_, answering, config)
+
+
 @contextmanager
 def held(id_: str, config: Path | None = None) -> Iterator[None]:
     """The question's OS lock — in ``config``, never the plan, so a lock file is never

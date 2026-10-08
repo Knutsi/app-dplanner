@@ -1,6 +1,6 @@
-"""Setting a status, once, for every surface: the window's Status verbs, ``dplanner status
-set`` and the review verbs all call :meth:`StatusWorkflow.set_status` and perform the
-``Change`` it returns. ``domain/workflow.py`` says what a workflow is.
+"""Setting a status, once, for every surface: the window's Status verbs and ``dplanner
+status set`` call :meth:`StatusWorkflow.set_status` and perform the ``Change`` it
+returns. ``domain/workflow.py`` says what a workflow is.
 
 **An agent's run ends at ready-for-review.** An :class:`AgentRun` setting an agent step done
 before anybody reviewed it is refused, naming ``ready-for-review`` — unless ``because`` says

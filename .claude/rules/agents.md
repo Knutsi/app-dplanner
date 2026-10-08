@@ -401,7 +401,7 @@ paths:
   coordinator may not answer a `person` gate (`may_answer`); `question escalate` passes an
   open question to a person. No warm hosting of Claude's own question tools yet. `docs/architecture/agents.md`'s *A question
   is a file, and the inbox is the directory* has the reasoning. **The window's inbox is a card
-  per open or escalated question on top of the Control Centre** (`agent_questions/panel.py`,
+  per open or escalated question on top of the Control Centre** (`agent_questions/cards.py`,
   handed to `status_board` as the `question_cards` factory): who asks — a playbook's gate says
   whose judgement it waits for — the step, the kind,
   the question, a button per choice and a person's own words — `inbox.answer` with the person
