@@ -1,7 +1,8 @@
 # DPlanner
 
-A development planner: your **projects**, each one a folder of plain files inside its own
-git repository, so every plan lives in version control next to the code it plans. Built on
+A development planner: your **projects**, each one a folder of plain files in a **plan
+repository** — a git repository of plans, kept apart from the code they plan — so every plan
+lives in version control and names the code it is about. Built on
 [app-framework](https://github.com/Knutsi/app-framework) — PySide6 (Qt 6, LGPL), managed
 with uv, running on Linux, macOS and Windows.
 
@@ -70,7 +71,7 @@ uv run dplanner install all
 
 ```
 Library  ── the account level: a per-user file listing project directories. One per window.
-└── Project  ── a unit of work with a beginning and an end, in its own repository
+└── Project  ── a unit of work with a beginning and an end, in a plan repository, naming its code
     └── Step  ── a node in that project's graph
 ```
 
@@ -86,9 +87,10 @@ learning anything about it. `dplanner aspect list` says which exist in a build.
 ## Status
 
 Early, and honest about it. The model, the storage layer, the index tree, the whole CLI, the
-graph editor and the order view are in place and tested. Fourteen aspects ship — estimate,
-ticket, description, agent instruction, agent run, status, milestone, feature, GitHub refs,
-spec figures, tests, checks and the two documentation ones — each with verbs in the CLI and most with an editor in Step Details
+graph editor and the order view are in place and tested. Nineteen aspects ship — estimate,
+ticket, description, agent instruction, agent run, playbook, status, milestone, feature,
+start, wait, branch cut, landing, GitHub refs, spec figures, tests, checks and the two
+documentation ones — each with verbs in the CLI and most with an editor in Step Details
 (`dplanner aspect list` is the authoritative roll call). Estimation runs over the graph: the order table says what order the
 work goes in and how much of it there is, and `dplanner schedule show` dates it. *Step
 statuses* reads the same graph with the statuses in hand: a table of what needs a person
@@ -97,7 +99,7 @@ progression show` beside it. The *Control Centre*, right after Home, is the same
 every project, each row naming its own and a *Projects* filter to narrow it (`dplanner
 progression show --all`), and every row's ⋮ reaches its agent's terminal, a shell in its
 worktree and its pull request. An agent's work ends at *ready for review*, never at done:
-somebody looks next.
+a person, or a gate of the step's playbook, looks next.
 Tests are what a step must keep passing once it is done: a step carries several, a *check*
 step gathers every test it waits on, and a *test run* records what each one did. Every
 image and file a project carries is browsable in one place — the Assets tab and
@@ -194,15 +196,16 @@ Codex (`~/.agents/skills/dplanner/`) alike. `dplanner install status` says wheth
 installed copy matches the build, and *Tools ▸ Install DPlanner…* does the same from the
 window.
 
-Commands find the current project by walking up from the working directory for
-`project.dproj`, so an agent already sitting in the repository needs no configuration. A
-plan kept in a subdirectory the walk would never enter is reachable through a one-line
-`.dplanner` pointer file at the repository root — see `FORMAT.md`. Everything takes
-`--json`, `--library` and `--project`.
+Commands find the current project with no configuration: walking up from the working
+directory to a `project.dproj` or the `.dplanner` index at a plan repository's root, or —
+from a code checkout or one of its worktrees — by the library project whose code location
+that repository is. So every verb reaches the plan the window shows, from either side; see
+`FORMAT.md`. Everything takes `--json`, `--library` and `--project`.
 
 ```bash
 dplanner library list
-dplanner project create "Search rewrite" --dir ~/code/widget/planning --summary "Replace the index"
+dplanner project create "Search rewrite" --in ~/code/plans --init-repo \
+    --code git@github.com:you/widget.git --summary "Replace the index"
 dplanner step add search "Read the spec"
 dplanner step add search "Draft the model" --after "Read the spec"
 dplanner estimate set "Draft the model" --days 5
@@ -238,12 +241,27 @@ terminals are installed here. Select several ready steps — on the canvas, or b
 *Step statuses* tab or the *Control Centre*, across projects, and dropping its Run Agent
 arrow down — and one gesture launches one agent per step, each in its own project's
 checkout, all through the profile you pick. The step wears a chip and a marching ring while the shell runs, the
-chip follows what the agent reports (`dplanner agent-state set … needs-input` when it has
-a question), and the ring goes when the shell ends — finished, failed or closed, which
+chip follows what the agent reports (`dplanner question ask` when it has a question, which
+reads *needs input*), and the ring goes when the shell ends — finished, failed or closed, which
 the status bar says, with the tokens the run consumed once its CLI's record has been read
 (`dplanner usage show|list` prints the ledger per step and per project). *View ▸
 Agents…* lists every run this window launched, with the command that picks an ended one
 up again; *Step ▸ Show Agent Terminal* brings its window or pane back.
+
+**A playbook says how a step gets done, and nobody watches it.** *Step ▸ Run Playbook* (or
+`dplanner agent run S7 --playbook`) runs the step's stages headless, each one a turn of an
+agent CLI under a supervisor that outlives the window: a plan, the work, a review by another
+vendor's agent that loops back to the work, a gate where a person or the coordinator decides
+— the presets in `dplanner playbook list`, chosen per step or per project, and *Land* for a
+branch's landing, where a person merges because DPlanner never merges into the mainline. The
+card wears a strip saying where the pass stands (*Review 1/2*, *Waits for you · plan
+approval*, *Waits for merge*). Whatever needs a person — a plan to approve, a permission, a
+gate — is a question card on top of the Control Centre, and answering it resumes the session
+(`dplanner question list|answer`); a run that hits a usage limit waits for the reset in its
+supervisor, and *Retry Now* resumes it sooner. *Step ▸ Autonomous Work ▸ Local* hands a
+selection to a coordinating agent (`dplanner agent coordinate`): it claims the steps for a
+squad, runs each one's playbook, answers what it may, escalates the rest and merges into the
+feature branch.
 
 **And before there are steps to run, there is *Project ▸ Open Agent in Code*.** The same
 profiles, in the same terminals, opening where the project's code is — with no briefing at
@@ -281,9 +299,13 @@ uv run dplanner report csv search --table order         # one table, to stdout
 ## On disk
 
 ```
-<repository>/
-└── planning/                  the project directory — any folder in the repo
-    ├── project.dproj          id, title, summary, format, children
+<plan repository>/
+├── .dplanner                  the index: one project directory per line
+└── search-rewrite/            the project directory — any folder in the repo
+    ├── project.dproj          id, title, summary, locations, format, children
+    ├── ledger/                its agent runs, a file per run
+    ├── questions/             what its agents asked, and who answered
+    ├── claims/                which squad has taken which steps
     ├── modules/
     └── steps/
         └── read-the-spec/
@@ -344,12 +366,7 @@ the on-disk one.
 ## Layout
 
 ```
-src/dplanner/
-├── identity.py            what this application calls itself
-├── menus.py               the menu bar's shape, by subject: File, Edit, View (the window), Go (the places), Project, Graph (the canvas), Step, Tools
-├── app.py                 bootstrap: QApplication, the session, the first open
-├── entry.py               the one `dplanner` command: the CLI, or `dplanner window` (`dpw`)
-├── assets/                what the application ships: the icon, one PNG per size, read by the window and the launcher alike
+<repository>/
 ├── scripts/measure_scaling.py     what every gesture costs the GUI thread by project size, headless through the journal
 ├── scripts/synthetic_library.py   a large library with the real aspect mix — for the harness, and for a window to feel
 ├── scripts/gc_catalog.py          a pytest plugin listing each test's Qt garbage in the collector's order
@@ -364,8 +381,19 @@ src/dplanner/
 ├── scripts/windows_check.py       the Windows check: the three checks, the frozen build and a real window, in a VM
 ├── scripts/render_windows_check.py  Debug ▸ Windows Check, live and greyed with its reason — docs/screenshots/s17-windows/
 ├── scripts/windows/              what it drives — the throwaway box, the guest provisioning, and its README
+├── scripts/render_*.py           the other surfaces rendered offscreen to PNG, each naming the docs/screenshots/ folder it fills
+├── scripts/time_accuracy.py      how good the Time tab's forecasts are, scenario by scenario
 ├── dplanner.spec                 the frozen build: onedir, two executables, one analysis (LGPL — see the docstring)
-├── freeze/                       what PyInstaller is handed: the entry point, and the manifest of shipped files
+└── freeze/                       what PyInstaller is handed: the entry point, and the manifest of shipped files
+```
+
+```
+src/dplanner/
+├── identity.py            what this application calls itself
+├── menus.py               the menu bar's shape, by subject: File, Edit, View (the window), Go (the places), Project, Graph (the canvas), Step, Tools
+├── app.py                 bootstrap: QApplication, the session, the first open
+├── entry.py               the one `dplanner` command: the CLI, or `dplanner window` (`dpw`)
+├── assets/                what the application ships: the icon, one PNG per size, read by the window and the launcher alike
 │
 ├── core/                  ── from the template. Qt-free, application-independent.
 │   ├── storage/             three providers behind one protocol: folder, git, GitHub — and two
@@ -379,7 +407,11 @@ src/dplanner/
 │   ├── telemetry.py         the journal both surfaces write: spans, a ring, a JSON-lines file
 
 │   ├── anchors.py           where a quoted passage sits in a document: exact, fuzzy or lost, and behind when the text moved on
-│   ├── signals.py  fsio.py  text_diff.py
+│   ├── process.py           starting a process the user owns, and knowing later whether it still is
+│   ├── config_dir.py        where per-user, per-machine configuration lives — without Qt
+│   ├── user_path.py         the PATH a desktop launch does not inherit, asked for once and put back
+│   ├── secrets.py           API keys in the OS credential store, never on disk
+│   ├── signals.py  fsio.py  text_diff.py  clock.py  markdown.py  xlsx.py
 │
 ├── domain/                ── the planner itself. Qt-free.
 │   ├── model.py             Library, Project, Step: the graph, its edges, its aspects — and the
@@ -399,6 +431,19 @@ src/dplanner/
 │   ├── document_source.py   what a spec source kind hands back: a snapshot, its documents, freshness
 │   ├── document_folder.py   a directory read as one of those snapshots — the walk the folder and
 │   │                        git kinds share, with the nesting, the digests and the caps
+│   ├── locations.py         a project's locations: the repositories it is about, each a role and a position
+│   ├── repositories.py      which repository is which, and where each is on this machine
+│   ├── plan_repo.py, relocate.py, project_link.py
+│   │                        what a plan repository offers a library, moving a plan into one, and
+│   │                        the link a colleague sets a project up from
+│   ├── agents.py            what an agent CLI is to DPlanner: the harness contract a provider fills
+│   ├── headless.py          the harness's headless half: a stage's argv, its stream, how a turn ended
+│   ├── ledger.py            a run's record — its turns and what it consumed — one file per run
+│   ├── questions.py         what an agent or a gate asked, and who answered — one file per question
+│   ├── claims.py, claim_sync.py  a squad's lease on steps, and its commit and push
+│   ├── at_work.py           an agent's own claim that it is at work on a plan, per machine
+│   ├── expenditure.py       what a project's steps consumed, in the order they can be done
+│   ├── dictation.py         the dictation provider contract and the recorder table
 │   ├── migrations.py        the format's version history — append only
 │   └── seed.py              what a brand-new library, and a brand-new project, contain
 │
@@ -413,6 +458,7 @@ src/dplanner/
 │   ├── schedule.py          the same walk carrying estimates: running totals, dates, and when each
 │   │                        step lands in a staffed simulation
 │   ├── scope.py             collectors — check, feature, milestone — and what each gathers
+│   ├── feature_migrate.py   how the project's feature catalogue became each feature step's own entry
 │   └── dates.py             a date in words, the same way everywhere it is printed
 │
 ├── cli/                   ── the headless surface. Qt-free.
@@ -424,7 +470,9 @@ src/dplanner/
 │   ├── desktop.py           `desktop install`/`status`/`uninstall`: the launcher an applications menu opens, one class per platform
 │   ├── install.py           `install all`/`status`/`remove`: the command, the launcher and the skill as one act, read and written together
 │   ├── assets.py            `<noun> attach`/`assets` — the per-aspect pair — and `asset list`/`uses`/`prune` over every module's areas
-│   ├── lint.py              `lint` — every module's checks over the library, one report
+│   ├── lint.py              `project lint` — every module's checks over the library, one report
+│   ├── gate.py              the two doors: the topology read before a graph edit, a house format before its prose
+│   ├── shaping.py, shaping.md   the default shape `topology show` prints beside a project's own
 │   ├── checklist.py         `checklist show` — every module's checks over this *machine*, one report
 │   ├── scopes.py            `scope show` — what a check, feature or milestone gathers
 │   ├── authoring.py         `step add` — one verb, each module contributing its flags
@@ -434,7 +482,7 @@ src/dplanner/
 │   │                        (assemble.py), drawn as one HTML file with inline SVG (page.py,
 │   │                        drawings.py), as sheets (sheets.py), as a plan repository's site
 │   │                        (website.py) — `dplanner report html|site|xlsx|csv|tables`
-│   └── skill.py             the agent skill, generated from the registry
+│   └── skill.py             the agent skill, generated from the registry and skill_preamble.md
 
 │
 ├── framework/             ── from the template, and evolved here. The Qt machinery.
@@ -528,18 +576,22 @@ src/dplanner/
 │   ├── step_description/
 │   ├── step_agent_instruction/   … this one also holds the project's standing instruction
 │   │                             and the step's worktree choice
-│   ├── agent_launch/        Run Agent: the verbs and *Open Agent in Code* (module.py),
-│   │                        `launch.py` the one launch both surfaces run (worktree, briefing,
-│   │                        run record, start) and `workflows.py` its claim, `cli.py`
-│   │                        `dplanner agent run`, `launcher.py` the terminal and multiplexer
+│   ├── agent_launch/        Run Agent: the verbs, *Open Agent in Code* and *Autonomous Work ▸
+│   │                        Local* (module.py), `launch.py` the one launch both surfaces run
+│   │                        (worktree, briefing, run record, start) and `workflows.py` its
+│   │                        claim, `cli.py` `dplanner agent run` — headless under a supervisor
+│   │                        unless `--terminal`, a pass with `--playbook` —, `run_dialog.py`
+│   │                        the launch's two questions, `launcher.py` the terminal and multiplexer
 │   │                        table and the wrapper script that reports back, `profiles.py`
 │   │                        the named agent-and-terminal pairs, seeded once, `settings_page.py`
-│   │                        and `detect_dialog.py` their page, `availability.py`
-│   │                        whether each agent CLI can run here (on PATH, version, signed in)
+│   │                        and `detect_dialog.py` their page, `availability.py` and
+│   │                        `checks.py` whether each agent CLI can run here (on PATH,
+│   │                        version, signed in)
 │   ├── agent_briefing/      what an agent is told — no module.py, headless all through:
 │   │                        the preflight and the report-back protocol (protocol.py), the
 │   │                        step's and project's facts (blocks.py), the instructions
-│   │                        (instructions.py), assembled once by compose.brief; a squad
+│   │                        (instructions.py), assembled once by compose.brief; what a
+│   │                        playbook's stage adds to it (stages.py); a squad
 │   │                        coordinator's briefing over a selection (coordinator.py, which
 │   │                        `agent coordinate` prints); and where a run works
 │   │                        (worktree.py: its run name, checkout, and the worktree git
@@ -553,11 +605,13 @@ src/dplanner/
 │   │                        <run>` drives a headless run turn by turn, guards each turn
 │   │                        (stall, runaway, wall clock), writes it into the ledger
 │   │                        record, then ends, parks or retries the run (supervisor.py);
-│   │                        each account's last-known usage and the launch hold (limits.py)
+│   │                        each account's last-known usage and the launch hold (limits.py,
+│   │                        `dplanner agent limits`)
 │   ├── agent_questions/     the question door: `dplanner question ask` from a headless
 │   │                        run, `question list|answer|escalate` over the project's
 │   │                        questions/ (`domain/questions.py`); answering resumes the
-│   │                        parked run on this machine (inbox.py); the cards the Control
+│   │                        parked run on this machine (inbox.py, and `dplanner agent retry`
+│   │                        for Retry now); the cards the Control
 │   │                        Centre shows on top, one per open question (cards.py)
 │   ├── agent_claims/        which squad holds which steps: `dplanner claim take|list|
 │   │                        release|end` over claims/ (`domain/claims.py`, pushed by
@@ -579,11 +633,13 @@ src/dplanner/
 │   ├── step_milestone/      the steps that mark a milestone — the Milestone tab and the Type ▸ Milestone toggle
 │   ├── step_wait/           a step that holds what requires it, until a day or for working days: the
 │   │                        Type ▸ Wait toggle, the Wait template, its Details block, `dplanner wait`
-│   ├── step_playbook/       which playbook runs a step: the nine built-in presets (presets.py),
+│   ├── step_playbook/       which playbook runs a step: the ten built-in presets (presets.py),
 │   │                        the step's choice and the project's defaults (aspect.py), its
-│   │                        Details block, the Playbooks tab of Project ▸ Settings…,
-│   │                        `dplanner playbook list|show|set|advance` — and the engine:
-│   │                        where a pass stands (passes.py) and what advances it (engine.py)
+│   │                        Details block, the Playbooks tab of Project ▸ Settings…, Step ▸
+│   │                        Run Playbook and Stop Playbook (module.py), `dplanner playbook
+│   │                        list|show|set|advance|stop|wake` — and the engine: where a pass
+│   │                        stands (passes.py), what advances it (engine.py) and the
+│   │                        changes it makes to the plan (workflows.py)
 │   ├── feature/             a step that is a feature: the Type ▸ Feature toggle, the Feature
 │   │                        tab (the spec passages it was read from), the Specs tab's Cite…
 │   │                        menu, `dplanner feature` (list, show, cite, uncite, reanchor)
@@ -603,6 +659,9 @@ src/dplanner/
 │   │                        call, the Test panel beside each roster that a run is worked down from, the preview a
 │   │                        reference in one body opens onto another, the exports, and the
 │   │                        house shape of a test body (format.md, `dplanner test format`)
+│   ├── docs/                what a step contributes to the product's documentation, and what a
+│   │                        feature or milestone compiles from it: the fragment's editor, the
+│   │                        Documentation tab, `dplanner docs|compiled`, the compile prompt
 │   ├── github/              the branch and PR a step lands in: refs, pickers, PR-state refresh, where
 │   │                        they stand now (the tab's standing line, `dplanner github show`), the missing-gh notice
 │   │
