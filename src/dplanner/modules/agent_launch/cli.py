@@ -192,6 +192,7 @@ class StageLauncher:
         findings: Sequence[Mapping[str, Any]],
         directory: str,
         member: str,
+        claim: str,
     ) -> StagedRun:
         """Write the stage's run — nothing started. ``limits.HeldError`` while its account is held,
         ``CliError`` for anything else that refuses it."""
@@ -211,9 +212,16 @@ class StageLauncher:
             workdir = Path(directory) if directory else place(*worktree_of(step, facts), branches)
         except WorktreeError as error:
             raise CliError(str(error)) from error
-        # A pass goes on for whichever squad holds its step: the re-read before the start
-        # then refuses only a change of hands while the stage was prepared.
-        squad, claim = held_claim(project_dir, step.id)
+        # A pass goes on only under the claim it started under: an ended claim reads as no
+        # claim at all, and must not become a solo launch. `start_run` asks again under the
+        # launch lock, just before the start.
+        squad, holding = held_claim(project_dir, step.id)
+        if claim and holding != claim:
+            raise CliError(
+                f"the claim the pass started under, {claims.short(claim)}, has ended or no"
+                " longer holds the step"
+            )
+        claim = holding
         # The member keeps its callsign through every stage while its squad holds the step.
         callsign = member if squad and claims.squad_of(member) == squad else squad
         try:

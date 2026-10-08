@@ -757,3 +757,19 @@ A supervisor started on a run whose recorded turn was still live refused it — 
 running" — on the theory that its own supervisor had it. Holding the run's lock proves that
 supervisor gone, so nothing would ever finish the turn or advance its pass. It is now ended by
 identity and retried as a lost turn. Now: `agents.md`'s *One supervisor per run*.
+
+## 2026-10-08 — A Codex plan or review writes control directories, not the project
+
+A Codex plan or review had the whole project directory as a writable root, so with a plan
+colocated at the code checkout's root and the step working in that checkout, its planner and
+reviewer could write the code. Kettle Watch found it in round 2 of the S23 landing review. The
+roots are now the project's `questions/` and `claims/` and the config directory, any that is
+or holds the code dropped. Now: `playbooks.md`'s *Each stage is one headless turn per harness*.
+
+## 2026-10-08 — A pass pins the claim it started under
+
+A later stage launched under whichever squad held the step when it was prepared. Ending a claim
+skips a launch lock that is busy, and an ended claim reads as no claim, so an advance already
+preparing its next stage launched it solo. Kettle Watch found it in round 2. The pass now pins
+its first run's claim and a stage whose claim has gone is a `blocked` card. Now:
+`playbooks.md`'s *One verb starts a pass*.
