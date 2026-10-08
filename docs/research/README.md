@@ -35,3 +35,9 @@ changes, write a new note and link back.
   door (`dplanner ask`) plus resume works for all three; Claude's native question tool exists
   only when DPlanner hosts it; plan mode is plan → park → resume; nothing blocks headless but
   every CLI fails quietly; both vendors publish limit resets, and a session survives a 429.
+- [2026-10-08 — Playbooks dogfood: every preset, a coordinator and the Control Centre](2026-10-08-playbooks-dogfood/README.md):
+  the finished engine on a toy plan with real Claude Code and Codex. Every preset reached its
+  end; a headless coordinator (*teapot*) took three steps to merge; questions, plan approvals,
+  a usage hold and a blocked run were answered on the Control Centre's cards; a SIGKILLed
+  supervisor was revived. The weak part is what a person sees: only the cards say a step waits
+  for you. Three fixes and eight filed notes.

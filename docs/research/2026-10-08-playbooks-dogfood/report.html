@@ -1,0 +1,265 @@
+<title>Playbooks Dogfood</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root{
+  --ground:#F1F3F6; --surface:#FFFFFF; --sunken:#E6EAF0; --ink:#17212C; --muted:#56616E; --line:#D3D9E1;
+  --accent:#2F5D8A; --accent-soft:#DCE6F1;
+  --ok:#2C7A4B; --ok-soft:#DDEFE3; --warn:#9A5A08; --warn-soft:#F5E8D2; --bad:#AE3A30; --bad-soft:#F6DEDB;
+  --code-bg:#E9EDF2;
+  --display:"Bricolage Grotesque","Arial Narrow",system-ui,sans-serif;
+  --body:"Source Sans 3",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --ground:#0F141A; --surface:#161D25; --sunken:#1C242E; --ink:#E2E8EE; --muted:#9AA6B3; --line:#2A3440;
+    --accent:#7FA8D4; --accent-soft:#1B2B3D;
+    --ok:#6CC28F; --ok-soft:#15291E; --warn:#E0A54F; --warn-soft:#2E2312; --bad:#EE8579; --bad-soft:#331916;
+    --code-bg:#1A222B;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --ground:#0F141A; --surface:#161D25; --sunken:#1C242E; --ink:#E2E8EE; --muted:#9AA6B3; --line:#2A3440;
+  --accent:#7FA8D4; --accent-soft:#1B2B3D;
+  --ok:#6CC28F; --ok-soft:#15291E; --warn:#E0A54F; --warn-soft:#2E2312; --bad:#EE8579; --bad-soft:#331916;
+  --code-bg:#1A222B;
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--body);font-size:17px;line-height:1.6;padding-inline:16px;padding-block:0 64px}
+.shell{max-width:1160px;margin:0 auto;display:grid;grid-template-columns:1fr;gap:36px}
+@media (min-width:1000px){.shell{grid-template-columns:220px minmax(0,1fr)}}
+nav.toc{font-size:14.5px;padding-top:32px}
+@media (min-width:1000px){nav.toc{position:sticky;top:env(safe-area-inset-top,0px);align-self:start;max-height:100vh;overflow-y:auto}}
+nav.toc h2{font-family:var(--mono);font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:0 0 10px;font-weight:600}
+nav.toc ul{list-style:none;margin:0;padding:0;display:grid;gap:2px}
+nav.toc a{display:block;color:var(--ink);text-decoration:none;padding:5px 8px;border-radius:4px}
+nav.toc a:hover,nav.toc a:focus-visible{background:var(--sunken)}
+main{min-width:0;max-width:840px}
+header.mast{padding:40px 0 20px;border-bottom:1px solid var(--line)}
+.eyebrow{font-family:var(--mono);font-size:12.5px;color:var(--muted)}
+h1{font-family:var(--display);font-weight:800;font-size:clamp(34px,6vw,52px);line-height:1.04;margin:10px 0 14px;letter-spacing:-.015em;text-wrap:balance}
+.lede{font-size:19px;max-width:62ch;margin:0}
+section{padding-top:44px}
+h2{font-family:var(--display);font-weight:800;font-size:28px;line-height:1.15;margin:0 0 14px;text-wrap:balance}
+h3{font-family:var(--display);font-weight:600;font-size:19px;margin:26px 0 8px}
+p,li{max-width:68ch}
+p{margin:0 0 14px}
+ul{padding-left:1.2em;margin:0 0 14px}
+li{margin-bottom:6px}
+a{color:var(--accent)}
+code{font-family:var(--mono);font-size:.84em;background:var(--code-bg);padding:1px 5px;border-radius:3px}
+.inshort{border-left:3px solid var(--accent);background:var(--surface);padding:12px 16px 2px;margin:0 0 20px;border-radius:0 6px 6px 0}
+.inshort b.k{font-family:var(--mono);font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:2px}
+.scroll{overflow-x:auto;margin:12px 0 22px;background:var(--surface);border:1px solid var(--line);border-radius:6px}
+table{border-collapse:collapse;width:100%;min-width:640px;font-size:15px}
+th,td{text-align:left;vertical-align:top;padding:9px 12px;border-bottom:1px solid var(--line)}
+tr:last-child td{border-bottom:0}
+th{font-family:var(--mono);font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+td:first-child{font-weight:600;width:24%}
+.chip{display:inline-block;font-family:var(--mono);font-size:11.5px;font-weight:600;padding:1px 7px;border-radius:999px;margin-right:6px;white-space:nowrap}
+.ok{background:var(--ok-soft);color:var(--ok)} .warn{background:var(--warn-soft);color:var(--warn)} .bad{background:var(--bad-soft);color:var(--bad)} .na{background:var(--sunken);color:var(--muted)}
+.code{background:var(--code-bg);border-radius:6px;margin:12px 0 20px;overflow-x:auto}
+.code pre{margin:0;padding:12px 14px;font-family:var(--mono);font-size:13px;line-height:1.55}
+.code .src{font-family:var(--mono);font-size:11.5px;color:var(--muted);padding:7px 14px 0}
+.flow{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:12px;overflow-x:auto;margin:12px 0 18px}
+.verdict{display:grid;grid-template-columns:1fr;gap:12px;margin:16px 0 8px}
+@media (min-width:700px){.verdict{grid-template-columns:repeat(3,1fr)}}
+.verdict div{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:12px 14px}
+.verdict b{font-family:var(--display);font-size:17px;display:block;margin-bottom:4px}
+.verdict p{font-size:15px;margin:0}
+footer{margin-top:56px;padding-top:16px;border-top:1px solid var(--line);font-size:14px;color:var(--muted)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+figure{margin:14px 0 22px}
+figure img{display:block;max-width:100%;height:auto;border:1px solid var(--line);border-radius:6px}
+figcaption{font-size:14px;color:var(--muted);margin-top:6px}
+</style>
+<div class="shell">
+<nav class="toc" aria-label="Contents">
+  <h2>Contents</h2>
+  <ul>
+    <li><a href="#answer">The answer</a></li>
+    <li><a href="#feel">How it feels</a></li>
+    <li><a href="#presets">Every preset</a></li>
+    <li><a href="#cards">Answering from the cards</a></li>
+    <li><a href="#coordinator">A coordinator</a></li>
+    <li><a href="#hold">Usage hold</a></li>
+    <li><a href="#revive">A killed supervisor</a></li>
+    <li><a href="#spend">What it cost</a></li>
+    <li><a href="#fixed">Fixed and filed</a></li>
+    <li><a href="#untested">Not tested</a></li>
+  </ul>
+</nav>
+<main>
+<header class="mast">
+  <div class="eyebrow">2026-10-08 · S21 · Claude Code 2.1.280 (Opus 5.5) · Codex CLI 0.160.0 · a toy plan · Kettle Twenty-One</div>
+  <h1>Does the playbook engine hold up with real agents?</h1>
+  <p class="lede">Yes. Thirteen agent steps on a toy plan ran every preset, a coordinator, questions and plan approvals answered on the Control Centre's cards, a forced usage hold released by <strong>Retry now</strong> and a supervisor killed mid-turn. Every pass reached its end. What a person <em>sees</em> while it runs is the weak part.</p>
+</header>
+
+<section id="answer">
+  <h2>The answer</h2>
+  <div class="inshort"><b class="k">In short</b><p>The engine did the right thing at every turn: it parked when it should have, resumed the same session with the answer, merged only into the feature branch, and revived a killed run. Three small fixes landed with this step. Eight rough edges are filed, and one of them needs Knut's call.</p></div>
+  <div class="verdict">
+    <div><b>Works</b><p>All nine presets, cross-vendor review both ways, <code>progress</code> merging its own PR, the coordinator end to end, the hold and Retry now, revive after SIGKILL.</p></div>
+    <div><b>Fixed here</b><p>Codex runs counted as model "unknown"; gate cards that said "An agent"; a fake API that could not release a hold.</p></div>
+    <div><b>Needs a decision</b><p>On a landing that was never run, <em>Review only</em> (the landing default) reviews the branch and skips the landing's own work (N180).</p></div>
+  </div>
+</section>
+
+<section id="feel">
+  <h2>How it feels</h2>
+  <div class="inshort"><b class="k">In short</b><p>Almost everything a person needs to know is on the Control Centre's cards, and only there. The canvas shows four states: pending, in progress, Ready for review and done. It cannot tell a step that waits for you from one that waits for nobody. The status bar speaks in run ids. A run that is dying, or already dead, shows nothing at all.</p></div>
+  <p>Each row is one moment of a pass, as the window showed it. The last column marks where I was left guessing.</p>
+  <div class="scroll"><table>
+    <tr><th>Moment</th><th>Canvas card</th><th>Control Centre</th><th>Status bar</th><th>Left guessing?</th></tr>
+    <tr><td>Launched (<code>agent run --playbook</code>)</td><td>Turns <em>in progress</em>; a small playbook medallion over the card</td><td>The row moves to In progress</td><td>"Took N changes from outside DPlanner"</td><td><span class="chip warn">which stage</span>Plan, execute and review all look the same</td></tr>
+    <tr><td>Plan waits for approval</td><td>Still <em>in progress</em></td><td>A card: <em>Plan approval · S5 Longest word</em>, <em>Show Plan…</em>, Pass / Changes / Stop, your own words</td><td>Nothing</td><td><span class="chip warn">canvas silent</span>Only the card says it waits for you</td></tr>
+    <tr><td>The agent asks its own question</td><td><em>In progress</em></td><td>A card that names the agent (<em>Claude Code</em>) with the choices it gave</td><td>Nothing</td><td><span class="chip ok">clear</span></td></tr>
+    <tr><td>Work done, gate waiting</td><td>Gold <em>Ready for review</em> with the PR chip: the agent set its status, the gate came after</td><td>A gate card. It read <em>An agent</em>; it now reads <em>Waits for you</em> or <em>Waits for the coordinator</em></td><td>Nothing</td><td><span class="chip bad">identical</span>A step at a person gate looks exactly like one that is merely Ready for review (N186)</td></tr>
+    <tr><td>You answer</td><td>Unchanged until the next stage</td><td>The card goes on the next poll (2 s)</td><td>"Q-e7aa answered; run 20261008T085057Z-95593154 resumes with it"</td><td><span class="chip warn">run id</span>The step is not named (N187)</td></tr>
+    <tr><td>A coordinator's squad works it</td><td>A <em>teapot</em> chip under the card</td><td>A Squad column reading <em>teapot</em></td><td>Nothing</td><td><span class="chip ok">clear</span></td></tr>
+    <tr><td>Account held</td><td><em>In progress</em></td><td><em>Usage hold · Claude Code · The run resumes by itself at 14:20</em>, Retry Now</td><td>Nothing</td><td><span class="chip ok">clear</span></td></tr>
+    <tr><td>Failing and retrying</td><td><em>In progress</em></td><td>Nothing, for 25 minutes, then a Blocked card</td><td>Nothing</td><td><span class="chip bad">silent</span>N183</td></tr>
+    <tr><td>Supervisor dead</td><td><em>In progress</em></td><td>Nothing until a window start revives it</td><td>Nothing</td><td><span class="chip bad">silent</span>N182</td></tr>
+    <tr><td>Pass stopped by you</td><td><em>In progress</em> forever</td><td>The In progress row stays</td><td>"…its pass advances on it"</td><td><span class="chip bad">stale</span>N181</td></tr>
+    <tr><td><code>progress</code> merged</td><td>Green tick, PR chip</td><td>Done</td><td>Nothing</td><td><span class="chip ok">clear</span></td></tr>
+  </table></div>
+  <figure><img src="shots/s1-pass-before-graph.png" alt="The toy plan's canvas: S1 to S5 gold with PR chips, S8 done, S9 and S11 gold with teapot chips"><figcaption>The canvas while S1, S9 and S11 waited at gates. S2, S3 and S5 waited for nobody. You cannot tell which is which from here.</figcaption></figure>
+  <figure><img src="shots/s1-pass-before-cc.png" alt="Three gate cards on the Control Centre, each saying An agent"><figcaption>The same moment on the Control Centre. S1's card is a person gate; S9's and S11's are the coordinator's. All three said <em>An agent</em>.</figcaption></figure>
+  <figure><img src="shots/fixed-gate-words-now-cc.png" alt="Two gate cards: Waits for you, and Waits for the coordinator — or you, when none drives the run"><figcaption>After the fix: the card says whose judgement it waits for.</figcaption></figure>
+</section>
+
+<section id="presets">
+  <h2>Every preset</h2>
+  <div class="inshort"><b class="k">In short</b><p>Each preset ran on one tiny step: one module and one test. Most passes took one to six minutes of agent time. The ones that waited for a person took as long as the person did.</p></div>
+  <div class="scroll"><table>
+    <tr><th>Step · preset</th><th>Stages as run</th><th>Out tokens</th><th>Ending</th></tr>
+    <tr><td>S1 · <code>execute</code></td><td>execute (Codex); later <code>review-only</code>: review (Claude), person</td><td>5.2k</td><td><span class="chip ok">done</span>Ready for review, PR #1; review pass, person pass</td></tr>
+    <tr><td>S2 · <code>plan-execute-review-self</code></td><td>plan, execute, review — all Claude, the review fresh</td><td>5.6k</td><td><span class="chip ok">done</span>pass in 1 min 26 s</td></tr>
+    <tr><td>S3 · <code>plan-execute-review-other</code></td><td>plan, execute (Codex), review (Claude)</td><td>9.2k</td><td><span class="chip ok">done</span>pass</td></tr>
+    <tr><td>S4 · <code>plan-execute-person</code></td><td>plan, execute (asked, answered), person: <em>changes</em>, execute 2 (resumed), person: Pass</td><td>6.9k</td><td><span class="chip ok">done</span>loop-back resumed the session</td></tr>
+    <tr><td>S5 · <code>plan-person-execute</code></td><td>plan, person (approved on the card), execute</td><td>5.0k</td><td><span class="chip ok">done</span></td></tr>
+    <tr><td>S6 · <code>spike</code></td><td>plan (Codex, read-only), person</td><td>2.5k</td><td><span class="chip ok">done</span>step set done on approval</td></tr>
+    <tr><td>S8 · <code>plan-execute-progress</code></td><td>plan (lost, retried), execute, progress</td><td>4.4k</td><td><span class="chip ok">done</span>merged PR #6 into <code>feature/toy</code></td></tr>
+    <tr><td>S9–S11 · <code>plan-execute-coordinator</code></td><td>plan, execute, coordinator gate (Teapot Actual)</td><td>5.0–5.8k each</td><td><span class="chip ok">done</span>merged by the coordinator</td></tr>
+    <tr><td>S13 · <code>review-only</code> (landing default)</td><td>review (Codex), person: Stop</td><td>4.0k</td><td><span class="chip warn">wrong work</span>reviewed the branch; no landing PR existed (N180)</td></tr>
+  </table></div>
+  <p>A Codex review stage cannot reach the network: the landing's reviewer said its "remote refresh" was "restricted by the sandbox". A Codex agent that read its briefing first (S1) finished in one turn.</p>
+</section>
+
+<section id="cards">
+  <h2>Answering from the cards</h2>
+  <div class="inshort"><b class="k">In short</b><p>Every answer went through the real card buttons in the real window, run offscreen: a choice, a plan's Pass, your own words as <em>changes</em>, Stop, and Retry Now. Each was delivered, and the run resumed in the same session.</p></div>
+  <figure><img src="shots/s4-answer-before-cc.png" alt="A plan approval card for S5 above a decision card for S4 offering average_word_length and mean_word_length"><figcaption>S5's plan approval, with S4's own question below it. S4's card names its agent; S5's did not.</figcaption></figure>
+  <ul>
+    <li><strong>An agent's question.</strong> S4's briefing asked it to ask which name to use. It ran <code>dplanner question ask</code> with both choices and ended its turn <code>asked</code>. Pressing <em>mean_word_length</em> resumed the session with that answer, and the code uses it.</li>
+    <li><strong>A plan approval.</strong> <em>Show Plan…</em> opens the plan. <em>Pass</em> started execute. The status bar's confirmation was replaced at once by "Took 4 changes from outside DPlanner".</li>
+    <li><strong>Your own words.</strong> Typed into S4's person gate, they became <em>changes</em>. Execute attempt 2 resumed the same session, stripped the punctuation as asked, added a test and came back to the gate for round 2.</li>
+    <li><strong>Stop</strong> ended the landing's pass. The step still reads in progress (N181).</li>
+  </ul>
+</section>
+
+<section id="coordinator">
+  <h2>A coordinator</h2>
+  <div class="inshort"><b class="k">In short</b><p>The S19 briefing, run as <code>claude -p</code>, coordinated three steps through to merge, and the word it chose was <em>teapot</em>. Headless, it needed a person three times: to wake it (it schedules a wake-up that <code>-p</code> cannot keep), to allow <code>gh pr merge</code> (Claude's auto mode refused it), and to wave through a "stale" skill.</p></div>
+  <ul>
+    <li><strong>The word: teapot.</strong> Friendly, two syllables, professional. Callsigns came out as <em>Teapot Actual</em>, <em>Teapot Two</em>, and so on.</li>
+    <li><strong>Discipline.</strong> It put <code>export DPLANNER_CALLSIGN=teapot-actual</code> before every <code>dplanner</code> call. Each Bash call is a fresh shell, so that is what the briefing asks.</li>
+    <li><strong>Judgement.</strong>
+      <ul>
+        <li>It compared S9's and S11's files and ran them side by side.</li>
+        <li>For the gates it read both diffs and built <code>teapot-actual/verify</code> over <code>feature/toy</code> with both merged; 13 tests passed. Only then did it pass both gates and record a decision note.</li>
+        <li>It skipped a cross-vendor review on toy-sized changes and said why.</li>
+        <li>It never answered a person gate.</li>
+      </ul></li>
+    <li><strong>Where it stopped</strong> (N185):
+      <ul>
+        <li><code>skill status</code> read <em>stale</em>, because a branch build was checking the installed skill. It stopped, as the briefing says to; workers in the same state carried on.</li>
+        <li>Each round ended with ScheduleWakeup, which ends a <code>-p</code> process. I resumed it five times, at a total of $0.74.</li>
+        <li><code>gh pr merge</code> was refused by Claude's auto mode as "a merge without review". It stopped, asked, and merged once it was given <code>--allowedTools "Bash(gh pr merge:*)"</code>.</li>
+      </ul></li>
+  </ul>
+  <p>The window's <em>Autonomous Work ▸ Local</em> opens the same briefing interactively in the profile's command, Claude's <code>--permission-mode plan</code>. A person is there to approve its plan and its <code>gh</code> calls, so none of these three stops arises. A coordinator with nobody watching needs a waker and an allow-list.</p>
+</section>
+
+<section id="hold">
+  <h2>Usage hold</h2>
+  <div class="inshort"><b class="k">In short</b><p>A hold forced through the fake API put up its card within 3 s and held the whole account. When the fake was told to let requests through, <strong>Retry Now</strong> resumed the same run, which finished 46 s later, and the hold lifted. The first attempt taught that a waiting supervisor keeps the environment it started with.</p></div>
+  <figure><img src="shots/d2-held-now-cc.png" alt="A usage hold card: Claude Code, The account ran out of usage. The run resumes by itself at 14:20, with Retry Now"><figcaption>S14 held. The card says when it will go on by itself, and offers to go on now.</figcaption></figure>
+  <ul>
+    <li><strong>First attempt (S12).</strong>
+      <ul>
+        <li>The fake ran in <code>usage</code> mode, and the turn ended <code>limit</code>. The card borrowed the account's last-known reset (15:20), as designed.</li>
+        <li>S10's plan, finishing on the real account, lifted the hold at once; that is correct.</li>
+        <li>After the fake was stopped, Retry Now resumed inside the waiting supervisor, which still pointed at the dead fake. Each turn hit ECONNREFUSED after about 3 minutes of Claude's own retrying.</li>
+        <li>Then came DPlanner's retries at 30 s, 2 min and 10 min. The <code>blocked</code> card appeared at last, 25 minutes after the hold.</li>
+        <li>Retry Now on that card started a fresh supervisor in the window's environment, and the run finished (N183, N184).</li>
+      </ul></li>
+    <li><strong>Second attempt (S14)</strong>, with <code>fake_api.py usage --release FLAG</code>:
+      <ul>
+        <li>The card appeared, and <code>agent limits</code> read <em>five-hour 100 %, held</em>.</li>
+        <li>I touched the flag and pressed Retry Now. Turn 2 went through the fake to the real API with Claude's own login, and finished done.</li>
+        <li>The limits went back to the real 43 %.</li>
+      </ul></li>
+  </ul>
+  <figure><img src="shots/d1-blocked-retry-before-cc.png" alt="A blocked card: The run cannot go on alone: API Error: Connection refused"><figcaption>S12's blocked card, 25 minutes after the hold.</figcaption></figure>
+</section>
+
+<section id="revive">
+  <h2>A killed supervisor</h2>
+  <div class="inshort"><b class="k">In short</b><p>A supervisor killed with SIGKILL mid-turn left a turn with no end. Its Claude process exited on its own within about 40 s, once the pipe was gone. A window start then ran revive, which ended the turn <code>failed/lost</code> and retried. The pass went on through execute and <code>progress</code> to done. Until the window started, nothing said the run was dead (N182).</p></div>
+</section>
+
+<section id="spend">
+  <h2>What it cost</h2>
+  <div class="inshort"><b class="k">In short</b><p>Claude's worker turns came to about $6.50 at list price, and the coordinator to $0.74, all on the subscription; Codex used about 7 % of its five-hour window. Expenditure shows every run per step. Codex runs read model <em>unknown</em> until this step's fix.</p></div>
+  <figure><img src="shots/spend-expenditure.png" alt="The Expenditure tab: 13 steps, 583k in, 5.0M cached, 60.7k out, Codex runs with model unknown"><figcaption>Expenditure during the run. "unknown" is a Codex run: <code>codex exec --json</code> never names its model. The fix reads it from the rollout (N177).</figcaption></figure>
+</section>
+
+<section id="fixed">
+  <h2>Fixed and filed</h2>
+  <div class="inshort"><b class="k">In short</b><p>Three fixes are on this branch, each with a test where it is code. Eight <code>later</code> notes are on S21, worded as the facts they are.</p></div>
+  <h3>Fixed</h3>
+  <ul>
+    <li><strong>N177.</strong> <code>Headless.model</code>, a hook beside <code>limits</code>; Codex reads the latest <code>turn_context</code> from the thread's rollout.</li>
+    <li><strong>N178.</strong> A gate card says whose judgement it waits for (<code>questions.gate_role</code>).</li>
+    <li><strong>N179.</strong> <code>fake_api.py --release FLAG</code>: once the file exists, a pass-through to the real API.</li>
+  </ul>
+  <h3>Filed</h3>
+  <ul>
+    <li><strong>N180</strong> <span class="chip warn">for Knut</span><em>Review only</em> on a landing that was never run reviews the branch. Refuse a gate-first playbook on a step not at Ready for review, or make the landing default execute → review → person.</li>
+    <li><strong>N181.</strong> Stop leaves the step in progress.</li>
+    <li><strong>N182.</strong> A dead supervisor is invisible until something revives it.</li>
+    <li><strong>N183.</strong> Transient failures show nothing for about 25 minutes.</li>
+    <li><strong>N184.</strong> Retry now resumes inside the waiting supervisor, in its old environment.</li>
+    <li><strong>N185.</strong> A headless coordinator needs a waker and an allow-list for <code>gh pr merge</code>.</li>
+    <li><strong>N186.</strong> The canvas card does not say a step waits for a person.</li>
+    <li><strong>N187.</strong> Small things:
+      <ul>
+        <li>run ids in the status bar;</li>
+        <li><code>topology set</code> does not count as reading the topology;</li>
+        <li>a branch cut is listed as pending;</li>
+        <li>Codex review has no network;</li>
+        <li>there is no per-profile model, so Opus 5.5 was pinned with <code>ANTHROPIC_MODEL</code>.</li>
+      </ul></li>
+  </ul>
+</section>
+
+<section id="untested">
+  <h2>Not tested</h2>
+  <div class="inshort"><b class="k">In short</b><p>What this run did not reach, so nobody reads it as proven.</p></div>
+  <ul>
+    <li>opencode, in any stage.</li>
+    <li>A real exhausted account, and a Codex usage hold. Codex's real one was seen on 2026-10-04.</li>
+    <li>The window's own <em>Autonomous Work ▸ Local</em> menu. The coordinator ran as <code>claude -p</code> on the same briefing.</li>
+    <li>A round cap, two coordinators at once, a second machine.</li>
+    <li>The sleep inhibitor (N111). It stays filed.</li>
+  </ul>
+</section>
+
+<footer>Source, scripts and screenshots: <code>docs/research/2026-10-08-playbooks-dogfood/</code> on <code>feature/playbooks</code>. Raw streams stayed in the scratchpad, because they carry the account's identity. It builds on the 2026-10-03 playbook research, the 2026-10-04 autonomous run and the 2026-10-07 headless reality check.</footer>
+</main>
+</div>
