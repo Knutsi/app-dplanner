@@ -147,6 +147,64 @@ def squad_of(callsign: str) -> str:
     return callsign.strip().lower().partition("-")[0]
 
 
+# A squad's members: the coordinator is Actual, the workers Two, Three…, a worker's own
+# sub-agent Two-One, and the squad's verifier Watch — Knut's scheme, spoken as a radio net.
+ACTUAL = "actual"
+WATCH = "watch"
+_NUMBERS = (
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+    "ten",
+    "eleven",
+    "twelve",
+    "thirteen",
+    "fourteen",
+    "fifteen",
+    "sixteen",
+    "seventeen",
+    "eighteen",
+    "nineteen",
+    "twenty",
+)
+
+
+def member(squad: str, *ordinals: int) -> str:
+    """A member's callsign as machines write it: ``member("kettle")`` → ``kettle-actual``,
+    ``member("kettle", 2)`` → ``kettle-two``, ``member("kettle", 2, 1)`` → ``kettle-two-one``.
+    ``ValueError`` for an ordinal outside one to twenty."""
+    if any(not 1 <= ordinal <= len(_NUMBERS) for ordinal in ordinals):
+        raise ValueError(f"a member is numbered one to {len(_NUMBERS)}")
+    words = [_NUMBERS[ordinal - 1] for ordinal in ordinals] or [ACTUAL]
+    return "-".join([squad_of(squad), *words])
+
+
+def spoken(callsign: str) -> str:
+    """A callsign as a message says it: ``kettle-two-one`` → ``Kettle Two-One``."""
+    squad, _, rest = callsign.strip().lower().partition("-")
+    said = squad.capitalize()
+    return f"{said} {'-'.join(word.capitalize() for word in rest.split('-'))}" if rest else said
+
+
+def squads_holding(project_dirs: Iterable[Path], now: str) -> dict[str, Claim]:
+    """Every squad word a live or parked claim answers to in these projects, to one of its
+    claims: the words a new squad may not pick, since two coordinators under one word would
+    grow each other's claim."""
+    words: dict[str, Claim] = {}
+    for project_dir in project_dirs:
+        parked = parks(questions.records(project_dir))
+        for claim in records(project_dir):
+            if standing(claim, now, parked) in HOLDING:
+                words.setdefault(claim.callsign, claim)
+    return words
+
+
 def claimed(
     project: str,
     callsign: str,

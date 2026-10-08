@@ -284,3 +284,10 @@ def test_uninstall_verb(registry, tmp_path, monkeypatch):
     assert not (tmp_path / ".claude" / "skills" / "dplanner").exists()
     assert not (tmp_path / ".agents" / "skills" / "dplanner").exists()
     assert "nothing installed" in invoke(registry, "skill", "uninstall", "--repo")
+
+
+def test_the_skill_sends_a_coordinator_to_its_briefing_and_names_the_callsigns(files):
+    prose = " ".join(files[SKILL_FILE].split())
+    assert "## Coordinating a selection" in files[SKILL_FILE]
+    assert "dplanner agent coordinate S3 S4 S7 --callsign kettle" in prose
+    assert "`kettle-two-one` for a worker's sub-agent" in prose

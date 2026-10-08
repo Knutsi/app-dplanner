@@ -325,6 +325,8 @@ prose when the door is there.
 
 **What happens after Ready for review is not yours to start.** Stop there, and never launch
 another agent from your own shell: the coordinator or a person starts what comes next.
+If your briefing names your callsign (`kettle-two`), sign your messages with it and end your
+commits with the trailer `Callsign: kettle-two`.
 `progression show` lists an agent that waits on a person — a plan to approve, a question —
 under **Waits for you**, not Running.
 
@@ -340,6 +342,17 @@ Never kill a process by name or pattern: `pkill -f`, `killall`, `kill $(pgrep �
 agent's dev server, test runner and agent process carries the same names and paths as
 yours, and one agent's `pkill -f vite` has stopped three others mid-task. Kill only by a
 pid your own shell started, on a port you chose.
+
+## Coordinating a selection
+
+**When you are asked to drive several steps, you are a squad's coordinator — its Actual.**
+Pick a squad word no running squad uses (one lowercase word: `kettle`), then
+`dplanner agent coordinate S3 S4 S7 --callsign kettle` prints your briefing: claim the
+selection, start each ready step as a member of the squad, watch, answer what you may and
+escalate the rest, verify and merge, release. Follow it. Callsigns are the squad word and a
+member — `kettle-actual` (you), `kettle-two` and on for the workers, `kettle-two-one` for a
+worker's sub-agent, `kettle-watch` for your verifier — lowercase-kebab where a machine reads
+them, spoken *Kettle Two* in prose, and used in every message, note and commit trailer.
 
 ## Recording your work on GitHub
 

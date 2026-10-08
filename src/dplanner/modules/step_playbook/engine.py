@@ -88,9 +88,11 @@ class StageLauncher(Protocol):
         dress: Callable[[LedgerRecord], LedgerRecord],
         findings: Sequence[Mapping[str, Any]],
         directory: str,
+        member: str,
     ) -> Staged:
-        """Write the stage's run, nothing started. ``limits.HeldError`` while its account is held,
-        ``CliError`` for any other refusal."""
+        """Write the stage's run, nothing started — run by ``member`` of the squad holding the
+        step when it is one of that squad's (``kettle-two``). ``limits.HeldError`` while its
+        account is held, ``CliError`` for any other refusal."""
         ...
 
 
@@ -107,6 +109,7 @@ class Planned:
     pass_: str
     playbook: Playbook
     settings: Settings
+    member: str  # The squad member it runs as, from `agent run --callsign`; "" for none.
 
 
 @dataclass(frozen=True)
@@ -150,14 +153,15 @@ class Engine:
             settings = passes.pinned(playbook, read(step), implementer, self.launch.runnable())
         except ValueError as error:
             raise CliError(f"{playbook.name}: {error}") from error
-        return Planned(ledger.new_run_id(), playbook, settings)
+        return Planned(ledger.new_run_id(), playbook, settings, "")
 
     def start(
-        self, context: CliContext, step: Step, chosen: str, implementer: str
+        self, context: CliContext, step: Step, chosen: str, implementer: str, member: str = ""
     ) -> Callable[[str], Begun]:
         """``agent run --playbook``'s half: :meth:`plan` now, and :meth:`begin` — handed the
-        worktree, under the launch lock — before the claim is saved."""
-        planned = self.plan(context, step, chosen, implementer)
+        worktree, under the launch lock — before the claim is saved. ``member`` is the
+        callsign every stage of the pass runs as."""
+        planned = replace(self.plan(context, step, chosen, implementer), member=member)
         return lambda directory: self.begin(context, step, planned, directory)
 
     def begin(self, context: CliContext, step: Step, planned: Planned, directory: str) -> Begun:
@@ -170,7 +174,9 @@ class Engine:
         latest = _latest_pass(project_dir, step.id)
         if not isinstance(latest, str) and (orphan := _orphan(latest, step)) is not None:
             ledger.path_for(project_dir, orphan).unlink(missing_ok=True)
-        pass_ = _Pass(planned.pass_, planned.playbook, planned.settings, [], directory)
+        pass_ = _Pass(
+            planned.pass_, planned.playbook, planned.settings, [], directory, member=planned.member
+        )
         next_ = passes.due(pass_.playbook, pass_.settings, [], _facts(step))
         try:
             return self._do(context, step, pass_, next_)
@@ -235,6 +241,7 @@ class Engine:
                     dress=pass_.dress(next_),
                     findings=[f["ref"] for f in next_.findings if "ref" in f],
                     directory=pass_.directory,
+                    member=pass_.member,
                 )
                 said = f"{next_.stage} (attempt {next_.attempt}) launched as run {staged.run}"
                 return Begun(said, staged=staged)
@@ -273,6 +280,7 @@ class _Pass:
     entries: list[passes.Entry]
     directory: str  # Where its stages work: the worktree its first run was placed in.
     machine: str = ""  # The machine that launched it, the one that advances it.
+    member: str = ""  # The squad member its runs go as, as its first run recorded it.
 
     def first(self) -> bool:
         return not self.entries
@@ -519,4 +527,5 @@ def _latest_pass(project_dir: Path, step_id: str) -> "_Pass | str":
         else ""
     )
     directory = next((r.directory for r in runs_of if r.directory), "")
-    return _Pass(pass_id, playbook, settings, entries, directory, machine)
+    member = runs_of[0].callsign if runs_of else ""
+    return _Pass(pass_id, playbook, settings, entries, directory, machine, member)

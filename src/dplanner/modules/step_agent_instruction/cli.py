@@ -4,13 +4,18 @@ The description is the briefing's instructions: ``agent on`` is all most agent s
 beside ``describe set``. ``agent set`` writes the *separate* instruction — only for a step
 whose how-to-execute genuinely differs from its description — or, with ``--for-project``,
 the project's standing instruction prepended to every briefing. ``prompt`` prints the whole
-assembled briefing, which is also what Run Agent in the window launches with.
+assembled briefing, which is also what Run Agent in the window launches with. ``coordinate``
+prints a squad coordinator's briefing over a selection (``agent_briefing.coordinator``),
+refusing a squad word a live or parked claim in the library answers to — two coordinators
+under one word would grow each other's claim. It writes nothing: ``claim take`` is the
+briefing's first order, and the coordinator's to give.
 
 The briefing itself is ``agent_briefing.compose.brief``, the one assembly Run Agent uses.
 ``commands()`` takes the two facts the composition root collects — the location roles every
 module declares, and the branch plan the branches module decides — as keyword arguments.
 """
 
+import re
 from argparse import ArgumentParser, Namespace
 from collections.abc import Callable
 
@@ -18,14 +23,17 @@ from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.authoring import StepAuthor, StepAuthored
 from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import body_from, find_project, find_step, step_arg
+from dplanner.domain import claims
 from dplanner.domain.commands import EditTextCommand, SetModuleDataCommand
 from dplanner.domain.locations import CODE, LocationRole, find_location, of_role
-from dplanner.domain.model import Library, Node, Project, Step, TextEdit
+from dplanner.domain.model import Library, Node, Project, Step, TextEdit, now_stamp
 from dplanner.domain.repositories import RepositoryFacts, repository_facts
 from dplanner.domain.shelf import turn_off, turn_on
 from dplanner.domain.store import FilesFor
 from dplanner.modules.agent_briefing.compose import brief
+from dplanner.modules.agent_briefing.coordinator import coordinate, members
 from dplanner.modules.agent_briefing.instructions import instruction
+from dplanner.modules.agent_briefing.worktree import mainline
 from dplanner.planning.agent import (
     MODULE_ID,
     enabled,
@@ -39,6 +47,14 @@ from dplanner.planning.agent import (
     write_state,
 )
 from dplanner.planning.branches import BranchPlan
+from dplanner.planning.kinds import key_of
+from dplanner.planning.schedule import status_on
+from dplanner.planning.status import readiness_of
+
+# How many runs a coordinator keeps live at once, unless told: the window's setting is
+# QSettings, which no CLI reads.
+AT_ONCE = 3
+_SQUAD_WORD = re.compile(r"[a-z]+")
 
 
 def step_author() -> StepAuthor:
@@ -173,6 +189,60 @@ def commands(
         context.report(data, assembled.text)
         return 0
 
+    def _coordinate(context: CliContext, args: Namespace) -> int:
+        library = context.library
+        steps = list(dict.fromkeys(find_step(library, ref, context.current) for ref in args.steps))
+        projects = {library.project_of(step.id).id for step in steps}
+        if len(projects) > 1:
+            raise CliError("a squad coordinates one project at a time — select from one")
+        squad = args.callsign.strip().lower()
+        if not _SQUAD_WORD.fullmatch(squad):
+            raise CliError(f"a squad word is one lowercase word, like kettle — not {squad!r}")
+        if args.at_once < 1:
+            raise CliError("--at-once is at least 1")
+        held = claims.squads_holding(
+            (context.store.project_dir(project.id) for project in library.projects), now_stamp()
+        )
+        if squad in held:
+            taken = ", ".join(sorted(held))
+            raise CliError(
+                f"squad {squad} is running already ({held[squad].short}) — pick a word"
+                f" nobody is using; taken: {taken}"
+            )
+        project = library.project_of(steps[0].id)
+        facts = repository_facts(
+            project, context.store.project_dir(project.id), context.store.checkouts()
+        )
+        assembled = coordinate(
+            library,
+            steps,
+            squad=squad,
+            files=context.store.files,
+            facts=facts,
+            roles=roles,
+            merges_into=lambda step: _feature_branch(
+                branch_plan(library, step, facts), facts, step
+            ),
+            status_for=readiness_of(status_on(library, context.clock.today())),
+            at_once=args.at_once,
+        )
+        called = members(squad, steps)
+        data = {
+            "callsign": claims.member(squad),
+            "steps": [
+                {"step": step.id, "key": key_of(step), "callsign": called[step.id]}
+                for step in steps
+            ],
+            "prompt": assembled.text,
+            "segments": [
+                {"origin": segment.origin, "heading": segment.heading, "chars": len(segment.text)}
+                for segment in assembled.segments
+            ],
+            "chars": len(assembled.text),
+        }
+        context.report(data, assembled.text)
+        return 0
+
     return [
         CliCommand(
             path=("agent", "on"),
@@ -241,6 +311,17 @@ def commands(
             configure=step_arg,
             run=_prompt,
             examples=("dplanner agent prompt 'Read the spec' --json",),
+        ),
+        CliCommand(
+            path=("agent", "coordinate"),
+            summary="Print the briefing for a squad's coordinator over the steps named: claim"
+            " them, start each as a member, watch, answer or escalate, merge, release.",
+            configure=_configure_coordinate,
+            run=_coordinate,
+            examples=(
+                "dplanner agent coordinate S3 S4 S7 --callsign kettle",
+                "dplanner agent coordinate S3 S4 --callsign anvil --at-once 2 --json",
+            ),
         ),
     ]
 
@@ -445,3 +526,24 @@ def _clear_instruction(context: CliContext, args: Namespace) -> int:
             f"{title}: no separate instruction",
         )
     return 0
+
+
+def _feature_branch(plan: BranchPlan, facts: RepositoryFacts, step: Step) -> str:
+    """The feature branch the step's PR merges into, "" when it goes to the mainline."""
+    return plan.pr_base if plan.pr_base != mainline(facts, step) else ""
+
+
+def _configure_coordinate(parser: ArgumentParser) -> None:
+    parser.add_argument("steps", nargs="+", help="the selection, in the order to take it")
+    parser.add_argument(
+        "--callsign",
+        required=True,
+        help="your squad word (kettle): one no running squad uses",
+    )
+    parser.add_argument(
+        "--at-once",
+        dest="at_once",
+        type=int,
+        default=AT_ONCE,
+        help=f"how many runs may be live at once (default {AT_ONCE})",
+    )

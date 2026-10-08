@@ -168,3 +168,13 @@ def test_the_briefing_is_unchanged(cli, plan, tmp_path, case):
         golden.parent.mkdir(parents=True, exist_ok=True)
         golden.write_text(prompt, encoding="utf-8")
     assert prompt == golden.read_text(encoding="utf-8")
+
+
+def test_the_coordinator_briefing_is_unchanged(cli, plan, tmp_path):
+    selection = (plan["parser"], plan["spec-reader"], "Wire up", plan["member"])
+    said = cli("agent", "coordinate", *selection, "--callsign", "kettle", "--json")
+    prompt = json.loads(said)["prompt"].replace(str(tmp_path), TMP)
+    golden = GOLDEN / "coordinator.md"
+    if os.environ.get("DPLANNER_REGEN_GOLDEN"):
+        golden.write_text(prompt, encoding="utf-8")
+    assert prompt == golden.read_text(encoding="utf-8")

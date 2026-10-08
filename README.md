@@ -539,9 +539,11 @@ src/dplanner/
 │   ├── agent_briefing/      what an agent is told — no module.py, headless all through:
 │   │                        the preflight and the report-back protocol (protocol.py), the
 │   │                        step's and project's facts (blocks.py), the instructions
-│   │                        (instructions.py), assembled once by compose.brief; and where
-│   │                        a run works (worktree.py: its run name, checkout, and the
-│   │                        worktree git prepares)
+│   │                        (instructions.py), assembled once by compose.brief; a squad
+│   │                        coordinator's briefing over a selection (coordinator.py, which
+│   │                        `agent coordinate` prints); and where a run works
+│   │                        (worktree.py: its run name, checkout, and the worktree git
+│   │                        prepares)
 │   ├── agent_claude/        ── one module per agent CLI, each a Qt-free `harness.py`: the
 │   ├── agent_codex/            command, how it resumes, the marks it leaves in its shells, a
 │   ├── agent_opencode/         reader of its own records (`domain/agents.py` is the contract),

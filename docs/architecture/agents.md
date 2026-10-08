@@ -1292,6 +1292,44 @@ corner — the run chip marches, a claim is ownership — and names it in the Co
 *Squad* column. Not built — the second machine: which squad pushed first, a fence reaching
 the machine that runs the turn, and a claim file conflicting in a merge.
 
+### A coordinator is briefed, never built in
+
+The rule is `.claude/rules/agents.md`'s *A coordinator is a briefing over the verbs*.
+
+The 4 October run's director rebuilt Run Agent by hand for every step and still forgot what
+the window would have done for it. Everything it lacked is a verb now — `claim take`, `agent
+run --playbook --callsign`, `question answer|escalate`, `agent limits`, `playbook advance` —
+so a coordinator is **an agent with a briefing**, not a daemon: `agent_briefing/coordinator.py`
+composes it, `dplanner agent coordinate <keys> --callsign <word>` prints it, and Autonomous
+work ▸ Local launches a coordinator with the same text. A daemon would be a second engine
+deciding what an agent decides better — which plans collide, what a question means, whether a
+person is needed — and the verbs already refuse what it must never do: `may_answer` keeps it
+off a person or progress gate, `claim_for` off another squad's step, the hold off a spent
+account.
+
+**Callsigns are Knut's radio net.** The squad word is the coordinator's pick and unique among
+running squads — the verb refuses a word a live or parked claim answers to, because `claim
+take` under one word grows that squad's claim, and two coordinators would quietly share one.
+The coordinator is *Actual*, the workers *Two, Three…* in the selection's order, a worker's
+own sub-agent *Two-One*, the verifier *Watch* (`claims.member`, `claims.spoken`):
+lowercase-kebab where a machine reads it, capitalised in prose, and in every message, note
+title and commit trailer. **A member keeps its callsign through every stage of its pass**:
+`agent run --playbook --callsign kettle-two` hands it to the engine, the pass's first run
+records it, and each later stage reads it back from there (`_latest_pass`) — a stage's run
+used to carry only the squad word. The worker hears it in its preamble. **Workers' branches
+stay `agent/<run name>`**: the preamble's worktree check, `run_name_of` and the branch plan all
+key on it, so only the branches and worktrees a coordinator makes itself carry its callsign.
+
+**It paces itself under the hold.** A coordinator shares the account with its workers, and on
+7 October one ran out of usage while its workers ran, leaving nobody to resume them. So the
+briefing launches nothing at or above 90 % of any window — under the supervisor's 95 % hold,
+leaving the coordinator room — and leaves every reset to the supervisor. *Max agents launched
+at once* is a QSettings value no CLI can read, so `--at-once` carries it (three by default).
+The loop carries the rest of what the first runs taught, one sentence each: keep the machine
+awake, poll GitHub's `mergeable` past UNKNOWN, run the ratchet tests on the integrated branch,
+cap a cross-vendor review at two rounds, and brief a small fix fresh rather than resume a long
+session.
+
 ### What the window reads, and the one-writer rule across all three
 
 The window polls each directory's fingerprint, as Expenditure polls the ledger's; nothing

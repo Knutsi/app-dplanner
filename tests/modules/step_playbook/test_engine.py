@@ -484,3 +484,22 @@ def test_a_retry_after_a_crash_before_the_claim_was_saved_recovers(drive, monkey
     (record,) = ledger.records(drive.plan)
     assert record.run != orphan.run and drive.started == [(drive.plan, record.run)]
     assert _status(drive.cli, "Build it") == "in-progress"
+
+
+def test_every_stage_of_a_pass_runs_as_the_member_that_started_it(drive):
+    drive.cli("playbook", "set", "Build it", "plan-execute-review-self")
+    drive.cli("claim", "take", "Build it", "--callsign", "kettle", "--project", "widget")
+    drive.play(
+        {"lines": [INIT, result("## Plan\n\nAdd the lock.", session="plan-s")]},
+        {"lines": [INIT, result(typed=done(), session="plan-s")]},
+    )
+    drive.cli("agent", "run", "Build it", "--playbook", "--callsign", "kettle-two")
+    plan = drive.latest()
+    assert plan.callsign == "kettle-two"
+    assert "You are Kettle Two" in drive.prompt(plan)
+    assert "`Callsign: kettle-two`" in drive.prompt(plan)
+    drive.supervise()
+    drive.advance()
+    execute = drive.latest()
+    assert execute.stage == "execute" and execute.callsign == "kettle-two"
+    assert "You are Kettle Two, of the squad Kettle Actual coordinates" in drive.prompt(execute)

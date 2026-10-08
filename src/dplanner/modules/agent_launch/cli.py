@@ -28,7 +28,7 @@ from typing import Any, Protocol
 from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.lookup import find_step, step_arg
 from dplanner.core.storage.locations import remote_label
-from dplanner.domain import ledger
+from dplanner.domain import claims, ledger
 from dplanner.domain.agents import AgentHarness, harness_by_id
 from dplanner.domain.headless import StageKind
 from dplanner.domain.ledger import LedgerRecord
@@ -130,8 +130,9 @@ class BegunPass(Protocol):
 
 
 # A playbook's pass on a step, checked and its settings pinned now — or CliError — and begun in
-# the placed worktree under the launch lock: the playbook engine's, handed in by the root.
-StartPass = Callable[[CliContext, Step, str, str], Callable[[str], BegunPass]]
+# the placed worktree under the launch lock, every stage run by the member it names: the playbook
+# engine's, handed in by the root.
+StartPass = Callable[[CliContext, Step, str, str, str], Callable[[str], BegunPass]]
 
 
 @dataclass(frozen=True)
@@ -191,6 +192,7 @@ class StageLauncher:
         dress: Callable[[LedgerRecord], LedgerRecord],
         findings: Sequence[Mapping[str, Any]],
         directory: str,
+        member: str,
     ) -> StagedRun:
         """Write the stage's run — nothing started. ``limits.HeldError`` while its account is held,
         ``CliError`` for anything else that refuses it."""
@@ -213,6 +215,8 @@ class StageLauncher:
         # A pass goes on for whichever squad holds its step: the re-read before the start
         # then refuses only a change of hands while the stage was prepared.
         squad, claim = held_claim(project_dir, step.id)
+        # The member keeps its callsign through every stage while its squad holds the step.
+        callsign = member if squad and claims.squad_of(member) == squad else squad
         try:
             prepared = prepare_run(
                 library,
@@ -228,7 +232,7 @@ class StageLauncher:
                 stage=kind,
                 extra=extra,
                 dress=dress,
-                callsign=squad,
+                callsign=callsign,
                 claim=claim,
             )
         except ValueError as error:
@@ -291,7 +295,8 @@ def commands(
                 raise CliError("this build has no playbook engine")
             implementer = launcher.harness_of(agent_command(harnesses, profile), harnesses)
             assert implementer is not None  # headless_refusal said it is a known harness.
-            begin = start_pass(context, step, args.playbook, implementer.id)
+            member = args.callsign.strip().lower()
+            begin = start_pass(context, step, args.playbook, implementer.id, member)
         # HeldError from here until the run has started, or the run has written nothing.
         held = ExitStack()
         try:
