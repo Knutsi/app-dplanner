@@ -183,6 +183,11 @@ class LedgerRecord:
     claim: str = ""
     turns: tuple[Turn, ...] = ()
     verdict: Mapping[str, Any] | None = None  # A review's typed final message, as given.
+    # A fix's findings it would not act on: [{finding: {run|question, index}, reason}].
+    declined: tuple[Mapping[str, Any], ...] = ()
+    # What the pass pinned, on its first record only: {preset, revision, rounds, roles,
+    # overrides} (playbooks.md's *A pass pins its settings*).
+    settings: Mapping[str, Any] | None = None
     fence: Mapping[str, str] | None = None  # A takeover's {at, by, why}: the run is over.
 
     @property
@@ -276,6 +281,8 @@ class LedgerRecord:
             "callsign": self.callsign,
             "claim": self.claim,
             "verdict": dict(self.verdict) if self.verdict is not None else None,
+            "declined": [dict(each) for each in self.declined],
+            "settings": dict(self.settings) if self.settings is not None else None,
             "fence": dict(self.fence) if self.fence is not None else None,
         }
         data.update({key: value for key, value in optional.items() if value})
@@ -301,6 +308,7 @@ class LedgerRecord:
             if turn is not None
         )
         verdict, fence = raw.get("verdict"), raw.get("fence")
+        declined, settings = raw.get("declined"), raw.get("settings")
         record = cls(
             run=run,
             project=project,
@@ -328,6 +336,10 @@ class LedgerRecord:
             callsign=_text(raw, "callsign"),
             claim=_text(raw, "claim"),
             verdict=verdict if isinstance(verdict, dict) else None,
+            declined=tuple(d for d in declined if isinstance(d, dict))
+            if isinstance(declined, list)
+            else (),
+            settings=settings if isinstance(settings, dict) else None,
             fence=({str(k): str(v) for k, v in fence.items()} if isinstance(fence, dict) else None),
         )
         return record.with_turns(turns) if record.headless else record

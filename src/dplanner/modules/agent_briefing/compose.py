@@ -7,6 +7,7 @@ are the same text by construction.
 
 from collections.abc import Callable, Sequence
 
+from dplanner.domain.headless import StageKind
 from dplanner.domain.locations import LocationRole
 from dplanner.domain.model import Library, Step
 from dplanner.domain.repositories import RepositoryFacts
@@ -15,6 +16,7 @@ from dplanner.modules.agent_briefing.blocks import note_parts, project_sections,
 from dplanner.modules.agent_briefing.instructions import instruction
 from dplanner.modules.agent_briefing.prompt import AssembledPrompt, PromptPart, assemble
 from dplanner.modules.agent_briefing.protocol import epilogue, preamble
+from dplanner.modules.agent_briefing.stages import stage_epilogue
 from dplanner.planning.agent import asset_paths, read_project, uses_worktree
 from dplanner.planning.branches import BranchPlan, is_land
 
@@ -31,11 +33,15 @@ def brief(
     branches: BranchPlan,
     roles: Sequence[LocationRole],
     place: Callable[[str], str] = _unmoved,
+    stage: StageKind = StageKind.EXECUTE,
+    extra: Sequence[PromptPart] = (),
 ) -> AssembledPrompt:
     """The briefing for a run of ``step`` that carries it out, on ``branches``.
 
     ``place`` maps each file the step's own blocks reference to where the run will read it
-    — Run Agent stages them beside the prompt — and leaves them on disk by default.
+    — Run Agent stages them beside the prompt — and leaves them on disk by default. A
+    playbook's ``stage`` other than execute closes with its own ask rather than the work's
+    (:mod:`.stages`), and ``extra`` is what the stage hands over, read last.
     """
     project = library.project_of(step.id)
 
@@ -55,10 +61,14 @@ def brief(
         step_title=step.title or "Untitled step",
         project_title=project.title or "Untitled project",
         instruction=own.body,
-        parts=[placed(part) for part in note_parts(library, step, files)],
+        parts=[*(placed(part) for part in note_parts(library, step, files)), *extra],
         sections=[placed(section) for section in step_sections(library, step, files, facts)],
         project_sections=project_sections(library, step, files),
-        epilogue=epilogue(library, step, branches),
+        epilogue=(
+            epilogue(library, step, branches)
+            if stage is StageKind.EXECUTE
+            else stage_epilogue(step, stage)
+        ),
         preamble=preamble(step, uses_worktree(step), facts, branches, roles),
         project_instruction=standing,
         project_files=standing_files,

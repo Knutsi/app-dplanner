@@ -56,6 +56,20 @@ class StageKind(StrEnum):
     REVIEW = "review"
 
 
+def stage_kind(stage: str) -> StageKind | None:
+    """The turn a run's ``stage`` runs. A run names its stage's id in its playbook — the kind,
+    numbered where it repeats (``review-2``) — and a playbook's ``fix`` is an execute; None
+    for a word that is no agent stage."""
+    head, _, tail = stage.rpartition("-")
+    word = head if head and tail.isdigit() else stage
+    if word == "fix":
+        return StageKind.EXECUTE
+    try:
+        return StageKind(word)
+    except ValueError:
+        return None
+
+
 class TurnEnd(StrEnum):
     """How a turn ended: FORMAT.md's ``end``."""
 
@@ -418,11 +432,21 @@ def _text(value: object) -> str:
 TURN_SCHEMA: Mapping[str, object] = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["outcome", "summary", "question"],
+    "required": ["outcome", "summary", "question", "declined"],
     "properties": {
         "outcome": {"type": "string", "enum": ["done", "asked", "denied"]},
         "summary": {"type": "string"},
         "question": {"type": "string"},  # "" unless the outcome is asked.
+        # A fix's findings it would not act on, by their number in its briefing; [] otherwise.
+        "declined": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["finding", "reason"],
+                "properties": {"finding": {"type": "integer"}, "reason": {"type": "string"}},
+            },
+        },
     },
 }
 

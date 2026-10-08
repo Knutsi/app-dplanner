@@ -41,9 +41,11 @@ from dplanner.modules.github.aspect import (
 from dplanner.modules.github.gh import (
     GhError,
     PrInfo,
+    default_branch,
     gh_refusal,
     list_branches,
     list_prs,
+    merge_pr,
     parse_repo,
     pr_number_from,
     view_pr,
@@ -263,10 +265,8 @@ def _refresh(context: CliContext, args: Namespace, finish_merged: FinishMerged) 
         info = _gh(partial(view_pr, repo, refs.pr_number))
         if info is None:
             continue
-        fresh = refreshed(refs, info)
-        if fresh != refs:
-            context.apply(SetModuleDataCommand(step.id, MODULE_ID, write(fresh)))
-            updated += 1
+        fresh = _recorded(context, step, refs, info)
+        updated += fresh != refs
         if fresh.pr_state == PR_MERGED:
             finished += finish_merged(context, context.library.step(step.id))
     context.report(
@@ -275,6 +275,43 @@ def _refresh(context: CliContext, args: Namespace, finish_merged: FinishMerged) 
         + (f", {finished} step(s) merged and done" if finished else ""),
     )
     return 0
+
+
+def accept_by_merge(context: CliContext, step: Step, *, finish_merged: FinishMerged) -> str:
+    """A playbook's ``progress``: merge the step's PR into its feature branch, record it, and
+    accept the step by the merge — "" when it was accepted, else why not. Never into the
+    repository's default branch, which a person merges."""
+    refs = read(step)
+    if refs is None or refs.pr_number is None:
+        return "the step has no pull request recorded"
+    number = refs.pr_number
+    repo = _step_repo(context, step)
+    if repo is None:
+        return _NO_REPOSITORY
+    try:
+        info = view_pr(repo, number)
+        if info is None:
+            return f"{repo} has no PR #{number}"
+        if info.state == PR_OPEN:
+            if info.base_ref in ("", default_branch(repo)):
+                return f"PR #{number} goes into the default branch, which a person merges"
+            merge_pr(repo, number)
+            info = view_pr(repo, number) or info
+    except GhError as error:
+        return f"gh: {error}"
+    if _recorded(context, step, refs, info).pr_state != PR_MERGED:
+        return f"PR #{number} is {info.state}, not merged"
+    if not finish_merged(context, context.library.step(step.id)):
+        return f"PR #{number} merged into {info.base_ref}, but that did not accept the step"
+    return ""
+
+
+def _recorded(context: CliContext, step: Step, refs: GithubRefs, info: PrInfo) -> GithubRefs:
+    """The step's refs as gh now reports its PR, written when they changed."""
+    fresh = refreshed(refs, info)
+    if fresh != refs:
+        context.apply(SetModuleDataCommand(step.id, MODULE_ID, write(fresh)))
+    return fresh
 
 
 def _prs(context: CliContext, args: Namespace) -> int:

@@ -110,6 +110,17 @@ def view_pr(repo: str, number: int) -> PrInfo | None:
     return _pr_info(json.loads(output))
 
 
+def merge_pr(repo: str, number: int) -> None:
+    """Merge the pull request with a merge commit — the history this project keeps."""
+    _run("pr", "merge", str(number), "-R", repo, "--merge")
+
+
+def default_branch(repo: str) -> str:
+    """The repository's default branch: the mainline a person merges into."""
+    query = (".defaultBranchRef.name",)
+    return _run("repo", "view", repo, "--json", "defaultBranchRef", "--jq", *query).strip()
+
+
 def list_branches(repo: str) -> list[str]:
     """The repository's branch names, as GitHub lists them."""
     output = _run("api", f"repos/{repo}/branches?per_page=100", "--paginate", "--jq", ".[].name")

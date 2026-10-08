@@ -2802,6 +2802,7 @@ def default_cli_commands(
     from dplanner.modules.step_milestone import cli as milestone_cli
     from dplanner.modules.step_order import cli as order_cli
     from dplanner.modules.step_playbook import cli as playbook_cli
+    from dplanner.modules.step_playbook.engine import Engine as PlaybookEngine
     from dplanner.modules.step_start import cli as start_cli
     from dplanner.modules.step_status import cli as status_cli
     from dplanner.modules.step_ticket import cli as ticket_cli
@@ -2857,6 +2858,15 @@ def default_cli_commands(
         set_status(context, step, Status.DONE)
         return True
 
+    # A playbook's stages launch as `agent run` launches, and `progress` merges into the
+    # feature branch and accepts the step by the merge, as `github refresh` does.
+    harnesses = agent_harnesses()
+    engine = PlaybookEngine(
+        launch=launch_cli.StageLauncher(default_location_roles(), plan_branches, harnesses),
+        accept=lambda context, step: github_cli.accept_by_merge(
+            context, step, finish_merged=finish_merged
+        ),
+    )
     commands = [
         *library_cli.commands(),
         # The step authors let `step add` author the step in the same call; the list
@@ -2905,7 +2915,10 @@ def default_cli_commands(
         *agent_cli.commands(roles=default_location_roles(), branch_plan=plan_branches),
         # Run Agent from a terminal: the window's launch workflow, headless or in a terminal.
         *launch_cli.commands(
-            roles=default_location_roles(), branch_plan=plan_branches, harnesses=agent_harnesses()
+            roles=default_location_roles(),
+            branch_plan=plan_branches,
+            harnesses=harnesses,
+            start_pass=engine.start,
         ),
         *agent_state_cli.commands(),
         # A run's usage and its supervisor read the harness that ran it: the window's tuple.
@@ -2927,7 +2940,7 @@ def default_cli_commands(
         ),
         *milestone_cli.commands(),
         *wait_cli.commands(),
-        *playbook_cli.commands(harnesses=agent_harnesses()),
+        *playbook_cli.commands(harnesses=harnesses, advance=engine.advance),
         # A branch's two ends are born dressed as the window's Put on a Branch makes them.
         *branches_cli.commands(
             stacked_apart=stack_split,

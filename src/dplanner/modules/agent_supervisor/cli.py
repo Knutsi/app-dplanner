@@ -13,7 +13,12 @@ from dplanner.cli.discovery import find_library
 from dplanner.domain import ledger
 from dplanner.domain.agents import AgentHarness
 from dplanner.domain.library_file import read_library_file, resolve_library_path
-from dplanner.modules.agent_supervisor.supervisor import PROMPTS, RefusedError, supervise
+from dplanner.modules.agent_supervisor.supervisor import (
+    PROMPTS,
+    RefusedError,
+    advance_detached,
+    supervise,
+)
 
 
 def _configure(parser: ArgumentParser) -> None:
@@ -28,6 +33,7 @@ def _configure(parser: ArgumentParser) -> None:
 def commands(*, harnesses: tuple[AgentHarness, ...]) -> list[CliCommand]:
     def run(context: CliContext, args: Namespace) -> int:
         project_dir = _project_dir(args)
+        library = resolve_library_path(args.library)
         try:
             said = supervise(
                 project_dir,
@@ -35,7 +41,9 @@ def commands(*, harnesses: tuple[AgentHarness, ...]) -> list[CliCommand]:
                 harnesses,
                 prompt=args.prompt,
                 text=args.text,
-                library=resolve_library_path(args.library),
+                library=library,
+                # A playbook's stage that ended done hands its pass on, in a process of its own.
+                advance=lambda _dir, record: advance_detached(record.step, library=library),
             )
         except RefusedError as error:
             raise CliError(str(error)) from error

@@ -18,9 +18,10 @@ from pathlib import Path
 from dplanner.domain import ledger, questions
 from dplanner.domain.model import now_stamp
 from dplanner.domain.questions import Question
-from dplanner.modules.agent_supervisor.supervisor import start_detached
+from dplanner.modules.agent_supervisor.supervisor import advance_detached, start_detached
 
 Resume = Callable[..., None]
+Advance = Callable[..., None]
 
 
 @dataclass(frozen=True)
@@ -39,11 +40,15 @@ def answer(
     machine: str | None = None,
     config: Path | None = None,
     resume: Resume = start_detached,
+    advance: Advance = advance_detached,
+    library: Path | None = None,
 ) -> Answered:
     """Record ``given`` as the answer, then nudge the supervisor of the run it parks when this
-    machine launched it. ``caller_run`` is the run the caller works in (``$DPLANNER_RUN``).
-    Raises ``ValueError`` with the reason when the caller may not answer it, or it is no
-    longer open to an answer."""
+    machine launched it — or, for a playbook's own question, start its pass's advance, which
+    acts on it on the machine that launched the pass. ``caller_run`` is the run the caller
+    works in (``$DPLANNER_RUN``); ``library`` is the one the advance must reach. Raises
+    ``ValueError`` with the reason when the caller may not answer it, or it is no longer open
+    to an answer."""
 
     def answering(question: Question) -> Question:
         if caller_run and question.run == caller_run:
@@ -54,6 +59,14 @@ def answer(
         return questions.answered(question, answers, by, now_stamp())
 
     question = questions.update(project_dir, question_id, answering, config)
+    if question.pass_ and not question.run:
+        try:
+            advance(question.step, library=library)
+        except OSError as error:  # `playbook advance` finds the answer whenever it next runs.
+            return Answered(
+                question, f"{question.short} answered; its pass did not advance: {error}"
+            )
+        return Answered(question, f"{question.short} answered; its pass advances on it")
     why_not = resumable(project_dir, question, machine or ledger.machine_id(config))
     if why_not:
         return Answered(question, f"{question.short} answered; {why_not}")
