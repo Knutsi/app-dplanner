@@ -56,6 +56,20 @@ class StageKind(StrEnum):
     REVIEW = "review"
 
 
+def stage_kind(stage: str) -> StageKind | None:
+    """The turn a run's ``stage`` runs. A run names its stage's id in its playbook — the kind,
+    numbered where it repeats (``review-2``) — and a playbook's ``fix`` is an execute; None
+    for a word that is no agent stage."""
+    head, _, tail = stage.rpartition("-")
+    word = head if head and tail.isdigit() else stage
+    if word == "fix":
+        return StageKind.EXECUTE
+    try:
+        return StageKind(word)
+    except ValueError:
+        return None
+
+
 class TurnEnd(StrEnum):
     """How a turn ended: FORMAT.md's ``end``."""
 
@@ -419,11 +433,21 @@ def _text(value: object) -> str:
 TURN_SCHEMA: Mapping[str, object] = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["outcome", "summary", "question"],
+    "required": ["outcome", "summary", "question", "declined"],
     "properties": {
         "outcome": {"type": "string", "enum": ["done", "asked", "denied"]},
         "summary": {"type": "string"},
         "question": {"type": "string"},  # "" unless the outcome is asked.
+        # A fix's findings it would not act on, by their number in its briefing; [] otherwise.
+        "declined": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["finding", "reason"],
+                "properties": {"finding": {"type": "integer"}, "reason": {"type": "string"}},
+            },
+        },
     },
 }
 
@@ -451,6 +475,41 @@ VERDICT_SCHEMA: Mapping[str, object] = {
         },
     },
 }
+
+
+def conforms(value: object, schema: Mapping[str, object]) -> bool:
+    """Whether ``value`` is what ``schema`` says — the strict subset the schemas here use:
+    ``type`` (object, array, string, integer), ``enum``, ``required``, ``properties``,
+    ``additionalProperties: false`` and ``items``. A CLI with no schema flag (opencode) can
+    still end on JSON shaped nearly right, and nearly right is no verdict."""
+    kind = schema.get("type")
+    if kind == "object":
+        properties = schema.get("properties")
+        fields = properties if isinstance(properties, Mapping) else {}
+        required = schema.get("required")
+        return (
+            isinstance(value, Mapping)
+            and all(key in value for key in (required if isinstance(required, list) else []))
+            and (schema.get("additionalProperties") is not False or set(value) <= set(fields))
+            and all(conforms(value[key], sub) for key, sub in fields.items() if key in value)
+        )
+    if kind == "array":
+        items = schema.get("items")
+        return isinstance(value, list) and (
+            not isinstance(items, Mapping) or all(conforms(item, items) for item in value)
+        )
+    if kind == "string":
+        allowed = schema.get("enum")
+        return isinstance(value, str) and (not isinstance(allowed, list) or value in allowed)
+    if kind == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    return True
+
+
+def verdict_of(typed: Mapping[str, object] | None) -> Mapping[str, object] | None:
+    """A review's typed final message when it is a verdict — :data:`VERDICT_SCHEMA` whole —
+    else None: what does not validate is no verdict, never a pass."""
+    return typed if typed is not None and conforms(typed, VERDICT_SCHEMA) else None
 
 
 def schema_for(stage: StageKind) -> Mapping[str, object] | None:

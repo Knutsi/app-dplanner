@@ -49,6 +49,7 @@ def commands(*, in_agent_shell: Callable[[], bool]) -> list[CliCommand]:
                 " ".join(args.answer),
                 by(args),
                 caller_run=os.environ.get(RUN_ENV, ""),
+                library=context.store.library_path,
             )
         except (LookupError, ValueError) as error:
             raise CliError(str(error)) from error

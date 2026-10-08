@@ -22,7 +22,7 @@ A launch interrupted between its record and its start is reconciled by
 ``supervisor.revive``: started while its step is still claimed, deleted once it is not.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
 from pathlib import Path
@@ -38,9 +38,9 @@ from dplanner.domain.store import FilesFor
 from dplanner.modules.agent_briefing import worktree as where
 from dplanner.modules.agent_briefing.compose import brief
 from dplanner.modules.agent_briefing.instructions import instruction
-from dplanner.modules.agent_briefing.prompt import AssembledPrompt
+from dplanner.modules.agent_briefing.prompt import AssembledPrompt, PromptPart
 from dplanner.modules.agent_launch import launcher
-from dplanner.modules.agent_launch.profiles import Profile, agent_command
+from dplanner.modules.agent_launch.profiles import Profile, agent_command, read_profiles
 from dplanner.modules.agent_supervisor import limits, supervisor
 from dplanner.modules.agent_usage.aspect import launch_record
 from dplanner.planning.agent import enabled, no_agent, read_project, uses_worktree, workplace
@@ -132,16 +132,21 @@ def waiting_on(library: Library, step: Step, today: date) -> list[Step]:
     return outstanding(library, step, readiness_of(status_on(library, today)))
 
 
-def unfinished_run(project_dir: Path | None, step_id: str) -> str:
+def unfinished_run(project_dir: Path | None, step_id: str, *, of_passes: bool = True) -> str:
     """The step's headless run that is not over yet — running or parked — or "": a run to
-    resume through ``agent supervise``, never to launch a second time."""
+    resume through ``agent supervise``, never to launch a second time. A playbook's launch
+    leaves out its passes' runs (``of_passes=False``): whether a pass is under way, or a crash
+    left its first record behind, is the engine's to judge, under the same lock."""
     if project_dir is None:
         return ""
     return next(
         (
             record.run
             for record in ledger.records(project_dir)
-            if record.step == step_id and record.headless and not record.over
+            if record.step == step_id
+            and record.headless
+            and not record.over
+            and (of_passes or not record.pass_)
         ),
         "",
     )
@@ -158,6 +163,32 @@ def headless_refusal(profile: Profile, harnesses: tuple[AgentHarness, ...]) -> s
     if harness.headless is None:
         return f"{harness.label} has no headless mode here"
     return limits.hold(limits.account_of(harness), harness.label)
+
+
+def profile_for(harness_id: str, harnesses: tuple[AgentHarness, ...]) -> Profile | None:
+    """The first launch profile whose agent is ``harness_id`` and runs headless — what a
+    playbook's role maps to at launch. None when no profile runs it: the role is refused,
+    never swapped for the default, which may be the very agent whose work is reviewed."""
+    return next(
+        (
+            profile
+            for profile in read_profiles()
+            if (harness := launcher.harness_of(agent_command(harnesses, profile), harnesses))
+            is not None
+            and harness.id == harness_id
+            and harness.headless is not None
+        ),
+        None,
+    )
+
+
+def headless_harnesses(harnesses: tuple[AgentHarness, ...]) -> tuple[str, ...]:
+    """The harnesses some profile runs headless, in the profiles' order: who a role may name."""
+    found = (
+        launcher.harness_of(agent_command(harnesses, profile), harnesses)
+        for profile in read_profiles()
+    )
+    return tuple(dict.fromkeys(h.id for h in found if h is not None and h.headless is not None))
 
 
 # -- the launch ------------------------------------------------------------------------------
@@ -185,8 +216,11 @@ def briefing(
     facts: RepositoryFacts,
     branches: BranchPlan,
     staged: dict[str, str] | None = None,
+    stage: StageKind = StageKind.EXECUTE,
+    extra: Sequence[PromptPart] = (),
 ) -> AssembledPrompt:
-    """The step's briefing, with every referenced file path mapped through ``staged``."""
+    """The step's briefing for ``stage``, with every referenced file path mapped through
+    ``staged`` and a playbook stage's ``extra`` parts read last."""
     remap = staged or {}
     return brief(
         library,
@@ -196,6 +230,8 @@ def briefing(
         branches,
         briefed.roles,
         place=lambda path: remap.get(path, path),
+        stage=stage,
+        extra=extra,
     )
 
 
@@ -245,11 +281,15 @@ def prepare_run(
     harnesses: tuple[AgentHarness, ...],
     mode: str,
     stage: StageKind = StageKind.EXECUTE,
+    extra: Sequence[PromptPart] = (),
+    dress: Callable[[LedgerRecord], LedgerRecord] = lambda record: record,
 ) -> Prepared:
     """Write the run on ``step`` in ``workdir`` (from :func:`place`): its files and its
     record, nothing started. ``project_dir`` is where the run's ledger is; a terminal run
-    with none is launched unrecorded. Raises ``ValueError`` for a profile that cannot run
-    headless — ask :func:`headless_refusal` first — and for a headless run with no ledger."""
+    with none is launched unrecorded. A playbook's stage hands its ``extra`` briefing parts
+    and ``dress``es the headless record with its pass. Raises ``ValueError`` for a profile
+    that cannot run headless — ask :func:`headless_refusal` first — and for a headless run
+    with no ledger."""
     if mode == HEADLESS and (why := headless_refusal(profile, harnesses)):
         raise ValueError(why)
     if mode == HEADLESS and project_dir is None:
@@ -259,10 +299,9 @@ def prepare_run(
     run = ledger.new_run_id()
     directory = ledger.run_dir(run) if mode == HEADLESS else launcher.new_run_dir()
     directory.mkdir(parents=True, exist_ok=True)
-    staged = launcher.stage_assets(
-        directory, briefing(library, step, briefed, facts, branches).files, briefed.read_asset
-    )
-    text = briefing(library, step, briefed, facts, branches, staged).text
+    listed = briefing(library, step, briefed, facts, branches, stage=stage, extra=extra).files
+    staged = launcher.stage_assets(directory, listed, briefed.read_asset)
+    text = briefing(library, step, briefed, facts, branches, staged, stage, extra).text
     project = library.project_of(step.id)
     files = None
     if mode == HEADLESS:
@@ -270,19 +309,21 @@ def prepare_run(
         prompt_file = directory / "prompt.md"
         prompt_file.write_text(text, encoding="utf-8", newline="\n")
         session = launcher.new_session() if harness.names_session else ""
-        record = replace(
-            launch_record(
-                run=run,
-                project=project.id,
-                step=step.id,
-                harness=harness.id,
-                directory=workdir,
-                session=session,
-                prompt_chars=len(text),
-            ),
-            mode=ledger.HEADLESS,
-            stage=stage,
-            attempt=1,
+        record = dress(
+            replace(
+                launch_record(
+                    run=run,
+                    project=project.id,
+                    step=step.id,
+                    harness=harness.id,
+                    directory=workdir,
+                    session=session,
+                    prompt_chars=len(text),
+                ),
+                mode=ledger.HEADLESS,
+                stage=stage,
+                attempt=1,
+            )
         )
     else:
         files = launcher.prepare(

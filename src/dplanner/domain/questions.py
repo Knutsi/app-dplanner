@@ -201,8 +201,14 @@ def asked(
     by: Mapping[str, str] | None = None,
     body: str = "",
     resets: str = "",
+    pass_: str = "",
+    stage: str = "",
+    attempt: int = 0,
+    purpose: str = "",
+    settings: Mapping[str, Any] | None = None,
 ) -> Question:
-    """A new open question, its id minted as a run's is."""
+    """A new open question, its id minted as a run's is. A playbook's gate, round cap or
+    escalation names its ``pass_``, ``stage``, ``attempt`` and ``purpose`` instead of a run."""
     return Question(
         id=new_run_id(),
         project=project,
@@ -214,17 +220,27 @@ def asked(
         by=dict(by or {}),
         body=body,
         resets=resets,
+        pass_=pass_,
+        stage=stage,
+        attempt=attempt,
+        purpose=purpose,
+        settings=dict(settings or {}),
     )
 
 
 # -- what may happen to one ---------------------------------------------------------------------
 
 
+# The gates only a person answers: a `person` stage, and a `progress` that could not merge on
+# its own — on the mainline a person merges, and an agent's *pass* would stand in for them.
+PERSON_ONLY = (PERSON, "progress")
+
+
 def may_answer(question: Question, by_kind: str) -> str:
     """Why ``by_kind`` may not answer this question, or "" when it may. A person may answer
     anything; the coordinator may not answer a ``person`` gate — that gate is the playbook's
     promise that a person looked — and must escalate it instead."""
-    if by_kind == COORDINATOR and question.purpose == "gate" and gate_role(question) == PERSON:
+    if by_kind == COORDINATOR and question.purpose == "gate" and gate_role(question) in PERSON_ONLY:
         return f"{question.short} is a person gate: the coordinator escalates it, never answers"
     return ""
 
@@ -260,6 +276,20 @@ def consumed(question: Question, at: str, run: str, turn: int) -> Question:
     if question.state != ANSWERED:
         raise ValueError(f"{question.short} is {question.state}, not answered")
     return replace(question, state=CONSUMED, consumed={"at": at, "run": run, "turn": turn})
+
+
+def settled_by_pass(question: Question, at: str) -> Question:
+    """A playbook's answer acted on by its pass's engine: the pass, stage and attempt it
+    settled. Terminal."""
+    if question.state != ANSWERED:
+        raise ValueError(f"{question.short} is {question.state}, not answered")
+    settled = {
+        "at": at,
+        "pass": question.pass_,
+        "stage": question.stage,
+        "attempt": question.attempt,
+    }
+    return replace(question, state=CONSUMED, consumed=settled)
 
 
 def withdrawn(question: Question, why: str, at: str) -> Question:

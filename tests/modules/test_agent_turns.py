@@ -303,6 +303,7 @@ def test_claude_names_a_fresh_session_resumes_it_and_never_lets_add_dir_swallow_
         "outcome",
         "summary",
         "question",
+        "declined",
     ]
     at = fresh.index("--add-dir")
     assert fresh[at + 1 : at + 3] == [RUN_DIR, PLAN_REPO] and fresh[at + 3].startswith("--")

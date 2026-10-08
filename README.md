@@ -575,7 +575,8 @@ src/dplanner/
 │   ├── step_playbook/       which playbook runs a step: the nine built-in presets (presets.py),
 │   │                        the step's choice and the project's defaults (aspect.py), its
 │   │                        Details block, the Playbooks tab of Project ▸ Settings…,
-│   │                        `dplanner playbook list|show|set`
+│   │                        `dplanner playbook list|show|set|advance` — and the engine:
+│   │                        where a pass stands (passes.py) and what advances it (engine.py)
 │   ├── feature/             a step that is a feature: the Type ▸ Feature toggle, the Feature
 │   │                        tab (the spec passages it was read from), the Specs tab's Cite…
 │   │                        menu, `dplanner feature` (list, show, cite, uncite, reanchor)
