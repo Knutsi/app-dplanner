@@ -208,7 +208,7 @@ paths:
   the status aspect's `since`), so a day of work is told from a quiet one when nothing
   landed, while a day that only differs from yesterday by that count is not written —
   last-wins within the day, by `recorder.py` after every settled change in the window, by
-  `dplanner status set`/`clear` (the root's `_recording_status`, since an agent reports
+  `dplanner status set`/`clear` (the root's `_status_written`, since an agent reports
   with no window open) and by `dplanner progress record` from the terminal — directly,
   with its own origin, off the undo stack
   (the PR refresher's rule — Ctrl+Z undoes the status, not the record). And **saved**

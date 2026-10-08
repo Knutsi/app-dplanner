@@ -139,7 +139,7 @@ its PR into it. Two stretches crossing without nesting is `branch.overlap`, and 
 refuses a step on both.
 
 **The plan decides the branches; the script carries them out; the agent is told the same.**
-`planning.branches.BranchPlan`, decided once by the root's `_branch_plan`, names the branch a run works on,
+`planning.branches.BranchPlan`, decided once by `branches/plan.py`'s `branch_plan`, names the branch a run works on,
 where a new one starts, what the first run may cut and the PR's base, and the preamble, the
 epilogue and the wrapper all read it. **Every worktree starts from the remote** — a
 stretch's branch, else the code row's `Location.ref` as the mainline, else the remote's
