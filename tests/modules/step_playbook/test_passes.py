@@ -19,6 +19,7 @@ from dplanner.modules.step_playbook.passes import (
     ESCALATION,
     FIX,
     GATE,
+    LOOK,
     ONE_MORE,
     PASS,
     RETRY,
@@ -363,3 +364,30 @@ def test_the_coordinator_may_not_answer_a_progress_gate():
     assert questions.may_answer(progress, questions.COORDINATOR)
     assert not questions.may_answer(progress, questions.PERSON)
     assert not questions.may_answer(gate("coordinator"), questions.COORDINATOR)
+
+
+# -- a person's look at a pass that is through -------------------------------------------------
+
+
+def test_a_persons_look_sends_the_work_back_to_the_last_work_stage():
+    """Send Back on a pass that is through is a gate like any other, standing after every
+    stage: its note is the finding the work's session resumes with."""
+    sent = next_of("execute", run("execute"), gate(LOOK, "Changes: more tests"))
+    assert isinstance(sent, Launch) and (sent.stage, sent.attempt) == ("execute", 2)
+    assert [finding["text"] for finding in sent.findings] == ["more tests"]
+    # With no work stage in the playbook, the look's changes go to a fix of the implementer.
+    reviewed = (run("review", verdict=PASSED), gate("person", PASS), gate(LOOK, "Changes: x"))
+    assert next_of("review-only", *reviewed).stage == FIX
+
+
+def test_a_look_keeps_the_round_cap_and_accepting_it_completes_the_pass():
+    """The look's rounds are counted like a review's: its second *changes* asks the round
+    cap, and *Accept as is* there finishes the pass — it never starts the playbook over,
+    which reading a stage outside the list as "before the first" once did."""
+    first = (run("execute"), gate(LOOK, "Changes: a"), run("execute"))
+    capped = next_of("execute", *first, gate(LOOK, "Changes: b"))
+    assert isinstance(capped, Ask) and (capped.stage, capped.purpose) == (LOOK, ROUND_CAP)
+    accepted = next_of(
+        "execute", *first, gate(LOOK, "Changes: b"), gate(LOOK, ACCEPT, purpose=ROUND_CAP)
+    )
+    assert isinstance(accepted, Complete)
