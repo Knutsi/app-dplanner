@@ -137,9 +137,10 @@ class StepAgentRunDeps:
     # The card's playbook phrase for the step's pass ("Review 1/2"), "" for none: what a
     # headless row of the pass's latest run leads with, so the browser and the card agree.
     pass_phrase: Callable[[StepId], str] = lambda _step: ""
-    # Open a terminal in a directory on a command (title, project id): why none opened, or "".
-    open_terminal: Callable[[Path, str, Sequence[str], str], str] = (
-        lambda _directory, _title, _command, _project: "no terminal here"
+    # Open a terminal in a directory on a command (title, project id), off the GUI thread;
+    # the last callable is told on the GUI thread why none opened, or "".
+    open_terminal: Callable[[Path, str, Sequence[str], str, Callable[[str], None]], None] = (
+        lambda _directory, _title, _command, _project, opened: opened("no terminal here")
     )
     # The library the window has open, which a terminal's `dplanner` verb acts on.
     library_path: Path | None = None
@@ -561,9 +562,10 @@ class StepAgentRunModule:
         self._deps.status.show_status(said, 6000)
 
     def follow_run(self, project_dir: Path, run: str) -> str:
-        """Open a terminal following the run — ``dplanner agent follow``, read-only — and say
-        so; ``ValueError`` or ``LookupError`` says why not. What the browser's row, the Step
-        menu and the Control Centre's question card all do."""
+        """Start a terminal following the run — ``dplanner agent follow``, read-only — and say
+        so; ``ValueError`` or ``LookupError`` says why not, and the status bar whether it
+        opened. What the browser's row, the Step menu and the Control Centre's question card
+        all do."""
         record = ledger.find(project_dir, run)
         if record is None:
             raise LookupError(f"run {run} is no longer in the ledger")
@@ -571,40 +573,52 @@ class StepAgentRunModule:
             raise ValueError(refused)
         argv = follow_argv(self._deps.library_path, project_dir, run)
         title = self._title_of(record.step)
-        if reason := self._open_on(
-            project_dir, record.step, record.directory, f"Follow {title}", argv
-        ):
-            raise ValueError(f"no terminal opened — {reason}")
-        return f"Following the run on “{title}” in a terminal"
+        following = f"Following the run on “{title}” in a terminal"
+        self._open_on(
+            project_dir, record.step, record.directory, f"Follow {title}", argv, following
+        )
+        return f"Opening a terminal to follow the run on “{title}”…"
 
     def _open_session(self, run: HeadlessRun) -> None:
         """Open a terminal taking the run's session: ``dplanner agent open-session``, which
-        fences a run that is not over as taken over — asked first, since the run is then no
-        longer its playbook's — and releases its step from the squad holding it."""
+        halts its pass, fences every run on the session that is not over as taken over — asked
+        first, since they are then no longer the playbook's — and releases its step from the
+        squad whose run it was."""
         deps = self._deps
         if run.open_refusal:
             deps.status.show_status(f"Cannot open the session — {run.open_refusal}", 6000)
             return
         title = self._title_of(run.step)
-        if run.live and not confirm(
+        if run.takes and not confirm(
             deps.parent, OPEN_SESSION, _taking(title, run), verb=OPEN_SESSION
         ):
             return
         argv = open_session_argv(deps.library_path, run.project_dir, run.run)
-        if reason := self._open_on(
-            run.project_dir, run.step, run.directory, f"Session {title}", argv
-        ):
-            deps.status.show_status(f"No terminal opened — {reason}", 8000)
+        opened = f"The session of the run on “{title}” is opening in a terminal"
+        self._open_on(run.project_dir, run.step, run.directory, f"Session {title}", argv, opened)
 
     def _open_on(
-        self, project_dir: Path, step_id: str, worked_in: str, title: str, argv: Sequence[str]
-    ) -> str:
-        """Open a terminal on ``argv`` where the run worked — its project's directory when that
-        is gone — and answer why none opened, or ""."""
+        self,
+        project_dir: Path,
+        step_id: str,
+        worked_in: str,
+        title: str,
+        argv: Sequence[str],
+        opened: str,
+    ) -> None:
+        """Start a terminal on ``argv`` where the run worked — its project's directory when
+        that is gone — and say on the status bar ``opened``, or why none opened."""
         deps = self._deps
         directory = Path(worked_in) if worked_in and Path(worked_in).is_dir() else project_dir
         project = deps.library.project_of(step_id).id if deps.library.has(step_id) else ""
-        return deps.open_terminal(directory, title, argv, project)
+
+        def said(why: str) -> None:
+            if why:
+                deps.status.show_status(f"No terminal opened — {why}", 8000)
+            else:
+                deps.status.show_status(opened, 6000)
+
+        deps.open_terminal(directory, title, argv, project, said)
 
     def _latest(self, step_id: StepId) -> HeadlessRun | None:
         """The step's latest headless run, from its project's records as last read."""
@@ -642,10 +656,12 @@ class StepAgentRunModule:
 
 
 def _taking(title: str, run: HeadlessRun) -> str:
-    """What *Open Session* on a run that is not over does, asked before it does it."""
+    """What *Open Session* ends when something of the run's session or pass is still going,
+    asked before it does it."""
     stage = stage_label(run.stage) or "headless"
     return (
-        f"The {stage.lower()} run on “{title}” is the playbook's until you take it. Opening its"
-        " session fences the run as taken over by you, so nothing resumes it by itself again,"
-        " and releases the step from the squad holding it. The step is yours from here."
+        f"The {stage.lower()} run's session on “{title}” is the playbook's until you take it."
+        " Opening it stops its playbook pass, fencing every run on the session as taken over by"
+        " you, so nothing resumes it or starts the next stage by itself again, and releases the"
+        " step from its squad. The step is yours from here."
     )

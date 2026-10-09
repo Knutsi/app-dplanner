@@ -646,7 +646,9 @@ git never conflicts:
   holds `at`, `by` and `why`), `answered`, `consumed` (the answer was acted on:
   `consumed` holds `at` and, for an agent's question, the `run` and `turn` it resumed; for a
   playbook's, the `pass`, `stage` and `attempt` it settled), or `withdrawn` (the run ended or asked again:
-  `withdrawn` holds `at` and `why`). `consumed` and `withdrawn` are terminal.
+  `withdrawn` holds `at` and `why`; `why` is prose, but `taken over by a person` — *Open
+  Session* withdrawing a pass's gate — reads the pass as *Taken over*, as the run's fence does).
+  `consumed` and `withdrawn` are terminal.
   `answer.by.kind` is `person`, `coordinator` or `clock` — the last only for `limit` — and
   `answer.id` is minted as a run id is.
 - **Who may answer.** A person may answer any question. The coordinator may answer an

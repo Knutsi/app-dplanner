@@ -2869,7 +2869,7 @@ def default_cli_commands(
     from dplanner.modules.step_order import cli as order_cli
     from dplanner.modules.step_playbook import cli as playbook_cli
     from dplanner.modules.step_playbook.engine import Engine as PlaybookEngine
-    from dplanner.modules.step_playbook.engine import halt_claimed
+    from dplanner.modules.step_playbook.engine import halt_claimed, halt_pass
     from dplanner.modules.step_start import cli as start_cli
     from dplanner.modules.step_status import cli as status_cli
     from dplanner.modules.step_ticket import cli as ticket_cli
@@ -2991,7 +2991,7 @@ def default_cli_commands(
         *agent_state_cli.commands(),
         # A run's usage and its supervisor read the harness that ran it: the window's tuple.
         *usage_cli.commands(harnesses=harnesses),
-        *supervisor_cli.commands(harnesses=harnesses, release=release),
+        *supervisor_cli.commands(harnesses=harnesses, release=release, halt=halt_pass),
         *questions_cli.commands(in_agent_shell=in_agent_shell),
         *claims_cli.commands(in_agent_shell=in_agent_shell, halt=halt_claimed),
         # The agent's own account of what it is doing while it does it: the window's

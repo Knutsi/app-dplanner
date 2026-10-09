@@ -11,12 +11,14 @@ from typing import cast
 from tests.platforms import set_home
 
 from dplanner.cli.command import CliContext
-from dplanner.domain import ledger
+from dplanner.domain import claims, ledger
 from dplanner.domain.headless import LimitWindow, TurnEnd
 from dplanner.domain.ledger import LedgerRecord, Turn
+from dplanner.domain.model import now_stamp
 from dplanner.domain.workflow import Release
 from dplanner.modules.agent_claude import harness as claude
 from dplanner.modules.agent_supervisor import limits
+from dplanner.modules.step_playbook.engine import halt_pass
 
 RUN = "20261007T101500Z-9c1e44ab"
 
@@ -70,19 +72,23 @@ def test_open_session_fences_a_parked_run_releases_its_step_and_resumes_it(
     cli, tmp_path, monkeypatch
 ):
     """The verb Open Session's terminal runs: refused while a turn runs; parked, the run is
-    taken over, the step leaves its squad (a person's override, the ``release`` handed in) and
-    the harness resumes the session in the directory the run worked in."""
+    taken over, the step leaves the squad whose run it was (a person's override, the
+    ``release`` handed in) and the harness resumes the session in the directory the run
+    worked in."""
     from dplanner.modules.agent_supervisor import cli as supervisor_cli
 
     set_home(monkeypatch, tmp_path / "home")
     cli("project", "create", "Taken")
     project_dir = next(path for path in tmp_path.rglob("project.dproj")).parent
+    squad = claims.claimed("p1", "kettle-two", ["s1"], now_stamp(), worker={"machine": "m"})
+    claims.write(project_dir, squad)
     running = Turn(n=1, prompt="launch", started="…", pid=1)
     record = replace(
         _headless(project_dir, (running,)),
         machine=ledger.machine_id(),
         session="S-1",
         directory=str(tmp_path),
+        claim=squad.id,
     )
     ledger.write(project_dir, record)
     assert "Follow it, or Stop Playbook first" in cli("agent", "open-session", RUN, expect=1)
@@ -100,7 +106,7 @@ def test_open_session_fences_a_parked_run_releases_its_step_and_resumes_it(
         return True
 
     monkeypatch.setattr(subprocess, "run", resumed)
-    commands = supervisor_cli.commands(harnesses=(claude.HARNESS,), release=release)
+    commands = supervisor_cli.commands(harnesses=(claude.HARNESS,), release=release, halt=halt_pass)
     verb = next(command for command in commands if command.path == ("agent", "open-session"))
     args = Namespace(run=RUN, project_dir=str(project_dir), library=None)
     assert verb.run(cast(CliContext, None), args) == 0  # The verb reads nothing of it.

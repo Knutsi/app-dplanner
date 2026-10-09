@@ -859,25 +859,61 @@ class AgentLaunchModule:
         if directory is None:
             return  # The state gate already says why.
         subject = f"{key_of(step)} {step.title}".strip()
+
+        def opened(why: str) -> None:
+            if why:
+                notice(
+                    deps.parent,
+                    "Open Terminal",
+                    f"No terminal opened in {directory} — {NO_TERMINAL}",
+                )
+            else:
+                deps.status.show_status(f"Terminal opened in {directory}", 4000)
+
         project_id = deps.library.project_of(step.id).id
-        if self.open_in_terminal(directory, _window_title(subject, "shell"), (), project_id):
-            notice(
-                deps.parent, "Open Terminal", f"No terminal opened in {directory} — {NO_TERMINAL}"
-            )
-            return
-        deps.status.show_status(f"Terminal opened in {directory}", 4000)
+        self.open_in_terminal(directory, _window_title(subject, "shell"), (), project_id, opened)
 
     def open_in_terminal(
-        self, directory: Path, title: str, command: Sequence[str], project_id: str = ""
-    ) -> str:
+        self,
+        directory: Path,
+        title: str,
+        command: Sequence[str],
+        project_id: str,
+        opened: Callable[[str], None],
+    ) -> None:
         """Open the default profile's terminal in ``directory`` on ``command`` — a person's own
-        shell when there is none — and answer why it did not open, "" when it did. Nothing is
-        tracked: it is not a run."""
-        files = launcher.shell_script(directory, title, project_id=project_id, command=command)
-        argv = launcher.resolve_command(launch_command(), files, directory)
-        if argv is None:
-            return "no terminal is set or installed"
-        return launcher.spawn(argv, directory, harnesses=self._deps.harnesses)
+        shell when there is none — on a task, since a staged terminal (herdr) waits out each of
+        its stages; ``opened`` is told on the GUI thread why it did not open, "" when it did.
+        Nothing is tracked: it is not a run."""
+        deps = self._deps
+        template = launch_command()
+        result: list[str] = []
+
+        def body() -> None:  # Worker thread: the script written, the terminal started.
+            files = launcher.shell_script(directory, title, project_id=project_id, command=command)
+            argv = launcher.resolve_command(template, files, directory)
+            if argv is None:
+                result.append("no terminal is set or installed")
+            else:
+                result.append(launcher.spawn(argv, directory, harnesses=deps.harnesses))
+
+        def done() -> None:
+            opened(result[0] if result else "the terminal could not be started")
+
+        if deps.tasks is None:
+            body()
+            done()
+            return
+        runner = TaskRunner(deps.tasks, deps.parent)
+
+        def finished(busy: bool) -> None:
+            if not busy:
+                runner.busy_changed.disconnect(finished)
+                done()
+                runner.deleteLater()
+
+        runner.busy_changed.connect(finished)
+        runner.run(f"Opening a terminal for {title}", body)
 
     def _confirm_unfinished(
         self, waiting: Sequence[tuple[Step, Sequence[Step]]], *, count: int, title: str = ""

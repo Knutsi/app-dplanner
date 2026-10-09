@@ -796,3 +796,15 @@ interactively. The browser's tick runs for the window's life instead of only whi
 is live. `passes.until_words` folded into `limits.clock`, and the question-kind words moved
 to `questions.waits_for`, so the card and the browser draw from one place. Now:
 `agents.md`'s *A headless run is watched from the Agents browser, and taken over by a fence*.
+
+## 2026-10-09 — Open Session takes the whole session, under the launch lock
+
+The first *Open Session* fenced the one run it was opened on, and opened an ended run's
+session with no fence at all. Review found the gap: a pass's runs share a session, so an
+ended plan row could hand a person the session its execute run was still writing, and a gate
+answered meanwhile would launch the next stage into it. A takeover that timed out also never
+released its step, because the retry saw the run over. Now the takeover holds the step's
+launch lock, halts the pass with the engine's stop, stops every run on the session, and
+releases by the run's claim. The window's terminal starts on a task, and Follow reads the
+machine id without minting one. Now: `agents.md`'s *A headless run is watched from the
+Agents browser, and taken over by a fence*.

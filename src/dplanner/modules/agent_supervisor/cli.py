@@ -26,7 +26,7 @@ from dplanner.modules.agent_supervisor.supervisor import (
     advance_detached,
     supervise,
 )
-from dplanner.modules.agent_supervisor.takeover import take_over
+from dplanner.modules.agent_supervisor.takeover import HaltPass, take_over
 
 
 def _configure(parser: ArgumentParser) -> None:
@@ -44,7 +44,10 @@ def _configure_run(parser: ArgumentParser) -> None:
 
 
 def commands(
-    *, harnesses: tuple[AgentHarness, ...], release: Callable[[Path, Release], bool]
+    *,
+    harnesses: tuple[AgentHarness, ...],
+    release: Callable[[Path, Release], bool],
+    halt: HaltPass,
 ) -> list[CliCommand]:
     def run(context: CliContext, args: Namespace) -> int:
         project_dir = _project_dir(args)
@@ -78,16 +81,15 @@ def commands(
         return 0
 
     def open_session(context: CliContext, args: Namespace) -> int:
-        """Fence the run as a person's, release its step from the squad holding it, and run the
+        """Take the run's session from its pass and its squad (``take_over``), and run the
         harness's own resume in the directory it worked in, for as long as the person keeps it."""
         project_dir = _project_dir(args)
-        record = ledger.find(project_dir, args.run)
         try:
-            argv, directory = take_over(project_dir, args.run, getpass.getuser(), harnesses)
+            argv, directory = take_over(
+                project_dir, args.run, getpass.getuser(), harnesses, halt=halt, release=release
+            )
         except RefusedError as error:
             raise CliError(str(error)) from error
-        if record is not None and not record.over:
-            release(project_dir, Release(record.project, record.step, "taken over"))
         print(f"Opening {' '.join(argv)} in {directory}", flush=True)
         try:
             return subprocess.run(argv, cwd=directory, check=False).returncode

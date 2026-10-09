@@ -20,6 +20,8 @@ from dplanner.modules.agent_supervisor.supervisor import RefusedError
 
 TURNS = Path(__file__).parent.parent.parent / "fixtures" / "agent_turns"
 HARNESSES = (claude.HARNESS, codex.HARNESS, opencode.HARNESS)
+# The ledger's own machine readers, as imported — before the suite stubs them per test.
+MINTING, READING = ledger.machine_id, ledger.known_machine_id
 AT = "2026-10-08T10:00:00+00:00"
 
 
@@ -161,6 +163,29 @@ def test_another_machines_run_is_not_followed_here(tmp_path):
     ledger.write(run.plan, replace(run.record, machine="elsewhere", host="laptop"))
     with pytest.raises(RefusedError, match="ran on laptop"):
         follow(run.plan, run.record.run, HARNESSES, out=print, config=run.config)
+
+
+def test_following_leaves_an_uninitialised_config_directory_as_it_found_it(tmp_path, monkeypatch):
+    """A follower writes nothing — not even this machine's id, which the check of whose run it
+    is would otherwise mint into a config directory nothing has used yet."""
+    monkeypatch.setattr(ledger, "machine_id", MINTING)
+    monkeypatch.setattr(ledger, "known_machine_id", READING)
+    config = tmp_path / "config"
+    plan = tmp_path / "plan"
+    record = LedgerRecord(
+        run=ledger.new_run_id(datetime(2026, 10, 8, 10, tzinfo=UTC)),
+        project="p1",
+        step="s1",
+        harness="codex",
+        launched=AT,
+        machine="elsewhere",
+        host="laptop",
+        mode=ledger.HEADLESS,
+    )
+    ledger.write(plan, record)
+    with pytest.raises(RefusedError, match="ran on laptop"):
+        follow(plan, record.run, HARNESSES, out=print, config=config)
+    assert not config.exists()
 
 
 def test_the_argv_runs_this_build_on_this_library(tmp_path):

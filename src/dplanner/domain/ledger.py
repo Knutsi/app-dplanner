@@ -432,16 +432,21 @@ def new_run_id(now: datetime | None = None) -> str:
     return f"{moment:%Y%m%dT%H%M%SZ}-{secrets.token_hex(4)}"
 
 
+MACHINE_ID_FILE = "machine-id"
+
+
+def known_machine_id(directory: Path | None = None) -> str:
+    """This machine's id when one was minted, "" when none was — read without writing, for a
+    reader that must leave the config directory as it found it (``agent follow``)."""
+    return _stored_machine_id(directory)
+
+
 def machine_id(directory: Path | None = None) -> str:
     """This machine's id for the ledger: minted once into the config directory, so a
     renamed host is still the machine that can read its own agents' records."""
-    path = (directory or config_dir()) / "machine-id"
-    try:
-        known = path.read_text(encoding="utf-8").strip()
-    except OSError:
-        known = ""
-    if known:
+    if known := _stored_machine_id(directory):
         return known
+    path = (directory or config_dir()) / MACHINE_ID_FILE
     minted = uuid.uuid4().hex
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -449,6 +454,13 @@ def machine_id(directory: Path | None = None) -> str:
     except OSError:
         pass  # Unwritable config: this run is still this machine's, under a fresh id.
     return minted
+
+
+def _stored_machine_id(directory: Path | None) -> str:
+    try:
+        return ((directory or config_dir()) / MACHINE_ID_FILE).read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
 
 
 def host_name() -> str:

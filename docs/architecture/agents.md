@@ -1231,31 +1231,54 @@ the first line of what came back. A turn's end says how it ended and, for a park
 question it waits on. The next turn is followed as soon as it is recorded, because an
 answer resumes the run. Reading the record *before* the stream is what makes "the turn
 has ended" mean "the stream has nothing left": the supervisor writes the end only after
-it has drained the stream. Follow takes no lock and writes nothing. The browser's row,
-*Step ▸ Follow Agent Run*, *Tools ▸ Agent List* and the Control Centre's question card all
-open the default profile's terminal on that verb (`launcher.shell_script(command=)`). So
-the window and a person's own terminal run one command, and there is no second printer.
+it has drained the stream. Follow takes no lock and writes nothing — not even this
+machine's id: whose run it is, is read with `ledger.known_machine_id`, which never mints
+one into a config directory nothing has used. The browser's row, *Step ▸ Follow Agent
+Run*, *Tools ▸ Agent List* and the Control Centre's question card all open the default
+profile's terminal on that verb (`launcher.shell_script(command=)`). So the window and a
+person's own terminal run one command, and there is no second printer. The terminal is
+started on a `TaskRunner` (`AgentLaunchModule.open_in_terminal`) and its outcome said on the
+status bar: a staged terminal such as herdr runs each stage to its end, up to twenty seconds
+apiece, and that wait must never be the GUI thread's.
 
-**Open Session takes the run, and a fence is how.** A parked run is still its
-supervisor's: an answer, a reset or *Retry now* resumes it. A person typing into the same
+**Open Session takes the session, and it takes all of it.** A parked run is still its
+supervisor's: an answer, a reset or *Retry now* resumes it. And a run is not the session's
+only writer: a pass's plan, execute and fix runs share one session, so the plan's ended row
+can name a session the execute run after it is still writing, and a gate waiting between
+them launches the next stage into it the moment it is answered. A person typing into the
 session meanwhile would leave two processes writing one conversation. So `dplanner agent
-open-session <run>` (`agent_supervisor/takeover.py`) first stops the run being DPlanner's.
-It does that through the one stopper, `supervisor.stop_and_wait`, on **that run alone**,
-with `why` `taken over by a person` (`ledger.TAKEN_OVER`): a supervisor waiting out a
-limit is signalled, and a parked run nobody drives is ended here with its questions
-withdrawn. It does not take the plan follow-ups of *Stop Playbook*, because the work
-is not stopped: a person has it. The step leaves its squad's claim through `ownership`'s
-person's override (the `Release` handed to the verb), since a coordinator must not
-relaunch a step a person took over. The pass reads *Taken over* — a branch of
-`passes._words`, quiet rather than the bad news *Stopped* is — and so does a round cap
-answered *Take over*. Only then does the harness's own resume (`AgentHarness.resume`:
-`claude --resume`, `codex resume`, `opencode -s`) run in the directory the run worked in,
-as a child of the verb rather than an `exec`, which Windows does not have.
+open-session <run>` (`agent_supervisor/takeover.py`'s `take_over`) first makes the session
+nobody else's, **under the step's launch lock** — which every advance and launch of the
+step waits for, so an answer landing during the takeover starts nothing until it is done.
+It halts the run's pass with *Stop Playbook*'s own machinery (`engine.halt_pass`, handed in
+as `takeover.HaltPass`, since a module reaches another's effects only through a callback):
+its unfinished runs fenced `taken over by a person` (`ledger.TAKEN_OVER`) and its gates and
+questions withdrawn, an answered one included, so the advance waiting on the lock finds the
+pass halted. Then every other run on the session is stopped through the one stopper,
+`supervisor.stop_and_wait`. A supervisor waiting out a limit is signalled, and a parked run
+nobody drives is ended here. Only once every one of them is over does the step leave the
+claim of the squad whose run it was, through `ownership`'s person's override (the `Release`
+handed in), since a coordinator must not relaunch a step a person took over. It does not
+take the plan follow-ups of *Stop Playbook*, because the work is not stopped: a person has
+it. The pass reads *Taken over* — a branch of `passes._words`, quiet rather than the bad
+news *Stopped* is — whether its latest run was fenced or the gate it waited on withdrawn,
+and so does a round cap answered *Take over*. Only then does the harness's own resume
+(`AgentHarness.resume`: `claude --resume`, `codex resume`, `opencode -s`) run in the
+directory the run worked in, as a child of the verb rather than an `exec`, which Windows
+does not have.
 
-While a turn runs, Open Session is refused: "running — Follow it, or Stop Playbook first".
-Interrupting a turn is what *Stop Playbook* is for, and it says what it stops. A run that
-is over is opened without a fence, and without asking. A run that is not over asks first in
-the window, because the run will not come back to its playbook. The greyed reason and the
+**Every step of the takeover is idempotent, and the release is decided by the claim, not by
+what the run looked like.** A run whose supervisor does not end within the wait is refused
+with "still stopping — try again", having released nothing. By the second attempt the run
+is over, so a release decided by "was the run still going?" would never happen; it is
+decided by whether the claim holding the step is the run's own, which asking again still
+finds.
+
+While a turn on the session runs, Open Session is refused: "running — Follow it, or Stop
+Playbook first". Interrupting a turn is what *Stop Playbook* is for, and it says what it
+stops. A run whose session and pass have nothing left going is opened without a fence, and
+without asking. Otherwise the window asks first (`HeadlessRun.takes`), an ended row
+included, because what it ends will not come back to its playbook. The greyed reason and the
 verb's refusal are one function (`open_session_refusal`), and a run of another machine is
 refused by both: its streams and its session are there.
 

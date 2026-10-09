@@ -24,7 +24,7 @@ from dplanner.domain.headless import TurnEnd
 from dplanner.domain.ledger import LedgerRecord
 from dplanner.domain.questions import Question
 from dplanner.modules.agent_supervisor import limits
-from dplanner.modules.agent_supervisor.takeover import elsewhere, open_session_refusal
+from dplanner.modules.agent_supervisor.takeover import elsewhere, on_session, open_session_refusal
 
 # How long a headless run that ended stays listed under *Show ended*: one that ended overnight
 # is still there in the morning, as the card keeps a finished pass's strip.
@@ -51,6 +51,9 @@ class HeadlessRun:
     tokens: Tokens
     follow_refusal: str
     open_refusal: str
+    # Opening its session ends something still going — a run on the session, or a question its
+    # pass waits on — so the window asks first.
+    takes: bool
 
     @property
     def key(self) -> str:
@@ -196,7 +199,13 @@ def row_of(
         activity=activity_of(record, config),
         tokens=record.tokens,
         follow_refusal=elsewhere(record, config),
-        open_refusal=open_session_refusal(record, harnesses, config),
+        open_refusal=open_session_refusal(record, harnesses, config, project.records),
+        takes=any(not each.over for each in on_session(record, project.records))
+        or any(
+            question.pass_ == record.pass_ and not question.settled
+            for question in project.asked.values()
+            if record.pass_
+        ),
     )
 
 

@@ -649,11 +649,13 @@ def _words(
 
 
 def _taken_over(reading: _Reading, last: Entry | None) -> bool:
-    """A halted pass a person took from here: its latest run fenced by *Open Session*, or a
-    round cap answered *Take over*."""
+    """A halted pass a person took from here: its latest run fenced by *Open Session*, or the
+    question it waited on withdrawn by it, or a round cap answered *Take over*."""
     runs = [entry for entry in reading.entries if isinstance(entry, LedgerRecord)]
     fence = runs[-1].fence if runs else None
     if fence is not None and fence.get("why") == ledger.TAKEN_OVER:
+        return True
+    if isinstance(last, Question) and last.withdrawn.get("why") == ledger.TAKEN_OVER:
         return True
     return (
         isinstance(last, Question)

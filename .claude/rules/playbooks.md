@@ -104,7 +104,9 @@ paths:
   starts again — not an advance, `revive`, the clock or *Retry now*; nothing to stop exits 0
   and says so; the worktree and branch are kept, and the next `agent run --playbook` starts a
   new pass. **A step leaving its squad's claim halts the claim's pass the same way**
-  (`engine.halt_claimed`, under `ownership`), the plan left to whoever released it. **A pass
+  (`engine.halt_claimed`, under `ownership`), the plan left to whoever released it, and so
+  does *Open Session* (`engine.halt_pass`, under the step's launch lock, `ledger.TAKEN_OVER`:
+  `agents.md`). **A pass
   pins the claim its first run launched under**: a later stage launches only while that claim
   still holds the step — ended or taken meanwhile, the stage is refused onto a `blocked` card,
   never launched solo (`StageLauncher`, and `start_run` again under the launch lock).
@@ -123,8 +125,9 @@ paths:
   Qt-free reading of its runs, its questions and the questions its runs parked on, said by
   the card's playbook strip and by `playbook show` alike (`engine.standings` for a project,
   an ended pass shown for `ENDED_SHOWN`). A new phrase goes there, never in a surface.
-  **A pass a person took reads *Taken over*** — its latest run fenced `ledger.TAKEN_OVER`
-  (*Open Session*) or a round cap answered *Take over* — never *Stopped*.
+  **A pass a person took reads *Taken over*** — its latest run fenced, or the question it
+  waited on withdrawn, `ledger.TAKEN_OVER` (*Open Session*, through `engine.halt_pass`), or a
+  round cap answered *Take over* — never *Stopped*.
   **A pass through its stages reads *Done* only once its step does**; until then a pass that
   produced work reads *Waits for merge* and has not ended. `docs/architecture/playbooks.md`'s
   *The presets*, *A step names its playbook; a project names its default* and *The mark on the
