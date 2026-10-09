@@ -222,7 +222,8 @@ for days, and the step panel says so.
 
 The card wears **one phrase** derived from the step's latest runs and questions: *Planning*,
 *Executing*, *Review 1/2*, *Fixing (round 1)*, *Waits for you · plan approval*, *Parked until
-21:30*, *Escalated*, *Stopped*, *Taken over*, *Waits for merge*, *Done*. *Taken over* is a halted
+21:30*, *Escalated*, *Stopped*, *Taken over*, *Waits for merge*, *Waits for you · ready for
+review*, *Done*. *Taken over* is a halted
 pass a person took — its latest run fenced, or its waiting gate withdrawn, by *Open Session*,
 or a round cap answered *Take over* — and is quiet where *Stopped* is bad news: the work goes on, in somebody's hands
 (`agents.md`'s *A headless run is watched from the Agents browser, and taken over by a fence*).
@@ -235,8 +236,12 @@ most of its life parked, waiting or between stages, when no run is. **A pass thr
 stages is not *Done* until its step is**: one that produced work leaves a PR nobody has merged
 into the mainline yet, and DPlanner never merges there, so it reads *Waits for merge* (warn)
 until the step reads done — the dogfood run's card said *Done* on a Ready-for-review step a
-person still had to land. A pass that ended — done or stopped — shows for a day after its last
-record (`engine.ENDED_SHOWN`); one waiting for its merge has not ended and stays. Stages are
+person still had to land. *Waits for merge* needs a PR to merge: the step's GitHub aspect
+records one, not merged (`Facts.unmerged_pr`, read by `engine._facts`). Work that never became
+a PR — a temp file, a local change — has nothing to merge, so the pass reads *Waits for you ·
+ready for review* (warn) instead: what is left is a person's look. A pass that ended — done or
+stopped — shows for a day after its last record (`engine.ENDED_SHOWN`); one waiting for a
+person has not ended and stays. Stages are
 read in the step panel's Playbook section, never as cards; `canvas.md`'s *A card running a
 playbook says where its pass stands* has the canvas's half.
 

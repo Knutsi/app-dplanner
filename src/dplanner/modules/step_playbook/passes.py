@@ -198,6 +198,9 @@ class Facts:
 
     done: bool = False  # The step reads done: whatever the pass had left is moot.
     at_review: bool = False  # It reads Ready for review: a new pass starts at its first gate.
+    unmerged_pr: bool = (
+        False  # It has a PR recorded that is not merged: a pass through waits on it.
+    )
 
 
 def in_order(runs: Sequence[LedgerRecord], asked: Sequence[Question]) -> list[Entry]:
@@ -622,10 +625,13 @@ def _words(
     """(phrase, tone, stage id) for what is due, read against the latest record."""
     if isinstance(next_, Complete):
         # A pass that produced work never merges it into the mainline: until somebody does
-        # and the step reads done, the work is not done, however through the pass is.
+        # and the step reads done, the work is not done, however through the pass is. With no
+        # PR to merge, what is left is a person's look at the work.
         if facts.done or next_.set_done:
             return DONE, "good", ""
-        return "Waits for merge", "warn", ""
+        if facts.unmerged_pr:
+            return "Waits for merge", "warn", ""
+        return "Waits for you · ready for review", "warn", ""
     if isinstance(next_, Halted):
         stage = last.stage if last is not None else ""
         return (TAKEN_OVER, "", stage) if _taken_over(reading, last) else ("Stopped", "bad", stage)

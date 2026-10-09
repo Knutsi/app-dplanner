@@ -132,7 +132,8 @@ paths:
   waited on withdrawn, `ledger.TAKEN_OVER` (*Open Session*, through `engine.halt_pass`), or a
   round cap answered *Take over* — never *Stopped*.
   **A pass through its stages reads *Done* only once its step does**; until then a pass that
-  produced work reads *Waits for merge* and has not ended. `docs/architecture/playbooks.md`'s
+  produced work reads *Waits for merge* when the step's GitHub aspect records a PR not merged,
+  and *Waits for you · ready for review* when it records none — and has not ended. `docs/architecture/playbooks.md`'s
   *The presets*, *A step names its playbook; a project names its default* and *The mark on the
   one card*.
 - **Every stage is one headless turn**, with the invocation per harness in
