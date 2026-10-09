@@ -1088,6 +1088,8 @@ On Windows a waiting lock is `LK_NBLCK` retried every 50 ms until it is granted,
 `LK_LOCK`: `LK_LOCK` gives up after ten one-second tries, and a fetch holding the sync lock
 longer than that made a Save in another window raise. `wait=False` refuses on the first
 contention (`EACCES`/`EDEADLK`) with `BlockingIOError`; any other error propagates as itself.
+`parents=False` takes the lock only in a directory that exists (`FileNotFoundError` otherwise)
+rather than making it: the sync lock lives in a `.git`, and making one plants a repository.
 
 **Upstream?** yes — the template's `write_atomic` has the same shared temporary; `os_lock` is
 worth carrying for any template app with more than one writing process.
@@ -1204,6 +1206,11 @@ per listener.
   `GitHubStorage.pull`/`push` — so the window's Save and sync never interleave with another
   process committing or pushing the same checkout (DPlanner's claims commit from the CLI and a
   run's supervisor). Never nested; signals are emitted after it is let go.
+  `git_common_dir` raises `StorageError` naming the path when the root has neither a `.git`
+  directory nor a `.git` file leading to one, and the lock never makes its directory: a lock
+  made by `mkdir(parents=True)` once planted `/tmp/.git`, and every pytest temporary directory
+  read as inside a repository. A provider holds its root for its life, so a root whose `.git`
+  went from under it refuses the next Save rather than making the repository again.
 
 **Upstream?** yes — any template application that opens a repository by path meets each of
 these; the lock, for any application with a second process writing commits to the checkout.

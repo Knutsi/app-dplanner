@@ -67,22 +67,33 @@ SYNC_LOCK = "dplanner-sync.lock"
 @contextmanager
 def sync_lock(repo_root: Path) -> Iterator[None]:
     """The repository's sync lock, the operating system's, waited for. Never nested: a holder
-    calls no other method that takes it, and emits no signal while it holds it."""
-    with os_lock(git_common_dir(repo_root) / SYNC_LOCK, wait=True):
+    calls no other method that takes it, and emits no signal while it holds it.
+
+    ``StorageError`` when ``repo_root`` is no repository: the lock file goes inside a git
+    directory that exists and is never the one to make it, or a caller handed a stray
+    directory would plant a ``.git`` that turns everything beneath it into a repository."""
+    with os_lock(git_common_dir(repo_root) / SYNC_LOCK, wait=True, parents=False):
         yield
 
 
 def git_common_dir(repo_root: Path) -> Path:
     """The git directory a checkout and all its worktrees share — ``.git`` itself, or, in a
-    worktree, the one its ``.git`` file leads back to."""
+    worktree, the one its ``.git`` file leads back to. ``StorageError`` when ``repo_root``
+    has neither, or the file leads nowhere."""
     dot = repo_root / ".git"
-    if not dot.is_file():
+    if dot.is_dir():
         return dot
+    if not dot.is_file():
+        raise StorageError(f"{repo_root} is not a git repository: it has no .git")
     pointer = dot.read_text(encoding="utf-8").strip()
-    gitdir = (repo_root / pointer.partition(":")[2].strip()).resolve()
+    if not pointer.startswith("gitdir:"):
+        raise StorageError(f"{dot} is not a gitdir file")
+    gitdir = (repo_root / pointer.removeprefix("gitdir:").strip()).resolve()
     common = gitdir / "commondir"
     if common.is_file():
-        return (gitdir / common.read_text(encoding="utf-8").strip()).resolve()
+        gitdir = (gitdir / common.read_text(encoding="utf-8").strip()).resolve()
+    if not gitdir.is_dir():
+        raise StorageError(f"{dot} leads to {gitdir}, which is not a git directory")
     return gitdir
 
 

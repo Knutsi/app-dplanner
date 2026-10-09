@@ -106,3 +106,12 @@ def test_a_windows_lock_propagates_an_error_that_is_not_contention(tmp_path, mon
 
     assert not isinstance(raised.value, BlockingIOError)
     assert raised.value.errno == errno.EBADF
+
+
+def test_a_lock_told_not_to_make_its_directory_refuses_and_makes_nothing(tmp_path):
+    with (
+        pytest.raises(FileNotFoundError),
+        os_lock(tmp_path / ".git" / "x.lock", wait=True, parents=False),
+    ):
+        pass
+    assert not (tmp_path / ".git").exists()

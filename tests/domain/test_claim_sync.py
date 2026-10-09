@@ -124,6 +124,21 @@ def test_without_a_remote_a_publish_commits_and_outside_git_does_nothing(tmp_pat
     assert claim_sync.publish(folder, "Claims", tmp_path / "config") == ""
 
 
+def test_a_heartbeat_from_a_directory_that_is_no_repository_plants_no_git(tmp_path, monkeypatch):
+    """A detached supervisor's heartbeat runs wherever it was started; the plan's own directory
+    says where its repository is, and a plan outside any says there is none."""
+    folder = tmp_path / "folder"
+    _taken(folder)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    config = tmp_path / "config"
+    claim_sync.renew(folder, config=config)
+    assert claim_sync.publish(folder, "Claims", config) == ""
+    assert claim_sync.publish(Path(), "Claims", config) == ""
+    assert not list(tmp_path.rglob(".git"))
+
+
 def test_renewing_writes_a_due_heartbeat_and_pushes_at_most_every_thirty_minutes(plan, tmp_path):
     config = tmp_path / "config"
     here = {"machine": ledger.machine_id(config), "host": "here"}
