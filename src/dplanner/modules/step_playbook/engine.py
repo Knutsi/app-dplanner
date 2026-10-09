@@ -560,6 +560,20 @@ def halt_claimed(
     return _halt(project_dir, step_id, entries, Facts(), by, why, 0.0)
 
 
+def halt_pass(
+    project_dir: Path, step_id: str, pass_id: str, by: str, why: str, wait: float
+) -> tuple[str, ...]:
+    """Halt the step's latest pass as :func:`stop` does when it is ``pass_id`` — an earlier
+    pass has ended already — waiting up to ``wait`` seconds: the runs here still stopping.
+    *Open Session*'s, under the step's launch lock, so no advance acts in between. The plan is
+    not read, as for :func:`halt_claimed`."""
+    entries = _latest_entries(project_dir, step_id)
+    if not entries or entries[-1].pass_ != pass_id:
+        return ()
+    stopped = _halt(project_dir, step_id, entries, Facts(), by, why, wait)
+    return stopped.still if stopped is not None else ()
+
+
 def _halt(
     project_dir: Path,
     step_id: str,

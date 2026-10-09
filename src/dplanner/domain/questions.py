@@ -44,6 +44,20 @@ PERMISSION = "permission"
 BLOCKED = "blocked"
 LIMIT = "limit"
 KINDS = (DECISION, PLAN_APPROVAL, PERMISSION, BLOCKED, LIMIT)
+# What a question of each kind waits for, in a person's words: the card's playbook strip, and a
+# run's row in the Agents browser. A decision is the default.
+_WAITS_FOR = {
+    PLAN_APPROVAL: "plan approval",
+    PERMISSION: "a permission",
+    BLOCKED: "blocked",
+    LIMIT: "a usage limit",
+}
+
+
+def waits_for(kind: str) -> str:
+    """What a question of ``kind`` waits for, in words: *plan approval*, *a decision*."""
+    return _WAITS_FOR.get(kind, "a decision")
+
 
 OPEN = "open"
 ESCALATED = "escalated"

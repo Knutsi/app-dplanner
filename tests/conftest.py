@@ -282,6 +282,7 @@ def _test_machine(monkeypatch):
     from dplanner.domain import ledger
 
     monkeypatch.setattr(ledger, "machine_id", lambda directory=None: TEST_MACHINE)
+    monkeypatch.setattr(ledger, "known_machine_id", lambda directory=None: TEST_MACHINE)
 
 
 TEST_MACHINE = "test-machine"

@@ -234,6 +234,33 @@ paths:
   the empty state names the switch that has the rest — an empty state per filter.
   `docs/architecture/agents.md`'s *The peer reports back through its run directory* has the
   reasoning.
+- **Headless runs are rows in the Agents browser, read and never tracked; Follow and Open
+  Session are verbs a terminal runs.** `step_agent_run/headless.py` lists every project's
+  headless runs, re-read when `ledger.fingerprint`/`questions.fingerprint` move, on the
+  module's two-second tick, which runs for the window's life. Each is listed while not over,
+  and for a day after it ends (*Clear ended* is a per-user stamp, never a deletion). A row
+  speaks the card's words: the pass's latest run leads with `passes.standing`'s phrase
+  (`pass_phrase`), any other with `headless.state_of`, whose words come from
+  `questions.waits_for` and `limits.clock` — **a new run phrase goes in those, never in the
+  browser**. *Follow* is `dplanner agent follow <run>` (`agent_supervisor/follow.py`: the
+  record, then the stream to its end, said by `Headless.say`, read-only, no lock). *Open
+  Session* is `dplanner agent open-session <run>` (`takeover.take_over`), **which makes the
+  person the session's only writer, under the step's launch lock**: refused while a turn on
+  the session runs (`takeover.RUNNING`), it halts the run's pass with *Stop Playbook*'s
+  machinery (`engine.halt_pass`, handed in — its gates and questions withdrawn, so no advance
+  launches into the session), stops every other run on the session (`supervisor.stop_and_wait`,
+  `ledger.TAKEN_OVER`), and only once each is over releases the step from the squad whose run
+  it was (`Release`, a person's override) — none of *Stop Playbook*'s plan follow-ups. Each
+  step is idempotent: a takeover that timed out waiting is finished by asking again. Then the
+  harness's `resume` runs in the run's directory. The window asks first whenever the takeover
+  would end something (`HeadlessRun.takes`), an ended row included. The row, *Step ▸ Follow
+  Agent Run|Open Agent Session*, *Tools ▸ Agent List* and the question card's *Follow* all
+  open the default profile's terminal on those verbs (`launcher.shell_script(command=)`,
+  `AgentLaunchModule.open_in_terminal`, **on a `TaskRunner`** — a staged terminal waits out
+  each stage — its outcome on the status bar), greyed by the same
+  `open_session_refusal`/`elsewhere` the verbs refuse with; `elsewhere` reads the machine id
+  with `ledger.known_machine_id`, which never mints one, so Follow writes nothing. `docs/architecture/agents.md`'s *A headless run is watched from the
+  Agents browser, and taken over by a fence* has the reasoning.
 - **What a run consumed is a ledger record, harvested by anyone — never caught at the
   end.** The launch writes the run's record into `<project>/ledger/YYYY-MM/<run id>.json`
   (`domain/ledger.py`; `agent_usage/aspect.py`'s `launch_record`, through the tracker's

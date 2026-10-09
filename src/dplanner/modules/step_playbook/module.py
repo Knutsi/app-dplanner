@@ -103,6 +103,13 @@ class PassStandings:
         stands = self._held.get(project_id, {}).get(step_id)
         return ("", "", "") if stands is None else (stands.phrase, stands.tone, describe(stands))
 
+    def phrase(self, step_id: StepId) -> str:
+        """The card's playbook phrase for the step's pass, "" for none — what the Agents
+        browser leads a pass's latest run with, so the two never disagree."""
+        if not self._library.has(step_id):
+            return ""
+        return self.card(self._library.project_of(step_id).id, step_id)[0]
+
     def stoppable(self, step: Step) -> str:
         """What stopping the step's pass would end, or "" — Stop Playbook's reading, made
         afresh from the records rather than the strip's last poll."""

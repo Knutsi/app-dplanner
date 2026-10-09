@@ -66,6 +66,7 @@ class Recorder:
     def __init__(self) -> None:
         self.answers: list[tuple[str, str]] = []
         self.retries: list[str] = []
+        self.followed: list[str] = []
         self.revealed: list[str] = []
         self.said: list[str] = []
         self.refuse = ""
@@ -79,6 +80,10 @@ class Recorder:
     def retry_now(self, _directory, run: str) -> str:
         self.retries.append(run)
         return "retried"
+
+    def follow(self, _directory, run: str) -> str:
+        self.followed.append(run)
+        return "following"
 
     def show_status(self, text: str, msecs: int = 0) -> None:
         self.said.append(text)
@@ -99,6 +104,7 @@ def faked(services):
             project_dir=services.repo.project_dir,
             answer=recorder.answer,
             retry_now=recorder.retry_now,
+            follow=recorder.follow,
             reveal=recorder.revealed.append,
             key_of=lambda _step: "S1",
         ),
@@ -263,6 +269,22 @@ def test_a_usage_hold_shows_its_reset_and_retries_now(services, alpha, faked) ->
     card.retry.click()
 
     assert recorder.retries == ["run-1"]
+
+
+def test_a_runs_question_follows_its_run_and_a_gate_has_nothing_to_follow(
+    services, alpha, faked
+) -> None:
+    project, step = alpha
+    ask(services, project, step, "Keep both?", run="run-1")
+    ask(services, project, step, "Ship it?", minutes=1, pass_="P", stage="person")
+    cards, recorder = faked
+    cards.refresh()
+    run_card, gate_card = cards.cards()
+    assert gate_card.follow is None and run_card.follow is not None
+
+    run_card.follow.click()
+
+    assert recorder.followed == ["run-1"] and recorder.said == ["following"]
 
 
 def test_a_decision_offers_no_retry(services, alpha, faked) -> None:

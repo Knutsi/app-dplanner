@@ -4,7 +4,8 @@ where a person looks — the Control Centre, on top of its board.
 A card says who asks (callsign and harness — or, for a playbook's own gate, whose judgement it
 waits for), about which step, what kind of question it is,
 the question, and the ways to answer it: a button per choice, a line in a person's own words,
-*Retry now* for a run that is held or blocked, and *Go to Step*. Nothing on it is
+*Retry now* for a run that is held or blocked, *Follow* for a run's question — the run's
+turns in a terminal, read-only — and *Go to Step*. Nothing on it is
 decoration: DESIGN.md's *Cards*, a ``#ToolCard`` well on a ``#CardLane``, and no accent.
 
 **The cards outlive a refresh.** Questions are written by other processes — a supervisor, an
@@ -94,6 +95,7 @@ class QuestionCard(QFrame):
         retry: Callable[[Question], None],
         reveal: Callable[[Question], None],
         show_body: Callable[[Question], None],
+        follow: Callable[[Question], None] = lambda _question: None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -127,6 +129,13 @@ class QuestionCard(QFrame):
             self.show_body = quiet(QPushButton(words, self))
             self.show_body.clicked.connect(lambda: show_body(question))
             head.addWidget(self.show_body, 0, Qt.AlignmentFlag.AlignTop)
+        # A run's question: what the run did up to it, watched in a terminal.
+        self.follow: QPushButton | None = None
+        if question.run:
+            self.follow = quiet(QPushButton("Follow", self))
+            self.follow.setToolTip("Watch the run's turns in a terminal — read-only")
+            self.follow.clicked.connect(lambda: follow(question))
+            head.addWidget(self.follow, 0, Qt.AlignmentFlag.AlignTop)
         self.go = quiet(QPushButton("Go to Step", self))
         self.go.setEnabled(facts.has_step)
         self.go.setToolTip(
@@ -378,6 +387,7 @@ class QuestionCards:
                 retry=self._retry,
                 reveal=self._reveal,
                 show_body=self._show_body,
+                follow=self._follow,
                 parent=self.lane,
             )
             card.set_typed(typed)
@@ -438,6 +448,9 @@ class QuestionCards:
 
     def _retry(self, question: Question) -> None:
         self._act(question, lambda directory: self._deps.retry_now(directory, question.run))
+
+    def _follow(self, question: Question) -> None:
+        self._act(question, lambda directory: self._deps.follow(directory, question.run))
 
     def _reveal(self, question: Question) -> None:
         if self._deps.library.has(question.step):

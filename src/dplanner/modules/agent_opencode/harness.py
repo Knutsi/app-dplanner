@@ -63,6 +63,9 @@ from dplanner.domain.headless import (
     StageKind,
     TurnLog,
     TurnSpec,
+    called,
+    came_back,
+    shorten,
     typed_message,
 )
 
@@ -264,9 +267,34 @@ def stderr_denials(stderr: str) -> list[str]:
 
 # opencode reports a tool only once it has finished, so no tool is ever seen running and the
 # stall clock never waits on one: its threshold covers a whole tool call instead.
+def say_event(event: Mapping[str, object]) -> list[str]:
+    """An event as ``agent follow`` says it: what the agent wrote, each tool it called with the
+    first line of what came back — opencode reports a tool once it has finished — and an
+    error."""
+    kind = event.get("type")
+    part = event.get("part")
+    part = part if isinstance(part, dict) else {}
+    if kind == "text":
+        return [str(part.get("text") or "")]
+    if kind == "tool_use":
+        state = part.get("state")
+        state = state if isinstance(state, dict) else {}
+        lines = [called(part.get("tool"), state.get("input"))]
+        failed = state.get("status") == "error"
+        return [*lines, came_back(state.get("error" if failed else "output") or "", failed)]
+    if kind == "error":
+        error = event.get("error")
+        error = error if isinstance(error, dict) else {}
+        data = error.get("data")
+        message = data.get("message") if isinstance(data, dict) else ""
+        return [f"· {error.get('name', 'error')}: {shorten(message or '')}"]
+    return []
+
+
 HEADLESS = Headless(
     command=headless_command,
     read=read_event,
+    say=say_event,
     stderr_denials=stderr_denials,
     stall=2 * STALL_SECONDS,
 )

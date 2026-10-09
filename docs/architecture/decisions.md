@@ -782,3 +782,29 @@ branch, asked for a gradual reveal: they now appear only under a playbook that h
 (rounds) or another agent's review (reviewer). Disabled-never-hidden stays the rule for verbs
 and aspect toggles; a field with nothing to apply to is not a verb waiting on a reason. Now:
 `playbooks.md`'s *A step names its playbook*.
+
+## 2026-10-09 — A headless run is followed and taken over from the Agents browser
+
+The Agents browser listed only the terminals this window launched. A headless run, which is
+every playbook stage, could be seen only as the card's one phrase, and its session could be
+picked up only by hand. *Resume Agent* had been left unbuilt on purpose, because the hint
+under an ended row was enough. Knut asked for progress he could watch and a session he could
+open (#249). Now headless runs are rows beside the shells. *Follow* opens a terminal on
+`dplanner agent follow`. *Open Session* opens one on `agent open-session`, which fences the
+run as taken over by a person, releases the step from its squad and resumes the session
+interactively. The browser's tick runs for the window's life instead of only while a shell
+is live. `passes.until_words` folded into `limits.clock`, and the question-kind words moved
+to `questions.waits_for`, so the card and the browser draw from one place. Now:
+`agents.md`'s *A headless run is watched from the Agents browser, and taken over by a fence*.
+
+## 2026-10-09 — Open Session takes the whole session, under the launch lock
+
+The first *Open Session* fenced the one run it was opened on, and opened an ended run's
+session with no fence at all. Review found the gap: a pass's runs share a session, so an
+ended plan row could hand a person the session its execute run was still writing, and a gate
+answered meanwhile would launch the next stage into it. A takeover that timed out also never
+released its step, because the retry saw the run over. Now the takeover holds the step's
+launch lock, halts the pass with the engine's stop, stops every run on the session, and
+releases by the run's claim. The window's terminal starts on a task, and Follow reads the
+machine id without minting one. Now: `agents.md`'s *A headless run is watched from the
+Agents browser, and taken over by a fence*.

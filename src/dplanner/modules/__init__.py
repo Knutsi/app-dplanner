@@ -560,11 +560,6 @@ def _agents(
             Context({SCOPE_SELECTION: (ContextNode(selection_uri("step", step_id)),)}),
         )
 
-    def ended() -> None:
-        """A run ended: what it consumed is due a harvest. The module is built below, and
-        nothing ends before the build is up."""
-        usage.sweep()
-
     # Whoever answers in the window is the person at it, and what the answer resumes reaches
     # the window's library.
     person, chosen = {"kind": "person", "name": getuser()}, store.library_path
@@ -589,11 +584,17 @@ def _agents(
             reveal=reveal_step,
             # Which CLI ran a step, and how to read its record back when the shell ends.
             harnesses=agent_harnesses(),
-            ended=ended,
+            # A run ended: what it consumed is due a harvest (built below; nothing ends before).
+            ended=lambda: usage.sweep(),
             # Where each run's ledger record lives.
             project_dir=ledger_of,
             retry_refusal=lambda step_id: inbox.retry_refusal(ledger_of(step_id), step_id),
             retry_now=retry_now,
+            # The headless runs beside the shells, each pass's in the card's phrase (built below).
+            project_dirs=lambda: [d for p in library.projects if (d := ledger_dir(store, p.id))],
+            pass_phrase=lambda step_id: standings.phrase(step_id),
+            open_terminal=lambda *opened: launch.open_in_terminal(*opened),
+            library_path=store.library_path,
         )
     )
     # The ledger's sweep and the Expenditure tab, whose rows look as the Order tab's do.
@@ -731,6 +732,7 @@ def _agents(
                 inbox.retry_now(project_dir, run, person, library=chosen).said
             ),
             reveal=reveal_step,
+            follow=runs.follow_run,
             harnesses=agent_harnesses(),
             key_of=key_of,
         )
@@ -2867,7 +2869,7 @@ def default_cli_commands(
     from dplanner.modules.step_order import cli as order_cli
     from dplanner.modules.step_playbook import cli as playbook_cli
     from dplanner.modules.step_playbook.engine import Engine as PlaybookEngine
-    from dplanner.modules.step_playbook.engine import halt_claimed
+    from dplanner.modules.step_playbook.engine import halt_claimed, halt_pass
     from dplanner.modules.step_start import cli as start_cli
     from dplanner.modules.step_status import cli as status_cli
     from dplanner.modules.step_ticket import cli as ticket_cli
@@ -2989,7 +2991,7 @@ def default_cli_commands(
         *agent_state_cli.commands(),
         # A run's usage and its supervisor read the harness that ran it: the window's tuple.
         *usage_cli.commands(harnesses=harnesses),
-        *supervisor_cli.commands(harnesses=harnesses),
+        *supervisor_cli.commands(harnesses=harnesses, release=release, halt=halt_pass),
         *questions_cli.commands(in_agent_shell=in_agent_shell),
         *claims_cli.commands(in_agent_shell=in_agent_shell, halt=halt_claimed),
         # The agent's own account of what it is doing while it does it: the window's

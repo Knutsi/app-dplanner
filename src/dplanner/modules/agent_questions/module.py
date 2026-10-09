@@ -33,6 +33,9 @@ class AgentQuestionsDeps:
     retry_now: Callable[[Path, str], str]
     # Select the step in its project's graph.
     reveal: Callable[[StepId], None]
+    # Open a terminal following the question's run (project dir, run id): the same contract as
+    # ``answer``.
+    follow: Callable[[Path, str], str] = lambda _directory, _run: ""
     # Who ran the question's run, named as the harness's dropdown names it.
     harnesses: tuple[AgentHarness, ...] = ()
     key_of: Callable[[Step], str] = lambda _step: ""

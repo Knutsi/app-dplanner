@@ -79,12 +79,15 @@ from dplanner.domain.agents import (
     Tokens,
 )
 from dplanner.domain.headless import (
+    CALLED,
     Headless,
     LimitWindow,
     StageKind,
     TurnLog,
     TurnSpec,
+    came_back,
     schema_file,
+    shorten,
     typed_message,
     window,
 )
@@ -472,9 +475,47 @@ def read_model(thread: str, home: Path | None = None) -> str:
     return ""
 
 
+def say_event(event: Mapping[str, object]) -> list[str]:
+    """An event as ``agent follow`` says it: a command as it starts, with the first line it
+    printed once it is done, a file change, what the agent wrote, and a failed turn."""
+    kind = event.get("type")
+    item = event.get("item")
+    item = item if isinstance(item, dict) else {}
+    what = item.get("type")
+    if kind == "item.started" and what == "command_execution":
+        return [f"{CALLED}$ {shorten(_bare_command(str(item.get('command') or '')))}"]
+    if kind == "item.completed":
+        if what == "agent_message":
+            return [str(item.get("text") or "")]
+        if what == "command_execution":
+            failed = item.get("exit_code") not in (0, None)
+            return [came_back(item.get("aggregated_output") or "", failed)]
+        if what == "file_change":
+            changes = item.get("changes")
+            return [
+                f"{CALLED}{change.get('kind') or 'change'}: {shorten(change.get('path') or '')}"
+                for change in (changes if isinstance(changes, list) else [])
+                if isinstance(change, dict)
+            ]
+        if isinstance(what, str) and what != "reasoning":
+            return [f"{CALLED}{what}"]
+    if kind == "turn.failed":
+        error = event.get("error")
+        message = error.get("message") if isinstance(error, dict) else error
+        return [f"· failed: {shorten(message or 'the turn failed')}"]
+    return []
+
+
+def _bare_command(command: str) -> str:
+    """The command without the login shell Codex wraps it in (``/usr/bin/bash -lc '…'``)."""
+    wrapped = re.fullmatch(r"\S*sh -lc (['\"])(.*)\1", command, re.DOTALL)
+    return wrapped.group(2) if wrapped else command
+
+
 HEADLESS = Headless(
     command=headless_command,
     read=read_event,
+    say=say_event,
     limits=lambda log: read_limits(log.session),
     model=lambda log: read_model(log.session),
 )

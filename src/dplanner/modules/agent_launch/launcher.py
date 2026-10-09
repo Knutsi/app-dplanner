@@ -606,8 +606,11 @@ def shell_script(
     project_id: str = "",
     platform: str = sys.platform,
     run_dir: Path | None = None,
+    command: Sequence[str] = (),
 ) -> LaunchFiles:
-    """A wrapper that opens a person's own shell in ``directory`` — not an agent, not a run.
+    """A wrapper that opens a person's own shell in ``directory`` — not an agent, not a run —
+    or runs ``command`` there instead: a ``dplanner`` verb a person watches or works in
+    (*Follow*, *Open Session*), whose own end closes the terminal.
 
     Nothing is reported back — no shell facts, no exit status, no prompt — because there is
     nothing for the window to track or claim: it is a terminal where a step's work is, for
@@ -632,9 +635,12 @@ def shell_script(
         lines = ["@echo off", f"title {files.title}", f'cd /d "{directory}"']
         if project_id:
             lines.append(f"set {PROJECT_ENV}={project_id}")
-        # A shell of its own: the ``cmd /k`` rows would keep theirs open anyway, but a row
-        # that runs the script and closes (Ghostty, herdr) would close on the prompt.
-        lines.append('"%ComSpec%" /k')
+        if command:
+            lines.append(subprocess.list2cmdline(command))
+        else:
+            # A shell of its own: the ``cmd /k`` rows would keep theirs open anyway, but a row
+            # that runs the script and closes (Ghostty, herdr) would close on the prompt.
+            lines.append('"%ComSpec%" /k')
         files.script.write_text("\r\n".join(lines) + "\r\n", encoding="utf-8", newline="")
     else:
         where = shlex.quote(str(directory))
@@ -646,7 +652,7 @@ def shell_script(
         ]
         if project_id:
             lines.append(f"export {PROJECT_ENV}={shlex.quote(project_id)}")
-        lines.append('exec "${SHELL:-/bin/sh}"')
+        lines.append(f"exec {shlex.join(command)}" if command else 'exec "${SHELL:-/bin/sh}"')
         files.script.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="")
         files.script.chmod(0o755)
     return files

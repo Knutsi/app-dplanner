@@ -90,7 +90,10 @@ from dplanner.domain.headless import (
     StageKind,
     TurnLog,
     TurnSpec,
+    called,
+    came_back,
     schema_text,
+    shorten,
     window,
 )
 
@@ -346,7 +349,39 @@ def _denial(denial: Mapping[str, object]) -> str:
     return f"{denial.get('tool_name') or 'a tool'} {target}".strip()
 
 
-HEADLESS = Headless(command=headless_command, read=read_event)
+def say_event(event: Mapping[str, object]) -> list[str]:
+    """An event as ``agent follow`` says it: what the agent wrote, each tool it called and the
+    first line of what came back, and a limit the account hit."""
+    kind = event.get("type")
+    if kind == "assistant":
+        lines = [str(block.get("text") or "") for block in _blocks(event, "text")]
+        lines += [
+            called(block.get("name"), block.get("input")) for block in _blocks(event, "tool_use")
+        ]
+        return [line for line in lines if line.strip()]
+    if kind == "user":
+        return [
+            came_back(_result_text(block.get("content")), block.get("is_error") is True)
+            for block in _blocks(event, "tool_result")
+        ]
+    if kind == "rate_limit_event":
+        info = event.get("rate_limit_info")
+        status = info.get("status") if isinstance(info, dict) else None
+        if isinstance(status, str) and status != "allowed":
+            return [f"· usage limit: {status}"]
+    if kind == "result" and (event.get("is_error") or event.get("subtype") != "success"):
+        return [f"· {shorten(event.get('result') or event.get('subtype') or 'error')}"]
+    return []
+
+
+def _result_text(content: object) -> str:
+    """A tool result's text: a string, or the text blocks of a list."""
+    if isinstance(content, list):
+        return "\n".join(str(part.get("text") or "") for part in content if isinstance(part, dict))
+    return content if isinstance(content, str) else ""
+
+
+HEADLESS = Headless(command=headless_command, read=read_event, say=say_event)
 
 
 def signed_in(shell: Shell) -> SignedIn:
