@@ -25,6 +25,7 @@ import threading
 import time
 from collections.abc import Callable, Iterable, Sequence
 
+from dplanner.core.process import run_bounded
 from dplanner.domain.agents import AgentHarness, AgentLevel, AgentStatus, Shell
 
 Which = Callable[[str], str | None]
@@ -38,18 +39,12 @@ _VERSION = re.compile(r"\d+(?:\.\d+)+")
 
 def subprocess_shell(path: str) -> Shell:
     """A shell that runs the CLI at ``path``, stdout and stderr together, never waiting
-    longer than :data:`PROBE_TIMEOUT_S` and never reading a keyboard."""
+    longer than :data:`PROBE_TIMEOUT_S` — whatever it started is ended with it — and never
+    reading a keyboard."""
 
     def run(arguments: Sequence[str]) -> tuple[int, str]:
         try:
-            done = subprocess.run(
-                [path, *arguments],
-                stdin=subprocess.DEVNULL,
-                capture_output=True,
-                text=True,
-                timeout=PROBE_TIMEOUT_S,
-                check=False,
-            )
+            done = run_bounded([path, *arguments], timeout=PROBE_TIMEOUT_S)
         except subprocess.TimeoutExpired as expired:
             raise TimeoutError(f"no answer in {PROBE_TIMEOUT_S:g} s") from expired
         return done.returncode, done.stdout + done.stderr

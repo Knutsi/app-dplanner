@@ -34,6 +34,13 @@ def playbook_block(panel):
     return next(b for b in details._blocks if b.section.id == "step_playbook.details")
 
 
+def revealed(section):
+    """Which overrides the block shows — asked of the widgets, so a hidden field is gone
+    whether or not its panel is on screen."""
+    fields = {"Rounds": section.rounds, "Reviewer": section.reviewer}
+    return {name for name, field in fields.items() if not field.isHidden()}
+
+
 def pick(combo, data):
     index = combo.findData(data)
     assert index >= 0, data
@@ -46,22 +53,36 @@ def test_the_block_writes_a_preset_and_default_takes_it_away(services, project, 
     section = playbook_block(step_editor(step.id)).extension
     assert section.playbook.currentIndex() == 0
     assert section.playbook.itemText(0) == "Default — Run Agent"
-    assert not section.rounds.isEnabled() and not section.reviewer.isEnabled()
+    assert revealed(section) == set()
 
     pick(section.playbook, "plan-execute-review-other")
     assert read(step) == Choice(playbook("plan-execute-review-other"))
-    assert section.rounds.isEnabled() and section.reviewer.isEnabled()
+    assert revealed(section) == {"Rounds", "Reviewer"}
     section.rounds.setValue(3)
     pick(section.reviewer, "codex")
     assert read(step) == Choice(playbook("plan-execute-review-other"), rounds=3, reviewer="codex")
 
     pick(section.playbook, "execute")  # no gate, no review: the overrides have nothing to cap
     assert step.module_data[MODULE_ID] == {"playbook": "execute", "format": 1}
-    assert not section.rounds.isEnabled() and not section.reviewer.isEnabled()
+    assert revealed(section) == set()
 
     section.playbook.setCurrentIndex(0)
     section.playbook.activated.emit(0)
     assert not step.module_data.get(MODULE_ID)
+
+
+def test_each_override_is_revealed_by_a_playbook_that_can_use_it(services, project, step_editor):
+    """Rounds cap a gate and the reviewer is another agent's review: a playbook that judges
+    its own work shows the one, and nothing chosen shows neither."""
+    step = project.steps[0]
+    section = playbook_block(step_editor(step.id)).extension
+
+    pick(section.playbook, "plan-execute-review-self")
+    assert revealed(section) == {"Rounds"}
+    assert section._reviewer_caption.isHidden()  # Its caption goes with it.
+
+    pick(section.playbook, "review-only")
+    assert revealed(section) == {"Rounds", "Reviewer"}
 
 
 def test_a_pick_undoes_back_to_the_default(services, project, step_editor):
