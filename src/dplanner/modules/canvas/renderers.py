@@ -115,8 +115,8 @@ LEFT_INSET = KEY_BLOCK_W + 4.0
 # The chip on the bottom edge, left end — the badge's mirror, worn by a live agent run.
 CHIP_H = 14.0
 
-# The ring the same run wears: a dashed line marching round the body a few pixels out, in
-# the chip's tone. Motion is what says "somebody is at work on this one right now" — a
+# The ring a run at work wears: a dashed line marching round the body a few pixels out, in
+# its tone. Motion is what says "somebody is at work on this one right now" — a
 # static outline would be one more border. The dash pattern is in pen widths (Qt's unit
 # for it) and the phase advances by RING_STEP per scene tick; one full dash-and-gap per
 # ~14 ticks reads as a steady crawl rather than a flicker.
@@ -202,8 +202,8 @@ class NodeAccent:
     The canvas never learns which aspect means "muted", what a badge says, or which
     aspect a pill stands for — the composition root translates aspects into this, the
     same seam ``step_aspects`` uses for the subtitle. A ``badge`` sits on the top edge
-    (a milestone label); a ``chip`` sits on the bottom edge (a live agent run — and the
-    same run wears the marching ring, so one field says both); a ``pill``
+    (a milestone label); a ``chip`` sits on the bottom edge (a live agent run); a ``ring``
+    marches round the body while a run is at work on the step; a ``pill``
     sits on the second line with a tone that is "good" or "bad", never "merged";
     ``branch`` asks for the small fork glyph beside it. The key block down the left edge
     reads ``key_text`` under ``key_glyph`` — who works the step — and is shaded by
@@ -223,6 +223,9 @@ class NodeAccent:
     key_glyph_tone: str = ""  # "" the key's ink | "warn": the attention amber.
     chip_text: str = ""  # "" → no chip.
     chip_tone: str = ""  # "" neutral | "info" | "attention".
+    # A run is at work on this step, so the card wears the marching ring, in this tone:
+    # "info" | "attention". "" → no ring. Whose run it is is the composition root's to say.
+    ring: str = ""
     # The squad whose claim holds the step, in a chip on the bottom edge's right end — still,
     # not marching: a claim is ownership, and the ring is a run at work. Its words and its
     # tone: "" neutral, "attention" once the claim was abandoned. ("", "") → unclaimed.
@@ -350,8 +353,8 @@ def paint_node(
     paint_marks(painter, palette, body, state)
     if accent.flagged:
         paint_problem(painter, card)
-    if accent.chip_text:
-        paint_ring(painter, card, accent.chip_tone, state.phase)
+    if accent.ring:
+        paint_ring(painter, card, accent.ring, state.phase)
     inner = body.adjusted(KEY_BLOCK_W + PAD_Y, PAD_Y, -PADDING, -PAD_Y)
     detail = bool(accent.stat_text or accent.pill_text or accent.branch)
     reserved = painter.fontMetrics().height() + LINE_GAP if detail else 0.0
@@ -714,7 +717,7 @@ def paint_badge(
 
 
 def paint_ring(painter: QPainter, body: QRectF, tone: str, phase: float) -> None:
-    """The dashed ring round a node with a live agent run, its dashes at ``phase``.
+    """The dashed ring round a node a run is at work on, its dashes at ``phase``.
 
     Drawn outside the body so it reads as something around the card rather than a second
     border, and never filled: what is inside is the node, unchanged.

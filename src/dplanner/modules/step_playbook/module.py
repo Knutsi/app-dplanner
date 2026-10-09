@@ -103,6 +103,11 @@ class PassStandings:
         stands = self._held.get(project_id, {}).get(step_id)
         return ("", "", "") if stands is None else (stands.phrase, stands.tone, describe(stands))
 
+    def live(self, project_id: ProjectId, step_id: StepId) -> bool:
+        """Whether a turn of the step's pass is under way — the card's marching ring."""
+        stands = self._held.get(project_id, {}).get(step_id)
+        return stands is not None and stands.live
+
     def phrase(self, step_id: StepId) -> str:
         """The card's playbook phrase for the step's pass, "" for none — what the Agents
         browser leads a pass's latest run with, so the two never disagree."""
