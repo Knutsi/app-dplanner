@@ -790,7 +790,6 @@ def _graph(root: _Root, *, branches: "BranchesModule", agents: _Agents) -> _Grap
                 # Finished work waits on a person: to review it, or to merge it.
                 pulse=status_for(step) in REVIEW_AND_MERGE,
                 strip=strips.get(step.id, ("", "")),
-                playbook=agents.standings.card(project_id, step.id),
             )
             for step in project.steps
         }
@@ -812,7 +811,6 @@ def _graph(root: _Root, *, branches: "BranchesModule", agents: _Agents) -> _Grap
         flagged: bool = False,
         pulse: bool = False,
         strip: tuple[str, str] = ("", ""),
-        playbook: tuple[str, str, str] = ("", "", ""),
     ) -> "NodeAccent":
         """How a step looks on the canvas, translated from aspects the canvas never learns.
 
@@ -824,13 +822,13 @@ def _graph(root: _Root, *, branches: "BranchesModule", agents: _Agents) -> _Grap
         purple-highlighted node wearing its label as a badge, a tag medallion and the
         schedule's accumulated days and date as its stat (done outranks it on the body — a
         shipped milestone reads finished, and the tag still says what it was); a PR is a
-        pill with its state as a tone and a branch the fork glyph; a live agent run is the
-        chip on the bottom edge; a plain step's stat is its own estimate; a step a person
-        moves next — ready for review or to merge — pulses. The card says nothing in words
-        beyond its title and its key — every aspect it wears is one of these, never a
-        phrase — but in two strips under the body: the feature branch its work goes onto
-        (``strip``, the branch and its lane colour, ``plan.strips``) and where its playbook
-        pass stands (``playbook``: ``passes.standing``'s phrase, tone and stages).
+        pill with its state as a tone and a branch the fork glyph; a terminal agent run is the
+        chip on the bottom edge, and it or a playbook's turn under way the marching ring; a
+        plain step's stat is its own estimate; a step a person moves next — ready for review
+        or to merge — pulses. The card says nothing in words beyond its title and its key —
+        every aspect it wears is one of these, never a phrase — but in two strips under the
+        body: the feature branch its work goes onto (``strip``, the branch and its lane
+        colour, ``plan.strips``) and where its playbook pass stands (``passes.standing``).
         """
         refs = github_read(step)
 
@@ -842,6 +840,7 @@ def _graph(root: _Root, *, branches: "BranchesModule", agents: _Agents) -> _Grap
         milestone = milestone_read(step)
         key_glyph, key_glyph_tone = _primary_glyph(step)
         kind = kind_of(step)
+        project_id = library.project_of(step.id).id
         return NodeAccent(
             muted=status is Status.DONE,
             badge=milestone,
@@ -854,7 +853,8 @@ def _graph(root: _Root, *, branches: "BranchesModule", agents: _Agents) -> _Grap
             key_glyph_tone=key_glyph_tone,
             chip_text=chip_text,
             chip_tone=chip_tone,
-            squad=agents.claims.chip(library.project_of(step.id).id, step.id),
+            ring=chip_tone or ("info" if agents.standings.live(project_id, step.id) else ""),
+            squad=agents.claims.chip(project_id, step.id),
             # Done outranks a kind; otherwise the kind tints the body, and the medallion
             # still says what the node also is.
             body_tone=(
@@ -879,7 +879,7 @@ def _graph(root: _Root, *, branches: "BranchesModule", agents: _Agents) -> _Grap
             stat_strong=bool(milestone),
             strip=strip[0],
             strip_tone=strip[1],
-            playbook=playbook,
+            playbook=agents.standings.card(project_id, step.id),
         )
 
     # Built before the graph editor because the editor stands its panel beside the canvas.

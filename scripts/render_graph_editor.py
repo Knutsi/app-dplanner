@@ -42,7 +42,8 @@ column of its wave under the ruler, the strip's *Free | Waves* lit on Waves; and
 ``--branches``, a stretch put on a feature branch — the right-click that puts it there, then
 its cut and landing, the lane under its arrows and the strip under its cards, planned, in
 flight and landed; and with ``--playbooks``, where each step's playbook pass stands in the
-strip under its card — every phrase, under a branch strip and alone, one card's foot halfway
+strip under its card — every phrase, under a branch strip and alone, a turn under way ringed
+as a running agent is, one card's foot halfway
 down as its strip grows, and the stages a hover on the strip shows. A
 whole application is built over a throwaway library — the tab is the tab host's, so nothing
 here hand-wires a surface the window would build differently — and torn down per theme.
@@ -964,7 +965,16 @@ def render_playbooks(app: QApplication, theme: Theme, out: Path, workspace: Path
     labels = tuple(stage.label for stage in playbook.stages)
     held = {
         step_id: Standing(
-            "4f1c", playbook.name, phrase, tone, labels, stage, phrase in ("Stopped", "Done"), ""
+            "4f1c",
+            playbook.name,
+            phrase,
+            tone,
+            labels,
+            stage,
+            ended=phrase in ("Stopped", "Done"),
+            # A turn under way: the card wears the running agent's marching ring.
+            live=tone == "busy",
+            at="",
         )
         for step_id, (_title, phrase, tone, stage) in zip(made, PLAYBOOK_CARDS, strict=True)
     }

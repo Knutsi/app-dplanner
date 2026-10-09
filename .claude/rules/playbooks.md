@@ -125,6 +125,7 @@ paths:
   Qt-free reading of its runs, its questions and the questions its runs parked on, said by
   the card's playbook strip and by `playbook show` alike (`engine.standings` for a project,
   an ended pass shown for `ENDED_SHOWN`). A new phrase goes there, never in a surface.
+  Whether a turn is under way is its `live` — the card's marching ring (`canvas.md`).
   **A pass a person took reads *Taken over*** — its latest run fenced, or the question it
   waited on withdrawn, `ledger.TAKEN_OVER` (*Open Session*, through `engine.halt_pass`), or a
   round cap answered *Take over* — never *Stopped*.

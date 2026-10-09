@@ -564,6 +564,7 @@ class Standing:
     stages: tuple[str, ...]  # The playbook's stage labels, in order.
     current: int  # The stage the pass stands at, by index; -1 for none.
     ended: bool  # Done or stopped: nothing more is due, not even a person's merge.
+    live: bool  # A turn of its latest run is under way — not parked, not over.
     at: str  # The stamp of the pass's latest record.
 
 
@@ -590,6 +591,7 @@ def standing(
         stages=tuple(stage.label for stage in playbook.stages),
         current=reading.ids.index(stage) if stage in reading.ids else -1,
         ended=isinstance(next_, Halted) or phrase == DONE,
+        live=isinstance(last, LedgerRecord) and not last.over and not last.parked,
         at=_stamp(last) if last is not None else "",
     )
 

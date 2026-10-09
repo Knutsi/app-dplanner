@@ -1145,6 +1145,16 @@ project's ledger and question fingerprints every two seconds, re-reads everythin
 minute for the clock (a hold's reset passes, an ended pass stops being shown), and names the
 project when what it holds changed.
 
+**A turn under way marches, like a terminal agent.** The strip says where a pass stands; it
+does not say that an agent is at work on the step this minute, and a headless run has no
+chip. So the same reading answers that too — `Standing.live`, the pass's latest run neither
+over nor parked — and the root lays the terminal run's marching ring on the card while it
+holds. A turn parked on a question, a usage hold or a supervisor's backoff stops the ring,
+and so does a pass waiting on a person or ended: a ring is *somebody is on this one now*,
+and nobody is. The ring is one field, `NodeAccent.ring` — its tone — filled from either
+source, so there is one ring and one animation, and the canvas still never learns what a
+pass is (`.claude/rules/canvas.md`'s *A run at work is a marching ring*).
+
 ## The ground is a preference; snapping belongs to the gesture
 
 *Graph ▸ Background* (plain, dots, lines, crosses) and *Graph ▸ Snap to Grid* are two fields

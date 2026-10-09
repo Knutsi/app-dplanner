@@ -47,6 +47,22 @@ def test_each_working_stage_says_what_it_does():
     assert executing.stages[executing.current] == "execute"
 
 
+def test_a_pass_is_live_only_while_a_turn_of_its_run_is_under_way():
+    """What rings the card: an agent at work now — never one parked on a question or a
+    usage hold, a pass waiting for a person, or one that has ended."""
+    assert stands(REVIEWED, run("plan"), run("execute", end="", over=False)).live
+    asked = questions.asked(
+        "p1", "s1", "2026-10-08T11:00:00+00:00", [questions.one("Which?")],
+        kind=questions.PERMISSION, run="run-x",
+    )  # fmt: skip
+    parked = parked_on(run("execute", end="denied", over=False), asked)
+    assert not stands(REVIEWED, run("plan"), parked, parks=[asked]).live
+    assert not stands(REVIEWED, run("plan"), run("execute", end="limit", over=False)).live
+    assert not stands("plan-execute-person", run("plan"), run("execute"), gate("person")).live
+    assert not stands(REVIEWED, run("plan"), run("execute", end="stopped")).live
+    assert not stands(REVIEWED, run("plan")).live  # The next run is due, not yet launched.
+
+
 def test_a_review_counts_its_rounds_and_a_loop_back_is_a_fix():
     first = stands(REVIEWED, run("plan"), run("execute"), run("review", end="", over=False))
     assert first.phrase == "Review 1/2"

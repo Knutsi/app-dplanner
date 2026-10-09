@@ -277,8 +277,8 @@ class StepNodeItem(QGraphicsItem):
         return self._accent.playbook[2] if band.contains(self.mapFromScene(scene_pos)) else ""
 
     def wears_ring(self) -> bool:
-        """Whether this node has a live agent run, and so wears the marching ring."""
-        return bool(self._accent.chip_text)
+        """Whether a run is at work on this node, and so it wears the marching ring."""
+        return bool(self._accent.ring)
 
     def moves(self) -> bool:
         """Whether anything on this card moves — the ring, the pulse or its playbook strip

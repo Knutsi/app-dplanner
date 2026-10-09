@@ -58,6 +58,11 @@ def card(tab, project, index=0):
     return tab._scene._nodes[project.steps[index].id]
 
 
+def parked():
+    """A pass whose run waits on its usage: its strip shows, and nothing is at work."""
+    return run("plan", end="limit", over=False)
+
+
 def settle(scene, seconds=GROW_S + 0.05):
     """Run the motion clock by hand for ``seconds``, a display frame at a time."""
     for _ in range(int(seconds / 0.016) + 1):
@@ -72,9 +77,24 @@ def test_a_pass_under_way_names_where_it_stands_under_the_card(services, project
     assert card(tab, project, 1)._accent.playbook == ("", "", "")
 
 
+def test_a_live_headless_turn_rings_the_card_like_a_running_agent(services, project, tab):
+    """The ring a terminal run wears, from the pass's records: while a turn is under way, and
+    no longer once it parks — the strip still says where the pass stands."""
+    node, scene = card(tab, project), tab._scene
+    write_pass(services, project, run("plan"), run("execute", end="", over=False))
+    assert node._accent.ring == "info" and node.wears_ring()
+    assert scene._motion_clock.isActive()
+    assert not card(tab, project, 1).wears_ring()
+
+    write_pass(services, project, run("plan"), run("execute", end="limit", over=False))
+    assert node._accent.playbook[0] and not node.wears_ring()
+    settle(scene)
+    assert not scene._motion_clock.isActive()
+
+
 def test_the_cards_foot_grows_down_to_the_strip_and_the_body_stays(services, project, tab):
     node, scene = card(tab, project), tab._scene
-    write_pass(services, project, run("plan", end="", over=False))
+    write_pass(services, project, parked())
     # It begins where it was: the strip grows, it does not jump.
     assert node.size() == (NODE_W, NODE_H) and node.growing()
     assert scene._motion_clock.isActive()
@@ -103,7 +123,7 @@ def test_the_strip_folds_back_when_the_pass_is_no_longer_shown(services, project
 
 def test_the_clock_ticks_at_the_display_rate_only_while_a_strip_grows(services, project, tab):
     scene = tab._scene
-    write_pass(services, project, run("plan", end="", over=False))
+    write_pass(services, project, parked())
     assert scene._motion_clock.interval() < MOTION_TICK_MS
     settle(scene)
     assert not scene._motion_clock.isActive()
@@ -112,7 +132,7 @@ def test_the_clock_ticks_at_the_display_rate_only_while_a_strip_grows(services, 
 def test_reduce_motion_shows_the_strip_at_once(services, project, tab):
     services.actions.run("canvas.reduce_motion", services.context.current())
     assert tab._scene.motion_reduced
-    write_pass(services, project, run("plan", end="", over=False))
+    write_pass(services, project, parked())
     assert card(tab, project).size() == (NODE_W, NODE_H + STRIP_H)
     assert not tab._scene._motion_clock.isActive()
 

@@ -383,11 +383,14 @@ paths:
   (`DEFAULT_AIR`, 2) to one gap. None of the four reshapes the graph, so none declares
   `edits_graph`. `docs/architecture/canvas.md`'s *An explicit sort persists; the ambient layout
   never does* has the reasoning.
-- **A live agent run is a chip and a marching ring.** The chip on the bottom edge names the
-  state; the dashed ring round the body moves, which is what says "somebody is on this one
-  right now". The ring is derived from the chip (`NodeAccent.chip_text`), so one field says
-  both. **The squad holding a step is the chip's still mirror** on the bottom edge's right
-  end (`NodeAccent.squad`, the `attention` tone once the claim is abandoned): a claim is
+- **A run at work is a marching ring; a terminal run is a chip too.** The chip on the bottom
+  edge names a terminal run's state; the dashed ring round the body moves, which is what
+  says "somebody is on this one right now". The ring is one field, `NodeAccent.ring` (its
+  tone), and the root fills it from either run: a terminal run's chip, or a playbook turn
+  under way (`Standing.live` — not parked, not waiting, not ended), which has no chip. Never
+  a second animation for a second kind of run. `docs/architecture/canvas.md`'s *A card
+  running a playbook says where its pass stands* has the reasoning. **The squad holding a
+  step is the chip's still mirror** on the bottom edge's right end (`NodeAccent.squad`, the `attention` tone once the claim is abandoned): a claim is
   ownership, not work, so it never marches; each chip takes at most its own half of the edge.
   `docs/architecture/agents.md`'s *A claim is a lease in git* has the reasoning.
 - **The canvas has one motion clock.** One `QTimer` on the scene (`_motion_clock`,
