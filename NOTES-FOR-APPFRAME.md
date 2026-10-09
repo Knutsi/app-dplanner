@@ -885,6 +885,12 @@ signal instance and a `_Handoff` (runner, body, task), which the GUI thread empt
 event-loop turn after delivery. A completion emitted after the runner's C++ side is gone is
 logged and dropped.
 
+**A task never outlives its runner.** `run()` connects the runner's `destroyed` to finishing
+its task (error `ABANDONED`), and the completion disconnects it. Without it, a runner whose
+owner was deleted mid-run — a dialog with `WA_DeleteOnClose`, closed while its body worked —
+dropped its completion and left the task listed as running for good: the checklist's
+"Checking this machine · 9m 23s · about 0s left".
+
 `current_task`, `abandon` and `detail_factory` are gone (no callers).
 
 **Upstream?** yes — whole; the template's runner is the same file with the same hazard.
@@ -1054,7 +1060,11 @@ midnight and on reactivation (`framework/day_watch.py`). Qt-free, so the CLI hol
 
 The Qt-free per-user configuration directory, for what the CLI must also read — QSettings is out
 of reach for a surface that loads no graphics stack. The project library file is the first
-resident.
+resident; the agent launch profiles moved here so `dplanner agent run --profile` can read them.
+
+`$DPLANNER_CONFIG_DIR` names the directory outright. The test suite points it at a directory per
+test, as it does QSettings: redirecting `$XDG_CONFIG_HOME` instead also hid git's own
+configuration (`~/.config/git/config`), and every test that committed lost its identity.
 
 **Upstream?** yes — small, and needed the first time a headless surface reads a preference.
 
@@ -1069,7 +1079,20 @@ LF, and `write_text` translating to `os.linesep` turned a Windows save into a wh
 `write_csv` writes `utf-8-sig`, the BOM being what makes Excel read Unicode. `write_json_atomic`
 and `read_json` are gone (no callers).
 
-**Upstream?** yes — the template's `write_atomic` has the same shared temporary.
+`os_lock(path, wait=)` is added: an exclusive lock the operating system holds (`flock`,
+`msvcrt.locking`) and drops when its holder dies, on a file nobody deletes — so there is no
+stale lock to judge. The run supervisor holds one for its life and one across each
+read-modify-write of a run record; the question store takes one across each change of a
+question, which is why it left `agent_supervisor/supervisor.py` for here.
+On Windows a waiting lock is `LK_NBLCK` retried every 50 ms until it is granted, not
+`LK_LOCK`: `LK_LOCK` gives up after ten one-second tries, and a fetch holding the sync lock
+longer than that made a Save in another window raise. `wait=False` refuses on the first
+contention (`EACCES`/`EDEADLK`) with `BlockingIOError`; any other error propagates as itself.
+`parents=False` takes the lock only in a directory that exists (`FileNotFoundError` otherwise)
+rather than making it: the sync lock lives in a `.git`, and making one plants a repository.
+
+**Upstream?** yes — the template's `write_atomic` has the same shared temporary; `os_lock` is
+worth carrying for any template app with more than one writing process.
 
 ## `core/markdown.py`
 
@@ -1110,8 +1133,25 @@ rendering PDF pages from the CLI.
 `spawn_detached()` and `detached_flags()`: start a process the user owns — an agent's terminal,
 a second window — so that closing the application never takes it down; `start_new_session` on
 POSIX, creation flags on Windows. One place, where there had been several.
+`detached_environment()` drops the run marker (`RUN_ENV`, `DPLANNER_RUN`) from what a detached
+process inherits: DPlanner ends a run by finding every process that carries it, and a detached
+start is never part of its starter's run. The name lives here so that `spawn_detached` can
+apply it to every caller. `cli/discovery.py` re-exports it.
 
-**Upstream?** yes — any desktop application that opens a second window of itself.
+`ProcessStamp`, `stamp_of()`, `is_live()` and `process_alive()`: whether a recorded process is
+*still that process* — its pid, the machine's boot id and the process's start time, all three
+matching — because a pid alone is reused and a record kept across a reboot would read a
+stranger as its own process running. `process_alive` (pid only) moved here from
+`step_agent_run/runs.py` so there is one per-platform probe.
+
+**Upstream?** yes — any desktop application that opens a second window of itself; the stamp
+for any application that records a process it must find again after a restart. The run marker
+does not belong upstream. It is DPlanner's own.
+
+`run_bounded()`: a CLI asked a question from a task, in a process group of its own (a group,
+not a session — it is waited on), killed with everything it started when the timeout runs
+out. `subprocess.run`'s own timeout ends the direct child only. **Upstream?** yes, with the
+task runner.
 
 ## `core/repository.py`
 
@@ -1157,13 +1197,26 @@ per listener.
   holds several planned directories, and scoping keeps a Save from sweeping up the user's own
   source. `commit(message, also=())` records extra paths (the `.dplanner` index) in the same
   commit without making them part of the dirty count, and leaves out a scope nothing matches.
+- `find_repo_root` takes a `.git` file or a `.git` directory holding `HEAD` — git's own test
+  — never a bare `.git`: a stray one left by an old build's lock at `/tmp/.git` made every
+  loose folder under `/tmp` a repository, and the project index went to `/tmp`.
 - Repository facts beside `find_repo_root`: `main_checkout` (a linked worktree's main checkout),
   `init_repo`, `origin_url` (memoised on `.git/config`'s mtime — an action state asks it on
   every context change), `canonical_remote` and `remote_label` (one spelling for a remote, and
   how it is named to a person), and `activity` (who worked under a path, from the last commits).
+- **`sync_lock(repo_root)`**: an OS lock on `dplanner-sync.lock` in the repository's common git
+  directory (`git_common_dir`, shared by its worktrees), held by `commit` — and by
+  `GitHubStorage.pull`/`push` — so the window's Save and sync never interleave with another
+  process committing or pushing the same checkout (DPlanner's claims commit from the CLI and a
+  run's supervisor). Never nested; signals are emitted after it is let go.
+  `git_common_dir` raises `StorageError` naming the path when the root has neither a `.git`
+  directory nor a `.git` file leading to one, and the lock never makes its directory: a lock
+  made by `mkdir(parents=True)` once planted `/tmp/.git`, and every pytest temporary directory
+  read as inside a repository. A provider holds its root for its life, so a root whose `.git`
+  went from under it refuses the next Save rather than making the repository again.
 
 **Upstream?** yes — any template application that opens a repository by path meets each of
-these.
+these; the lock, for any application with a second process writing commits to the checkout.
 
 ## `core/storage/github.py`
 
@@ -1174,6 +1227,8 @@ a Save from a second clone is never refused for being second; a conflict is abor
 restored) and raised as `DivergedError`. `GitHubStorage.create(name, dest)` creates an empty
 repository and clones it. `repository_url(checkout)` asks `gh` and answers None on any refusal.
 `has_origin` goes through the memoised `origin_url`, and the label is `remote_label`'s.
+`pull` and `push` hold `git.sync_lock` across their fetch, rebase and push, and say
+`worktree_changed` once it is free.
 
 **Upstream?** yes — any application whose saves are commits from several clones.
 

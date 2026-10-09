@@ -62,10 +62,19 @@ paths:
   `PLAN_ENTRIES` (`project.dproj`,
   `modules/`, `steps/`) — a project directory is often the repository root, and counting
   the source tree or an agent worktree under `.dplanner-worktrees/` as another writer
-  reloaded the window on every edit anyone made. The usage `ledger/` beside them is
-  outside on purpose — a file per run, one writer each, never flushed by the store — and
-  `PLAN_ENTRIES` must not grow to take it in; Move Plan copies it by name
-  (`relocate.py`), and Save commits it with the project's scope.
+  reloaded the window on every edit anyone made. The usage `ledger/`, the `questions/` and
+  the `claims/` beside them are outside on purpose — a file per run, question or claim, never
+  flushed by the store — and `PLAN_ENTRIES` must not grow to take them in; Move Plan copies
+  them by name (`relocate.py`), and Save commits them with the project's scope. **Every git
+  operation that commits, fetches, rebases or pushes a checkout holds its `sync_lock`**
+  (`core/storage/git.py`, in the common git directory): `GitStorage.commit` and
+  `GitHubStorage.pull`/`push` take it, and so does a claim's publish from another process —
+  which never fetches or rebases at all, so nothing but the window rewrites the checkout.
+  **The lock never makes its directory**: a root with no git directory is refused with a
+  `StorageError`, never given a `.git` — and **a repository is what git says is one**:
+  `find_repo_root` takes a `.git` file or a `.git` directory holding `HEAD`, never a bare
+  `.git`, so a stray one cannot pull loose folders into a repository or the `.dplanner`
+  index above them (`docs/architecture/persistence.md`'s *Two writers, one folder*).
 - **The window takes an outside change in place, entry by entry.** The same per-file
   record says *which* files changed, and each plan file is one entry of one node, so
   `LibraryStore.adopt_outside_changes` reads the change into the live model through the
@@ -82,12 +91,9 @@ paths:
   which is what retired the status-bar button it used to leave. The watcher no
   longer waits for a quiet window: a flush re-stamps as it writes, so our own writes never
   read as foreign. Branch switch and pull go through the same `SessionControl.refresh`,
-  clearing undo history (theirs describes another tree). **The watcher says it settled**
-  (`LibraryWatchDeps.settled`, after every settle and every answer), because some settles
-  change nothing the model announces — *Keep Mine*, an identical rewrite, a project still
-  unreadable — and whoever stood down while the plan changed underneath must look again:
-  the auto-launcher is (`agents.md`). `docs/architecture/persistence.md`'s *Adopting the
-  other writer's changes in place* has the reasoning.
+  clearing undo history (theirs describes another tree).
+  `docs/architecture/persistence.md`'s *Adopting the other writer's changes in place* has
+  the reasoning.
 - **An agent at work says so, and the window says it back.** The other writer is
   invisible, which is the whole problem: a developer editing a step an agent is rewriting
   finds out when a modal asks them to settle a collision they did not cause. So an agent
@@ -221,8 +227,8 @@ paths:
   made, never in a plan repository, a project directory or the repositories folder — or
   `FOLDER`, the repositories folder asked once. Run Agent and Open Agent in Code say
   *clones … first* and clone before launching (`StepAgentInstructionDeps.
-  ensure_checkouts`); Save clones an unplaced reporting repository first
-  (`SyncDeps.prepare_save`), the quit-time save never; the wizard's Repositories page
+  ensure_checkouts`); Save writes the plan alone and clones nothing — a report site
+  reaches a reporting row only where it is placed here (`reporting_site`); the wizard's Repositories page
   shows under `FOLDER` alone. `Placement.kept` is wording only (*kept by DPlanner at …*);
   a repository stored as a path is placed there only when a working tree is there. `domain/repositories.py` is
   the one derivation (`RepositoryFacts` over placements, with `code`/`repository`/

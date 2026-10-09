@@ -7,9 +7,18 @@ The model here mirrors production: a per-test **library file** lists project dir
 each inside a git repository. ``session`` opens the library the way ``dplanner.app.main``
 does; ``make_project`` gives GUI tests a *real* project (seeded on disk, attached to the
 store) because a project with no directory cannot hold module files any more.
+
+**No test starts a real terminal or agent CLI** — ``_no_real_spawns`` fails it. A test that
+runs a *fake* agent CLI on purpose takes ``allow_spawn`` and hands it the fake's path; nothing
+else gets through.
 """
 
 import os
+import shlex
+import shutil
+import subprocess
+from pathlib import Path
+from typing import Any
 
 # Must precede any PySide6 import: the platform plugin is chosen when Qt's GUI layer loads.
 # setdefault rather than a plain assignment so a developer can export QT_QPA_PLATFORM=xcb
@@ -117,15 +126,7 @@ def at_work_board(tmp_path):
 
 
 @pytest.fixture
-def launch_locks(tmp_path):
-    """Where a test's window keeps its launch lock — this test's own directory, never the
-    machine's, so no window a test builds competes with a DPlanner the developer has open.
-    A test that plays the other window holds a lock of its own over the same directory."""
-    return tmp_path / "auto-launch"
-
-
-@pytest.fixture
-def session(app, library_file, at_work_board, launch_locks):
+def session(app, library_file, at_work_board):
     """A whole application, built over a fresh, empty library in a temp directory.
 
     Built through ``AppSession`` — the same path ``dplanner.app.main`` takes — so a test can
@@ -140,7 +141,7 @@ def session(app, library_file, at_work_board, launch_locks):
     # not read what some agent is really doing on this machine — and a test that writes a
     # claim through the ``cli`` fixture sees it in the window it built, because both
     # fixtures are handed the one board.
-    session = new_session(at_work=at_work_board, launch_locks=launch_locks)
+    session = new_session(at_work=at_work_board)
     assert session.open_initial(library_file)
     assert session.services is not None
     # Every coalesced view refresh runs inline: a test asserts on a view the line after it
@@ -257,15 +258,17 @@ def _no_agent_shell(monkeypatch):
 
     Run Agent's wrapper exports ``DPLANNER_PROJECT`` into an agent's shell so ``dplanner``
     reaches the plan from a worktree; an agent running this suite would hand every CLI
-    test that project instead of the one the test built. And every agent CLI marks its
-    shell (``CLAUDECODE`` and the rest), which ``status set`` reads to hold an agent's done
-    at review: the suite is routinely run by an agent, so a test that wants an agent's
-    shell sets the marker itself.
+    test that project instead of the one the test built, and a coordinator's shell names its
+    squad in ``DPLANNER_CALLSIGN``, which ``claim take`` and the heartbeat read. And every
+    agent CLI marks its shell (``CLAUDECODE`` and the rest), which ``status set`` reads to
+    hold an agent's done at review: the suite is routinely run by an agent, so a test that
+    wants an agent's shell sets the marker itself.
     """
     from dplanner.modules import agent_harnesses
 
     monkeypatch.delenv("DPLANNER_PROJECT", raising=False)
     monkeypatch.delenv("DPLANNER_RUN", raising=False)
+    monkeypatch.delenv("DPLANNER_CALLSIGN", raising=False)
     harnesses = agent_harnesses()
     for name in list(os.environ):
         if any(harness.marks(name) for harness in harnesses):
@@ -279,6 +282,7 @@ def _test_machine(monkeypatch):
     from dplanner.domain import ledger
 
     monkeypatch.setattr(ledger, "machine_id", lambda directory=None: TEST_MACHINE)
+    monkeypatch.setattr(ledger, "known_machine_id", lambda directory=None: TEST_MACHINE)
 
 
 TEST_MACHINE = "test-machine"
@@ -300,6 +304,32 @@ def _no_greeting(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_agent_probes(monkeypatch):
+    """A built window never asks this machine's agent CLIs whether they work.
+
+    The window keeps one ``Availability`` and refreshes it on a task as the person moves
+    about, which would run every installed agent CLI's ``--version`` and sign-in check from
+    every test that builds the application. Here the window's reading finds no CLI on PATH,
+    asking nothing; a test about what a reading greys hands the module a fake one, and
+    ``tests/modules/agent_launch/test_availability.py`` probes through fake shells.
+    """
+    from dplanner.modules.agent_launch import availability
+
+    class Unprobed(availability.Availability):
+        def __init__(self, harnesses: Any, **kwargs: Any) -> None:
+            super().__init__(harnesses, **{**kwargs, "which": lambda _binary: None})
+
+    monkeypatch.setattr(availability, "Availability", Unprobed)
+
+
+@pytest.fixture(autouse=True)
+def _own_config_dir(monkeypatch, tmp_path_factory):
+    """``config_dir()`` is a throwaway directory per test, as QSettings is: the agent
+    profiles live there now, and a test that saves one must not write the developer's."""
+    monkeypatch.setenv("DPLANNER_CONFIG_DIR", str(tmp_path_factory.mktemp("config")))
+
+
+@pytest.fixture(autouse=True)
 def _fresh_session_settings():
     """Per-user state must not leak between tests.
 
@@ -314,6 +344,122 @@ def _fresh_session_settings():
         settings.beginGroup(group)
         settings.remove("")
         settings.endGroup()
+
+
+class SpawnGuard:
+    """What ``_no_real_spawns`` refuses, and what a test let through on purpose."""
+
+    def __init__(self, forbidden: frozenset[str]) -> None:
+        self.forbidden = forbidden
+        self.allowed: set[Path] = set()
+        self.refused: list[list[str]] = []
+
+    def allow(self, executable: Path) -> None:
+        """Let this one file run — a fake agent CLI the test wrote, whatever it is named."""
+        self.allowed.add(executable.resolve())
+
+    def check(self, argv: list[str], kwargs: dict[str, Any]) -> None:
+        program = _program(argv[0])
+        env = kwargs.get("env") or os.environ
+        found = shutil.which(argv[0], path=env.get("PATH"))
+        if found is not None and Path(found).resolve() in self.allowed:
+            return
+        detached = kwargs.get("start_new_session") or kwargs.get("creationflags", 0) & 0x8
+        if program in self.forbidden or (detached and program != "git"):
+            self.refused.append(argv)
+            pytest.fail(
+                f"a test started {argv!r} for real — stub launcher.spawn (or the seam that"
+                " reaches it), or hand a fake to the allow_spawn fixture",
+                pytrace=False,
+            )
+
+
+def _program(word: str) -> str:
+    return Path(word).name.removesuffix(".exe")
+
+
+def _launchable_programs() -> frozenset[str]:
+    """Every terminal and agent CLI the application knows how to start, read off its own
+    tables — so a new terminal row or a fourth harness is guarded with no edit here."""
+    from dplanner.modules import agent_harnesses
+    from dplanner.modules.agent_launch.launcher import TERMINALS, stages
+
+    words = [
+        stage[0]
+        for preset in TERMINALS
+        for stage in stages(shlex.split(preset.command, posix=True))
+    ]
+    for harness in agent_harnesses():
+        words += [shlex.split(harness.command)[0], shlex.split(harness.open_command)[0]]
+    return frozenset(_program(word) for word in words)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_spawns(monkeypatch):
+    """No test starts a terminal, an agent CLI or anything detached.
+
+    Once a stub that stopped matching made the suite open real terminal windows running
+    ``claude`` against its temp repositories (2026-10-04, ``bugs.md`` #3). Every launch —
+    ``launcher.spawn``, ``spawn_detached`` imported by name in three modules, a
+    multiplexer's ``subprocess.run`` stages — ends in ``subprocess.Popen`` looked up on the
+    module, so that is guarded: a program from :func:`_launchable_programs`, or a detached
+    start other than git's cancellable clone, fails the test. The refusal is also checked
+    at teardown, since one raised on a worker thread never reaches the test.
+
+    A test that means to run a fake agent CLI asks for ``allow_spawn`` and hands it the
+    file: ``allow_spawn(tmp_path / "claude")`` lets exactly that file through, by its
+    resolved path, never a real ``claude`` on PATH. A test that patches ``subprocess.Popen``
+    or ``subprocess.run`` itself has already replaced what this guards.
+    """
+    guard = SpawnGuard(_launchable_programs())
+    real = subprocess.Popen
+
+    class GuardedPopen(real):  # type: ignore[valid-type, misc]
+        def __init__(self, args: Any, *rest: Any, **kwargs: Any) -> None:
+            argv = [args] if isinstance(args, (str, bytes, os.PathLike)) else list(args)
+            guard.check([os.fsdecode(word) for word in argv], kwargs)
+            super().__init__(args, *rest, **kwargs)
+
+    monkeypatch.setattr(subprocess, "Popen", GuardedPopen)
+    yield guard
+    if guard.refused:
+        pytest.fail(f"a test started {guard.refused!r} for real", pytrace=False)
+
+
+_ABOVE_THE_TREE = (".git", ".dplanner")
+
+
+def _strays_above(base: Path) -> set[Path]:
+    return {
+        directory / name
+        for directory in (base, *base.parents)
+        for name in _ABOVE_THE_TREE
+        if (directory / name).exists()
+    }
+
+
+@pytest.fixture(autouse=True)
+def _nothing_above_the_tree(request, tmp_path_factory):
+    """No test leaves a ``.git`` or a ``.dplanner`` above its own ``tmp_path``.
+
+    Either one there turns every loose test project beneath it into a repository or a plan
+    — ``/tmp/.git`` and ``/tmp/.dplanner`` once failed a dozen discovery tests on every
+    branch until somebody deleted them by hand. A few stats per test against the worker's
+    basetemp and its parents; what was already there is not this test's doing. Under xdist
+    another worker's test can make one mid-test, so ``-n0`` is how to confirm the name.
+    """
+    base = tmp_path_factory.getbasetemp()
+    before = _strays_above(base)
+    yield
+    made = sorted(map(str, _strays_above(base) - before))
+    if made:
+        pytest.fail(f"{request.node.nodeid} wrote {made} above its tmp_path", pytrace=False)
+
+
+@pytest.fixture
+def allow_spawn(_no_real_spawns):
+    """``allow_spawn(path)``: run this fake executable for real — see ``_no_real_spawns``."""
+    return _no_real_spawns.allow
 
 
 # -- the headless CLI, over a real library -----------------------------------------------------

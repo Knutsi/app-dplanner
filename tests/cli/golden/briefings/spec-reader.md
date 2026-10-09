@@ -4,11 +4,11 @@ Project: Widget
 
 ## Before you start
 
-First, confirm you can drive DPlanner: run `dplanner skill status`. If the command is missing or the skill is not installed, STOP — do not carry out the step — and tell the developer this step needs the DPlanner skill (`dplanner skill install`).
+First, confirm you can drive DPlanner: run `dplanner skill status`. If the command is missing or a line reads `missing`, STOP — do not carry out the step — and tell the developer this step needs the DPlanner skill (`dplanner skill install`). `stale` is not a stop: that skill came from another build of DPlanner, so say so and carry on.
 
-Then say you are working, before you touch anything: `dplanner agent-work start '<what you are about to do>' --step S4`. A developer may have a DPlanner window open on this plan, and that is what tells them somebody else is editing it — without it they will edit the same steps you are rewriting and be asked to settle collisions they did not cause. Keep it current as you go (`dplanner agent-work set '<what now>' --done N --of M`); setting the step's status when you finish ends it, and if you stop without one, end it yourself (`dplanner agent-work end --step S4`).
+Then say you are working, before you touch anything: `dplanner agent-work start '<what you are about to do>' --step S3`. A developer may have a DPlanner window open on this plan, and that is what tells them somebody else is editing it — without it they will edit the same steps you are rewriting and be asked to settle collisions they did not cause. Keep it current as you go (`dplanner agent-work set '<what now>' --done N --of M`); setting the step's status when you finish ends it, and if you stop without one, end it yourself (`dplanner agent-work end --step S3`).
 
-Second, confirm you are in this step's own git worktree: `git rev-parse --show-toplevel` must end in `.dplanner-worktrees/s4-spec-reader` and `git branch --show-current` must print `agent/s4-spec-reader`. If either differs, STOP — do not touch the main checkout — and tell the developer the worktree was not prepared. Commit on that branch; every `dplanner` command still reaches the plan the window shows.
+Second, confirm you are in this step's own git worktree: `git rev-parse --show-toplevel` must end in `.dplanner-worktrees/s3-spec-reader` and `git branch --show-current` must print `agent/s3-spec-reader`. If either differs, STOP — do not touch the main checkout — and tell the developer the worktree was not prepared. Commit on that branch; every `dplanner` command still reaches the plan the window shows.
 
 WARNING: this plan lives inside the code repository it plans: its files (`project.dproj`, `steps/`, `modules/`) sit in the checkout beside the code. Every `dplanner` command reaches the plan of record — the copy the window shows, in the main checkout — never a branch's copy, so do not edit those files by hand, and do not stage or commit them with your work. Do not move the plan on your own; when the developer asks for it, `dplanner project move <project> --into <plan repository>` (`--init-repo` to start one) moves it, commits both sides and re-points the library, and every verb keeps reaching the plan where it lands.
 
@@ -41,19 +41,18 @@ Handoffs from the steps before this one (1):
 
 ## When you are done
 
-This step is S4. Its branch and worktree carry that key; open the PR title with it (`S4: …`) and record the branch and the PR on the step as they exist: `dplanner github set S4 --branch $(git branch --show-current)`, then `dplanner github set S4 --pr <number>`. Open it against `main`: `gh pr create --base main`. Once the PR is open, set the status (below) straight away: it takes the window's banner down with it.
+This step is S3. Its branch and worktree carry that key; open the PR title with it (`S3: …`) and record the branch and the PR on the step as they exist: `dplanner github set S3 --branch $(git branch --show-current)`, then `dplanner github set S3 --pr <number>`. Open it against `main`: `gh pr create --base main`. Once the PR is open, set the status (below) straight away: it takes the window's banner down with it.
 As you work, keep the run state current:
-- `dplanner agent-state set S4 plan-for-review` when your plan is ready to review
-- `dplanner agent-state set S4 working` while implementing
-- `dplanner agent-state set S4 pending-approval` while waiting on an approval
-- `dplanner agent-state set S4 needs-input` when you have a question the developer must answer before you can go on
+- `dplanner agent-state set S3 plan-for-review` when your plan is ready to review
+- `dplanner agent-state set S3 working` while implementing
+- `dplanner agent-state set S3 pending-approval` while waiting on an approval
+- `dplanner question ask '<question>' --choice '<answer>' … --step S3` when you have a question the developer must answer before you can go on, then end your turn: unattended, the answer resumes you; in a terminal it says you need input, and you wait for the reply there
 As you go, leave notes — the project's record, indexed into the briefing of every step that comes after the one you made them on. That is the reach: add `--reach project` when what you settled belongs to the whole plan rather than this branch. `dplanner note add --help` lists the labels:
-- `dplanner note add Widget decision '<what you chose>' --step S4 --text '<why>'` for each choice the plan should remember (`--supersedes N3` when it reverses an earlier one)
-- `dplanner note add Widget spec-change '<what differs>' --step S4 --text '<what and why>'` where the work had to depart from the spec
-- `dplanner note add Widget later '<what>' --step S4` for work you noticed and did not do
+- `dplanner note add Widget decision '<what you chose>' --step S3 --text '<why>'` for each choice the plan should remember (`--supersedes N3` when it reverses an earlier one)
+- `dplanner note add Widget spec-change '<what differs>' --step S3 --text '<what and why>'` where the work had to depart from the spec
+- `dplanner note add Widget later '<what>' --step S3` for work you noticed and did not do
 When the work is finished, record it in DPlanner:
-- `dplanner status set S4 ready-for-review` and `dplanner agent-state clear S4` — ready for review, never done: a person or a reviewing agent looks next and sets it done. That is the step's work finished, not the mid-run `plan-for-review` above, which is your plan waiting for a look. If nothing needs reviewing, `dplanner status set S4 done --because '<why>'` keeps the reason as a decision note.
-- S5 collects this step's work: it may start as soon as you set ready-for-review, and takes your branch or PR from there — so push everything and open the PR first. Leave this step's done to it.
-- `dplanner note add Widget handoff '<one line the next worker needs>' --step S4 --file -` with what whoever picks up after you must know — where things are, what is half done, what bit you. Title it as the fact it is; the body carries the detail. Add `--for S12` for a step that must read it in full, `--reach project` if every step should see it regardless; `dplanner note attach Widget <id> <file>` for files.
-If you cannot finish, `dplanner status set S4 blocked` and say why in the handoff note.
-Each of those statuses ends your working claim. If you stop without setting one, end it yourself: `dplanner agent-work end --step S4` — a banner nobody ended is one nobody believes next time.
+- `dplanner status set S3 ready-for-review` and `dplanner agent-state clear S3` — ready for review, never done: a person or a reviewing agent looks next and sets it done. That is the step's work finished, not the mid-run `plan-for-review` above, which is your plan waiting for a look. If nothing needs reviewing, `dplanner status set S3 done --because '<why>'` keeps the reason as a decision note.
+- `dplanner note add Widget handoff '<one line the next worker needs>' --step S3 --file -` with what whoever picks up after you must know — where things are, what is half done, what bit you. Title it as the fact it is; the body carries the detail. Add `--for S12` for a step that must read it in full, `--reach project` if every step should see it regardless; `dplanner note attach Widget <id> <file>` for files.
+If you cannot finish, `dplanner status set S3 blocked` and say why in the handoff note.
+Each of those statuses ends your working claim. If you stop without setting one, end it yourself: `dplanner agent-work end --step S3` — a banner nobody ended is one nobody believes next time.

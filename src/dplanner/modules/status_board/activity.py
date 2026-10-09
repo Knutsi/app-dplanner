@@ -70,7 +70,7 @@ from dplanner.theme.icons import glyph_painter, step_icon
 from dplanner.theme.tokens import FIELD_GAP, PANEL_MARGIN, SECONDARY_ALPHA, SECTION_GAP
 
 if TYPE_CHECKING:  # module.py imports this file, so the Deps arrive as a forward name.
-    from dplanner.modules.status_board.module import ProgressionDeps
+    from dplanner.modules.status_board.module import ProgressionDeps, QuestionLane
 
 PROGRESSION_KIND = "progression"
 CONTROL_CENTRE_KIND = "control_centre"
@@ -78,11 +78,12 @@ CONTROL_CENTRE = "Control Centre"
 
 
 STEP_ROLE = HOST_ROLE
-CHECK_COLUMN, STEP_COLUMN, PROJECT_COLUMN, UNBLOCKS_COLUMN, MENU_COLUMN = range(5)
+CHECK_COLUMN, STEP_COLUMN, PROJECT_COLUMN, SQUAD_COLUMN, UNBLOCKS_COLUMN, MENU_COLUMN = range(6)
 COLUMNS = (
     Column("", check=True),
     Column("Step", glyph=True, detail=True, resize="stretch"),
     Column("Project"),
+    Column("Squad"),
     Column("Unblocks", numeric=True),
     Column("", menu=True),
 )
@@ -157,9 +158,11 @@ class StatusTable(Table):
         glyph_of: Callable[[Step], str],
         milestone_badge: Callable[[StepId], QIcon | None],
         project_of: Callable[[Step], str],
+        held_by: Callable[[Step], str] = lambda _step: "",
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(COLUMNS, selection="extended", parent=parent)
+        self._held_by = held_by
         self._key_of = key_of
         self._glyph_of = glyph_of
         self._milestone_badge = milestone_badge
@@ -193,6 +196,7 @@ class StatusTable(Table):
         picked = self.picked()
         self._glyphs.clear()
         self.blockSignals(True)
+        held = False
         try:
             self.clear_rows()
             for group in GROUPS:
@@ -202,12 +206,15 @@ class StatusTable(Table):
                 if shown == ALL:  # One group on its own needs no heading: the filter says it.
                     self.add_heading(group.heading, key=group.key)
                 for step in steps:
-                    self._add(step, progress.unlocks.get(step.id, 0))
+                    held = self._add(step, progress.unlocks.get(step.id, 0)) or held
             self._reselect(picked)
         finally:
             self.blockSignals(False)
+        self.setColumnHidden(SQUAD_COLUMN, not held)
 
-    def _add(self, step: Step, unlocks: int) -> None:
+    def _add(self, step: Step, unlocks: int) -> bool:
+        """One row; True when a squad holds its step."""
+        squad = self._held_by(step)
         self.add_row(
             (
                 Cell(),
@@ -217,11 +224,13 @@ class StatusTable(Table):
                     glyph=self._glyph(step),
                 ),
                 Cell(self._project_of(step)),
+                Cell(squad),
                 Cell(str(unlocks) if unlocks else ""),
                 Cell(tooltip=ROW_MENU_TIP),
             ),
             data={STEP_ROLE: step.id},
         )
+        return bool(squad)
 
     def _glyph(self, step: Step) -> QIcon:
         badge = self._milestone_badge(step.id)
@@ -333,6 +342,7 @@ class StatusBoard(EntityActivity):
             glyph_of=deps.glyph_of,
             milestone_badge=deps.milestone_badge,
             project_of=lambda step: library.project_of(step.id).title or UNTITLED,
+            held_by=deps.holders.held_by if deps.holders is not None else lambda _step: "",
             parent=page,
         )
         self.table.itemSelectionChanged.connect(self._on_selection)
@@ -345,11 +355,17 @@ class StatusBoard(EntityActivity):
         layout.addWidget(self.empty, 1)
 
         self._widget = page
+        self._layout = layout  # The Control Centre puts its question cards under the strip.
         # After a quiet spell, not per signal: every row is rebuilt.
         self._refresh_soon = Debounced(self._refresh, parent=page, service=deps.debounce)
         self.updating.follow(self._refresh_soon)
         self._unsubscribes = [
             deps.clock.day_changed.connect(lambda _day: self._refresh_soon.trigger()),
+            *(
+                [deps.holders.changed.connect(lambda _project: self._refresh_soon.trigger())]
+                if deps.holders is not None
+                else []
+            ),
         ]
 
     # -- what a subclass says ------------------------------------------------------------------
@@ -399,13 +415,7 @@ class StatusBoard(EntityActivity):
         deps = self._deps
         self._each = {
             project.id: progression(
-                deps.library,
-                project,
-                deps.status_for,
-                deps.counts_as_work,
-                deps.auto_progresses,
-                deps.asks_person,
-                deps.is_agent,
+                deps.library, project, deps.status_for, deps.counts_as_work, deps.asks_person
             )
             for project in self._projects()
         }
@@ -520,6 +530,11 @@ class ControlCentreActivity(StatusBoard):
     the library has more than one: a project is added to it as it arrives, renamed with it,
     and hidden — and dropped from the pick — when it leaves, since a filter that stops
     listing what it is narrowing by hides rows for a reason nobody can see.
+
+    **The open questions sit on top**, a card each, above the board (``question_cards``):
+    narrowed by the same filter, and counted with the rows in the title. A headless run
+    parked on a question sets no agent state, so a card and a *Waits for you* row are
+    hardly ever the same step, and the plain sum is the honest count.
     """
 
     def __init__(self, deps: "ProgressionDeps") -> None:
@@ -539,6 +554,11 @@ class ControlCentreActivity(StatusBoard):
             )
         ]
         self._unsubscribes.append(self.projects.changed.connect(self._show))
+        self.questions: QuestionLane | None = None
+        if deps.question_cards is not None:
+            self.questions = deps.question_cards(self.widget)
+            self._layout.insertWidget(1, self.questions.widget)  # Under the strip.
+            self.questions.set_changed(lambda: deps.tabs.set_tab_title(self, self.title))
         self._refresh()
 
     @property
@@ -547,7 +567,13 @@ class ControlCentreActivity(StatusBoard):
 
     @property
     def title(self) -> str:
-        return f"{CONTROL_CENTRE} ({self._needing})" if self._needing else CONTROL_CENTRE
+        count = self._needing + (self.questions.count if self.questions is not None else 0)
+        return f"{CONTROL_CENTRE} ({count})" if count else CONTROL_CENTRE
+
+    def close(self) -> None:
+        if self.questions is not None:
+            self.questions.close()
+        super().close()
 
     def activity_nodes(self) -> tuple[ContextNode, ...]:
         """No project: the board is every project's, and a verb about one reads the picked
@@ -569,6 +595,13 @@ class ControlCentreActivity(StatusBoard):
         # board it re-shows must already be the one without that project.
         super()._refresh()
         self._sync_projects()
+        if self.questions is not None:
+            self.questions.refresh()  # A step renamed or a project gone says so on its card.
+
+    def _show(self) -> None:
+        super()._show()
+        if self.questions is not None:
+            self.questions.show_projects(self.projects.active())
 
     def _sync_projects(self) -> None:
         """The filter's entries against the library: one per project, in the words it has

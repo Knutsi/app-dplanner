@@ -16,11 +16,13 @@ Everything here blocks. Callers run it through ``TaskRunner``.
 
 import re
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from dplanner.core.fsio import os_lock
 from dplanner.core.signals import Signal
 from dplanner.core.storage.local import LocalStorage
 from dplanner.core.storage.provider import Revision, StorageError
@@ -29,9 +31,17 @@ DEFAULT_BRANCH = "main"
 
 
 def find_repo_root(start: Path) -> Path | None:
-    """The nearest ancestor holding a ``.git``, or None when there is no repository."""
+    """The nearest ancestor that is a repository, or None when there is none.
+
+    A repository is a ``.git`` *file* (a linked worktree's) or a ``.git`` directory holding
+    ``HEAD``, as git itself requires — never a bare ``.git`` directory. Builds before the
+    sync lock stopped making its own directory planted ``/tmp/.git`` holding nothing but a
+    lock file, and a walk that took that for a repository put every loose project under
+    ``/tmp`` into one, and the ``.dplanner`` index written for them at ``/tmp``.
+    """
     for candidate in (start, *start.parents):
-        if (candidate / ".git").exists():
+        dot = candidate / ".git"
+        if dot.is_file() or (dot / "HEAD").is_file():
             return candidate
     return None
 
@@ -53,6 +63,46 @@ def main_checkout(root: Path) -> Path:
     if gitdir.parent.name == "worktrees" and gitdir.parents[1].name == ".git":
         return gitdir.parents[2]
     return root
+
+
+# Held across every git operation that commits, fetches, rebases or pushes a checkout — the
+# window's Save and sync, and a claim's commit and push from the CLI or a supervisor — so no
+# two of them interleave. In the repository's common git directory, shared by its worktrees
+# and never committed.
+SYNC_LOCK = "dplanner-sync.lock"
+
+
+@contextmanager
+def sync_lock(repo_root: Path) -> Iterator[None]:
+    """The repository's sync lock, the operating system's, waited for. Never nested: a holder
+    calls no other method that takes it, and emits no signal while it holds it.
+
+    ``StorageError`` when ``repo_root`` is no repository: the lock file goes inside a git
+    directory that exists and is never the one to make it, or a caller handed a stray
+    directory would plant a ``.git`` that turns everything beneath it into a repository."""
+    with os_lock(git_common_dir(repo_root) / SYNC_LOCK, wait=True, parents=False):
+        yield
+
+
+def git_common_dir(repo_root: Path) -> Path:
+    """The git directory a checkout and all its worktrees share — ``.git`` itself, or, in a
+    worktree, the one its ``.git`` file leads back to. ``StorageError`` when ``repo_root``
+    has neither, or the file leads nowhere."""
+    dot = repo_root / ".git"
+    if dot.is_dir():
+        return dot
+    if not dot.is_file():
+        raise StorageError(f"{repo_root} is not a git repository: it has no .git")
+    pointer = dot.read_text(encoding="utf-8").strip()
+    if not pointer.startswith("gitdir:"):
+        raise StorageError(f"{dot} is not a gitdir file")
+    gitdir = (repo_root / pointer.removeprefix("gitdir:").strip()).resolve()
+    common = gitdir / "commondir"
+    if common.is_file():
+        gitdir = (gitdir / common.read_text(encoding="utf-8").strip()).resolve()
+    if not gitdir.is_dir():
+        raise StorageError(f"{dot} leads to {gitdir}, which is not a git directory")
+    return gitdir
 
 
 def init_repo(path: Path) -> Path:
@@ -304,14 +354,15 @@ class GitStorage(LocalStorage):
         project index) and is deliberately not part of ``scopes``: the dirty count and the
         review diff stay about the plan.
         """
-        scopes = [scope for scope in (*self._scopes, *also) if self._matches(scope)]
-        if not scopes:
-            return False
-        self._git("add", "-A", "--", *scopes)
-        staged = self._git("diff", "--cached", "--quiet", "--", *scopes, check=False)
-        if staged.returncode == 0:
-            return False
-        self._git("commit", "-m", message or self._timestamped("Save"), "--", *scopes)
+        with sync_lock(self.repo_root):
+            scopes = [scope for scope in (*self._scopes, *also) if self._matches(scope)]
+            if not scopes:
+                return False
+            self._git("add", "-A", "--", *scopes)
+            staged = self._git("diff", "--cached", "--quiet", "--", *scopes, check=False)
+            if staged.returncode == 0:
+                return False
+            self._git("commit", "-m", message or self._timestamped("Save"), "--", *scopes)
         self.refresh_dirty()
         return True
 

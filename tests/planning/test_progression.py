@@ -13,12 +13,10 @@ from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.ordering import ready
 from dplanner.planning.progression import (
     across,
-    due,
     estimated_progress,
     merge,
     outstanding,
     progression,
-    taken,
 )
 from dplanner.planning.status import Status, Unknown, Waiting, readiness_of
 
@@ -216,113 +214,22 @@ def test_a_plain_requires_waits_for_done_not_for_review_or_merge():
         assert titles(found.waiting) == ["D"]
 
 
-def collector():
-    """Three sources and a plain prerequisite P, all joining at C, which collects the three:
-    the milestone-2 round, where one agent step lands three agents' PRs."""
+def test_outstanding_is_the_one_answer_run_agent_reads():
+    """Every prerequisite not done, whatever else it reads — review and merge included."""
     library, project = build("A1", "A2", "A3", "P", "C")
     for source in ("A1", "A2", "A3", "P"):
         link(library, project, "C", source)
-    collected = {by_title(project, title).id for title in ("A1", "A2", "A3")}
-
-    def auto_progresses(waiter, source):
-        return waiter.title == "C" and source.id in collected
-
-    return library, project, auto_progresses
+    statuses = status_of({"A1": "ready-for-review", "A2": "in-progress", "A3": "done"})
+    assert titles(outstanding(library, by_title(project, "C"), statuses)) == ["A1", "A2", "P"]
 
 
-def test_a_collector_is_ready_once_its_sources_are_ready_for_review():
-    library, project, auto = collector()
-    reviewed = {"A1": "ready-for-review", "A2": "ready-to-merge", "P": "done"}
-    found = progression(library, project, status_of(reviewed), auto_progresses=auto)
-    assert "C" not in titles(found.ready)  # A3 is still pending.
-    found = progression(
-        library, project, status_of({**reviewed, "A3": "ready-for-review"}), auto_progresses=auto
-    )
-    assert titles(found.ready) == ["C"]
-
-
-def test_a_collector_still_waits_on_a_plain_source_until_it_is_done():
-    library, project, auto = collector()
-    reviewed = {"A1": "ready-for-review", "A2": "ready-for-review", "A3": "ready-for-review"}
-    found = progression(
-        library, project, status_of({**reviewed, "P": "ready-for-review"}), auto_progresses=auto
-    )
-    assert found.ready == ()
-    assert [(c.step.title, titles(c.after)) for c in found.upcoming] == [("C", ["P"])]
-
-
-def test_without_auto_progress_a_collector_waits_for_done():
-    """The default is the plain rule: every call that passes nothing is unchanged."""
-    library, project, _auto = collector()
-    reviewed = {"A1": "ready-for-review", "A2": "ready-for-review", "A3": "ready-for-review"}
-    found = progression(library, project, status_of({**reviewed, "P": "done"}))
-    assert [titles(c.after) for c in found.upcoming] == [["A1", "A2", "A3"]]
-
-
-def test_outstanding_is_the_one_answer_run_agent_reads():
-    library, project, auto = collector()
-    step = by_title(project, "C")
-    statuses = status_of({"A1": "ready-for-review", "A2": "in-progress", "P": "ready-to-merge"})
-    assert titles(outstanding(library, step, statuses, auto)) == ["A2", "A3", "P"]
-    assert titles(outstanding(library, step, statuses)) == ["A1", "A2", "A3", "P"]
-
-
-def agents(*titles):
-    """An ``is_agent`` answering yes for the steps named."""
-    return lambda step: step.title in titles
-
-
-ALL_SOURCES_IN = {"A1": "ready-for-review", "A2": "ready-to-merge", "A3": "ready-for-review"}
-
-
-def test_a_collector_is_due_once_its_last_source_reaches_review():
-    library, project, auto = collector()
-    statuses = {**ALL_SOURCES_IN, "P": "done"}
-    assert titles(due(library, project, status_of(statuses), auto, agents("C"))) == ["C"]
-    del statuses["A3"]  # One source still pending: ready for nobody yet.
-    assert due(library, project, status_of(statuses), auto, agents("C")) == []
-
-
-def test_a_collector_whose_sources_were_all_set_done_is_ready_but_not_due():
-    """Fulfilled by done alone, nothing auto-progress did: a person launches it."""
-    library, project, auto = collector()
-    statuses = status_of({"A1": "done", "A2": "done", "A3": "done", "P": "done"})
-    assert titles(progression(library, project, statuses, auto_progresses=auto).ready) == ["C"]
-    assert due(library, project, statuses, auto, agents("C")) == []
-
-
-def test_a_plain_prerequisite_not_done_keeps_a_collector_from_being_due():
-    library, project, auto = collector()
-    statuses = status_of({**ALL_SOURCES_IN, "P": "ready-for-review"})
-    assert due(library, project, statuses, auto, agents("C")) == []
-
-
-def test_only_an_agent_step_nobody_started_and_no_run_holds_is_due():
-    library, project, auto = collector()
-    statuses = {**ALL_SOURCES_IN, "P": "done"}
-    assert due(library, project, status_of(statuses), auto, agents()) == []
-    for word in ("in-progress", "blocked", "done", "ready-for-review"):
-        started = status_of({**statuses, "C": word})
-        assert due(library, project, started, auto, agents("C")) == []
-    launched = due(library, project, status_of(statuses), auto, agents("C"), running=lambda s: True)
-    assert launched == []
-
-
-def test_an_unknown_status_holds_a_step_it_is_never_due_and_never_ready():
+def test_an_unknown_status_holds_a_step_it_is_never_ready():
     """A word a newer build wrote: guessing pending would launch the step again."""
-    library, project, auto = collector()
-    statuses = status_of({**ALL_SOURCES_IN, "P": "done", "C": "unknown"})
-    assert due(library, project, statuses, auto, agents("C")) == []
-    found = progression(library, project, statuses, auto_progresses=auto)
+    library, project = build("A", "C")
+    link(library, project, "C", "A")
+    found = progression(library, project, status_of({"A": "done", "C": "unknown"}))
     assert "C" not in titles(found.ready)
     assert titles(found.attention) == ["C"]
-
-
-def test_a_wait_is_never_due():
-    library, project, auto = collector()
-    statuses = status_of({**ALL_SOURCES_IN, "P": "done"})
-    found = due(library, project, statuses, auto, agents("C"), counts_as_work=lambda s: False)
-    assert found == []
 
 
 def test_an_agent_waiting_on_a_person_is_asking_not_running():
@@ -332,41 +239,6 @@ def test_an_agent_waiting_on_a_person_is_asking_not_running():
     assert titles(found.running) == ["A"] and titles(found.asking) == ["B"]
     assert titles(found.attention) == ["C"] and found.total == 3
     assert titles(merge([found, found]).asking) == ["B", "B"]
-
-
-def test_work_under_review_an_agent_takes_on_is_taken_not_a_person_s():
-    """A1 is under review and C, an agent, collects it: C's turn, so off *Ready for review*.
-    P reaches C over a plain link, so nobody takes it on — a person looks next."""
-    library, project, auto = collector()
-    statuses = status_of({"A1": "ready-for-review", "P": "ready-for-review"})
-    found = progression(library, project, statuses, auto_progresses=auto, is_agent=agents("C"))
-    assert titles(found.taken) == ["A1"] and titles(found.review) == ["P"]
-    assert found.total == len(project.steps)
-    assert titles(merge([found, found]).taken) == ["A1", "A1"]
-
-
-def test_only_a_live_agent_takes_work_on():
-    """A collector a person works, or one blocked or done, takes nothing on: the work under
-    review is a person's turn again."""
-    library, project, auto = collector()
-    a1 = by_title(project, "A1")
-    under_review = {"A1": "ready-for-review"}
-    assert taken(library, a1, status_of(under_review), auto, agents("C"))
-    assert not taken(library, a1, status_of(under_review), auto, agents())
-    for word in ("blocked", "done"):
-        statuses = status_of({**under_review, "C": word})
-        assert not taken(library, a1, statuses, auto, agents("C"))
-    in_progress = status_of({**under_review, "C": "in-progress"})
-    assert taken(library, a1, in_progress, auto, agents("C"))
-
-
-def test_without_is_agent_everything_under_review_is_a_person_s():
-    """The default is the board before this rule: every call that passes nothing is unchanged."""
-    library, project, auto = collector()
-    found = progression(
-        library, project, status_of({"A1": "ready-for-review"}), auto_progresses=auto
-    )
-    assert titles(found.review) == ["A1"] and found.taken == ()
 
 
 def test_every_group_a_person_acts_on_is_ranked_by_what_it_unlocks():

@@ -1,0 +1,442 @@
+"""The playbook aspect, in the running application: a Details block, a project tab,
+*Step ▸ Run Playbook* and *Stop Playbook*, and where each step's pass stands for the card's
+strip.
+
+A step's block picks its playbook and the overrides a choice of its own may carry; the
+project's tab, under *Project ▸ Settings…*, picks what a step that never chose runs.
+
+**Run Playbook is Run Agent's equivalent for a pass**: a child menu of every preset beside
+Run Agent's, the step's own playbook first and marked with where it was chosen. Each entry is
+greyed with its own reason — Run Agent's questions of the step, a role no launch profile
+runs, an agent not usable here (``Availability.why_not``, the status checks' reading, never
+probed on the GUI thread). Starting one is the launch module's, handed in by the root
+(:class:`PlaybookLauncher`): a pass starts only as ``dplanner agent run --playbook``. It is
+one step at a time — a selection is what *Autonomous work* runs — and a *Remote ▸* entry is
+for when workers exist.
+
+**Stop Playbook stops the step's pass whatever it is doing**, after a confirmation naming what
+runs, by running ``dplanner playbook stop`` — the launch module runs it, as it runs Run
+Playbook's verb. It is greyed with the reason when nothing of a pass is left to stop.
+
+**Where a pass stands is polled** (:class:`PassStandings`). Its runs and questions are
+written by other processes — a supervisor, an advance, an answer — and nothing watches their
+directories, so every :data:`POLL_MS` it compares each project's ledger and questions
+fingerprints, re-reads a project whose records moved (``engine.standings``, the reading
+``playbook show`` makes) and re-reads everything once a minute for the clock alone: a hold's
+reset passes, and a pass that ended stops being shown, with nothing written. When what it
+holds for a project changes, :attr:`PassStandings.changed` names it and the canvas re-reads.
+"""
+
+import time
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Protocol
+
+from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import QMenu, QWidget
+
+from dplanner.core.signals import Signal
+from dplanner.domain import ledger, questions
+from dplanner.domain.agents import AgentHarness
+from dplanner.domain.model import Library, ProjectId, Step, StepId
+from dplanner.framework.action_registry import (
+    DISABLED,
+    ENABLED,
+    ActionRegistry,
+    ActionSpec,
+    ActionState,
+    DataMenuSpec,
+)
+from dplanner.framework.context import Context, ContextService
+from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
+from dplanner.framework.step_selection import chosen_steps
+from dplanner.framework.task_runner import TaskRunner
+from dplanner.framework.tasks import TaskService
+from dplanner.framework.undo import UndoService
+from dplanner.framework.widgets import confirm
+from dplanner.modules.step_playbook.aspect import DATA_FORMAT, MODULE_ID, SPEC, read, resolve
+from dplanner.modules.step_playbook.engine import standings, stoppable
+from dplanner.modules.step_playbook.pass_section import (
+    OpenTerminal,
+    PassSection,
+    PassVerbs,
+    RunVerbs,
+)
+from dplanner.modules.step_playbook.passes import Standing, agents_of, describe, pinned
+from dplanner.modules.step_playbook.presets import PRESETS, Playbook
+from dplanner.modules.step_playbook.project_section import ProjectPlaybookSection
+from dplanner.modules.step_playbook.section import PlaybookSection
+from dplanner.planning.agent import enabled as is_agent
+from dplanner.planning.kinds import works_nobody
+from dplanner.theme.icons import playbook_icon
+
+RUN_MENU_ID = f"{MODULE_ID}.run_with"
+RUN_MENU_TITLE = "Run Playbook"
+ONE_AT_A_TIME = "one step at a time — Autonomous work runs a selection"
+STOP_TITLE = "Stop Playbook"
+# Where the step's playbook was chosen, as its entry in the child menu says.
+SOURCE_WORDS = {"step": "this step's", "project": "project default", "landing": "landing default"}
+POLL_MS = 2000
+# A hold's reset passes and an ended pass stops being shown with nothing written.
+CLOCK_S = 60.0
+
+
+class PassStandings:
+    """Where each step's latest playbook pass stands, per project — what the card's playbook
+    strip says. Built by the root ahead of the canvas that reads it; polling starts with the
+    module's :meth:`StepPlaybookModule.register`, so a discarded build stops."""
+
+    def __init__(
+        self, library: Library, project_dir: Callable[[ProjectId], Path], parent: QWidget
+    ) -> None:
+        self._library = library
+        self._project_dir = project_dir
+        self._seen: dict[ProjectId, tuple[object, ...]] = {}
+        self._held: dict[ProjectId, dict[StepId, Standing]] = {}
+        self._read_at = 0.0
+        self.changed: Signal[str] = Signal("step_playbook.standings_changed")
+        self._timer = QTimer(parent)
+        self._timer.setInterval(POLL_MS)
+        self._timer.timeout.connect(self.refresh)
+
+    def start(self) -> None:
+        self._timer.start()
+        self.refresh()
+
+    def card(self, project_id: ProjectId, step_id: StepId) -> tuple[str, str, str]:
+        """What a card's playbook strip says — the phrase, its tone and the stages for its
+        tooltip — or ("", "", "") for a step with no pass shown."""
+        stands = self._held.get(project_id, {}).get(step_id)
+        return ("", "", "") if stands is None else (stands.phrase, stands.tone, describe(stands))
+
+    def live(self, project_id: ProjectId, step_id: StepId) -> bool:
+        """Whether a turn of the step's pass is under way — the card's marching ring."""
+        stands = self._held.get(project_id, {}).get(step_id)
+        return stands is not None and stands.live
+
+    def phrase(self, step_id: StepId) -> str:
+        """The card's playbook phrase for the step's pass, "" for none — what the Agents
+        browser leads a pass's latest run with, so the two never disagree."""
+        if not self._library.has(step_id):
+            return ""
+        return self.card(self._library.project_of(step_id).id, step_id)[0]
+
+    def project_dir_of(self, step_id: StepId) -> Path:
+        """Where the step's project keeps its runs and questions."""
+        return self._project_dir(self._library.project_of(step_id).id)
+
+    def stoppable(self, step: Step) -> str:
+        """What stopping the step's pass would end, or "" — Stop Playbook's reading, made
+        afresh from the records rather than the strip's last poll."""
+        return stoppable(self._project_dir(self._library.project_of(step.id).id), step)
+
+    def refresh(self) -> None:
+        """Re-read each project whose records moved — every project once a minute — and say
+        which changed."""
+        clock = time.monotonic() - self._read_at >= CLOCK_S
+        if clock:
+            self._read_at = time.monotonic()
+        now = datetime.now(UTC)
+        for project in self._library.projects:
+            directory = self._project_dir(project.id)
+            stamp = (ledger.fingerprint(directory), questions.fingerprint(directory))
+            if stamp == self._seen.get(project.id) and not clock:
+                continue
+            self._seen[project.id] = stamp
+            found = standings(directory, project.steps, now) if stamp[0] else {}
+            if found != self._held.get(project.id, {}):
+                self._held[project.id] = found
+                self.changed.emit(project.id)
+
+
+class PlaybookLauncher(PassVerbs, Protocol):
+    """What Run Playbook and the Playbook tab need of the launch: the agent launch module,
+    handed in by the root."""
+
+    def playbook_refusal(self, step: Step) -> str:
+        """Why no pass can start on ``step`` here, "" when one can."""
+        ...
+
+    def runnable(self) -> tuple[str, ...]:
+        """The harnesses some launch profile runs headless."""
+        ...
+
+    def implementer(self) -> str:
+        """The harness a pass's work stages run."""
+        ...
+
+    def start_playbook(self, step: Step, playbook_id: str) -> None:
+        """Start a pass, saying how it went."""
+        ...
+
+    def stop_playbook(self, step: Step) -> None:
+        """Stop the step's pass, saying how it went."""
+        ...
+
+
+class AgentReadings(Protocol):
+    """Whether each agent CLI is usable here — the status checks' shared reading."""
+
+    def why_not(self, harness_ids: Iterable[str]) -> str:
+        """Why these cannot all run here, "" when they can. Never probes."""
+        ...
+
+    def stale(self) -> bool: ...
+
+    def refresh_stale(self) -> None:
+        """Probe what is missing or old: a task's body."""
+        ...
+
+
+@dataclass(frozen=True)
+class StepPlaybookDeps:
+    library: Library
+    undo: UndoService[Library]
+    details: InspectorSectionRegistry
+    project_settings: InspectorSectionRegistry
+    harnesses: tuple[AgentHarness, ...]  # What a reviewer override may name; how a run reads.
+    actions: ActionRegistry
+    context: ContextService
+    launcher: PlaybookLauncher
+    readings: AgentReadings
+    parent: QWidget
+    standings: PassStandings  # Started here; read by the canvas through the root.
+    # The Playbook tab: a tab of Step Details beside the block in its Details tab.
+    sections: InspectorSectionRegistry
+    runs: RunVerbs  # Follow and Open Session on one of a pass's runs.
+    open_terminal: OpenTerminal  # Its worktree, or its diff, in a terminal.
+    # Where the readings are refreshed and the tab reads, off the GUI thread; None: inline.
+    tasks: TaskService | None = None
+
+
+class StepPlaybookModule:
+    id = MODULE_ID
+    data_format = DATA_FORMAT
+
+    def __init__(self, deps: StepPlaybookDeps) -> None:
+        self._deps = deps
+        self._reading: TaskRunner | None = None
+
+    def register(self) -> None:
+        deps = self._deps
+        deps.standings.start()
+        deps.details.register(
+            InspectorSection(
+                id=f"{MODULE_ID}.details",
+                label=SPEC.label,
+                order=18,  # After the size and schedule (10 to 15), before the description (20).
+                hint="What runs this step when a playbook is started on it: stages that plan, "
+                "execute and judge the work. Default is what the project chose for steps like "
+                "this one.",
+                factory=lambda: PlaybookSection(
+                    deps.library, deps.undo, tuple(harness.id for harness in deps.harnesses)
+                ),
+                shown_for=lambda step_id: (
+                    step_id is not None
+                    and deps.library.has(step_id)
+                    and not works_nobody(deps.library.step(step_id))
+                ),
+            )
+        )
+        deps.sections.register(
+            InspectorSection(
+                id=f"{MODULE_ID}.passes",
+                label="Playbook",
+                order=42,  # After the Agent tab (40), whose runs a pass's are.
+                hint="What the step's playbook passes did and changed, and what you do next.",
+                factory=self._pass_section,
+                icon=playbook_icon,
+                shown_for=self._has_passes,
+            )
+        )
+        deps.project_settings.register(
+            InspectorSection(
+                id=f"{MODULE_ID}.project",
+                label="Playbooks",
+                order=25,
+                hint="What a step that never chose a playbook runs, and what a landing runs.",
+                factory=lambda: ProjectPlaybookSection(deps.library, deps.undo),
+                icon=playbook_icon,
+            )
+        )
+        # The verb the palette runs — the step's own playbook. Its seat is the child menu
+        # below, beside Run Agent's, which lists every preset with the step's own first.
+        deps.actions.register(
+            ActionSpec(
+                id="playbook.run",
+                label="Run &Playbook",
+                menu="Step",
+                group="agent",
+                submenu=RUN_MENU_TITLE,
+                order=15,
+                in_menus=False,
+                tip="Start the step's playbook: stages that plan, execute and judge the work,"
+                " headless",
+                icon=playbook_icon,
+                state=self._can_run_own,
+                run=self._run_own,
+            )
+        )
+        deps.actions.register_data_menu(
+            DataMenuSpec(
+                id=RUN_MENU_ID,
+                menu="Step",
+                group="agent",
+                title=RUN_MENU_TITLE,
+                order=15,  # After Run Agent (10), before Preview Agent Prompt (20).
+                fill=self._fill,
+            )
+        )
+        deps.actions.register(
+            ActionSpec(
+                id="playbook.stop",
+                label="Stop Playboo&k",
+                menu="Step",
+                group="agent",
+                order=16,  # Right after Run Playbook's child menu.
+                tip="Stop the step's playbook pass, whatever it is doing; nothing of it starts"
+                " again by itself",
+                state=self._can_stop,
+                run=self._stop,
+            )
+        )
+        # Whether each agent is usable is read, never probed, when a menu asks; the probes
+        # run on a task whenever the reading has gone stale and the person moves on.
+        deps.context.changed.connect(lambda _context: self._refresh())
+        self._refresh()
+
+    def _has_passes(self, step_id: str | None) -> bool:
+        """Whether a pass can be on the step: it runs a playbook, or it is an agent's."""
+        library = self._deps.library
+        if step_id is None or not library.has(step_id):
+            return False
+        step = library.step(step_id)
+        if works_nobody(step):
+            return False
+        return is_agent(step) or resolve(step, library.project_of(step_id)).playbook is not None
+
+    def _pass_section(self) -> PassSection:
+        deps = self._deps
+        return PassSection(
+            deps.library,
+            project_dir=deps.standings.project_dir_of,
+            harnesses=deps.harnesses,
+            runs=deps.runs,
+            verbs=deps.launcher,
+            open_terminal=deps.open_terminal,
+            tasks=deps.tasks,
+            changed=deps.standings.changed.connect,
+        )
+
+    # -- Run Playbook --------------------------------------------------------------------------
+
+    def _step(self, context: Context) -> Step | str | None:
+        """The one step Run Playbook acts on, why not when several are chosen, or None."""
+        library = self._deps.library
+        chosen = chosen_steps(context, library)
+        if len(chosen) > 1:
+            return ONE_AT_A_TIME
+        return library.step(chosen[0]) if chosen else None
+
+    def _own(self, step: Step) -> tuple[Playbook | None, str]:
+        """The step's own playbook, and the words for where it was chosen."""
+        resolved = resolve(step, self._deps.library.project_of(step.id))
+        return resolved.playbook, SOURCE_WORDS.get(resolved.source, "")
+
+    def _refusal(self, step: Step, playbook: Playbook) -> str:
+        """Why a pass of ``playbook`` cannot start on ``step`` here, "" when it can."""
+        launcher = self._deps.launcher
+        if why := launcher.playbook_refusal(step):
+            return why
+        try:
+            settings = pinned(playbook, read(step), launcher.implementer(), launcher.runnable())
+        except ValueError as error:
+            return str(error)
+        return self._deps.readings.why_not(agents_of(playbook, settings))
+
+    def _can_run_own(self, context: Context) -> ActionState:
+        step = self._step(context)
+        if step is None:
+            return DISABLED
+        if isinstance(step, str):
+            return ActionState(enabled=False, label=f"{RUN_MENU_TITLE} — {step}")
+        playbook, _source = self._own(step)
+        if playbook is None:
+            return ActionState(
+                enabled=False,
+                label=f"{RUN_MENU_TITLE} — the step has no playbook; pick one from Step ▸"
+                f" {RUN_MENU_TITLE}",
+            )
+        if why := self._refusal(step, playbook):
+            return ActionState(enabled=False, label=f"{RUN_MENU_TITLE} — {why}")
+        return ENABLED
+
+    def _run_own(self, context: Context) -> None:
+        step = self._step(context)
+        if isinstance(step, Step) and (playbook := self._own(step)[0]) is not None:
+            self._deps.launcher.start_playbook(step, playbook.id)
+
+    # -- Stop Playbook -------------------------------------------------------------------------
+
+    def _can_stop(self, context: Context) -> ActionState:
+        step = self._step(context)
+        if step is None:
+            return DISABLED
+        if isinstance(step, str):
+            return ActionState(enabled=False, label=f"{STOP_TITLE} — {step}")
+        if not self._deps.standings.stoppable(step):
+            return ActionState(
+                enabled=False, label=f"{STOP_TITLE} — no playbook pass runs or waits on it"
+            )
+        return ENABLED
+
+    def _stop(self, context: Context) -> None:
+        deps = self._deps
+        step = self._step(context)
+        if not isinstance(step, Step) or not (running := self._deps.standings.stoppable(step)):
+            return
+        question = (
+            f"Stop the playbook on “{step.title}”? {running[0].upper()}{running[1:]}. Nothing"
+            " of the pass will start again by itself; a step in progress goes back to pending,"
+            " and its worktree and branch are kept."
+        )
+        if confirm(deps.parent, STOP_TITLE, question, verb="Stop"):
+            deps.launcher.stop_playbook(step)
+
+    def _fill(self, menu: QMenu) -> None:
+        """Every preset over the chosen step, its own first and marked, each greyed with its
+        own reason — one agent may be signed out where another is not. Rebuilt every time
+        the menu opens."""
+        deps = self._deps
+        self._refresh()
+        step = self._step(deps.context.current())
+        if not isinstance(step, Step):
+            entry = menu.addAction(step.capitalize() if step else "No step is chosen")
+            entry.setEnabled(False)
+            return
+        own, source = self._own(step)
+        listed = [own] if own is not None else []
+        listed += [playbook for playbook in PRESETS if playbook != own]
+        for playbook in listed:
+            name = f"{playbook.name} ({source})" if playbook == own else playbook.name
+            why = self._refusal(step, playbook)
+            entry = menu.addAction(f"{name} — {why}" if why else name)
+            entry.setToolTip(playbook.summary)
+            entry.setEnabled(not why)
+            entry.triggered.connect(
+                lambda _checked=False, s=step, p=playbook: deps.launcher.start_playbook(s, p.id)
+            )
+
+    def _refresh(self) -> None:
+        """Probe the agents whose reading is missing or old, on a task — one at a time."""
+        deps = self._deps
+        if not deps.readings.stale():
+            return
+        if deps.tasks is None:
+            deps.readings.refresh_stale()
+            return
+        runner = self._reading = self._reading or TaskRunner(deps.tasks, deps.parent)
+        if not runner.is_busy():
+            runner.run("Checking the agent CLIs", deps.readings.refresh_stale, key="agents.check")

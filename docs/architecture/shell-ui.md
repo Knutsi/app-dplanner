@@ -205,8 +205,8 @@ a cloud over nine identical stems, taught that the look is most of the message.
 ## Motion is a library
 
 The canvas already moved in two places, each on a hand-rolled `QTimer` — the agent ring
-and the auto-progress chevrons step every 80 ms, twelve frames a second, and the spinner
-has its own — and Home's garden would have been a third. `framework/motion/` is what they
+and the pulse step every 80 ms, twelve frames a second, and the spinner has its own — and
+Home's garden would have been a third. `framework/motion/` is what they
 share instead, shaped for the canvas though Home is its first user:
 
 - **One clock per surface, at the display's rate, only while seen.** `FrameClock` runs on
@@ -251,6 +251,14 @@ kind of motion from everything listed above: it happens only under a hand, the m
 not changed yet, and the release settles every glide before anything is written — so there
 is nothing for a preference to complete, and a test calls the gesture's `settle()` the way
 a render does. The list above still waits on both.
+
+**The second is a card's foot growing to its playbook strip** (S27, `canvas.md`'s *A card
+running a playbook says where its pass stands*), and it is the first motion that is not under
+the hand, so it brought the two pieces the list waited on in their smallest form: DESIGN.md
+names it as one more allowed motion, and *Reduce Motion* exists — as a field of the canvas's
+`Look`, since the canvas is the only surface it governs yet; a second surface that needs it is
+the moment to lift it to an application preference. It rides the canvas's own clock, which
+now measures motion in seconds and ticks at the display's rate only while something grows.
 
 **A well can be as tall as its rows.** The guide is a `RowWell`, which is a scroll area, and
 `QScrollArea` stops its size hint at twenty-four lines of text whatever its adjust policy —
@@ -373,7 +381,7 @@ that picked*:
   where Ctrl+V lives; one enabled QAction may own a shortcut);
 - the **plane** as a place — `select`: Find, Lasso, Select Nearest;
 - a **mixed** pick — `narrow`: Select Only Steps, Select Only Links;
-- a picked **arrow** — `links`: Remove Link, Auto-progress and the Redirect pair;
+- a picked **arrow** — `links`: Remove Link and the Redirect pair;
 - the drawing itself — `arrange`, `look`, `panels` as before;
 - picked **steps** — Step: Rename, Delete, Connect, Link, Unlink (the link between two
   picked steps, which a table can offer with no arrow in sight), Isolate, and *Show in ▸

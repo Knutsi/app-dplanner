@@ -12,10 +12,11 @@ the next GUI open would migrate the untouched ones and leave the stamped one alo
 loss that shows up months later, in a project nobody can reconstruct.
 """
 
+import getpass
 import json
 import os
 from collections.abc import Callable, Iterator, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import TextIO
 
@@ -23,6 +24,7 @@ from dplanner.cli.command import CliContext, CliError
 from dplanner.cli.lookup import find_project
 from dplanner.core.clock import Clock
 from dplanner.core.module_data import ModuleDataFormat, migrate_module_data
+from dplanner.core.process import RUN_ENV as RUN_ENV  # Names the run a shell belongs to.
 from dplanner.core.storage.locations import (
     canonical_remote,
     find_repo_root,
@@ -33,15 +35,25 @@ from dplanner.core.storage.pointer import POINTER_FILE, resolve_index
 from dplanner.domain.library_file import LIBRARY_ENV, resolve_library_path
 from dplanner.domain.locations import CODE, Location, of_role
 from dplanner.domain.model import Library, LinkRule, Project
+from dplanner.domain.questions import COORDINATOR, PERSON
 from dplanner.domain.shelf import migrate_shelved
 from dplanner.domain.store import PROJECT_META, LibraryStore, StaleWorkspaceError
 
 # Names the current project for every verb in a shell — what Run Agent's wrapper sets, so
 # an agent's calls are scoped without the briefing saying `--project` on each line.
 PROJECT_ENV = "DPLANNER_PROJECT"
-# Names the run a shell belongs to — its record in the project's ledger, which
-# ``dplanner usage harvest`` reads back into when it is given no ``--run``.
-RUN_ENV = "DPLANNER_RUN"
+# Names the squad member a shell is — ``kettle-actual``, ``kettle-two`` — so the heartbeat of
+# every ``dplanner`` run from it renews that squad's claim alone, and ``claim take`` knows the
+# squad's own shell from another squad's coordinator that picked the same word.
+CALLSIGN_ENV = "DPLANNER_CALLSIGN"
+
+
+def acting(name: str, in_agent_shell: bool) -> dict[str, str]:
+    """Who acts on a question or a claim, read from where the call comes from: inside a run or
+    an agent's shell it is the coordinator — an agent cannot say it is a person — and
+    elsewhere a person. ``name`` only names them; it never changes which."""
+    agent = bool(os.environ.get(RUN_ENV)) or in_agent_shell
+    return {"kind": COORDINATOR if agent else PERSON, "name": name or getpass.getuser()}
 
 
 def find_library(explicit: str | None = None) -> Path:
@@ -267,18 +279,30 @@ def open_library(
     migrate_module_data(store, formats, library)
     migrate_shelved(store, formats)
     try:
-        yield context
         try:
+            yield context
             store.flush(context.marks)
         except StaleWorkspaceError as error:
             # Somebody else wrote to the same folder while the verb ran — another CLI run,
             # or a window that autosaved. Refusing is what makes a second lock unnecessary:
             # the loser is told, nothing is overwritten, and running again picks up the
             # change.
+            _unwind(context.unwritten)
             raise CliError(f"{error} — nothing was written; run this again") from error
+        except BaseException:
+            _unwind(context.unwritten)
+            raise
         _settle(context.after_flush)
     finally:
         store.close()
+
+
+def _unwind(owed: Sequence[Callable[[], None]]) -> None:
+    """Take back what a run that wrote nothing did beforehand, every one of them and the
+    last first, without hiding why the run failed."""
+    for step in reversed(owed):
+        with suppress(Exception):
+            step()
 
 
 def _settle(owed: Sequence[Callable[[], None]]) -> None:

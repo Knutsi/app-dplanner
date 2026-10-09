@@ -284,6 +284,7 @@ def test_a_live_agent_run_wears_a_marching_ring(services, project, tab):
         services.document
     )
     item = node(tab, step)
+    assert item._accent.ring == "info"
     assert item.wears_ring() and scene._motion_clock.isActive()
     before = item._phase
     scene.advance_motion()
@@ -324,7 +325,29 @@ def test_the_ring_is_painted_outside_the_body_and_moves_with_the_phase(app):
         return [image.pixelColor(x, row).alpha() for x in columns]
 
     assert not any(render(NodeAccent()))
-    inked = render(NodeAccent(chip_text="working", chip_tone="info"))
+    inked = render(NodeAccent(ring="info"))
     assert any(inked) and not all(inked)  # Dashes and gaps.
-    assert render(NodeAccent(chip_text="working", chip_tone="info"), phase=2.0) != inked
+    assert render(NodeAccent(ring="info"), phase=2.0) != inked
     assert QRectF(0, 0, NODE_W, NODE_H).adjusted(-RING_GAP, 0, 0, 0).left() > -PAINT_MARGIN
+
+
+def test_a_step_that_chose_its_playbook_wears_the_medallion_and_an_inherited_one_does_not(
+    services, project, tab
+):
+    from dplanner.modules.step_playbook import aspect as playbook
+    from dplanner.modules.step_playbook.presets import PRESETS
+
+    step = project.steps[0]
+    services.undo.push(
+        SetModuleDataCommand(
+            project.id,
+            playbook.MODULE_ID,
+            playbook.write_project(playbook.Defaults(default=PRESETS[0])),
+        )
+    )
+    assert "playbook" not in node(tab, step)._accent.icons
+    choice = playbook.Choice(PRESETS[-1])
+    services.undo.push(SetModuleDataCommand(step.id, playbook.MODULE_ID, playbook.write(choice)))
+    assert "playbook" in node(tab, step)._accent.icons
+    services.undo.undo()
+    assert "playbook" not in node(tab, step)._accent.icons

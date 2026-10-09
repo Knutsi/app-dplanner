@@ -306,40 +306,34 @@ cutting a release from the current branch, settling a conflict the window handed
 step that only reads and reports. "It would be convenient" is not a reason: a step in the
 checkout shares the developer's working tree with every other agent and with the person.
 When you *execute* a step, its briefing tells you which worktree to expect; if you are
-not in it, stop and say so rather than working in the main checkout. A review step is the
-exception: it reads the work it reviews where that work is, commits nothing, and runs in the
-checkout with no worktree of its own — leave that checkout as you found it.
+not in it, stop and say so rather than working in the main checkout.
 
 **An agent finishes at Ready for review, never at done.** When your work on a step is
-finished, `dplanner status set S7 ready-for-review`: a person or a reviewing agent looks
-next, sets it `ready-to-merge` once it is accepted and `done` once it has landed — and
-nothing that waits on the step starts before then, except a step that collects it over an
-auto-progress link, which starts now and takes your branch. From inside an agent's shell, `status
+finished, `dplanner status set S7 ready-for-review`: a person, or a gate of the step's
+playbook, looks next, sets it `ready-to-merge` once it is accepted and `done` once it has landed — and
+nothing that waits on the step starts before then. From inside an agent's shell, `status
 set <agent step> done` on a step nobody has reviewed is refused; when there is genuinely
 nothing to review, say why — `dplanner status set S7 done --because '<reason>'` — and the
 reason is kept as a decision note on the step. Ready for review is the *step's* work
 finished; the agent-run state `plan-for-review` is your *plan* waiting for a look, mid-run.
-A step a review waits on does not stop there: its briefing says to wait for the review's
-rounds and answer them (below).
 
-**What happens after Ready for review is not yours to start.** When your `status set` makes
-a collector or a review *due* — every prerequisite finished, at least one through an
-auto-progress link — the terminal says so (`Now due: C9 …`), and `progression show` marks
-it `due`. With a DPlanner window open whose *Agent profiles ▸ When a step becomes due* is
-on, that window launches its agent within seconds, claimed in progress; with none, it waits
-for a person. Either way, stop as you would have: never launch another agent from your own
-shell. `progression show` lists an agent that waits on a person — a plan to approve, a
-question — under **Waits for you**, not Running; and work under review that a live agent
-takes on from there — its review, a collector — under **Taken by an agent**, not Ready for
-review, which names a person's turn alone.
+**Under a playbook you are one stage of a pass**, and your briefing says which: a plan, the
+work, a fix, a review. A review answers with its verdict as its final message, never with
+`status set`; whatever the pass does next — another review round, a gate, the merge — is the
+engine's, not yours to start. `dplanner playbook show S7` says where the pass stands.
 
-**A step that collects other steps' work lands it, and finishes them.** Its briefing has
-*Work you collect*: each source's status, branch, PR and worktree on this machine. Merge each
-into your branch as a merge commit of its own, reconcile what they could not see of each
-other, review the whole — and once a source's work has landed, `dplanner status set <source>
-done` yourself: that is your job, and the CLI allows it. A step whose briefing names who
-collects it leaves its own done to them, so push everything and open the PR before `status
-set <step> ready-for-review`.
+**A question for the developer goes through one door: `dplanner question ask '<question>'
+--choice '<answer>' … --step S7`, then end your turn.** Run unattended, the question is
+recorded on your run and the answer resumes your session; in a terminal it marks the step
+`needs-input` and you ask there. Never wait in a loop for an answer, and never ask only in
+prose when the door is there.
+
+**What happens after Ready for review is not yours to start.** Stop there, and never launch
+another agent from your own shell: the coordinator or a person starts what comes next.
+If your briefing names your callsign (`kettle-two`), sign your messages with it and end your
+commits with the trailer `Callsign: kettle-two`.
+`progression show` lists an agent that waits on a person — a plan to approve, a question —
+under **Waits for you**, not Running.
 
 **A step on a feature branch opens its PR there, and a landing brings the branch back.** A
 *cut* starts a branch and a *landing* merges it back; the steps between them work on it
@@ -354,39 +348,19 @@ agent's dev server, test runner and agent process carries the same names and pat
 yours, and one agent's `pkill -f vite` has stopped three others mid-task. Kill only by a
 pid your own shell started, on a port you chose.
 
-## Reviewing and being reviewed
+## Coordinating a selection
 
-A **review step** (key `R`) is an agent step that reviews the step it waits on, its
-*subject*: `dplanner step add <project> 'Review the parser' --after S7 --agent --review`,
-then `dplanner review set R8 --agent codex --lens architecture --lens <a skill> --max-rounds
-2` for anything but the defaults (the default profile, architecture and security, three
-rounds). It may start as soon as its subject reads ready for review. The two sides talk
-through `dplanner review`, one verb per turn:
-
-- **Reviewing (R8):** `review start R8` opens a round. Read the subject's branch or PR, then
-  `review post R8 --file findings.md` — the subject is in progress again — and `review wait
-  R8` for the answer. When the work is right, `review approve R8`: the subject is done and
-  the review ready to merge, carrying its branch and PR. Past the cap `start` is refused:
-  approve, or `review escalate R8 --file why.md` hands it to a person. A review comments; the
-  subject's own agent changes its branch.
-- **Being reviewed (S7):** after `status set S7 ready-for-review` and `agent-state set S7
-  pending-approval`, run `review wait S7`. When findings arrive, `review take S7`, do the
-  work, push, and `review reply S7 --file reply.md` — S7 is ready for review again — then
-  wait again, until the review approves (S7 is done) or escalates. After an hour with
-  nothing new, stop: relaunching S7 briefs you with any round that arrived — and a window
-  that launches what becomes due relaunches whichever side has the turn once its agent has
-  gone, once per round.
-
-Both briefings carry this protocol — the review's `## Instructions` are generated from its
-lenses, its cap and its subject, with its description as what to look for — and a
-conversation still going is a *Review rounds with …* section on either side, so a relaunched
-agent picks it up where it stands.
-
-`review wait` reads the plan afresh until it is your turn, then exits 0 with what arrived;
-after nine minutes it exits 3, and you run it again. Give the tool call running it a longer
-timeout than that, or shorten the wait with `--timeout`. A collector sends work back to a
-source the same way: `review start C9 --to S4`, then `post` and `wait` with the same `--to`.
-`review show <step>` prints a conversation.
+**When you are asked to drive several steps, you are a squad's coordinator — its Actual.**
+Pick a squad word no running squad uses (one lowercase word: `kettle`), then
+`dplanner agent coordinate S3 S4 S7 --callsign kettle` prints your briefing: claim the
+selection, start each ready step as a member of the squad, watch, answer what you may and
+escalate the rest, verify and merge, release. Follow it. Callsigns are the squad word and a
+member — `kettle-actual` (you), `kettle-two` and on for the workers, `kettle-two-one` for a
+worker's sub-agent, `kettle-watch` for your verifier — lowercase-kebab where a machine reads
+them, spoken *Kettle Two* in prose, and used in every message, note and commit trailer.
+Run headless (`claude -p`), a coordinator has no scheduled wake-up — somebody must wake it —
+and Claude's auto mode refuses its `gh pr merge` unless it was started with `--allowedTools
+"Bash(gh pr merge:*)"`.
 
 ## Recording your work on GitHub
 

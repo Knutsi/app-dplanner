@@ -60,7 +60,10 @@ class TaskCenterModule:
                 timer.stop()
 
         timer.timeout.connect(refresh)
-        deps.tasks.changed.connect(refresh)
+        # The task list outlives the window: a runner torn down with it finishes its task
+        # after this button is gone, and must find nobody here to redraw.
+        unsubscribe = deps.tasks.changed.connect(refresh)
+        button.destroyed.connect(lambda: unsubscribe())
 
         def open_browser(_context: Context | None = None) -> None:
             self.browser.refresh(deps.tasks.active() + deps.tasks.finished())

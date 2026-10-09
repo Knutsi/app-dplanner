@@ -4,7 +4,7 @@ Project: Widget
 
 ## Before you start
 
-First, confirm you can drive DPlanner: run `dplanner skill status`. If the command is missing or the skill is not installed, STOP — do not carry out the step — and tell the developer this step needs the DPlanner skill (`dplanner skill install`).
+First, confirm you can drive DPlanner: run `dplanner skill status`. If the command is missing or a line reads `missing`, STOP — do not carry out the step — and tell the developer this step needs the DPlanner skill (`dplanner skill install`). `stale` is not a stop: that skill came from another build of DPlanner, so say so and carry on.
 
 Then say you are working, before you touch anything: `dplanner agent-work start '<what you are about to do>' --step S2`. A developer may have a DPlanner window open on this plan, and that is what tells them somebody else is editing it — without it they will edit the same steps you are rewriting and be asked to settle collisions they did not cause. Keep it current as you go (`dplanner agent-work set '<what now>' --done N --of M`); setting the step's status when you finish ends it, and if you stop without one, end it yourself (`dplanner agent-work end --step S2`).
 
@@ -31,16 +31,6 @@ Keep the last line.
 Branch: feat/parser
 PR #12
 
-## Review rounds with R3
-
-Where it stands: S2 has R3's findings for round 1.
-
-### Round 1 — R3's findings
-
-The parser drops the last line.
-
-It waits on your answer: `dplanner review take S2`, settle each finding — or say why not — commit and push, then `dplanner review reply S2 --file <reply.md>`.
-
 ## Instructions
 
 Run the parser tests first.
@@ -66,16 +56,13 @@ As you work, keep the run state current:
 - `dplanner agent-state set S2 plan-for-review` when your plan is ready to review
 - `dplanner agent-state set S2 working` while implementing
 - `dplanner agent-state set S2 pending-approval` while waiting on an approval
-- `dplanner agent-state set S2 needs-input` when you have a question the developer must answer before you can go on
+- `dplanner question ask '<question>' --choice '<answer>' … --step S2` when you have a question the developer must answer before you can go on, then end your turn: unattended, the answer resumes you; in a terminal it says you need input, and you wait for the reply there
 As you go, leave notes — the project's record, indexed into the briefing of every step that comes after the one you made them on. That is the reach: add `--reach project` when what you settled belongs to the whole plan rather than this branch. `dplanner note add --help` lists the labels:
 - `dplanner note add Widget decision '<what you chose>' --step S2 --text '<why>'` for each choice the plan should remember (`--supersedes N3` when it reverses an earlier one)
 - `dplanner note add Widget spec-change '<what differs>' --step S2 --text '<what and why>'` where the work had to depart from the spec
 - `dplanner note add Widget later '<what>' --step S2` for work you noticed and did not do
 When the work is finished, record it in DPlanner:
-- `dplanner status set S2 ready-for-review`, then `dplanner agent-state set S2 pending-approval` — push everything and open the PR first. R3 reviews this step next, in at most 3 rounds, and you answer, so do not stop at ready for review:
-  1. `dplanner review wait S2` returns when a round is posted to you or the review ends; exit 3 means nothing yet after nine minutes — run it again.
-  2. Findings arrived: `dplanner review take S2` prints them. Settle each one — or say why not — commit and push, then `dplanner review reply S2 --file <reply.md>`, which sets this step ready for review again. Back to 1.
-  3. Stop waiting when the review approves — it sets this step done; `dplanner agent-state clear S2` and you are finished — or when it hands the review to a person (a note says what they must decide: stop there), or after an hour of waiting with nothing new: stop, and relaunching this step briefs you with any round that arrived meanwhile.
+- `dplanner status set S2 ready-for-review` and `dplanner agent-state clear S2` — ready for review, never done: a person or a reviewing agent looks next and sets it done. That is the step's work finished, not the mid-run `plan-for-review` above, which is your plan waiting for a look. If nothing needs reviewing, `dplanner status set S2 done --because '<why>'` keeps the reason as a decision note.
 - `dplanner note add Widget handoff '<one line the next worker needs>' --step S2 --file -` with what whoever picks up after you must know — where things are, what is half done, what bit you. Title it as the fact it is; the body carries the detail. Add `--for S12` for a step that must read it in full, `--reach project` if every step should see it regardless; `dplanner note attach Widget <id> <file>` for files.
 If you cannot finish, `dplanner status set S2 blocked` and say why in the handoff note.
 Each of those statuses ends your working claim. If you stop without setting one, end it yourself: `dplanner agent-work end --step S2` — a banner nobody ended is one nobody believes next time.

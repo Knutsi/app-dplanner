@@ -85,6 +85,24 @@ structural review's probe, `tests/domain/test_store_adoption.py`). Around that o
 The same check is why **two CLI runs need no lock between them**: the second is refused for
 exactly the same reason and can be run again. One mechanism, three cases.
 
+Git is the exception, because a commit, a fetch or a rebase is not a file write the stamp can
+judge: every one of them holds the repository's **sync lock**, a file in its common git
+directory. **The lock is taken only inside a git directory that exists, and is never what
+makes one.** It once made its directory when missing, so a root that was no repository got a
+`.git` holding nothing but the lock — `/tmp/.git`, and every pytest temporary directory read
+as inside a repository, and the tests that then wrote a repository's project index wrote it
+into `/tmp`. So `git_common_dir` refuses a root with neither a `.git` directory nor a `.git`
+file leading to one, naming it; and since a provider keeps its root for its life, a root
+whose `.git` went from under it refuses the next Save rather than starting a repository again.
+
+The fix in the lock did not reach the installed builds already running, and they kept
+planting `/tmp/.git` — so the walk does not trust a bare one either. `find_repo_root` takes a
+`.git` *file* (a linked worktree) or a `.git` directory holding `HEAD`, which is git's own
+test, and a directory holding only a lock is no repository: nothing above a loose project
+reads as its root, and `add_to_index` writes no index there. The suite guards the same
+boundary from the other side: `tests/conftest.py`'s `_nothing_above_the_tree` fails the test
+that leaves a `.git` or a `.dplanner` in its basetemp or any parent of it.
+
 ### Adopting the other writer's changes in place
 
 The simple answer to an outside change is the whole rebuild: `AppSession.reload()` builds a
@@ -236,7 +254,8 @@ working is already running verbs — a status, a note, a link — so `cli/main.p
 project's standing claims on every invocation and the agent never carries a heartbeat of
 its own. It never *makes* a claim: running a verb is evidence for a claim somebody made,
 not a claim of its own. And the renewal is handed to the run only from inside an agent's
-shell — `entry.py` passes the board when `agent_shell_marker()` says so, the same fact the
+shell — `entry.py` passes the board when `domain.agents.shell_marker(agent_harnesses())` says
+so, the same fact the
 window word is refused on, read from the other side — because a developer running
 `dplanner step list` in their own terminal would otherwise be vouching for an agent that
 died an hour ago.
@@ -481,8 +500,8 @@ origin no view claims, off the stack — with one difference: it is *read off di
 does not dirty anything.
 
 **A merged PR finishes a step waiting on its merge.** *Ready to merge* means exactly that
-the PR is all that is left — a review's `approve` leaves itself there, carrying its
-subject's PR — so the moment GitHub says *merged* is the moment the step is done, and
+the PR is all that is left — a person or a reviewing agent leaves the step there once
+the work is accepted — so the moment GitHub says *merged* is the moment the step is done, and
 nobody should have to remember to say so. It is the same external fact, so it is written
 the same way: `record_merged` in the status aspect applies `status set`'s own command
 directly, with an origin of its own (`MERGED_ORIGIN`, beside `STARTED_ORIGIN`, whose
@@ -497,7 +516,7 @@ merged step as still waiting on it. Three choices shape it:
   and `github refresh|show` all learn a PR merged; the first two share one writer
   (`refresh.adopt`) so the tab cannot write fresh state and forget the rest.
 - **What is stored counts, not only what is fetched.** A merged PR is terminal and never
-  fetched again, but a step can reach *ready to merge* after its PR did — a review approved
+  fetched again, but a step can reach *ready to merge* after its PR did — a step accepted
   once the developer had merged by hand inherits a state nobody will refresh. So each tick,
   and each `github refresh`, also offers the steps whose stored state already reads merged.
   A merged PR on a step nobody accepted says nothing: only *ready to merge* moves.

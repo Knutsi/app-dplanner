@@ -12,11 +12,17 @@ from pathlib import Path
 
 import pytest
 
-from dplanner.domain.commands import AddNodeCommand, SetModuleDataCommand
+from dplanner.domain import ledger, questions
+from dplanner.domain.commands import SetModuleDataCommand
+from dplanner.domain.ledger import LedgerRecord, Turn
 from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
+from dplanner.modules.agent_supervisor import supervisor
 from dplanner.modules.step_agent_run import aspect, terminal
+from dplanner.modules.step_agent_run.browser_dialog import NO_RUNS
 from dplanner.modules.step_agent_run.runs import AgentRun, describe, new_run, read_shell, settle
+
+RUN = "20261007T180000Z-5e55a0c1"
 
 # -- settling a run, with no application at all -------------------------------------------------
 
@@ -231,15 +237,6 @@ def module(services):
     return next(m for m in services.modules if m.id == aspect.MODULE_ID)
 
 
-@pytest.fixture
-def step(services, make_project):
-    project = make_project("Discovery", legacy=True)
-    step = Step(title="Deploy")
-    AddNodeCommand(project.id, step).redo(services.document)
-    services.autosave.flush_now()
-    return step
-
-
 def select(services, step):
     services.context.set_scope(SCOPE_SELECTION, (ContextNode(selection_uri("step", step.id)),))
 
@@ -253,7 +250,9 @@ def test_a_tracked_launch_stamps_the_step_and_shows_in_the_status_bar(services, 
     assert runs._timer.isActive()
 
 
-def test_the_shells_exit_clears_the_chip_and_stops_the_clock(services, step, tmp_path):
+def test_the_shells_exit_clears_the_chip_and_the_clock_keeps_ticking(services, step, tmp_path):
+    """The tick outlives the shell: a headless run is started by another process, and only
+    the tick notices it."""
     runs = module(services)
     runs.track(step.id, str(tmp_path / "shell"), str(tmp_path / "exit"))
     services.autosave.flush_now()
@@ -261,7 +260,7 @@ def test_the_shells_exit_clears_the_chip_and_stops_the_clock(services, step, tmp
     runs.check()
     assert aspect.read(services.document.step(step.id)) == ""
     assert runs.runs()[0].outcome == "finished"
-    assert not runs._timer.isActive()
+    assert runs._timer.isActive()
     assert "finished" in runs._button.text()
 
 
@@ -451,7 +450,7 @@ def test_the_browser_keeps_the_ended_runs_off_screen_until_they_are_asked_for(
 
     browser.clear_button.click()
     assert runs.runs() == []
-    assert browser.empty.text() == "No agent has been launched from this window."
+    assert browser.empty.text() == NO_RUNS
 
 
 def test_the_browser_greys_show_terminal_per_run(services, step, tmp_path, monkeypatch):
@@ -597,3 +596,96 @@ def test_a_launch_into_plan_mode_waits_on_a_person_until_the_agent_says_anything
         entry = aspect.write(state, aspect.launched(step))
         SetModuleDataCommand(step.id, aspect.MODULE_ID, entry).redo(library)
         assert aspect.asks_person(step) is asks
+
+
+def test_retry_now_resumes_a_run_held_on_its_usage_limit(services, step):
+    """Step ▸ Retry Now answers the limit the step's headless run is parked on, as a person —
+    and is greyed, with the reason, on a step with no such run."""
+    select(services, step)
+    spec = services.actions.spec("agent.retry_now")
+    state = spec.state(services.context.current())
+    assert not state.enabled and state.label == "Retry Now — no headless run is parked on this step"
+
+    project_dir = module(services)._deps.project_dir(step.id)
+    project = services.document.project_of(step.id)
+    question = questions.asked(
+        project.id,
+        step.id,
+        "2026-10-07T18:10:00+00:00",
+        [questions.one("Out of usage.", "Usage limit", [(questions.RETRY_NOW, "")])],
+        kind=questions.LIMIT,
+        run=RUN,
+    )
+    questions.write(project_dir, question)
+    held = Turn(n=1, prompt="launch", started="…", end="limit", question=question.id)
+    record = LedgerRecord(
+        run=RUN,
+        project=project.id,
+        step=step.id,
+        harness="claude",
+        launched="2026-10-07T18:00:00+00:00",
+        machine="elsewhere",  # Launched on another machine: nothing is started from here.
+        mode=ledger.HEADLESS,
+        stage="execute",
+    ).with_turns((held,))
+    ledger.write(project_dir, record)
+    assert spec.state(services.context.current()).enabled
+
+    spec.run(services.context.current())
+    answered = questions.find(project_dir, question.id)
+    assert answered is not None and answered.answer["by"]["kind"] == "person"
+    assert answered.answer["answers"] == {"Out of usage.": questions.RETRY_NOW}
+    state = spec.state(services.context.current())
+    assert not state.enabled and "parked on no open question" in state.label
+
+
+def test_retry_now_and_an_answer_resume_with_the_windows_library(services, step, monkeypatch):
+    """The resumed supervisor resolved the default library, not the window's: its turns'
+    `dplanner` calls and its pass's advance then reached another plan."""
+    started: list[list[str]] = []
+    monkeypatch.setattr(supervisor, "spawn_detached", lambda argv, **_k: started.append(argv))
+    project_dir = module(services)._deps.project_dir(step.id)
+    project = services.document.project_of(step.id)
+    question = questions.asked(
+        project.id,
+        step.id,
+        "2026-10-07T18:10:00+00:00",
+        [questions.one("Out of usage.", "Usage limit", [(questions.RETRY_NOW, "")])],
+        kind=questions.LIMIT,
+        run=RUN,
+    )
+    questions.write(project_dir, question)
+    held = Turn(n=1, prompt="launch", started="…", end="limit", question=question.id)
+    record = LedgerRecord(
+        run=RUN,
+        project=project.id,
+        step=step.id,
+        harness="claude",
+        launched="2026-10-07T18:00:00+00:00",
+        mode=ledger.HEADLESS,
+        stage="execute",
+    ).with_turns((held,))
+    ledger.write(project_dir, record)
+    select(services, step)
+
+    services.actions.spec("agent.retry_now").run(services.context.current())
+
+    gate = questions.asked(
+        project.id,
+        step.id,
+        "2026-10-07T18:20:00+00:00",
+        [questions.one("Approve?", "Review", [("Approve", ""), ("Send back", "")])],
+        kind=questions.DECISION,
+        pass_="20261007T180000Z-0a55a0c1",
+    )
+    questions.write(project_dir, gate)
+    cards = next(m for m in services.modules if m.id == "agent_questions")
+    cards._deps.answer(project_dir, gate.id, "Approve")
+
+    resumed, advanced = started
+    library = str(services.repo.library_path.expanduser().resolve())
+    assert resumed[resumed.index("supervise") + 1] == RUN
+    assert advanced[advanced.index("advance") + 1] == step.id
+    for argv in started:
+        assert argv[argv.index("--library") + 1] == library
+        assert argv[argv.index("--project") + 1] == project.id

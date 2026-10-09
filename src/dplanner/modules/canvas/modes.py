@@ -75,6 +75,7 @@ CONTRACT_VERTICAL = "contract-vertical"
 CONTRACT_HORIZONTAL = "contract-horizontal"
 REDIRECT_TO = "redirect-to"
 REDIRECT_FROM = "redirect-from"
+STRIP_PRESS = "strip-press"
 
 # The redirect modes by the end of the arrow they move. An arrow runs from the step waited
 # on to the step that waits, so moving the waiter end aims the picked links *at* a step and
@@ -200,6 +201,8 @@ class Canvas(Protocol):
     nodes_moved: Signal[list[tuple[StepId, float, float]]]
     # A stack's "+" was pressed: a step is wanted below this one, the stack's last.
     stack_add_requested: Signal[StepId]
+    # A card's playbook strip was clicked: the step's pass is wanted, in Step Details.
+    playbook_opened: Signal[StepId]
     # A card restacked — let go in the stack with this id at this slot, or out of its own
     # stack at this seat: where it went; which verb that is, is the model's to say.
     dropped_into_stack: Signal[StepId, str, int]
@@ -758,8 +761,10 @@ class NodeResizeMode(GestureMode):
         self._parts = edge.split("-")
         self.cursor = RESIZE_CURSORS[edge]
         self._was_pos = node.pos()
-        self._was_size = node.size()
+        self._was_size = node.footprint()
         self._seat = QRectF(node.pos(), QSizeF(*node.size()))
+        # A playbook strip under the card is the card's own to add: the footprint is less it.
+        self._playbook_h = node.size()[1] - node.footprint()[1]
 
     def held(self) -> set[StepId]:
         # A card in a stack moves the cards under it as it grows: the column is held whole.
@@ -784,13 +789,13 @@ class NodeResizeMode(GestureMode):
             rect.setTop(min(y, rect.bottom() - MIN_NODE_H - strip))
         elif "bottom" in self._parts:
             rect.setBottom(max(y, rect.top() + MIN_NODE_H + strip))
-        self._node.set_size(rect.width(), rect.height())
+        self._node.set_size(rect.width(), rect.height() - self._playbook_h)
         self._node.setPos(rect.topLeft())
         return True
 
     def mouse_release(self, event: CanvasEvent) -> bool:
         at = self._node.pos()
-        if at != self._was_pos or self._node.size() != self._was_size:
+        if at != self._was_pos or self._node.footprint() != self._was_size:
             # The step stores its body: the strip is the branch's, never the card's own.
             w, h = self._node.body_size()
             self.deps.canvas.node_resized.emit(self._node.step_id, at.x(), at.y(), w, h)
@@ -1515,6 +1520,35 @@ def visible_scene_rect(view: QGraphicsView) -> QRectF:
     return view.mapToScene(view.viewport().rect()).boundingRect()
 
 
+class StripPressMode(ModeBase):
+    """A press on a card's playbook strip, which is a button and not a handle: let go on the
+    strip, it asks for the step's pass in Step Details (``playbook_opened``); anywhere else,
+    nothing. Nothing drags from it — the strip is not the card's footprint, so a card is
+    taken by its body."""
+
+    name = STRIP_PRESS
+
+    def __init__(self, deps: ModeDeps, node: StepNodeItem) -> None:
+        super().__init__(deps)
+        self._node = node
+
+    def mouse_move(self, event: CanvasEvent) -> bool:
+        return True
+
+    def mouse_release(self, event: CanvasEvent) -> bool:
+        if self.stack is not None:
+            self.stack.pop()
+        if self._node.playbook_tip_at(event.scene_pos):
+            self.deps.canvas.playbook_opened.emit(self._node.step_id)
+        return True
+
+    def key_press(self, key: CanvasKey) -> bool:
+        if key.key == Qt.Key.Key_Escape and self.stack is not None:
+            self.stack.pop()
+            return True
+        return False
+
+
 class IdleMode(ModeBase):
     """The base. Qt does selection, rubber banding and the drag of several loose cards; this
     catches the rest: every right press, and a left press on a card's link handle, a stack's
@@ -1548,6 +1582,9 @@ class IdleMode(ModeBase):
             if edge:
                 self._push(NodeResizeMode(self.deps, node, edge))
                 return True
+            if node.playbook_tip_at(event.scene_pos) and not event.modifiers:
+                canvas.select_step(node.step_id)
+                return self._push(StripPressMode(self.deps, node))
             if event.modifiers & Qt.KeyboardModifier.ControlModifier:
                 return False  # Qt's toggle of one card in the pick.
             # The one card into, through or out of a stack: Shift on any card, and a loose

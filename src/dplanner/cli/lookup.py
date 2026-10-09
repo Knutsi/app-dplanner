@@ -32,10 +32,17 @@ if TYPE_CHECKING:
 # step as its earlier `S7`), so only the number decides.
 _KEY = re.compile(r"^[A-Za-z]?(\d+)$")
 
+# How much of an id every listing prints, and so the least of one that may name a step in
+# another project than the current one.
+_PRINTED_ID = 8
+
 
 def step_arg(parser: ArgumentParser) -> None:
     """The positional a step verb takes, resolved by :func:`find_step`."""
-    parser.add_argument("step", help="step key (S7), id, folder name, or part of its title")
+    parser.add_argument(
+        "step",
+        help="step key (S7), folder name or part of its title in the current project, or its id",
+    )
 
 
 def project_arg(parser: ArgumentParser) -> None:
@@ -61,14 +68,26 @@ def find_project(library: Library, needle: str) -> Project:
 def find_step(library: Library, needle: str, within: Project | None = None) -> Step:
     """A step by key, id, folder name, or a unique part of its title.
 
-    ``within`` is the current project, when the invocation has one: a needle that matches
-    there is resolved there, so "the step called review" means *this* project's — and only
-    a needle the current project cannot answer at all falls back to the whole library.
+    ``within`` is the current project, when the invocation has one — however it was found.
+    **An id is the library's; a key, a folder name and a title are the project's.** Several
+    projects number from 1 and may share a title, so a key the current project does not
+    have was never meant for another one: a verb run in project A on `R26` once turned
+    project B's S26 into a review step (a kind of step since removed). Only an id reaches
+    past ``within`` — at least as long as the ids the CLI prints, so a bare `26` or a word
+    that happens to be hex can never land in somebody else's project.
     """
-    if within is not None and _matches_something(list(within.steps), needle):
-        return _find(list(within.steps), needle, "step")
     steps = [step for project in library.projects for step in project.steps]
-    return _find(steps, needle, "step")
+    if within is None:
+        return _find(steps, needle, "step")
+    if _matches_something(list(within.steps), needle):
+        return _find(list(within.steps), needle, "step")
+    by_id = [step for step in steps if len(needle) >= _PRINTED_ID and step.id.startswith(needle)]
+    if by_id:
+        return _find(by_id, needle, "step")
+    raise CliError(
+        f"no step matching {needle!r} in {within.title!r} — another project's step is named"
+        " by its id, or with --project"
+    )
 
 
 def _matches_something(candidates: list[Step], needle: str) -> bool:
@@ -111,13 +130,13 @@ def _find[NodeT: (Project, Step)](candidates: list[NodeT], needle: str, kind: st
     if len(keyed) == 1:
         return keyed[0]
     if keyed:
-        names = ", ".join(sorted(f"{node.title} ({node.id[:8]})" for node in keyed))
+        names = ", ".join(sorted(f"{node.title} ({node.id[:_PRINTED_ID]})" for node in keyed))
         raise CliError(f"{needle!r} is a step in several projects — use an id: {names}")
     prefixed = [node for node in candidates if needle and node.id.startswith(needle)]
     if len(prefixed) == 1:
         return prefixed[0]
     if prefixed:
-        names = ", ".join(sorted(f"{node.title} ({node.id[:8]})" for node in prefixed))
+        names = ", ".join(sorted(f"{node.title} ({node.id[:_PRINTED_ID]})" for node in prefixed))
         raise CliError(f"{needle!r} is the start of several {kind} ids — type more of it: {names}")
     lowered = needle.lower()
     partial = [node for node in candidates if lowered in node.title.lower()]
@@ -127,7 +146,7 @@ def _find[NodeT: (Project, Step)](candidates: list[NodeT], needle: str, kind: st
         raise CliError(f"no {kind} matching {needle!r}")
     # The ids are the point of this message: it has to say what to type next, not just
     # that the guess failed.
-    names = ", ".join(sorted(f"{node.title} ({node.id[:8]})" for node in partial))
+    names = ", ".join(sorted(f"{node.title} ({node.id[:_PRINTED_ID]})" for node in partial))
     raise CliError(f"{needle!r} matches several {kind}s — use an id: {names}")
 
 

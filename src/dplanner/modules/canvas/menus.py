@@ -8,8 +8,8 @@ So the menu cannot offer verbs about something other than what they act on.
 
 Each target is a row of bands, rendered in order by ``fill_bands``, never an entry
 written here: a verb registered into a band appears in every menu that renders it, which is
-how Auto-progress (``modules/auto_progress/``) reaches the arrow and the mixed pick's
-*Links* by registering into Graph ▸ ``links``. It is a table rather than an entry of its own
+how a verb registered into Graph ▸ ``links`` reaches both the arrow and the mixed pick's
+*Links*. It is a table rather than an entry of its own
 in ``MENU_STRUCTURE`` because an entry there is a place verbs are *registered into*, and
 nothing registers here.
 ``docs/architecture/shell-ui.md``'s *A right-click is composed by what is under it* has the

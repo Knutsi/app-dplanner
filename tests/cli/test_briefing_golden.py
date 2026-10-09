@@ -1,11 +1,10 @@
 """What an agent is briefed with, held to the byte.
 
 One plan that exercises every block a briefing can carry — a description beside a separate
-instruction, a feature's passages and a step flowing into it, a PR, a review with a round
-posted, a collector and its source, a branch stretch and its landing, notes addressed and
-indexed, a code location — and ``dplanner agent prompt`` for each agent step in it, compared
-with the text under ``golden/briefings/``. A briefing is prose many functions compose; this is
-the test that says a refactor of where they live changed none of it.
+instruction, a feature's passages and a step flowing into it, a PR, a branch stretch and its
+landing, notes addressed and indexed, a code location — and ``dplanner agent prompt`` for
+each agent step in it, compared with the text under ``golden/briefings/``. A briefing is prose
+many functions compose; this is the test that says a refactor of where they live changed none of it.
 
 ``DPLANNER_REGEN_GOLDEN=1`` rewrites the files from the code as it stands — for a change that
 *means* to reword a briefing, never to make a failure go away.
@@ -22,8 +21,6 @@ TMP = "<tmp>"
 
 CASES = (
     "parser",
-    "review",
-    "collector",
     "spec-reader",
     "member",
     "landing",
@@ -77,10 +74,7 @@ def plan(cli, tmp_path, workspace):
         text("parser-agent.md", "Run the parser tests first."),
     )
     cli("github", "set", "Parser", "--branch", "feat/parser", "--pr", "12")
-    cli("step", "add", "widget", "Review", "--after", "Parser", "--agent", "--review")
     cli("status", "set", "Parser", "ready-for-review")
-    cli("review", "start", "Review")
-    cli("review", "post", "Review", "--text", "The parser drops the last line.")
     cli(
         "step",
         "add",
@@ -96,13 +90,12 @@ def plan(cli, tmp_path, workspace):
         "step",
         "add",
         "widget",
-        "Collector",
+        "Wire up",
         "--after",
         "Spec reader",
         "--agent",
-        "--auto-progress",
         "--describe-file",
-        text("collector.md", "Land the reader's work."),
+        text("wire-up.md", "Wire the reader in."),
     )
     cli(
         "step",
@@ -110,7 +103,7 @@ def plan(cli, tmp_path, workspace):
         "widget",
         "Sign in",
         "--after",
-        "Collector",
+        "Wire up",
         "--feature",
         "--agent",
         "--describe-file",
@@ -159,8 +152,6 @@ def plan(cli, tmp_path, workspace):
     )
     return {
         "parser": "Parser",
-        "review": "Review",
-        "collector": "Collector",
         "spec-reader": "Spec reader",
         "member": "Member",
         "landing": stretch["land"],
@@ -175,5 +166,15 @@ def test_the_briefing_is_unchanged(cli, plan, tmp_path, case):
     golden = GOLDEN / f"{case}.md"
     if os.environ.get("DPLANNER_REGEN_GOLDEN"):
         golden.parent.mkdir(parents=True, exist_ok=True)
+        golden.write_text(prompt, encoding="utf-8")
+    assert prompt == golden.read_text(encoding="utf-8")
+
+
+def test_the_coordinator_briefing_is_unchanged(cli, plan, tmp_path):
+    selection = (plan["parser"], plan["spec-reader"], "Wire up", plan["member"])
+    said = cli("agent", "coordinate", *selection, "--callsign", "kettle", "--json")
+    prompt = json.loads(said)["prompt"].replace(str(tmp_path), TMP)
+    golden = GOLDEN / "coordinator.md"
+    if os.environ.get("DPLANNER_REGEN_GOLDEN"):
         golden.write_text(prompt, encoding="utf-8")
     assert prompt == golden.read_text(encoding="utf-8")

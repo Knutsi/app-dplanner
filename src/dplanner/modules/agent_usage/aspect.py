@@ -86,8 +86,8 @@ def end(project_dir: Path, run: str, code: int | None, ended: str = "") -> Ledge
     """Say the run's shell ended — cheap, no reading — so the next harvest knows to read it
     once more and the sweep knows when to stop."""
     record = ledger.find(project_dir, run)
-    if record is None:
-        return None
+    if record is None or record.headless:
+        return record  # A headless run's end is its supervisor's to write.
     record = record.ended_at(ended or now_stamp(), code)
     ledger.write(project_dir, record)
     return record

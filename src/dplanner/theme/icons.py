@@ -407,6 +407,11 @@ def person_icon(color: str | QColor) -> QIcon:
     return glyph_icon("person", color)
 
 
+def playbook_icon(color: str | QColor) -> QIcon:
+    """A list ticked off: a playbook runs this step, stage by stage."""
+    return glyph_icon("playbook", color)
+
+
 def beaker_icon(color: str | QColor) -> QIcon:
     """A flask: this step keeps tests."""
     return glyph_icon("beaker", color)
@@ -415,11 +420,6 @@ def beaker_icon(color: str | QColor) -> QIcon:
 def shield_icon(color: str | QColor) -> QIcon:
     """A shield with a tick: a check stands for everything behind it."""
     return glyph_icon("shield", color)
-
-
-def review_icon(color: str | QColor) -> QIcon:
-    """A speech bubble: a review, an agent's conversation with the step it waits on."""
-    return glyph_icon("review", color)
 
 
 def merge_icon(color: str | QColor) -> QIcon:
@@ -583,7 +583,7 @@ def close_icon(color: str | QColor) -> QIcon:
 
 # What a step is and who works it, as row and menu icons: one glyph per name a card can wear
 # — the medallions ("tag" a milestone, "layers" a feature, "beaker" one carrying tests,
-# "shield" a check, "review" a review) and the key block's icon ("spark" an agent does it,
+# "shield" a check) and the key block's icon ("spark" an agent does it,
 # "person" a person does, "clock" it is a wait). It lives here, beside the glyphs, so a
 # surface that shows what a step is looks it up rather than keeping its own table.
 GLYPH_ICONS: dict[str, Callable[[str | QColor], QIcon]] = {
@@ -594,7 +594,6 @@ GLYPH_ICONS: dict[str, Callable[[str | QColor], QIcon]] = {
     "person": person_icon,
     "beaker": beaker_icon,
     "shield": shield_icon,
-    "review": review_icon,
     "ticket": ticket_icon,
     "clock": clock_icon,
     "branch": branch_icon,

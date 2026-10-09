@@ -26,14 +26,25 @@ this file only reads the arguments, names the actor and says what happened.
 
 from argparse import ArgumentParser, Namespace
 from collections.abc import Callable
+from pathlib import Path
+from typing import assert_never
 
 from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.lookup import find_project, find_step, project_arg, step_arg
 from dplanner.domain.model import Step
 from dplanner.domain.ordering import placed
-from dplanner.domain.workflow import Actor, AgentRun, EndClaim, Person
-from dplanner.modules.step_status.workflows import Kept, Performed, StatusWorkflow, perform
+from dplanner.domain.workflow import Actor, AgentRun, EndClaim, FollowUp, Person, Release
+from dplanner.modules.step_status.workflows import (
+    WITHOUT_REVIEW,
+    Kept,
+    Performed,
+    StatusWorkflow,
+    perform,
+)
 from dplanner.planning.status import Status, stored, word
+
+# Releases a step from the squad claim holding it, in the plan at the path; True when one did.
+type Releaser = Callable[[Path, Release], bool]
 
 
 def commands(
@@ -41,10 +52,11 @@ def commands(
     workflow: StatusWorkflow,
     in_agent_shell: Callable[[], bool],
     end_claim: Callable[[EndClaim], bool],
+    release: Releaser,
 ) -> list[CliCommand]:
     """``in_agent_shell`` says this command runs inside an agent CLI's shell — the actor is
-    then an agent run; ``end_claim`` ends an agent's at-work claim and answers whether one
-    stood."""
+    then an agent run; ``end_claim`` ends an agent's at-work claim and ``release`` hands a
+    step back from its squad's claim, each answering whether one stood."""
 
     def actor() -> Actor:
         return AgentRun() if in_agent_shell() else Person()
@@ -68,10 +80,13 @@ def commands(
         and the agent's claim it ended."""
 
         def say(kept: Kept | None, done: Performed) -> None:
+            ended = any(isinstance(each, EndClaim) for each in done.ended)
+            released = any(isinstance(each, Release) for each in done.ended)
             data = (
                 {"step": step.id, "status": status.value}
                 | ({"note": kept.note} if kept else {})
-                | ({"claim_ended": True} if done.ended else {})
+                | ({"claim_ended": True} if ended else {})
+                | ({"released": True} if released else {})
             )
             reason = (
                 (
@@ -82,11 +97,21 @@ def commands(
                 if kept
                 else ""
             )
-            released = " — no agent at work on it now" if done.ended else ""
-            context.report(data, f"{step.title}: {status.value}{reason}{released}")
+            stood = (" — no agent at work on it now" if ended else "") + (
+                " — released from its squad's claim, its worker stopped" if released else ""
+            )
+            context.report(data, f"{step.title}: {status.value}{reason}{stood}")
 
         write_status(
-            context, workflow, end_claim, step, status, actor=who, because=because, then=say
+            context,
+            workflow,
+            end_claim,
+            release,
+            step,
+            status,
+            actor=who,
+            because=because,
+            then=say,
         )
 
     return [
@@ -128,11 +153,13 @@ def write_status(
     context: CliContext,
     workflow: StatusWorkflow,
     end_claim: Callable[[EndClaim], bool],
+    release: Releaser,
     step: Step,
     status: Status,
     *,
     actor: Actor,
     because: str = "",
+    titled: str = WITHOUT_REVIEW,
     then: Callable[[Kept | None, Performed], None] = lambda _kept, _done: None,
 ) -> None:
     """Set a status the way every verb does: refused as one line, applied now, and its
@@ -142,24 +169,44 @@ def write_status(
     if why := workflow.refusal([step], status, actor, because):
         raise CliError(why)
     change, kept = workflow.set_status(
-        context.library, step, status, actor=actor, today=context.clock.today(), because=because
+        context.library,
+        step,
+        status,
+        actor=actor,
+        today=context.clock.today(),
+        because=because,
+        titled=titled,
     )
     if change.command is not None:
         context.apply(change.command)
 
     def settle() -> None:
-        done = perform(change.follow_ups, end_claim)
+        project_dir = context.store.project_dir
+        done = perform(
+            change.follow_ups,
+            end_claim,
+            lambda follow_up: release(project_dir(follow_up.project), follow_up),
+        )
         then(kept, done)
         if done.failed:
             raise CliError(
                 "; ".join(
-                    f"{step.title}: {status.value} is written, but the agent's claim on it"
-                    f" could not be ended ({why}) — `dplanner agent-work end` ends it"
-                    for _claim, why in done.failed
+                    f"{step.title}: {status.value} is written, but {_unperformed(claim)} ({why})"
+                    for claim, why in done.failed
                 )
             )
 
     context.after_flush.append(settle)
+
+
+def _unperformed(follow_up: FollowUp) -> str:
+    match follow_up:
+        case EndClaim():
+            return "the agent's claim on it could not be ended — `dplanner agent-work end` ends it"
+        case Release():
+            return "its squad's claim could not release it — `dplanner claim release` does"
+        case _:
+            assert_never(follow_up)
 
 
 def _configure_set(parser: ArgumentParser) -> None:

@@ -145,17 +145,18 @@ def test_the_window_refuses_inside_an_agents_shell(monkeypatch, capsys):
     own background process — and every agent launched from that window was a child
     session of the first; one `pkill` later, four were gone. The word is explicit now,
     and even the word refuses where an agent's shell is around it."""
-    from dplanner.domain.agents import shell_markers
+    from dplanner.domain.agents import shell_marker, shell_markers
     from dplanner.entry import main
-    from dplanner.modules import agent_harnesses, agent_shell_marker
+    from dplanner.modules import agent_harnesses
 
     # One marker per harness — the one that names the CLI, never a session detail
     # (TRACEPARENT is set by half the tooling in the world).
-    assert shell_markers(agent_harnesses()) == ("CLAUDECODE", "CODEX_THREAD_ID", "OPENCODE")
-    assert agent_shell_marker({"CODEX_THREAD_ID": "t1"}) == "CODEX_THREAD_ID"
-    assert agent_shell_marker({"CLAUDECODE": "1"}) == "CLAUDECODE"
-    assert agent_shell_marker({"CLAUDECODE": ""}) == ""  # Set to nothing is not set.
-    assert agent_shell_marker({"PATH": "/usr/bin"}) == ""
+    harnesses = agent_harnesses()
+    assert shell_markers(harnesses) == ("CLAUDECODE", "CODEX_THREAD_ID", "OPENCODE")
+    assert shell_marker(harnesses, {"CODEX_THREAD_ID": "t1"}) == "CODEX_THREAD_ID"
+    assert shell_marker(harnesses, {"CLAUDECODE": "1"}) == "CLAUDECODE"
+    assert shell_marker(harnesses, {"CLAUDECODE": ""}) == ""  # Set to nothing is not set.
+    assert shell_marker(harnesses, {"PATH": "/usr/bin"}) == ""
     monkeypatch.setenv("CLAUDECODE", "1")
     assert main([WINDOW_WORD]) == 2
     err = capsys.readouterr().err

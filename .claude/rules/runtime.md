@@ -50,6 +50,10 @@ paths:
   The one documented exception — storage operations that rewrite the working tree, which
   must complete before the app touches anything else — is `docs/architecture/persistence.md`'s
   *Storage operations that rewrite the working tree are synchronous*.
+  **No task runs for ever**: a runner deleted mid-run finishes its task as it goes, and a
+  body that asks a CLI something uses `core.process.run_bounded`, whose timeout ends every
+  process the CLI started — never a bare `subprocess.run` without a timeout.
+  `docs/architecture/runtime.md`'s *No task runs for ever* has the reasoning.
 - **Every action, command and slow slot is a span, and the journal is how you find out
   why.** `core/telemetry.py` is one process-wide journal, like `logging`: `ActionRegistry.run`
   (every presenter's one path — the menu bar's QAction goes through it too), `UndoService`'s

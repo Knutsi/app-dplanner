@@ -49,7 +49,7 @@ styling one surface by name.
 | a list of facts about this machine | one `StatusLine` per row, grouped | `modules/checklist/dialog.py` | `docs/screenshots/f13-checklist/` |
 | a page with nothing in it | `EmptyState(stands_in_for=…)` | `framework/widgets.py` | `table-empty-*` |
 | module-owned pages about one thing, in a modal | a tab per `InspectorSection`: a `QTabBar` named `InspectorTabs` over a `QStackedLayout` | `modules/step_properties/panel.py`, `modules/projects/project_dialog.py` | `s6-step-details/`, `s16-dialogs/project-agent-*` |
-| independent things listed on a page | `#ToolCard` wells on a `#CardLane`, `framework/cards.py`'s metrics and `card_rule()` | `framework/cards.py` | a check's Covers tab in Step Details |
+| independent things listed on a page | `#ToolCard` wells on a `#CardLane`, `framework/cards.py`'s metrics and `card_rule()` | `framework/cards.py` | a check's Covers tab in Step Details; the Control Centre's question cards: `s14-question-cards/` |
 | a panel a tab hosts beside its surface | `SidePanel`, `HostedSidePanel` | `framework/side_panel.py` | `s16-tests-view/test-panel-*` |
 | a caption over a block, a remark under it | `caption()`, `captioned()`, `note()`, `block()` | `framework/widgets.py` | the modal's form |
 | a line of facts that must never wrap | `note(one_line=True)`; `ElidedLabel` for another look | `framework/widgets.py` | the Coverage strip, the Specs source strip |
@@ -839,17 +839,14 @@ and one stylesheet rule for the progress bar:
   person came for.
 - **The only things that move are the agent ring, the Updating indicator and the glyph of
   a button whose work is running.** No fades, no slides: on a still surface every change
-  is a change of fact, so the eye is drawn only by facts. The one extension is the ring's
-  own motion carried along a link: an auto-progress arrow out of a step wearing the ring
-  moves its chevrons on the ring's clock, because the fact is the same one — somebody is at
-  work, and that work will move along this link on its own. The one ornament that moves is
+  is a change of fact, so the eye is drawn only by facts. The one ornament that moves is
   **Home's garden** (`f9-home/garden-*`): the page nobody works in, where the motion *is* the
   message — agents make the plan bloom — in the plan's own tones, still while off screen or
   after two seasons, and turned off in *Settings ▸ Home*. It is not a precedent: a
   surface where people work stays still, and what the canvas might do with
   `framework/motion/` is `docs/architecture/shell-ui.md`'s *Motion is a library*, not yet a rule.
-  **The pulse** (`f20-flow/flow-*`) is a card a person moves next — ready to merge, and
-  ready for review with no live agent to take it on — breathing a glow in its key block's
+  **The pulse** (`f20-flow/flow-*`) is a card a person moves next — ready to merge, or
+  ready for review — breathing a glow in its key block's
   own tone, amber or green, once every 3.2 s. It may move because it is the one fact on the
   canvas that is *waiting on the reader*: a mark would be one more thing to find, where a
   slow swell is found without looking for it, and a glance at the canvas finds every step
@@ -857,13 +854,21 @@ and one stylesheet rule for the progress bar:
   says somebody is at work, the pulse that somebody is waited on — and it runs on the
   ring's clock, so an idle canvas still ticks nothing. What it marks is the boards' *Ready
   to merge* and *Ready for review*, one answer (`docs/architecture/canvas.md`'s *A card pulses where
-  a person moves next*). The talk bubble on a link into a review is a medallion, and still.
+  a person moves next*).
   **The one slide** is a stack making way (`f19-restack/make-way-*`): while a card is
   dragged through a stack, the cards between ease aside over about 120 ms to open
   the slot it would drop into, and close up behind one dragged out. It is allowed because
   it is a fact moving, not an ornament — the drop is visible before it happens, which a
   jump would show too, but a jump of four cards under the hand loses which card went
-  where. It follows the hand and ends with the gesture; nothing slides on its own.
+  where. It follows the hand and ends with the gesture.
+  **The one grow** is a card's foot making room for its playbook strip
+  (`playbook-strip/growing-*`): when a pass starts on a step the card's bottom edge eases
+  down over a fifth of a second and the strip saying where the pass stands is uncovered,
+  and it folds back the same way when the pass is no longer shown. It may move because a
+  status arriving on a card nobody is looking at is a fact arriving, and a card that jumped
+  taller would read as a card that was always that tall; nothing else on the canvas moves
+  with it, and a tab that opens on a pass shows the strip at once. *Graph ▸ Reduce
+  Motion* makes it appear and go at once, as every motion added after it must allow.
 - **Selection follows the keyboard**: arrows move the row edge and whatever follows the
   selection follows it, as a click would.
 
@@ -927,9 +932,10 @@ from the code or a screenshot, and Debug ▸ Design Examples is what *yes* looks
     rebuild's end?
 14. Is every busy, ok and error a `StatusLine` in place, and every rewritten `QLabel` gone?
 15. Is any progress bar 4 px, accent and determinate?
-16. Does nothing fade, slide or animate except the ring (and the chevrons it carries along
-    an auto-progress link), the indicator, a working button's glyph and Home's garden — and
-    does that button carry a glyph, so nothing moves when it turns?
+16. Does nothing fade, slide or animate except the ring, the pulse, the indicator, a working
+    button's glyph, Home's garden, the restack's slide and a card's foot growing to its
+    playbook strip (which *Reduce Motion* stills) — and does that button carry a glyph, so
+    nothing moves when it turns?
 
 **The surfaces, as audited when the system was written (September 2026)** — what makes
 each read as Qt, and so what its pass has to change. A surface not named here was not
@@ -1018,6 +1024,9 @@ Tables and lists:
 - Index tree — unstyled or ink-only hover. *(The palette list is done — S15: it says when
   nothing matches, and speaks the strips' words.)* *(The Settings tree is done —
   S16: the picker list's wash and edge, folders as headings.)*
+- *(done — S14)* The Control Centre's question cards — a `#ToolCard` per open question on
+  a `#CardLane` under the strip, as tall as two cards before it scrolls: who asks over the rule, the ways to answer on one
+  line under it, quiet buttons only, and a field dressed as a dialog's.
 - *(done — S15)* Task and Agents browsers — one `RowWell` on the dialog frame; a task
   with no known fraction is a busy line. Milestones list — a `Table` with the day each
   milestone begins set in the cell, its colour and *Begin When the Previous Lands* on the

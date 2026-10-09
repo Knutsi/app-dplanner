@@ -475,8 +475,8 @@ is how the Steps lane stopped drawing the origin under every feature. Now: `coll
 
 A doubled arrow first cost 1.5 ms to lay out on every sync, placing each chevron with
 `QPainterPath.percentAtLength` at about 40 µs a call. `follow()` was changed to flatten the
-curve once and walk the polyline (0.2 ms). Now: `graph-model.md`'s *An auto-progress link is
-an aspect on the step that waits*.
+curve once and walk the polyline (0.2 ms). The doubled arrow left with auto-progress on
+2026-10-07 (below).
 
 ## 2026-09-27 — The project's forms left the card stack
 
@@ -555,8 +555,7 @@ Undoing a rename restored the old title over the agent's newer one, and nothing 
 commands now remember what their redo left and refuse otherwise. The first auto-launch
 spawned, claimed in memory and flushed afterwards, so a window that died in between launched
 the step again; `launch_due` now writes an intent before it spawns. Now: `persistence.md`'s
-*Adopting the other writer's changes in place*; `agents.md`'s *Auto-progress is launched by
-the window*.
+*Adopting the other writer's changes in place*; `agents.md`'s *One launch under both surfaces*.
 
 ## 2026-10-04 — Effects wait for the save in the window too; intents outlive a refusal
 
@@ -568,4 +567,288 @@ been refused in memory, so a new window launched the step again; an intent now g
 its step no longer reads due. Coalescing merged a value command across another writer's edit,
 so undo restored the older value over theirs; a merge now requires continuity. Now:
 `core.md`'s *A workflow is one function under both surfaces*; `persistence.md`'s *Adopting
-the other writer's changes in place*; `agents.md`'s *Auto-progress is launched by the window*.
+the other writer's changes in place*; `agents.md`'s *One launch under both surfaces*.
+
+## 2026-10-07 — The ledger record becomes the run; at-work is kept beside claims
+
+Before headless runs were built, their records were settled as one design (S3 of
+*Playbooks and autonomous work*). The ledger record, which said only what a launch
+consumed, becomes the run record at format 2 — turns, how each ended, the playbook stage —
+and the playbook ledger is its runs rather than a record of its own. A run's working files
+leave `tempfile.mkdtemp` in `/tmp`, which a reboot empties and which was a nearly full RAM
+disk in the 10-04 run, for `config_dir()/runs/`. Questions and claims are new files in the
+project. The machine-local at-work claim was weighed for absorbing into the committed claim
+and kept: its three-minute clock cannot be committed. Now: `agents.md`'s *Runs, questions
+and claims are three records in the plan*.
+
+## 2026-10-07 — A key resolves in the current project, or not at all
+
+`find_step` resolved a key or title in the current project when it could, and otherwise fell
+back to the whole library — so in the 10-04 run `DPLANNER_PROJECT=A dplanner review set R26`
+rewrote project B's S26. Now only an id of at least eight characters reaches past the current
+project (S7 of *Playbooks and autonomous work*). Now: `graph-model.md`'s *A key is the
+current project's, an id the library's*.
+
+## 2026-10-07 — Auto-progress and the window's auto-launch were removed
+
+An auto-progress link let a step start once a step it waited on read ready for review, so a
+collector could land three agents' branches and a review could start on its subject; the
+window then launched what that made due, on its own, from one window per library. Playbooks
+replace both (S5 of *Playbooks and autonomous work*): what used to be a second card and a
+flagged arrow is a stage on the one step, and DPlanner never starts the next step itself —
+the coordinator or a person does. Gone with it: the `auto_progress` aspect, its verbs and
+lint, `step add --auto-progress`, the Edge menu's toggle, `progression`'s `due` and `taken`
+(Ready for review is a person's turn whatever waits on it), *Now due*, `project graph`'s
+`==>`, the briefing's *Work you collect*, and the canvas's doubled, flowing and medallion
+arrows, so `EdgeAccent` is a lane alone. Review steps fall back to plain links until S6
+removes them. Kept: the unattended launch's intent and claim, as `launch_unattended`, for
+`dplanner agent run`. The stored `auto_progress.json` is retired with no successor: it is
+left as data nobody declares, and the id is in `RETIRED_IDS`, which no module may declare
+again. A machine's old `config_dir()/auto-launch/` and the `auto_launch` setting are left
+behind, read by nothing. Now: `agents.md`'s *One launch under both surfaces*;
+FORMAT.md's *Retiring a module*.
+
+## 2026-10-07 — Review steps were removed
+
+A review was a step: an agent step carrying `step_review` (keyed `R`; agent, lenses and a cap
+of rounds) whose subject was the step it `requires`, holding a conversation with that subject
+in `review_rounds` on itself — rounds of texts and stamps whose state was derived, never
+stored — through `dplanner review start|post|take|reply|approve|escalate|wait`. Both sides were
+briefed with the protocol, the review got a generated `## Instructions` and no worktree, and
+the window showed it read-only in a Review tab and *Review Conversation…*. Playbooks replace it
+(S6 of *Playbooks and autonomous work*): a review is a gate stage on the one step, its findings
+a typed verdict on a run, its round cap a question — what made a second card per step and an
+agent pair waiting on each other in two terminals. Gone with it: the aspect, the verbs, `step
+add --review`, the lint (`review.subject`, `review.bypassed`), the toggle, tab, template,
+medallion and glyph, `Kind.REVIEW`, the briefing's review instruction, epilogue, *Work you
+review* and *Review rounds with …*, `due_turns`, and the rule that a review runs in no worktree
+(`no_worktree`; every surface now reads `uses_worktree`). Kept: what its ledger taught —
+`playbooks.md`'s *What of the review rounds ledger survives* — and the profile lookup by
+harness, as `launch_unattended(harness=)` for a playbook role. `step_review` and
+`review_rounds` are retired with no successor: a plan's files stay as data nobody declares and
+the ids are in `RETIRED_IDS`; a step that carried `step_review` reads as the agent step it also
+was. The full reasoning as it stood is the review section of `agents.md` at `dfc0de0` (`git
+show dfc0de0:docs/architecture/agents.md`). Now: `playbooks.md`; FORMAT.md's *Retiring a
+module*.
+
+## 2026-10-07 — A turn's usage is counted from its own stream, not from cursors
+
+FORMAT.md's format 2 was designed with each turn's usage read between two cursors into the
+vendor's session records, a reader per harness, so that runs sharing a session would count
+only their own turns. Building the supervisor showed the stream it already tees is exactly
+one turn's window: the counts are read from it as the turn ends, the harvest leaves a
+headless record to its supervisor, and no cursor API was built. The cost is subagents the
+stream does not report. Now: `agents.md`'s *A headless run is driven by its supervisor*.
+
+## 2026-10-07 — One launch under both surfaces; the intent file and the unattended launch left
+
+The window's Run Agent built the briefing, prepared the worktree inside the terminal's
+wrapper script, spawned the terminal and claimed the step; `launch_unattended`, kept from the
+auto-launch for `agent run`, did the same with an intent file (`intents.py`) written before
+its shell, and had no caller. `dplanner agent run` (S11) needed the launch without a terminal,
+and so without a script to make the worktree in. Now both surfaces run one launch
+(`agent_launch/launch.py`) and apply one claim (`workflows.py`'s `run_agent`): the worktree
+is prepared by git in Python (`agent_briefing/worktree.py`'s `prepare`, the scripts' ~90
+lines of sh and of cmd gone), the run's ledger record is written before anything spawns and
+is the intent, and the claim is applied only once the run started. `launch_unattended`, its
+profile-by-harness lookup and `intents.py` were removed; a playbook role's agent is a
+`Profile` built from its harness. `planning/status.py`'s `record_started` went with them —
+the claim is the workflow's `Change`. The launch profiles moved from QSettings to
+`config_dir()/agent-profiles.json`, adopted once by the window, so the CLI can read
+`--profile`. A supervisor is started as `sys.executable -m dplanner`, not the `dplanner` on
+PATH. Now: `agents.md`'s *One launch under both surfaces*.
+
+## 2026-10-07 — A launch saves its claim before it starts, under the step's lock
+
+S11 first started the run and claimed the step afterwards, keeping the window's rule that a
+failed launch claims nothing. Kettle Watch's review showed the cost: a flush another writer
+refused left an agent running on a step that read pending, and two launches of one step
+could both pass the "no run yet" check. Now a launch holds the step's OS launch lock from
+its first check to its start, saves its record and its claim first and starts the run as
+the follow-up, withdrawing the claim when the start fails; `revive` settles a launch cut off
+in between. Now: `agents.md`'s *One launch under both surfaces*.
+
+## 2026-10-07 — A limit waits in its supervisor instead of exiting
+
+The supervisor parked a run on a usage limit and exited, like every other park, and the run
+stood until somebody resumed it with `--prompt reset`. A limit is the one park no person is
+needed for — the vendor says when it ends — so its supervisor now waits for the reset and the
+clock answers the question, and *Retry now* is a person answering it sooner. Now:
+`agents.md`'s *A headless run is driven by its supervisor* and `docs/architecture/agents.md`'s
+*A usage limit waits in its supervisor, and Retry now is an answer*.
+
+## 2026-10-08 — A person's stopped status releases the step from its squad's claim
+
+Setting a step done, blocked or under review used to end the agent's at-work banner and do
+nothing else: "nothing yet tells the agent to stand down". With claims in the plan, a
+person's stopped status also hands that one step back from the squad claim holding it and
+stops its worker — a second follow-up, `Release`, beside `EndClaim` — while a worker reaching
+ready-for-review releases nothing, because its coordinator verifies and merges first. Now:
+`agents.md`'s *Runs, questions and claims are three records in the plan*.
+
+## 2026-10-08 — Claim ownership is decided locally, per step; a claim publish never rebases
+
+The first claims ranked rival claims by which file reached the remote first, fetched and
+rebased the person's checkout to publish a heartbeat, and stopped a worker only on a person's
+status. Kettle Watch found a growing claim outranking a squad that took the step first, a
+superseded squad renewing its way back, release and Clear leaving workers running, a fenced
+run blocking its new owner, the window launching another squad's step, and a heartbeat's
+rebase racing the window's Save. Now each step carries its own `acquired` stamp, a takeover's
+`supersedes` is per step and final, every step that leaves a squad goes through one function
+that stops its worker, both surfaces check ownership in the one launch and again before the
+start, and a claim publish commits by pathspec under the repository's sync lock and never
+fetches. Arbitration between machines waits for multiplayer. Now: `agents.md`'s *Runs,
+questions and claims are three records in the plan*.
+
+## 2026-10-08 — A pass's phrase rides a strip of its own, not the agent chip
+
+*The mark on the one card* had the phrase riding the agent run's chip. Built, the chip was the
+wrong carrier: it says a run is live, and a pass spends most of its life parked, waiting on a
+gate or between stages, when no run is. It became a second strip under the card, after the
+branch strip's pattern, but kept out of the footprint — a pass lasts hours, and counting it
+would have moved the ambient layout whenever one started. The card's foot grows to it on the
+motion clock, which now measures motion in time. Now: `canvas.md`'s *A card running a playbook
+says where its pass stands* and `playbooks.md`'s *The mark on the one card*.
+
+## 2026-10-08 — Landings default to *Land*, not *Review only*
+
+S4 had a branch landing default to *Review only*: a cross-vendor review of the branch, then a
+person. The S21 dogfood (note N180) found the gap — with no work stage, the landing's own work
+never ran: nothing merged the mainline in, ran the checks or opened the branch's PR, so the
+review read a branch with no landing PR. Knut chose a preset that does the work first: *Land*,
+execute ⇄ review (other agent) → human review, where the person merges because DPlanner never
+merges into the mainline. *Review only* stays, for a PR that already exists. Now:
+`playbooks.md`'s *The presets* and *A step names its playbook*.
+
+## 2026-10-08 — A pass through its stages waits for the merge; it is not *Done* yet
+
+The strip said *Done* the moment a pass had nothing left to run. The S21 dogfood found that a
+lie on every playbook that produces work: the pass ends at Ready for review with a PR nobody
+has merged into the mainline, and DPlanner never merges there, so the card read *Done* on a
+step a person still had to land. Such a pass now reads *Waits for merge* (warn) until the step
+reads done, and is not ended, so its strip outlives `ENDED_SHOWN`; a playbook with nothing to
+merge (*Spike*) still reads *Done* on its approval. Now: `playbooks.md`'s *The mark on the one
+card*.
+
+## 2026-10-08 — A claim's leaving halts its pass; a stop holds the lock through its plan write
+
+Ending a squad claim, or releasing a step from it, fenced only the claim's unfinished runs, so
+a pass between stages or waiting at a gate went on: answering the gate launched the next stage
+as a run under no claim. And *Stop Playbook* let the step's launch lock go once the records
+were written, before the plan's change and the claim's release, so a launch in that moment
+could have its new pass reset and its claim released by the old stop. Kettle Watch found both
+in the S23 landing review. Now `ownership` halts the step's pass under the claim with the
+engine's stop (`engine.halt_claimed`), and `playbook stop` holds the lock until its follow-ups
+are done. Now: `agents.md`'s *Runs, questions and claims are three records in the plan* and
+`playbooks.md`'s *Stopping a pass*.
+
+## 2026-10-08 — A Codex plan or review writes its run and DPlanner's records, not read-only
+
+A Codex plan and review ran `sandbox_mode="read-only"`, which kept the code safe and also
+refused the `dplanner agent-work start` its briefing opens with and the `dplanner question ask`
+door: a reviewer could neither say it had begun nor ask. They now run from the run directory
+(`-C`) in `workspace-write`, the plan repository and the config directory their only other
+writable roots, the checkout named in the prompt to read. Now: `playbooks.md`'s *Each stage is
+one headless turn per harness*.
+
+## 2026-10-08 — A turn that outlived its supervisor is ended, not refused
+
+A supervisor started on a run whose recorded turn was still live refused it — "still
+running" — on the theory that its own supervisor had it. Holding the run's lock proves that
+supervisor gone, so nothing would ever finish the turn or advance its pass. It is now ended by
+identity and retried as a lost turn. Now: `agents.md`'s *One supervisor per run*.
+
+## 2026-10-08 — A Codex plan or review writes control directories, not the project
+
+A Codex plan or review had the whole project directory as a writable root, so with a plan
+colocated at the code checkout's root and the step working in that checkout, its planner and
+reviewer could write the code. Kettle Watch found it in round 2 of the S23 landing review. The
+roots are now the project's `questions/` and `claims/` and the config directory, any that is
+or holds the code dropped. Now: `playbooks.md`'s *Each stage is one headless turn per harness*.
+
+## 2026-10-08 — A pass pins the claim it started under
+
+A later stage launched under whichever squad held the step when it was prepared. Ending a claim
+skips a launch lock that is busy, and an ended claim reads as no claim, so an advance already
+preparing its next stage launched it solo. Kettle Watch found it in round 2. The pass now pins
+its first run's claim and a stage whose claim has gone is a `blocked` card. Now:
+`playbooks.md`'s *One verb starts a pass*.
+
+## 2026-10-09 — The Playbook block's overrides are revealed, not greyed
+
+*Rounds* and *Reviewer* stood greyed under *Default* and under a playbook with nothing for them
+to apply to, so every step's Details tab carried two dead fields. Knut, testing the playbooks
+branch, asked for a gradual reveal: they now appear only under a playbook that has a gate
+(rounds) or another agent's review (reviewer). Disabled-never-hidden stays the rule for verbs
+and aspect toggles; a field with nothing to apply to is not a verb waiting on a reason. Now:
+`playbooks.md`'s *A step names its playbook*.
+
+## 2026-10-09 — A headless run is followed and taken over from the Agents browser
+
+The Agents browser listed only the terminals this window launched. A headless run, which is
+every playbook stage, could be seen only as the card's one phrase, and its session could be
+picked up only by hand. *Resume Agent* had been left unbuilt on purpose, because the hint
+under an ended row was enough. Knut asked for progress he could watch and a session he could
+open (#249). Now headless runs are rows beside the shells. *Follow* opens a terminal on
+`dplanner agent follow`. *Open Session* opens one on `agent open-session`, which fences the
+run as taken over by a person, releases the step from its squad and resumes the session
+interactively. The browser's tick runs for the window's life instead of only while a shell
+is live. `passes.until_words` folded into `limits.clock`, and the question-kind words moved
+to `questions.waits_for`, so the card and the browser draw from one place. Now:
+`agents.md`'s *A headless run is watched from the Agents browser, and taken over by a fence*.
+
+## 2026-10-09 — Open Session takes the whole session, under the launch lock
+
+The first *Open Session* fenced the one run it was opened on, and opened an ended run's
+session with no fence at all. Review found the gap: a pass's runs share a session, so an
+ended plan row could hand a person the session its execute run was still writing, and a gate
+answered meanwhile would launch the next stage into it. A takeover that timed out also never
+released its step, because the retry saw the run over. Now the takeover holds the step's
+launch lock, halts the pass with the engine's stop, stops every run on the session, and
+releases by the run's claim. The window's terminal starts on a task, and Follow reads the
+machine id without minting one. Now: `agents.md`'s *A headless run is watched from the
+Agents browser, and taken over by a fence*.
+
+## 2026-10-09 — A child `dplanner` names its project
+
+The window, a supervisor, an advance and a wake ran their `dplanner` verbs with the library
+alone and the starter's working directory, so each child resolved its project from wherever
+the window was started. Started in a checkout of a code repository three library projects
+plan, Run Playbook was refused with *pass --project*, and the refusal was a ten-second
+status-bar line: the gesture "did nothing". Now `supervisor.dplanner_argv` takes the project
+and every builder passes it, a child runs from its project's directory, a refusal of a window
+verb stands as a notice, and each verb's exit code and line are journaled. Now: `agents.md`'s
+*Every `dplanner` a process of ours starts names its project*.
+
+## 2026-10-09 — A pass with nothing to merge waits for review, not merge
+
+*Waits for merge* (2026-10-08) assumed every pass that produced work left a PR. Knut's test step
+S30 ran *Plan → execute ⇄ review* on work that was a temp file: the pass ended at Ready for
+review with no PR, and the strip asked for a merge there was nothing to make. *Waits for merge*
+now needs a PR the step's GitHub aspect records and has not seen merged; with none, a pass
+through its stages reads *Waits for you · ready for review* (warn) until the step reads done.
+Now: `playbooks.md`'s *The mark on the one card*.
+
+## 2026-10-09 — A click on a card's playbook strip opens the pass, not a tip
+
+A click on the playbook strip showed its tooltip — the stages, the current one marked — and
+still picked the card. Knut, testing the playbooks branch, met a pass that ended at *Waits for
+you · ready for review* with no PR and asked how he would review it: the tip said the same
+phrase again, and the implementer's summary, the verdicts and the declined findings lived only
+in run records. The click now opens Step Details on the step's Playbook tab, which shows them,
+what the work changed in git and the verbs — Accept, Send Back with a note — and a person's
+send-back became a gate of its own, `look`, rather than a verb outside the pass. Now:
+`canvas.md`'s playbook-strip bullet and `playbooks.md`'s *A pass is reviewed in Step Details'
+Playbook tab*.
+
+## 2026-10-09 — A verdict on a pass names the pass it was given on
+
+The Playbook tab's first cut trusted its last reading: Accept of a pass that is through set the
+step done in the window, on the undo stack, and Pass and Send Back ran `playbook accept|
+send-back` naming only the step, which acted on whatever stood by then. Kettle Watch's review
+found the three ways that went wrong — a click meant for one gate passing the next, done set on
+work a send-back had reopened or an open PR still held, and an old pass looped back beside a
+plain run in the same worktree — and that an agent could give the person's look. Now both
+surfaces run the CLI verbs, which name the pass, its latest run and its gate and are refused
+under the step's launch lock when any has moved on; `look` is person-only; and Accept is no
+longer an undo step. Now: `playbooks.md`'s *A pass is reviewed in its step's Playbook tab*.

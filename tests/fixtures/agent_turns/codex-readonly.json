@@ -1,0 +1,24 @@
+{
+ "cli": "codex",
+ "exit": 0,
+ "probe": "codex-readonly",
+ "source": "docs/research/2026-10-07-headless-agents/ experiment E6: exec -s read-only asked to edit; explained and returned the change as text",
+ "signal_sent": null,
+ "timed_out_after_s": null,
+ "stdout_lines": 9,
+ "stdout_head": [
+  "{\"type\":\"thread.started\",\"thread_id\":\"01a1149f-4f99-7b91-b124-c68296dc1f69\"}",
+  "{\"type\":\"turn.started\"}",
+  "{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"I’ll check `calc.py` and the repository instructions, then add the function, verify it, and commit if workspace permissions allow.\"}}",
+  "{\"type\":\"item.started\",\"item\":{\"id\":\"item_1\",\"type\":\"command_execution\",\"command\":\"/usr/bin/bash -lc 'pwd; rg --files -g AGENTS.md -g calc.py; git status --short'\",\"aggregated_output\":\"\",\"exit_code\":null,\"status\":\"in_progress\"}}",
+  "{\"type\":\"item.completed\",\"item\":{\"id\":\"item_1\",\"type\":\"command_execution\",\"command\":\"/usr/bin/bash -lc 'pwd; rg --files -g AGENTS.md -g calc.py; git status --short'\",\"aggregated_output\":\"<scratch>/hx/w/e6ro\\ncalc.py\\n\",\"exit_code\":0,\"status\":\"completed\"}}",
+  "{\"type\":\"item.started\",\"item\":{\"id\":\"item_2\",\"type\":\"command_execution\",\"command\":\"/usr/bin/bash -lc 'cat calc.py; for p in /tmp/AGENTS.md <tmp>/AGENTS.md <tmp>/AGENTS.md <tmp>/AGENTS.md <scratch>/AGENTS.md <scratch>/hx/AGENTS.md <scratch>/hx/w/AGENTS.md; do if [ -f \\\"$p\\\" ]; then cat \\\"$p\\\"; fi; done'\",\"aggregated_output\":\"\",\"exit_code\":null,\"status\":\"in_progress\"}}",
+  "{\"type\":\"item.completed\",\"item\":{\"id\":\"item_2\",\"type\":\"command_execution\",\"command\":\"/usr/bin/bash -lc 'cat calc.py; for p in /tmp/AGENTS.md <tmp>/AGENTS.md <tmp>/AGENTS.md <tmp>/AGENTS.md <scratch>/AGENTS.md <scratch>/hx/AGENTS.md <scratch>/hx/w/AGENTS.md; do if [ -f \\\"$p\\\" ]; then cat \\\"$p\\\"; fi; done'\",\"aggregated_output\":\"def add(a, b):\\n    return a + b\\n\",\"exit_code\":0,\"status\":\"completed\"}}",
+  "{\"type\":\"item.completed\",\"item\":{\"id\":\"item_3\",\"type\":\"agent_message\",\"text\":\"The workspace is read-only, so I couldn’t edit `calc.py` or create a Git commit. The required addition is:\\n\\n```python\\ndef multiply(a, b):\\n    return a * b\\n```\\n\\nOnce writing is enabled, run:\\n\\n```bash\\npython3 -c \\\"import calc; print(calc.multiply(3,4))\\\"\\ngit add calc.py\\ngit commit -m \\\"Add multiply function\\\"\\n```\\n\\nExpected verification output: `12`.\"}}",
+  "{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":46911,\"cached_input_tokens\":42880,\"cache_write_input_tokens\":0,\"output_tokens\":486,\"reasoning_output_tokens\":28}}"
+ ],
+ "stdout_tail": [],
+ "stderr_tail": [
+  "Reading additional input from stdin..."
+ ]
+}

@@ -1,0 +1,26 @@
+--- /home/knut/Code/app-dplanner/docs/research/2026-10-03-playbooks/spike/probes/fake_api.py	2026-10-04 12:45:25.091108748 +0200
++++ $SCRATCH/fake_api.py	2026-10-07 06:32:58.484364668 +0200
+@@ -22,6 +22,7 @@
+     "404model": (404, "not_found_error", "model: claude-retired-1"),
+     "credit": (400, "invalid_request_error", "Your credit balance is too low to access the Anthropic API."),
+     "429": (429, "rate_limit_error", "Number of request tokens has exceeded your rate limit."),
++    "usage": (429, "rate_limit_error", "This request would exceed your account's rate limit. Please try again later."),
+     "529": (529, "overloaded_error", "Overloaded"),
+     "500": (500, "api_error", "Internal server error"),
+ }
+@@ -52,6 +53,15 @@
+             self.send_header("content-length", str(len(body)))
+             if status == 429:
+                 self.send_header("retry-after", "20")
++                if mode == "usage":
++                    reset = str(int(time.time()) + 3 * 3600)
++                    self.send_header("anthropic-ratelimit-unified-status", "rejected")
++                    self.send_header("anthropic-ratelimit-unified-reset", reset)
++                    self.send_header("anthropic-ratelimit-unified-representative-claim", "five_hour")
++                    self.send_header("anthropic-ratelimit-unified-5h-status", "rejected")
++                    self.send_header("anthropic-ratelimit-unified-5h-reset", reset)
++                    self.send_header("anthropic-ratelimit-unified-5h-utilization", "1.0")
++                    self.send_header("x-should-retry", "false")
+             self.end_headers()
+             self.wfile.write(body)
+ 

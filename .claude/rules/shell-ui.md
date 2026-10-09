@@ -284,7 +284,7 @@ paths:
   holds the Tests tabs' own panel toggle for the same reason). A verb whose subject is picked
   *on the canvas* and is not a step is Graph's: `new` (New Step, Paste's second seat — a
   point), `select` (Find, Lasso, Select Nearest — the plane as a place), `narrow` (Select
-  Only Steps / Only Links — a mixed pick), `links` (Remove Link, Auto-progress, Redirect — a
+  Only Steps / Only Links — a mixed pick), `links` (Remove Link, Redirect — a
   picked arrow), then `arrange` (Sort, Layout, Divide), `look` (Frame, Mark, Snap to Grid,
   Background — the band the strip's *Options* face renders whole) and `panels` (what stands
   beside the canvas inside the tab). A verb about picked **steps** is Step's — Rename,

@@ -16,6 +16,10 @@ carrying the runner, the body and the task, and the GUI thread empties that hand
 on the next turn of the event loop, the way ``deleteLater`` works — once the completion
 has been delivered. Whatever the worker still holds afterwards is an empty shell.
 
+A runner its owner deletes mid-run — a dialog closed while its body still works — finishes
+its task as it goes, because the completion the worker queues has nowhere left to land: the
+task centre once listed "Checking this machine" for good after a checklist was closed early.
+
 Cancellation is cooperative: the body polls ``cancel_requested()`` at its safe points
 and simply returns; the runner cannot tear a body down. Owners that want a task to
 outlive its finish in the task centre pass ``keep_finished=True`` (see tasks.py).
@@ -23,15 +27,18 @@ The cancel/progress/detail knobs exist for long AI work; a storage commit delibe
 uses none of them — one must not be torn down halfway.
 """
 
+import functools
 import logging
 import threading
 from collections.abc import Callable
 
-from PySide6.QtCore import QObject, QTimer, Signal
+from PySide6.QtCore import QMetaObject, QObject, QTimer, Signal
 
 from dplanner.framework.tasks import Task, TaskService
 
 logger = logging.getLogger(__name__)
+
+ABANDONED = "abandoned: what started it was closed while it ran"
 
 
 class TaskTimeoutError(RuntimeError):
@@ -77,6 +84,7 @@ class TaskRunner(QObject):
         super().__init__(parent)
         self._tasks = tasks
         self._task: Task | None = None
+        self._orphaned = QMetaObject.Connection()
         self._completed.connect(self._on_completed)
         self._progress.connect(self._on_progress)
 
@@ -104,6 +112,11 @@ class TaskRunner(QObject):
             cancel_prompt=cancel_prompt,
             keep_finished=keep_finished,
         )
+        # A runner deleted mid-run — its owner, a dialog, was closed — has nowhere to deliver
+        # the completion, so its task ends with it: a task never outlives what would end it.
+        self._orphaned = self.destroyed.connect(
+            functools.partial(self._tasks.finish, self._task, error=ABANDONED)
+        )
         self.busy_changed.emit(True)
         handoff = _Handoff(self, body, self._task)
         completed = self._completed
@@ -119,8 +132,8 @@ class TaskRunner(QObject):
             try:
                 completed.emit(handoff, error, timed_out)
             except RuntimeError as exc:
-                # The runner's C++ side is gone: its owner was torn down (a
-                # session close) while the body ran. Nothing is left to deliver to.
+                # The runner's C++ side is gone: its owner was torn down while the body
+                # ran, and its task was finished as it went (``run``'s ``_orphaned``).
                 logger.warning("task completion dropped, runner deleted mid-run: %s", exc)
 
         threading.Thread(target=work, daemon=True).start()
@@ -144,6 +157,7 @@ class TaskRunner(QObject):
         if task is not self._task:  # A completion after the runner was reset: dropped.
             return
         self._task = None
+        QObject.disconnect(self._orphaned)
         self._tasks.finish(task, error=error or None, timed_out=timed_out)
         # busy_changed(False) first: a failed handler may open a modal dialog, and
         # resume hooks (autosave) must not wait behind it.

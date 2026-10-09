@@ -85,13 +85,14 @@ class CanvasDeps:
     # per sync: the answer for a milestone comes from a schedule walk, and the walk is the
     # same for every step in the project.
     step_accents: Callable[[str], dict[StepId, NodeAccent]] = field(default=_no_accents)
-    # Says an accent has changed for a reason the model cannot name. `step_accents` is
+    # Each says an accent has changed for a reason the model cannot name. `step_accents` is
     # otherwise re-read whenever the project changes, which covers everything the plan
-    # holds; what is wrong with a plan is *derived* from it, on a settle of its own, so it
-    # lands after the change that caused it and has to say so itself.
-    accents_changed: "CoreSignal[str] | None" = None
-    # The same for the arrows, keyed (waiter, kind, source): which links auto-progress, and
-    # which of those carry work that is being done right now. Absent means a plain arrow.
+    # holds; what is wrong with a plan is *derived* from it, on a settle of its own, and who
+    # holds a step is read from files beside it — each lands apart from any change of the
+    # model and has to say so itself.
+    accents_changed: "tuple[CoreSignal[str], ...]" = ()
+    # The same for the arrows, keyed (waiter, kind, source): which lie on a feature branch's
+    # lane. Absent means a plain arrow.
     edge_accents: Callable[[str], Mapping[Edge, EdgeAccent]] = field(default=_no_edge_accents)
     # Which of a project's cards wear a branch strip under the body, and so stand
     # ``STRIP_H`` taller — the same steps whose accent names one. The canvas sizes its cards
