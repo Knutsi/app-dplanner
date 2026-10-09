@@ -401,7 +401,7 @@ class _Reading:
         """A gate asked for changes: back to the work, unless it has given its last verdict."""
         if self._verdicts(gate) < self._cap(gate):
             return self._loop_back(gate, findings)
-        declined = self._declines()
+        declined = declines(self.entries)
         listed = [{**f, "declined": declined.get(ref_of(f), "")} for f in findings]
         return Ask(
             gate,
@@ -500,9 +500,6 @@ class _Reading:
             for w in self._settled_answers(gate, purpose)
         )
 
-    def _declines(self) -> dict[tuple[str, str, int], str]:
-        return declines(self.entries)
-
     def _open_findings(self, gate: str) -> tuple[Mapping[str, Any], ...]:
         """The gate's latest findings — its last review's, or the note its last answer of
         *changes* gave: what one more round acts on."""
@@ -527,7 +524,7 @@ class _Reading:
     def _history(self, gate: str) -> tuple[Mapping[str, Any], ...]:
         """What the gate found in earlier rounds, with the implementer's reason where it
         declined a finding — what the next round reads."""
-        declined = self._declines()
+        declined = declines(self.entries)
         found = []
         for run in self._run_list(gate):
             listed = _verdict(run).get("findings")
