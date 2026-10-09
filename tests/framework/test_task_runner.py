@@ -211,3 +211,26 @@ def test_a_failed_run_does_not_poison_the_remembered_duration(app) -> None:
     bad.monotonic_start -= 90.0
     service.finish(bad, "the remote refused")
     assert service.duration_of("Cloning") == pytest.approx(2.0, abs=0.5)
+
+
+def test_a_runner_its_owner_deletes_mid_run_ends_its_task(app, qtbot) -> None:
+    """A dialog closed while its sweep ran took its runner with it, and the task centre
+    listed the sweep as running for good."""
+    from PySide6.QtCore import QCoreApplication, QEvent, QObject
+
+    tasks = TaskService()
+    owner = QObject()
+    runner = TaskRunner(tasks, parent=owner)
+    gate = threading.Event()
+
+    def wait_for_gate() -> None:
+        gate.wait(timeout=5)
+
+    assert runner.run("Checking this machine", wait_for_gate)
+    del runner
+
+    owner.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    gate.set()
+
+    assert tasks.active() == []

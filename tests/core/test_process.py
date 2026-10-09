@@ -1,6 +1,7 @@
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,8 @@ from dplanner.core.process import (
     ProcessStamp,
     detached_flags,
     is_live,
+    process_alive,
+    run_bounded,
     spawn_detached,
     stamp_of,
 )
@@ -59,3 +62,31 @@ def test_a_process_that_exited_has_no_stamp():
     )
     assert stamp_of(int(done.stdout)) is None
     assert stamp_of(0) is None
+
+
+def test_a_bounded_run_answers_with_what_the_process_said():
+    done = run_bounded([sys.executable, "-c", "print('said'); raise SystemExit(3)"], timeout=30)
+    assert (done.returncode, done.stdout.strip()) == (3, "said")
+
+
+def test_a_bounded_run_that_overruns_ends_what_it_started_too(tmp_path: Path):
+    """The helper a CLI leaves behind holds the output pipe: ``subprocess.run``'s timeout
+    ends the CLI and then waits on the pipe for as long as the helper lives."""
+    marker = tmp_path / "helper.pid"
+    helper = "import time; time.sleep(60)"
+    starter = (
+        "import subprocess, sys, time; "
+        f"helper = subprocess.Popen([sys.executable, '-c', {helper!r}]); "
+        f"open({str(marker)!r}, 'w').write(str(helper.pid)); "
+        "time.sleep(60)"
+    )
+    started = time.monotonic()
+    with pytest.raises(subprocess.TimeoutExpired):
+        run_bounded([sys.executable, "-c", starter], timeout=2)
+
+    assert time.monotonic() - started < 15
+    pid = int(marker.read_text())
+    deadline = time.monotonic() + 5
+    while process_alive(pid) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert not process_alive(pid)

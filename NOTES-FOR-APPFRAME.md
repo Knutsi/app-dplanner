@@ -885,6 +885,12 @@ signal instance and a `_Handoff` (runner, body, task), which the GUI thread empt
 event-loop turn after delivery. A completion emitted after the runner's C++ side is gone is
 logged and dropped.
 
+**A task never outlives its runner.** `run()` connects the runner's `destroyed` to finishing
+its task (error `ABANDONED`), and the completion disconnects it. Without it, a runner whose
+owner was deleted mid-run — a dialog with `WA_DeleteOnClose`, closed while its body worked —
+dropped its completion and left the task listed as running for good: the checklist's
+"Checking this machine · 9m 23s · about 0s left".
+
 `current_task`, `abandon` and `detail_factory` are gone (no callers).
 
 **Upstream?** yes — whole; the template's runner is the same file with the same hazard.
@@ -1139,6 +1145,11 @@ stranger as its own process running. `process_alive` (pid only) moved here from
 **Upstream?** yes — any desktop application that opens a second window of itself; the stamp
 for any application that records a process it must find again after a restart. The run marker
 does not belong upstream. It is DPlanner's own.
+
+`run_bounded()`: a CLI asked a question from a task, in a process group of its own (a group,
+not a session — it is waited on), killed with everything it started when the timeout runs
+out. `subprocess.run`'s own timeout ends the direct child only. **Upstream?** yes, with the
+task runner.
 
 ## `core/repository.py`
 

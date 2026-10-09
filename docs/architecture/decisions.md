@@ -774,6 +774,15 @@ preparing its next stage launched it solo. Kettle Watch found it in round 2. The
 its first run's claim and a stage whose claim has gone is a `blocked` card. Now:
 `playbooks.md`'s *One verb starts a pass*.
 
+## 2026-10-09 — The Playbook block's overrides are revealed, not greyed
+
+*Rounds* and *Reviewer* stood greyed under *Default* and under a playbook with nothing for them
+to apply to, so every step's Details tab carried two dead fields. Knut, testing the playbooks
+branch, asked for a gradual reveal: they now appear only under a playbook that has a gate
+(rounds) or another agent's review (reviewer). Disabled-never-hidden stays the rule for verbs
+and aspect toggles; a field with nothing to apply to is not a verb waiting on a reason. Now:
+`playbooks.md`'s *A step names its playbook*.
+
 ## 2026-10-09 — A headless run is followed and taken over from the Agents browser
 
 The Agents browser listed only the terminals this window launched. A headless run, which is

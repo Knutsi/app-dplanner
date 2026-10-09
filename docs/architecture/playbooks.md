@@ -198,6 +198,9 @@ role) — and **absence encodes the default**, as every aspect's settings do, so
 change of default reaches every step that never chose. Its id is `step_playbook`, and the
 project's entry lives under the same id. `aspect.py`'s `resolve` is the order below and
 `inherited` is what *Default* means for one step — the row the panel's dropdown names.
+The Details block reveals each override only under a choice that can use it — *Rounds* under a
+playbook with a gate, *Reviewer* under one another agent reviews in — and shows neither under
+*Default*, so a step with no playbook of its own reads as one line.
 
 **Which playbook a step runs:**
 1. its own aspect;
