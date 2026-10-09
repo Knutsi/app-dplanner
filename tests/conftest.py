@@ -426,6 +426,36 @@ def _no_real_spawns(monkeypatch):
         pytest.fail(f"a test started {guard.refused!r} for real", pytrace=False)
 
 
+_ABOVE_THE_TREE = (".git", ".dplanner")
+
+
+def _strays_above(base: Path) -> set[Path]:
+    return {
+        directory / name
+        for directory in (base, *base.parents)
+        for name in _ABOVE_THE_TREE
+        if (directory / name).exists()
+    }
+
+
+@pytest.fixture(autouse=True)
+def _nothing_above_the_tree(request, tmp_path_factory):
+    """No test leaves a ``.git`` or a ``.dplanner`` above its own ``tmp_path``.
+
+    Either one there turns every loose test project beneath it into a repository or a plan
+    — ``/tmp/.git`` and ``/tmp/.dplanner`` once failed a dozen discovery tests on every
+    branch until somebody deleted them by hand. A few stats per test against the worker's
+    basetemp and its parents; what was already there is not this test's doing. Under xdist
+    another worker's test can make one mid-test, so ``-n0`` is how to confirm the name.
+    """
+    base = tmp_path_factory.getbasetemp()
+    before = _strays_above(base)
+    yield
+    made = sorted(map(str, _strays_above(base) - before))
+    if made:
+        pytest.fail(f"{request.node.nodeid} wrote {made} above its tmp_path", pytrace=False)
+
+
 @pytest.fixture
 def allow_spawn(_no_real_spawns):
     """``allow_spawn(path)``: run this fake executable for real — see ``_no_real_spawns``."""

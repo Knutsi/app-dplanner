@@ -1197,6 +1197,9 @@ per listener.
   holds several planned directories, and scoping keeps a Save from sweeping up the user's own
   source. `commit(message, also=())` records extra paths (the `.dplanner` index) in the same
   commit without making them part of the dirty count, and leaves out a scope nothing matches.
+- `find_repo_root` takes a `.git` file or a `.git` directory holding `HEAD` — git's own test
+  — never a bare `.git`: a stray one left by an old build's lock at `/tmp/.git` made every
+  loose folder under `/tmp` a repository, and the project index went to `/tmp`.
 - Repository facts beside `find_repo_root`: `main_checkout` (a linked worktree's main checkout),
   `init_repo`, `origin_url` (memoised on `.git/config`'s mtime — an action state asks it on
   every context change), `canonical_remote` and `remote_label` (one spelling for a remote, and

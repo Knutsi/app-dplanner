@@ -95,6 +95,14 @@ into `/tmp`. So `git_common_dir` refuses a root with neither a `.git` directory 
 file leading to one, naming it; and since a provider keeps its root for its life, a root
 whose `.git` went from under it refuses the next Save rather than starting a repository again.
 
+The fix in the lock did not reach the installed builds already running, and they kept
+planting `/tmp/.git` — so the walk does not trust a bare one either. `find_repo_root` takes a
+`.git` *file* (a linked worktree) or a `.git` directory holding `HEAD`, which is git's own
+test, and a directory holding only a lock is no repository: nothing above a loose project
+reads as its root, and `add_to_index` writes no index there. The suite guards the same
+boundary from the other side: `tests/conftest.py`'s `_nothing_above_the_tree` fails the test
+that leaves a `.git` or a `.dplanner` in its basetemp or any parent of it.
+
 ### Adopting the other writer's changes in place
 
 The simple answer to an outside change is the whole rebuild: `AppSession.reload()` builds a

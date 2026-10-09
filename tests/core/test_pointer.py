@@ -50,6 +50,17 @@ def test_the_root_itself_and_a_folder_outside_git_write_nothing(repo, tmp_path):
     assert add_to_index(loose) is None
 
 
+def test_a_bare_git_directory_above_a_loose_folder_is_no_repository(tmp_path):
+    """An old build's sync lock planted ``/tmp/.git`` holding only the lock; the walk took it
+    for a repository and wrote the index for every loose project under it at ``/tmp``."""
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".git" / "dplanner-sync.lock").touch()
+    loose = tmp_path / "loose"
+    loose.mkdir()
+    assert add_to_index(loose) is None
+    assert not (tmp_path / POINTER_FILE).exists()
+
+
 def test_resolve_follows_relative_and_absolute_lines(repo, tmp_path):
     elsewhere = tmp_path / "elsewhere"
     (repo / POINTER_FILE).write_text(f"search\n\n{elsewhere}\n")
