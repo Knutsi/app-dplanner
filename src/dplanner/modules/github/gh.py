@@ -17,6 +17,8 @@ import subprocess
 from dataclasses import dataclass
 from typing import Any
 
+from dplanner.core.process import run_bounded
+
 GH_TIMEOUT = 20.0  # seconds; listing and viewing are small requests.
 PR_LIST_LIMIT = 100
 
@@ -53,7 +55,10 @@ def gh_refusal(*, check_auth: bool = False) -> str | None:
     if gh is None:
         return "gh not found on PATH — GitHub features need the GitHub CLI"
     if check_auth:
-        status = subprocess.run([gh, "auth", "status"], capture_output=True, check=False)
+        try:
+            status = run_bounded([gh, "auth", "status"], timeout=GH_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            return f"gh auth status did not answer in {GH_TIMEOUT:g} s"
         if status.returncode != 0:
             return "gh is not authenticated — run `gh auth login`"
     return None

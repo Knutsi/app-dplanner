@@ -30,6 +30,7 @@ from collections.abc import Callable
 
 from dplanner.cli.checklist import MachineCheck, Reading, Remedy
 from dplanner.core import user_path
+from dplanner.core.process import run_bounded
 
 Which = Callable[[str], str | None]
 Runner = Callable[[list[str]], "subprocess.CompletedProcess[str]"]
@@ -40,6 +41,8 @@ Reach = Callable[[], str]
 # request of its own.
 REACH_URL = "https://api.github.com/"
 REACH_TIMEOUT_S = 3.0
+# `az account show` asks Azure; past this, the row says it would not answer.
+RUN_TIMEOUT_S = 10.0
 
 # Where to read about a tool this checklist cannot install for you. A row names one only
 # when the address is certain: a guessed link is a worse answer than no link.
@@ -48,7 +51,7 @@ AZ_URL = "https://learn.microsoft.com/cli/azure/install-azure-cli"
 
 
 def _run(command: list[str]) -> "subprocess.CompletedProcess[str]":
-    return subprocess.run(command, capture_output=True, text=True, check=False)
+    return run_bounded(command, timeout=RUN_TIMEOUT_S)
 
 
 def _reach() -> str:
@@ -66,7 +69,7 @@ def _reach() -> str:
 def _version(command: list[str], run: Runner) -> str:
     try:
         result = run(command)
-    except OSError as error:
+    except (OSError, subprocess.TimeoutExpired) as error:
         return f"could not be run ({type(error).__name__})"
     return result.stdout.strip().splitlines()[0] if result.returncode == 0 else ""
 
@@ -95,7 +98,7 @@ def _az(which: Which, run: Runner) -> Reading:
         return Reading(ok=False, detail="not installed — only needed if your work deploys to Azure")
     try:
         result = run(["az", "account", "show", "--output", "none"])
-    except OSError as error:
+    except (OSError, subprocess.TimeoutExpired) as error:
         return Reading(ok=False, detail=f"installed, but could not be run ({type(error).__name__})")
     if result.returncode != 0:
         return Reading(ok=False, detail="installed, but not signed in")

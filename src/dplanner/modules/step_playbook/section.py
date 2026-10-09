@@ -3,8 +3,10 @@
 The same entry ``dplanner playbook set`` writes. Its first row is *Default*, naming what the
 step inherits — the project's landing default on a landing, else its default, else Run Agent
 — and choosing it removes the entry. The overrides belong to a choice of the step's own, so
-they stand greyed under *Default*, and under a playbook that has no gate (rounds) or no
-other-agent review (reviewer) to apply them to.
+they are revealed only by one that can use them: *Rounds* under a playbook with a gate,
+*Reviewer* under one another agent reviews in, and neither under *Default*. A field with
+nothing to apply to is hidden rather than greyed — it is not a verb waiting on a reason, and
+a step with no playbook of its own reads as one line.
 """
 
 from typing import Any
@@ -49,8 +51,10 @@ class PlaybookSection(ModuleDataSection):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(FIELD_GAP)
         layout.addWidget(self.playbook)  # The block's own caption names it.
-        block(layout, captioned("Rounds", self, ROUNDS_HINT), self.rounds)
-        block(layout, captioned("Reviewer", self, REVIEWER_HINT), self.reviewer)
+        self._rounds_caption = captioned("Rounds", self, ROUNDS_HINT)
+        block(layout, self._rounds_caption, self.rounds)
+        self._reviewer_caption = captioned("Reviewer", self, REVIEWER_HINT)
+        block(layout, self._reviewer_caption, self.reviewer)
         self.playbook.activated.connect(lambda _index: self._on_playbook())
         self.rounds.valueChanged.connect(lambda _rounds: self.commit())
         self.reviewer.activated.connect(lambda _index: self.commit())
@@ -88,8 +92,12 @@ class PlaybookSection(ModuleDataSection):
 
     def _show_overrides(self) -> None:
         playbook = preset(self.playbook.currentData() or "")
-        self.rounds.setEnabled(playbook is not None and playbook.has_gate())
-        self.reviewer.setEnabled(playbook is not None and playbook.reviews_with_other())
+        rounds = playbook is not None and playbook.has_gate()
+        reviewer = playbook is not None and playbook.reviews_with_other()
+        for widget in (self._rounds_caption, self.rounds):
+            widget.setVisible(rounds)
+        for widget in (self._reviewer_caption, self.reviewer):
+            widget.setVisible(reviewer)
 
     def _default_words(self, step: Step | None) -> str:
         if step is None:

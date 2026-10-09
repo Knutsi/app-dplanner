@@ -6,15 +6,21 @@ A terminal running an agent, a second application window, an RDP session — eac
 process that started it, on every platform. On POSIX that is ``start_new_session``: the child
 leaves the session, and the SIGHUP that arrives when it ends. Windows needs flags instead.
 
+**Bounded** is the other half: a question put to a CLI from a task (:func:`run_bounded`) gets
+an answer or a timeout, and a timeout ends every process the question started — a task that
+waits on a child nobody can end is a task the task centre lists for ever.
+
 **Still that process** is a :class:`ProcessStamp`: the pid, the machine's boot and the
 process's start time. A pid alone is reused — after a reboot almost at once — so a record
 that kept only the pid would read a stranger as its own process still running.
 """
 
 import os
+import signal
 import subprocess
 import sys
 from collections.abc import Mapping, Sequence
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -62,6 +68,46 @@ def detached_environment(env: Mapping[str, str] | None = None) -> dict[str, str]
     """What a detached process starts with: ``env`` (this process's when None) less the run
     marker (:data:`RUN_ENV`)."""
     return {k: v for k, v in (os.environ if env is None else env).items() if k != RUN_ENV}
+
+
+def run_bounded(argv: Sequence[str], *, timeout: float) -> "subprocess.CompletedProcess[str]":
+    """Run ``argv`` to its end with no keyboard and its output captured — or, after
+    ``timeout`` seconds, kill it *and everything it started* and raise
+    ``subprocess.TimeoutExpired``.
+
+    In a process group of its own because ``subprocess.run``'s timeout kills the direct child
+    only: a CLI that starts a helper and leaves it holding the output pipe would otherwise
+    outlive the question it was asked. A group, not a session — the process is waited on,
+    never detached.
+    """
+    started = subprocess.Popen(
+        list(argv),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        process_group=None if sys.platform == "win32" else 0,
+        creationflags=CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0,
+    )
+    try:
+        out, err = started.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _kill_group(started)
+        with suppress(subprocess.TimeoutExpired):
+            started.communicate(timeout=1.0)
+        raise
+    return subprocess.CompletedProcess(started.args, started.returncode, out, err)
+
+
+def _kill_group(started: "subprocess.Popen[str]") -> None:
+    if sys.platform == "win32":
+        subprocess.run(
+            ["taskkill", "/T", "/F", "/PID", str(started.pid)], capture_output=True, check=False
+        )
+    else:
+        with suppress(ProcessLookupError, PermissionError):
+            os.killpg(started.pid, signal.SIGKILL)  # It leads its group: pid is the group's id.
+    started.kill()
 
 
 @dataclass(frozen=True)
