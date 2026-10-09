@@ -619,6 +619,33 @@ class StepAgentRunModule:
 
         deps.open_terminal(directory, title, argv, project, said)
 
+    # -- one run, by its id: what the step's Playbook tab offers on each of a pass's runs --------
+
+    def run_refusals(self, project_dir: Path, run: str) -> tuple[str, str]:
+        """Why the run cannot be followed, and why its session cannot be opened — "" where
+        it can, as the browser's row greys the two."""
+        row = self._row(project_dir, run)
+        if row is None:
+            gone = f"run {run} is no longer in the ledger"
+            return gone, gone
+        return row.follow_refusal, row.open_refusal
+
+    def follow_by_id(self, project_dir: Path, run: str) -> None:
+        if (row := self._row(project_dir, run)) is not None:
+            self._follow(row)
+
+    def open_session_by_id(self, project_dir: Path, run: str) -> None:
+        if (row := self._row(project_dir, run)) is not None:
+            self._open_session(row)
+
+    def _row(self, project_dir: Path, run: str) -> HeadlessRun | None:
+        """The run's row, read afresh: a verb acts on the record as it stands."""
+        project = headless.read(project_dir)
+        record = next((each for each in project.records if each.run == run), None)
+        if record is None:
+            return None
+        return headless.row_of(project, record, project.latest, self._deps.harnesses)
+
     def _latest(self, step_id: StepId) -> HeadlessRun | None:
         """The step's latest headless run, from its project's records as last read."""
         directory = self._deps.project_dir(step_id)

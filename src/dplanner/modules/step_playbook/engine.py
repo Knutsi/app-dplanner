@@ -34,9 +34,11 @@ from dplanner.modules.github import aspect as github
 from dplanner.modules.step_playbook import passes
 from dplanner.modules.step_playbook.aspect import read, resolve
 from dplanner.modules.step_playbook.passes import (
+    CHANGES,
     ESCALATION,
     GATE,
     GATE_OPTIONS,
+    LOOK,
     REFUSED_OPTIONS,
     Ask,
     Complete,
@@ -179,10 +181,10 @@ class Engine:
         latest = _latest_pass(project_dir, step.id)
         if not isinstance(latest, str) and (orphan := _orphan(latest, step)) is not None:
             ledger.path_for(project_dir, orphan).unlink(missing_ok=True)
-        pass_ = _Pass(
+        pass_ = Pass(
             planned.pass_, planned.playbook, planned.settings, [], directory, member=planned.member
         )
-        next_ = passes.due(pass_.playbook, pass_.settings, [], _facts(step))
+        next_ = passes.due(pass_.playbook, pass_.settings, [], facts_of(step))
         try:
             return self._do(context, step, pass_, next_)
         except limits.HeldError as held:
@@ -202,7 +204,7 @@ class Engine:
             if _lapsed(project_dir, pass_):
                 pass_ = _latest_pass(project_dir, step.id)
                 assert not isinstance(pass_, str)
-            next_ = passes.due(pass_.playbook, pass_.settings, pass_.entries, _facts(step))
+            next_ = passes.due(pass_.playbook, pass_.settings, pass_.entries, facts_of(step))
             said = self._act(context, step, pass_, next_)
             if not isinstance(next_, Wait):
                 _settle_answers(project_dir, pass_)
@@ -210,7 +212,7 @@ class Engine:
 
     # -- acting -----------------------------------------------------------------------------
 
-    def _act(self, context: CliContext, step: Step, pass_: "_Pass", next_: Next) -> str:
+    def _act(self, context: CliContext, step: Step, pass_: "Pass", next_: Next) -> str:
         """Do it, and start what it wrote — or, when the pass could not, ask about it on a
         card the pass waits on: a held account until its reset, anything else until a
         person's *Retry now*."""
@@ -225,7 +227,7 @@ class Engine:
         except CliError as error:
             return _refused(context, step, pass_, stage, attempt, str(error), None)
 
-    def _do(self, context: CliContext, step: Step, pass_: "_Pass", next_: Next) -> Begun:
+    def _do(self, context: CliContext, step: Step, pass_: "Pass", next_: Next) -> Begun:
         match next_:
             case Wait(why) | Halted(why):
                 return Begun(why)
@@ -279,7 +281,9 @@ class Engine:
 
 
 @dataclass
-class _Pass:
+class Pass:
+    """One pass of a playbook on a step, as its records say: what an advance acts on."""
+
     id: str
     playbook: Playbook
     settings: Settings
@@ -319,7 +323,7 @@ def precise_stamp() -> str:
     return datetime.now(UTC).isoformat(timespec="microseconds")
 
 
-def _facts(step: Step) -> Facts:
+def facts_of(step: Step) -> Facts:
     status = stored(step)
     refs = github.read(step)
     return Facts(
@@ -348,7 +352,7 @@ def _plan_text(run: LedgerRecord) -> str:
         return ""
 
 
-def _ask(context: CliContext, step: Step, pass_: _Pass, ask: Ask) -> Question:
+def _ask(context: CliContext, step: Step, pass_: Pass, ask: Ask) -> Question:
     """Write the pass's question; it."""
     project = context.library.project_of(step.id)
     project_dir = context.store.project_dir(project.id)
@@ -374,7 +378,7 @@ def _ask(context: CliContext, step: Step, pass_: _Pass, ask: Ask) -> Question:
 def _refused(
     context: CliContext,
     step: Step,
-    pass_: _Pass,
+    pass_: Pass,
     stage: str,
     attempt: int,
     why: str,
@@ -405,14 +409,14 @@ def _refused(
     return f"{stage} could not go on, and asks {asked.short}: {why}"
 
 
-def _asked(context: CliContext, step: Step, pass_: _Pass, ask: Ask) -> Begun:
+def _asked(context: CliContext, step: Step, pass_: Pass, ask: Ask) -> Begun:
     """The pass's question written, as an act: discarding it takes the file back."""
     asked = _ask(context, step, pass_, ask)
     path = questions.path_for(context.store.project_dir(asked.project), asked)
     return Begun(f"{ask.stage} asks {asked.short} ({ask.purpose})", question=path)
 
 
-def _settle_answers(project_dir: Path, pass_: _Pass) -> None:
+def _settle_answers(project_dir: Path, pass_: Pass) -> None:
     """Mark consumed every answer of the pass that has been acted on — after the act, so a
     crash between leaves an answer to act on again, never one lost."""
     for entry in pass_.entries:
@@ -428,6 +432,54 @@ def _settle_answers(project_dir: Path, pass_: _Pass) -> None:
             )
 
 
+# Records an answer through the one answer path (``agent_questions/inbox.answer``), handed in
+# by the root: (the verb's context, project directory, question id, the answer, who gives it)
+# — what came of it.
+type Answer = Callable[[CliContext, Path, str, str, Mapping[str, str]], str]
+
+
+def send_back(
+    context: CliContext, step: Step, note: str, by: Mapping[str, str], answer: Answer
+) -> str:
+    """Send the step's latest pass back with ``note``: the gate it waits on answered
+    *Changes* with it, or — a pass that is through — a :data:`~passes.LOOK` gate asked and
+    answered so; either way the answer's advance loops the work back, round cap and all.
+    ``CliError`` says why not."""
+    if not note.strip():
+        raise CliError("say what must change: --note")
+    project = context.library.project_of(step.id)
+    project_dir = context.store.project_dir(project.id)
+    with supervisor.launching(project.id, step.id, wait=True):
+        pass_ = _latest_pass(project_dir, step.id)
+        if isinstance(pass_, str):
+            raise CliError(f"{step.title}: {pass_}")
+        chosen = passes.choices(pass_.playbook, pass_.settings, pass_.entries, facts_of(step))
+        if chosen.send_back:
+            raise CliError(f"{step.title} cannot be sent back: {chosen.send_back}")
+        gate = chosen.gate or _ask(
+            context,
+            step,
+            pass_,
+            Ask(
+                LOOK,
+                1 + sum(1 for e in pass_.entries if isinstance(e, Question) and e.stage == LOOK),
+                GATE,
+                questions.DECISION,
+                "The pass is through. Does the work pass, or what must change?",
+                GATE_OPTIONS,
+            ),
+        )
+    return answer(context, project_dir, gate.id, f"{CHANGES}: {note.strip()}", by)
+
+
+def review_choices(project_dir: Path, step: Step) -> tuple[Pass | None, passes.Choices]:
+    """The step's latest pass, and what *Accept* and *Send Back* mean for it now."""
+    pass_ = _latest_pass(project_dir, step.id)
+    if isinstance(pass_, str):
+        return None, passes.Choices(None, pass_, pass_)
+    return pass_, passes.choices(pass_.playbook, pass_.settings, pass_.entries, facts_of(step))
+
+
 def active(project_dir: Path, step: Step) -> str:
     """Why the step's latest pass has not reached its end, or "": a step has one pass at a
     time, and a new one never quietly replaces it. A pass ends when what is due is that it is
@@ -437,7 +489,7 @@ def active(project_dir: Path, step: Step) -> str:
     pass_ = _latest_pass(project_dir, step.id)
     if isinstance(pass_, str) or _orphan(pass_, step):
         return ""
-    next_ = passes.due(pass_.playbook, pass_.settings, pass_.entries, _facts(step))
+    next_ = passes.due(pass_.playbook, pass_.settings, pass_.entries, facts_of(step))
     if isinstance(next_, Complete | Halted):
         return ""
     return f"has a playbook pass under way ({pass_.id}): {_under_way(next_)}"
@@ -457,7 +509,7 @@ def stoppable(project_dir: Path, step: Step) -> str:
     still reads in progress — a stop whose change to the plan did not land, or a pass
     something else halted."""
     entries = _latest_entries(project_dir, step.id)
-    if said := _left(project_dir, step.id, _facts(step), entries):
+    if said := _left(project_dir, step.id, facts_of(step), entries):
         return said
     if halted_pass(project_dir, step) and stored(step) is Status.IN_PROGRESS:
         return "it has halted, but the step still reads in progress"
@@ -492,7 +544,7 @@ def halted_pass(project_dir: Path, step: Step) -> str:
     with nothing of it left to stop, and nothing of the step has run since: what a stop
     repeated still finishes in the plan. "" otherwise, a completed pass included."""
     entries = _latest_entries(project_dir, step.id)
-    facts = _facts(step)
+    facts = facts_of(step)
     if not entries or _left(project_dir, step.id, facts, entries):
         return ""
     pass_ = _latest_pass(project_dir, step.id)
@@ -548,7 +600,7 @@ def stop(
     the run killed). Each of those makes :func:`~.passes.due` read the pass ``Halted``. Its
     worktree and branch are kept."""
     entries = _latest_entries(project_dir, step.id)
-    return _halt(project_dir, step.id, entries, _facts(step), by, STOP_WHY, wait)
+    return _halt(project_dir, step.id, entries, facts_of(step), by, STOP_WHY, wait)
 
 
 def halt_claimed(
@@ -629,7 +681,7 @@ def _under_way(next_: Next) -> str:
     return f"its {stage} stage is due — `dplanner playbook advance` moves it on"
 
 
-def _orphan(pass_: _Pass, step: Step) -> LedgerRecord | None:
+def _orphan(pass_: Pass, step: Step) -> LedgerRecord | None:
     """The pass's first run, when that is all the pass is and it never began: no turn, no
     supervisor, its step not as its launch leaves it (:func:`supervisor.launch_stands`). Its
     launch died between writing it and saving its claim — the start only ever follows the
@@ -643,7 +695,7 @@ def _orphan(pass_: _Pass, step: Step) -> LedgerRecord | None:
     return first
 
 
-def _lapsed(project_dir: Path, pass_: _Pass) -> bool:
+def _lapsed(project_dir: Path, pass_: Pass) -> bool:
     """Answer for the clock a held launch whose reset has passed — what :func:`wake` does,
     for a pass whose waker died with its machine. True when it answered one."""
     last = pass_.entries[-1] if pass_.entries else None
@@ -683,7 +735,7 @@ def wake(
         sleep(min(left, 60.0))
 
 
-def _latest_pass(project_dir: Path, step_id: str) -> "_Pass | str":
+def _latest_pass(project_dir: Path, step_id: str) -> "Pass | str":
     """The step's latest pass as its records say, or why there is none to advance."""
     return _pass_of(step_id, ledger.records(project_dir), questions.records(project_dir))
 
@@ -696,17 +748,32 @@ def _latest_entries(project_dir: Path, step_id: str) -> list[passes.Entry]:
 def _entries_of(
     step_id: str, records: Sequence[LedgerRecord], asked_all: Sequence[Question]
 ) -> list[passes.Entry]:
+    every = grouped(step_id, records, asked_all)
+    return every[-1] if every else []
+
+
+def grouped(
+    step_id: str, records: Sequence[LedgerRecord], asked_all: Sequence[Question]
+) -> list[list[passes.Entry]]:
+    """Each of the step's passes as its runs and questions, oldest first, the passes in the
+    order their latest records were made — so the last is the step's latest pass."""
     runs = [r for r in records if r.step == step_id and r.pass_]
     asked = [q for q in asked_all if q.step == step_id and q.pass_]
-    entries = passes.in_order(runs, asked)
-    return [e for e in entries if e.pass_ == entries[-1].pass_] if entries else []
+    by_pass: dict[str, list[passes.Entry]] = {}
+    for entry in passes.in_order(runs, asked):
+        by_pass.setdefault(entry.pass_, []).append(entry)
+    return sorted(by_pass.values(), key=lambda entries: passes.in_order_key(entries[-1]))
 
 
 def _pass_of(
     step_id: str, records: Sequence[LedgerRecord], asked_all: Sequence[Question]
-) -> "_Pass | str":
+) -> "Pass | str":
     """:func:`_latest_pass` over records already read: a project's, for every step at once."""
-    entries = _entries_of(step_id, records, asked_all)
+    return pass_of(_entries_of(step_id, records, asked_all))
+
+
+def pass_of(entries: list[passes.Entry]) -> "Pass | str":
+    """The pass these records are — one pass's, oldest first — or why it cannot be read."""
     if not entries:
         return "no playbook pass to advance"
     pass_id = entries[-1].pass_
@@ -730,7 +797,7 @@ def _pass_of(
     )
     directory = next((r.directory for r in runs_of if r.directory), "")
     member, claim = (runs_of[0].callsign, runs_of[0].claim) if runs_of else ("", "")
-    return _Pass(pass_id, playbook, settings, entries, directory, machine, member, claim)
+    return Pass(pass_id, playbook, settings, entries, directory, machine, member, claim)
 
 
 # -- where each pass stands -----------------------------------------------------------------------
@@ -765,7 +832,9 @@ def _standing(
         return None
     runs = {e.run for e in pass_.entries if isinstance(e, LedgerRecord)}
     parks = [q for q in asked if q.run and q.run in runs]
-    return passes.standing(pass_.playbook, pass_.settings, pass_.entries, parks, _facts(step), now)
+    return passes.standing(
+        pass_.playbook, pass_.settings, pass_.entries, parks, facts_of(step), now
+    )
 
 
 def _age(stamp: str, now: datetime) -> timedelta:

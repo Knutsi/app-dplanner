@@ -20,7 +20,7 @@ Nothing is written: *Keep This Arrangement* is the one way Wave view reaches the
 from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QPoint, QPointF, Qt
+from PySide6.QtCore import QPoint, QPointF, Qt, QTimer
 from PySide6.QtWidgets import QMenu, QVBoxLayout, QWidget
 
 from dplanner.domain.commands import CompositeCommand, redirect_edges_command
@@ -90,6 +90,7 @@ if TYPE_CHECKING:  # module.py imports this file, so the Deps arrive as a forwar
 # The tab kind stays "project": the module is the editor, but the thing in the tab is still a
 # project, and every `tabs.open("project", …)` in the application keeps working.
 PROJECT_KIND = "project"
+PLAYBOOK_KIND = "playbook"  # What Step Details lands on its Playbook tab for.
 # The modes a verb can switch on by name. Every other mode is a gesture that starts itself.
 SWITCHABLE_MODES: dict[str, Callable[[ModeDeps], ModeBase]] = {
     CONNECT: ConnectMode,
@@ -155,6 +156,7 @@ class ProjectActivity(EntityActivity):
         )
         self._scene.redirect_requested.connect(self._on_redirect_requested)
         self._scene.stack_add_requested.connect(self._on_stack_add)
+        self._scene.playbook_opened.connect(self._on_playbook_opened)
         self._scene.dropped_into_stack.connect(self._on_dropped_into_stack)
         self._scene.dropped_out_of_stack.connect(self._on_dropped_out_of_stack)
         self._view.modes.changed.connect(lambda _name: self._publish_activity())
@@ -538,6 +540,17 @@ class ProjectActivity(EntityActivity):
         """A stack's "+": Add Step Below, run on the stack's last step alone — the verb the
         Stack menu offers, so the "+" cannot come to mean something the menu does not."""
         self._run_on("stacks.add_below", (last,), "A step cannot be added to that stack")
+
+    def _on_playbook_opened(self, step_id: StepId) -> None:
+        """A card's playbook strip clicked: Step Details on the step, at its Playbook tab —
+        the double-click's verb, with the pass named so the dialog lands on it. A turn of the
+        event loop later, so no modal opens inside the release that asked for it."""
+        nodes = (
+            ContextNode(selection_uri("step", step_id)),
+            ContextNode(selection_uri(PLAYBOOK_KIND, step_id)),
+        )
+        context = Context({SCOPE_ACTIVITY: self.activity_nodes(), SCOPE_SELECTION: nodes})
+        QTimer.singleShot(0, self._page, lambda: self.run_action("steps.details", context))
 
     def _on_dropped_into_stack(self, step_id: StepId, stack_id: str, slot: int) -> None:
         self._restacked(self._stack_verbs.drop_into(step_id, stack_id, slot))

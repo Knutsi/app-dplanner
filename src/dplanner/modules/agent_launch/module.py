@@ -1023,6 +1023,29 @@ class AgentLaunchModule:
             own_task=True,
         )
 
+    def accept_playbook(self, step: Step) -> None:
+        """Answer the gate the step's pass waits on *Pass*, by ``dplanner playbook accept``."""
+        self._run_pass_verb(
+            step,
+            ["playbook", "accept", step.id],
+            doing="Accepting the playbook's gate on",
+            ok="Gate passed on",
+            refused="The gate was not answered on",
+            own_task=True,
+        )
+
+    def send_back(self, step: Step, note: str) -> None:
+        """Send the step's pass back with ``note``, by ``dplanner playbook send-back`` — the
+        gate's answer or a person's look, which the engine loops back."""
+        self._run_pass_verb(
+            step,
+            ["playbook", "send-back", step.id, "--note", note],
+            doing="Sending the work back on",
+            ok="Work sent back on",
+            refused="The work was not sent back on",
+            own_task=True,
+        )
+
     def _run_pass_verb(
         self,
         step: Step,

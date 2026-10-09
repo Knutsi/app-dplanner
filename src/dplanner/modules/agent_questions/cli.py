@@ -14,7 +14,7 @@ them commits: the window's Save does.
 
 import os
 from argparse import ArgumentParser, Namespace
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from dplanner.cli import CliCommand, CliContext, CliError
@@ -209,6 +209,19 @@ def _list(context: CliContext, args: Namespace) -> int:
     ]
     context.report([q.to_json() for q in found], "\n".join(lines) or "no questions")
     return 0
+
+
+def answer_in(
+    context: CliContext, project_dir: Path, question: str, given: str, by: Mapping[str, str]
+) -> str:
+    """An answer as ``question answer`` gives it, from another verb — a pass's own gate,
+    which no run asked: what came of it."""
+    try:
+        return inbox.answer(
+            project_dir, question, given, by, library=context.store.library_path
+        ).said
+    except (LookupError, ValueError) as error:
+        raise CliError(str(error)) from error
 
 
 def _configure_answer(parser: ArgumentParser) -> None:

@@ -138,6 +138,26 @@ class StepStatusModule:
 
         return run
 
+    def set_done_because(self, step: Step, because: str, titled: str) -> str:
+        """A person sets ``step`` done with a reason, kept as a decision note ``titled`` so —
+        ``status set done --because`` in the window, one undo step; why not, "" when done."""
+        try:
+            change, _kept = self._deps.workflow.set_status(
+                self._deps.library,
+                step,
+                Status.DONE,
+                actor=Person(),
+                today=self._deps.clock.today(),
+                because=because,
+                titled=titled,
+            )
+        except ValueError as refused:
+            return str(refused)
+        if change.command is not None:
+            self._deps.undo.push(change.command)
+        self._release(list(change.follow_ups))
+        return ""
+
     def _release(self, follow_ups: list[FollowUp]) -> None:
         """End the claims a stopped status owes, each on its own, once the statuses are on
         disk. Any that could not be ended — or all of them, while the save is held back or

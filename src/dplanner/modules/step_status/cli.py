@@ -34,7 +34,13 @@ from dplanner.cli.lookup import find_project, find_step, project_arg, step_arg
 from dplanner.domain.model import Step
 from dplanner.domain.ordering import placed
 from dplanner.domain.workflow import Actor, AgentRun, EndClaim, FollowUp, Person, Release
-from dplanner.modules.step_status.workflows import Kept, Performed, StatusWorkflow, perform
+from dplanner.modules.step_status.workflows import (
+    WITHOUT_REVIEW,
+    Kept,
+    Performed,
+    StatusWorkflow,
+    perform,
+)
 from dplanner.planning.status import Status, stored, word
 
 # Releases a step from the squad claim holding it, in the plan at the path; True when one did.
@@ -153,6 +159,7 @@ def write_status(
     *,
     actor: Actor,
     because: str = "",
+    titled: str = WITHOUT_REVIEW,
     then: Callable[[Kept | None, Performed], None] = lambda _kept, _done: None,
 ) -> None:
     """Set a status the way every verb does: refused as one line, applied now, and its
@@ -162,7 +169,13 @@ def write_status(
     if why := workflow.refusal([step], status, actor, because):
         raise CliError(why)
     change, kept = workflow.set_status(
-        context.library, step, status, actor=actor, today=context.clock.today(), because=because
+        context.library,
+        step,
+        status,
+        actor=actor,
+        today=context.clock.today(),
+        because=because,
+        titled=titled,
     )
     if change.command is not None:
         context.apply(change.command)

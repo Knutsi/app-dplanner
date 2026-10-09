@@ -34,6 +34,9 @@ from dplanner.modules.step_playbook.aspect import Choice
 from dplanner.modules.step_playbook.presets import ROUNDS, Playbook, StageRole
 
 FIX = "fix"  # The work stage a playbook with no work before its gate is sent back to.
+# A person's look at a pass that is through — the gate a *Send Back* from the step's Playbook
+# tab answers. It stands after every stage, so its *changes* go back to the last work stage.
+LOOK = "look"
 GATE, ROUND_CAP, ESCALATION = "gate", "round-cap", "escalation"
 
 # The answers a pass's questions offer: (label, what it means).
@@ -206,9 +209,12 @@ class Facts:
 def in_order(runs: Sequence[LedgerRecord], asked: Sequence[Question]) -> list[Entry]:
     """A pass's runs and questions, oldest first: the order they were made in."""
     entries: list[Entry] = [*runs, *asked]
-    return sorted(
-        entries, key=lambda e: (_stamp(e), e.run if isinstance(e, LedgerRecord) else e.id)
-    )
+    return sorted(entries, key=in_order_key)
+
+
+def in_order_key(entry: Entry) -> tuple[str, str]:
+    """Where a record falls in :func:`in_order`."""
+    return (_stamp(entry), entry.run if isinstance(entry, LedgerRecord) else entry.id)
 
 
 def due(playbook: Playbook, settings: Settings, entries: Sequence[Entry], facts: Facts) -> Next:
@@ -233,7 +239,7 @@ def retried(question: Question) -> bool:
         and question.state in (questions.ANSWERED, questions.CONSUMED)
         and (
             (isinstance(by, dict) and by.get("kind") == questions.CLOCK)
-            or _is(answer_word(question), questions.RETRY_NOW)
+            or is_answer(answer_word(question), questions.RETRY_NOW)
         )
     )
 
@@ -253,7 +259,7 @@ def _stamp(entry: Entry) -> str:
     return entry.launched if isinstance(entry, LedgerRecord) else entry.asked
 
 
-def _is(word: str, *labels: str) -> bool:
+def is_answer(word: str, *labels: str) -> bool:
     """Whether an answer is one of these choices, exactly — case, spacing and a closing stop
     aside. Anything more is words: "Pass only after fixing X" is not *Pass*."""
     said = " ".join(word.casefold().split()).rstrip(".!")
@@ -328,24 +334,27 @@ class _Reading:
     def _answered(self, question: Question) -> Next:
         word, stage = answer_word(question), question.stage
         if question.purpose == GATE:
-            if _is(word, PASS):
+            if is_answer(word, PASS):
                 return self._after(stage)
-            if _is(word, STOP):
+            if is_answer(word, STOP):
                 return Halted(f"{question.short} stopped the pass")
-            return self._changes(stage, (_note(question),))
-        if _is(word, ACCEPT):
+            return self._changes(stage, (note_of(question),))
+        if is_answer(word, ACCEPT):
             return self._after(stage)
-        if question.purpose == ROUND_CAP and _is(word, ONE_MORE):
+        if question.purpose == ROUND_CAP and is_answer(word, ONE_MORE):
             return self._loop_back(stage, self._open_findings(stage))
-        if question.purpose == ESCALATION and _is(word, RETRY):
+        if question.purpose == ESCALATION and is_answer(word, RETRY):
             return self._enter(self.ids.index(stage))
         return Halted(f"{question.short} was answered {word or 'with nothing'}")
 
     # -- moving through the list --------------------------------------------------------------
 
     def _after(self, stage: str) -> Next:
-        """The stage after ``stage`` that is still to run; a fix is before every stage."""
-        start = self.ids.index(stage) + 1 if stage in self.ids else 0
+        """The stage after ``stage`` that is still to run."""
+        if stage in self.ids:
+            start = self.ids.index(stage) + 1
+        else:  # A fix runs before every stage; a person's look after them all.
+            start = 0 if stage == FIX else len(self.ids)
         for index in range(start, len(self.ids)):
             if not (self.roles[self.ids[index]].is_gate and self._passed(self.ids[index])):
                 return self._enter(index)
@@ -393,7 +402,7 @@ class _Reading:
         if self._verdicts(gate) < self._cap(gate):
             return self._loop_back(gate, findings)
         declined = self._declines()
-        listed = [{**f, "declined": declined.get(_ref(f), "")} for f in findings]
+        listed = [{**f, "declined": declined.get(ref_of(f), "")} for f in findings]
         return Ask(
             gate,
             self._asked(gate, ROUND_CAP) + 1,
@@ -472,30 +481,27 @@ class _Reading:
         given = sum(
             1 for r in self._run_list(gate) if _verdict(r).get("outcome") in ("pass", "changes")
         )
-        return given + sum(1 for word in self._settled_answers(gate, GATE) if not _is(word, STOP))
+        return given + sum(
+            1 for word in self._settled_answers(gate, GATE) if not is_answer(word, STOP)
+        )
 
     def _cap(self, gate: str) -> int:
-        more = sum(1 for word in self._settled_answers(gate, ROUND_CAP) if _is(word, ONE_MORE))
+        more = sum(
+            1 for word in self._settled_answers(gate, ROUND_CAP) if is_answer(word, ONE_MORE)
+        )
         return self.settings.rounds + more
 
     def _passed(self, gate: str) -> bool:
         if any(_verdict(r).get("outcome") == "pass" for r in self._run_list(gate)):
             return True
-        return any(_is(w, PASS) for w in self._settled_answers(gate, GATE)) or any(
-            _is(w, ACCEPT)
+        return any(is_answer(w, PASS) for w in self._settled_answers(gate, GATE)) or any(
+            is_answer(w, ACCEPT)
             for purpose in (ROUND_CAP, ESCALATION)
             for w in self._settled_answers(gate, purpose)
         )
 
     def _declines(self) -> dict[tuple[str, str, int], str]:
-        """Every finding the implementer declined in the pass, by its reference: its reason."""
-        found: dict[tuple[str, str, int], str] = {}
-        for run in self._run_list():
-            for each in run.declined:
-                ref = each.get("finding")
-                if isinstance(ref, dict):
-                    found[_ref({"ref": ref})] = str(each.get("reason", ""))
-        return found
+        return declines(self.entries)
 
     def _open_findings(self, gate: str) -> tuple[Mapping[str, Any], ...]:
         """The gate's latest findings — its last review's, or the note its last answer of
@@ -512,10 +518,10 @@ class _Reading:
                 )
             if isinstance(entry, Question) and entry.purpose == GATE:
                 word = answer_word(entry)
-                if entry.state in (questions.ANSWERED, questions.CONSUMED) and not _is(
+                if entry.state in (questions.ANSWERED, questions.CONSUMED) and not is_answer(
                     word, PASS, STOP
                 ):
-                    return (_note(entry),)
+                    return (note_of(entry),)
         return ()
 
     def _history(self, gate: str) -> tuple[Mapping[str, Any], ...]:
@@ -528,28 +534,85 @@ class _Reading:
             for index, finding in enumerate(listed if isinstance(listed, list) else []):
                 if isinstance(finding, dict):
                     ref = {"run": run.run, "index": index}
-                    found.append({**finding, "declined": declined.get(_ref({"ref": ref}), "")})
+                    found.append({**finding, "declined": declined.get(ref_of({"ref": ref}), "")})
         return tuple(found)
 
 
-def _note(question: Question) -> Mapping[str, Any]:
+def note_of(question: Question) -> Mapping[str, Any]:
     """A gate's answer of *changes* as the finding it is: its words, by its question."""
     word = answer_word(question)
     said = word.split(":", 1)[1].strip() if word.casefold().startswith("changes:") else word
-    text = "" if _is(said, CHANGES) else said
+    text = "" if is_answer(said, CHANGES) else said
     return {
         "text": text or "Changes were asked for, with no note",
         "ref": {"question": question.id, "index": 0},
     }
 
 
-def _ref(finding: Mapping[str, Any]) -> tuple[str, str, int]:
+def declines(entries: Sequence[Entry]) -> dict[tuple[str, str, int], str]:
+    """Every finding the implementer declined in a pass, by its reference (:func:`ref_of`):
+    its reason."""
+    found: dict[tuple[str, str, int], str] = {}
+    for run in entries:
+        if not isinstance(run, LedgerRecord):
+            continue
+        for each in run.declined:
+            ref = each.get("finding")
+            if isinstance(ref, dict):
+                found[ref_of({"ref": ref})] = str(each.get("reason", ""))
+    return found
+
+
+def ref_of(finding: Mapping[str, Any]) -> tuple[str, str, int]:
     ref = finding.get("ref")
     if not isinstance(ref, dict):
         return ("", "", 0)
     kind = "run" if "run" in ref else "question"
     index = ref.get("index")
     return (kind, str(ref.get(kind, "")), index if isinstance(index, int) else 0)
+
+
+# -- what a person may do with a pass ----------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Choices:
+    """What *Accept* and *Send Back* mean for a pass now, and why not where they cannot — the
+    step's Playbook tab and ``playbook accept|send-back`` read the same answer."""
+
+    gate: Question | None  # The open gate both answer; None: a look at a pass that is through.
+    accept: str  # Why it cannot be accepted, "" when it can.
+    send_back: str  # Why it cannot be sent back, "" when it can.
+
+
+def choices(
+    playbook: Playbook, settings: Settings, entries: Sequence[Entry], facts: Facts
+) -> Choices:
+    """A pass waiting on a person's or the coordinator's gate is answered there: *Pass*, or
+    *Changes* with the note. A pass that is through, on a step not done, is the person's look:
+    accepting sets the step done — unless a PR is open, whose merge does that — and sending it
+    back is a :data:`LOOK` gate answered with the note, a gate like any other. Anything else
+    waits on nothing of a person's."""
+    if not entries:
+        return _neither("no playbook pass on this step yet")
+    last = entries[-1]
+    if isinstance(last, Question) and last.state in (questions.OPEN, questions.ESCALATED):
+        if last.purpose == GATE and last.kind in (questions.DECISION, questions.PLAN_APPROVAL):
+            return Choices(last, "", "")
+        return _neither(f"{last.short} waits for its answer in the Control Centre")
+    if facts.done:
+        return _neither("the step is done")
+    next_ = due(playbook, settings, entries, facts)
+    if isinstance(next_, Complete) and not next_.set_done:
+        open_pr = "its PR is open — merging it sets the step done" if facts.unmerged_pr else ""
+        return Choices(None, open_pr, "")
+    if isinstance(next_, Halted):
+        return _neither("the pass has ended — Run Playbook starts another")
+    return _neither("the pass is still at work")
+
+
+def _neither(why: str) -> Choices:
+    return Choices(None, why, why)
 
 
 # -- where a pass stands, in words --------------------------------------------------------------
@@ -668,7 +731,7 @@ def _taken_over(reading: _Reading, last: Entry | None) -> bool:
     return (
         isinstance(last, Question)
         and last.purpose == ROUND_CAP
-        and _is(answer_word(last), TAKE_OVER)
+        and is_answer(answer_word(last), TAKE_OVER)
     )
 
 

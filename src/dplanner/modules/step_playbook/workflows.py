@@ -13,7 +13,16 @@ from dplanner.domain.workflow import Change, EndClaim, PlanView, Release
 from dplanner.planning.status import Status, status_command, stored
 
 LABEL = "Playbook approved"
+# The decision note a person's *Accept* of a pass that is through is kept as.
+ACCEPTED = "Accepted after its playbook"
 STOP_LABEL = "Stop Playbook"
+
+
+def acceptance(pass_id: str, playbook: str, because: str = "") -> str:
+    """The reason a person's *Accept* of a pass is kept as, on both surfaces."""
+    return f"Accepted after pass {pass_id} of {playbook}" + (
+        f": {because.strip()}" if because.strip() else "."
+    )
 
 
 def approved(step: Step, *, today: date) -> Change:

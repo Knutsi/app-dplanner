@@ -98,6 +98,7 @@ from dplanner.domain.headless import (
     TurnLog,
     TurnSpec,
     stage_kind,
+    summary_of,
     verdict_of,
     write_schema,
 )
@@ -928,6 +929,7 @@ class Session:
             if done and log.typed and self.kind is StageKind.EXECUTE
             else ()
         )
+        summary = summary_of(log) if done and self.kind is StageKind.EXECUTE else ""
 
         def finished(record: LedgerRecord) -> LedgerRecord:
             record = _with_turn(record, turn)
@@ -935,6 +937,8 @@ class Session:
                 record = replace(record, verdict=dict(verdict))
             if declined:
                 record = replace(record, declined=declined)
+            if summary:
+                record = replace(record, summary=summary)
             if ending.end in OVER:
                 record = record.ended_at(turn.ended, code if done else None)
             return record

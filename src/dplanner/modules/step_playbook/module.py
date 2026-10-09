@@ -39,6 +39,7 @@ from PySide6.QtWidgets import QMenu, QWidget
 
 from dplanner.core.signals import Signal
 from dplanner.domain import ledger, questions
+from dplanner.domain.agents import AgentHarness
 from dplanner.domain.model import Library, ProjectId, Step, StepId
 from dplanner.framework.action_registry import (
     DISABLED,
@@ -57,10 +58,12 @@ from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import confirm
 from dplanner.modules.step_playbook.aspect import DATA_FORMAT, MODULE_ID, SPEC, read, resolve
 from dplanner.modules.step_playbook.engine import standings, stoppable
+from dplanner.modules.step_playbook.pass_section import OpenTerminal, PassSection, RunVerbs
 from dplanner.modules.step_playbook.passes import Standing, agents_of, describe, pinned
 from dplanner.modules.step_playbook.presets import PRESETS, Playbook
 from dplanner.modules.step_playbook.project_section import ProjectPlaybookSection
 from dplanner.modules.step_playbook.section import PlaybookSection
+from dplanner.planning.agent import enabled as is_agent
 from dplanner.planning.kinds import works_nobody
 from dplanner.theme.icons import playbook_icon
 
@@ -115,6 +118,10 @@ class PassStandings:
             return ""
         return self.card(self._library.project_of(step_id).id, step_id)[0]
 
+    def project_dir_of(self, step_id: StepId) -> Path:
+        """Where the step's project keeps its runs and questions."""
+        return self._project_dir(self._library.project_of(step_id).id)
+
     def stoppable(self, step: Step) -> str:
         """What stopping the step's pass would end, or "" — Stop Playbook's reading, made
         afresh from the records rather than the strip's last poll."""
@@ -162,6 +169,14 @@ class PlaybookLauncher(Protocol):
         """Stop the step's pass, saying how it went."""
         ...
 
+    def accept_playbook(self, step: Step) -> None:
+        """Answer the gate the step's pass waits on *Pass*, saying how it went."""
+        ...
+
+    def send_back(self, step: Step, note: str) -> None:
+        """Send the step's pass back with ``note``, saying how it went."""
+        ...
+
 
 class AgentReadings(Protocol):
     """Whether each agent CLI is usable here — the status checks' shared reading."""
@@ -183,14 +198,20 @@ class StepPlaybookDeps:
     undo: UndoService[Library]
     details: InspectorSectionRegistry
     project_settings: InspectorSectionRegistry
-    harness_ids: tuple[str, ...]  # What a reviewer override may name.
+    harnesses: tuple[AgentHarness, ...]  # What a reviewer override may name; how a run reads.
     actions: ActionRegistry
     context: ContextService
     launcher: PlaybookLauncher
     readings: AgentReadings
     parent: QWidget
     standings: PassStandings  # Started here; read by the canvas through the root.
-    # Where the readings are refreshed, off the GUI thread; None refreshes them inline.
+    # The Playbook tab: a tab of Step Details beside the block in its Details tab.
+    sections: InspectorSectionRegistry
+    runs: RunVerbs  # Follow and Open Session on one of a pass's runs.
+    open_terminal: OpenTerminal  # Its worktree, or its diff, in a terminal.
+    # A person sets the step done with a reason kept as a note so titled: why not, or "".
+    accept: Callable[[Step, str, str], str]
+    # Where the readings are refreshed and the tab reads, off the GUI thread; None: inline.
     tasks: TaskService | None = None
 
 
@@ -213,12 +234,25 @@ class StepPlaybookModule:
                 hint="What runs this step when a playbook is started on it: stages that plan, "
                 "execute and judge the work. Default is what the project chose for steps like "
                 "this one.",
-                factory=lambda: PlaybookSection(deps.library, deps.undo, deps.harness_ids),
+                factory=lambda: PlaybookSection(
+                    deps.library, deps.undo, tuple(harness.id for harness in deps.harnesses)
+                ),
                 shown_for=lambda step_id: (
                     step_id is not None
                     and deps.library.has(step_id)
                     and not works_nobody(deps.library.step(step_id))
                 ),
+            )
+        )
+        deps.sections.register(
+            InspectorSection(
+                id=f"{MODULE_ID}.passes",
+                label="Playbook",
+                order=42,  # After the Agent tab (40), whose runs a pass's are.
+                hint="What the step's playbook passes did and changed, and what you do next.",
+                factory=self._pass_section,
+                icon=playbook_icon,
+                shown_for=self._has_passes,
             )
         )
         deps.project_settings.register(
@@ -276,6 +310,30 @@ class StepPlaybookModule:
         # run on a task whenever the reading has gone stale and the person moves on.
         deps.context.changed.connect(lambda _context: self._refresh())
         self._refresh()
+
+    def _has_passes(self, step_id: str | None) -> bool:
+        """Whether a pass can be on the step: it runs a playbook, or it is an agent's."""
+        library = self._deps.library
+        if step_id is None or not library.has(step_id):
+            return False
+        step = library.step(step_id)
+        if works_nobody(step):
+            return False
+        return is_agent(step) or resolve(step, library.project_of(step_id)).playbook is not None
+
+    def _pass_section(self) -> PassSection:
+        deps = self._deps
+        return PassSection(
+            deps.library,
+            project_dir=deps.standings.project_dir_of,
+            harnesses=deps.harnesses,
+            runs=deps.runs,
+            verbs=deps.launcher,
+            open_terminal=deps.open_terminal,
+            accept=deps.accept,
+            tasks=deps.tasks,
+            changed=deps.standings.changed.connect,
+        )
 
     # -- Run Playbook --------------------------------------------------------------------------
 

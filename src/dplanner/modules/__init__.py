@@ -29,11 +29,11 @@ from functools import partial
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from dplanner.core.module_data import ModuleDataFormat
+from dplanner.planning.kinds import counts_as_work
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from argparse import Namespace
     from collections.abc import Callable, Container, Mapping, Sequence
     from datetime import date
     from pathlib import Path
@@ -57,7 +57,7 @@ if TYPE_CHECKING:
     from dplanner.domain.model import Edge, Library, LinkRule, Project, ProjectId, Step, StepId
     from dplanner.domain.repositories import RepositoryFacts
     from dplanner.domain.store import FilesFor
-    from dplanner.domain.workflow import Actor, EndClaim, PlanView
+    from dplanner.domain.workflow import Actor, EndClaim
     from dplanner.framework.context import ContextService
     from dplanner.framework.debounce import DebounceService
     from dplanner.framework.mime_files import Payload
@@ -1201,7 +1201,7 @@ def _project_tabs(root: _Root, agents: _Agents) -> _Tabs:
             # clock's day, which the tabs re-run on when it turns.
             status_for=readiness_of(_wait_aware(library, services.clock.today)),
             clock=services.clock,
-            counts_as_work=_counts_as_work,
+            counts_as_work=counts_as_work,
             # An agent that waits on a person is a row of its own: Waits for you.
             asks_person=asks_person,
             holders=agents.claims,
@@ -1224,7 +1224,7 @@ def _project_tabs(root: _Root, agents: _Agents) -> _Tabs:
     estimation = EstimationModule(
         EstimationDeps(
             library=library,
-            counts_as_work=_counts_as_work,
+            counts_as_work=counts_as_work,
             undo=services.undo,
             details=services.step_details,
             actions=services.actions,
@@ -1366,7 +1366,7 @@ def _project_tabs(root: _Root, agents: _Agents) -> _Tabs:
 
     step_order = StepOrderModule(
         StepOrderDeps(
-            counts_as_work=_counts_as_work,
+            counts_as_work=counts_as_work,
             library=library,
             debounce=services.debounce,
             actions=services.actions,
@@ -1870,6 +1870,19 @@ def _aspects(
     # The collectors, wired once: the docs and tests modules group by them, and every walk
     # either module makes stops where these say.
     scopes = scope_kinds()
+    status = StepStatusModule(
+        StepStatusDeps(
+            library=library,
+            undo=services.undo,
+            actions=services.actions,
+            clock=services.clock,
+            workflow=_status_workflow(),
+            end_claim=lambda claim: board.end(claim.project, claim.step),
+            release=agents.claims.release,
+            notices=services.window,
+            flush=services.autosave.saved,
+        )
+    )
 
     def set_separate_instruction(step_id: str, separate: bool) -> None:
         """The Description block's checkbox, translated into the agent aspect's writes.
@@ -2065,7 +2078,7 @@ def _aspects(
                 undo=services.undo,
                 details=services.step_details,
                 project_settings=services.project_settings,
-                harness_ids=tuple(harness.id for harness in agent_harnesses()),
+                harnesses=agent_harnesses(),
                 actions=services.actions,
                 context=services.context,
                 # Run Playbook: Run Agent's launch and gates, and whether its agents work here.
@@ -2073,6 +2086,12 @@ def _aspects(
                 readings=root.availability,
                 parent=services.window,
                 standings=agents.standings,
+                # The Playbook tab: a run's verbs as the Agents browser has them, a terminal
+                # as Open Terminal opens one, and Accept as the Status verbs set done.
+                sections=services.inspector_sections,
+                runs=agents.runs,
+                open_terminal=agents.launch.open_in_terminal,
+                accept=status.set_done_because,
                 tasks=services.tasks,
             )
         ),
@@ -2083,19 +2102,7 @@ def _aspects(
         # No tab: the status vocabulary is a Status submenu of checkable Step verbs. The
         # window is the director's, so a status that says the work stopped ends the agent's
         # claim on the board the banner reads.
-        StepStatusModule(
-            StepStatusDeps(
-                library=library,
-                undo=services.undo,
-                actions=services.actions,
-                clock=services.clock,
-                workflow=_status_workflow(),
-                end_claim=lambda claim: board.end(claim.project, claim.step),
-                release=agents.claims.release,
-                notices=services.window,
-                flush=services.autosave.saved,
-            )
-        ),
+        status,
         # No tab either: a check carries nothing, and the Covers tab that shows what it
         # gathers is the tests module's — it renders a list of tests, which is that
         # module's business, not this one's.
@@ -2397,30 +2404,10 @@ def _wait_aware(library: "Library", today: "Callable[[], date]") -> "Callable[[S
 
 
 def _status_workflow() -> "StatusWorkflow":
-    """Setting a status, as the window and every CLI verb do it, with the notes module's way
-    to keep a reason."""
-    from dplanner.modules.step_status.workflows import StatusWorkflow
+    """Setting a status, as the window and every CLI verb do it, a reason kept as a note."""
+    from dplanner.modules.step_status.workflows import StatusWorkflow, kept_as_note
 
-    return StatusWorkflow(keep_reason=_reason_note)
-
-
-def _reason_note(
-    view: "PlanView", step: "Step", reason: str, today: "date"
-) -> "tuple[str, Command | None]":
-    """Why a step went to done without review, as a decision note on it — added the way
-    `note add` adds one, so a retried verb is one note."""
-    from dplanner.modules.notes.aspect import note_on
-
-    project = view.project_of(step.id)
-    return note_on(project, step, "decision", "Done without review", reason, today)
-
-
-def _counts_as_work(step: "Step") -> bool:
-    """Whether a step is work: a wait and a branch cut are not — no worker takes them and no
-    count holds them."""
-    from dplanner.planning.kinds import works_nobody
-
-    return not works_nobody(step)
+    return StatusWorkflow(keep_reason=kept_as_note)
 
 
 # The status verbs that write one, each followed by the day's progress row.
@@ -2428,27 +2415,6 @@ STATUS_WRITES = (
     ("status", "set"),
     ("status", "clear"),
 )
-
-
-def _status_written(
-    command: "CliCommand", record: "Callable[[CliContext, Project], bool]"
-) -> "CliCommand":
-    """``command`` followed by ``record`` for the project of the step it named."""
-    from dataclasses import replace
-
-    from dplanner.cli.lookup import find_step
-
-    inner = command.run
-
-    def run(context: "CliContext", args: "Namespace") -> int:
-        project = context.library.project_of(
-            find_step(context.library, args.step, context.current).id
-        )
-        code = inner(context, args)
-        record(context, project)
-        return code
-
-    return replace(command, run=run)
 
 
 def _report_sources() -> tuple["ReportSource", ...]:
@@ -2485,7 +2451,7 @@ def _report_sources() -> tuple["ReportSource", ...]:
         return [phrase for phrase in (summary(step) for summary in summaries) if phrase]
 
     return (
-        progression(status_in=_ready_in, counts_as_work=_counts_as_work, key_of=key_of),
+        progression(status_in=_ready_in, counts_as_work=counts_as_work, key_of=key_of),
         time_estimates(TimeReaders()),
         graph(
             key_of=key_of,
@@ -2719,7 +2685,7 @@ def _lint_checks() -> tuple["LintCheck", ...]:
         *agent_cli.lint_checks(
             described=lambda step: bool(description_read(step)) or is_land(step)
         ),
-        *estimation_cli.lint_checks(counts_as_work=_counts_as_work),
+        *estimation_cli.lint_checks(counts_as_work=counts_as_work),
         *spec_cli.lint_checks(),
         *feature_cli.lint_checks(anchor=spec_cli.anchor_sources, key_of=key_of),
         *layout_cli.lint_checks(key_of=key_of),
@@ -2872,6 +2838,7 @@ def default_cli_commands(
     from dplanner.modules.step_playbook.engine import halt_claimed, halt_pass
     from dplanner.modules.step_start import cli as start_cli
     from dplanner.modules.step_status import cli as status_cli
+    from dplanner.modules.step_status.workflows import WITHOUT_REVIEW
     from dplanner.modules.step_ticket import cli as ticket_cli
     from dplanner.modules.step_wait import cli as wait_cli
     from dplanner.modules.steps import cli as steps_cli
@@ -2909,10 +2876,22 @@ def default_cli_commands(
     def actor() -> "Actor":
         return AgentRun() if in_agent_shell() else Person()
 
-    def set_status(context: "CliContext", step: "Step", status: "Status") -> None:
+    def set_status(
+        context: "CliContext", step: "Step", status: "Status", because: str = "", titled: str = ""
+    ) -> None:
         """A status written as `status set` writes it — refused as one line, its claim
-        ended once the run is written."""
-        status_cli.write_status(context, workflow, end_claim, release, step, status, actor=actor())
+        ended once the run is written; a ``because`` kept as a note ``titled`` so."""
+        status_cli.write_status(
+            context,
+            workflow,
+            end_claim,
+            release,
+            step,
+            status,
+            actor=actor(),
+            because=because,
+            titled=titled or WITHOUT_REVIEW,
+        )
 
     def finish_merged(context: "CliContext", step: "Step") -> bool:
         """A step waiting on its merge is done once its PR reads merged — written as
@@ -2976,7 +2955,7 @@ def default_cli_commands(
         # `topology show` tells the gate what it printed; the gate is built here, so the
         # spec module never learns where the record lives.
         *spec_cli.commands(note_read=gate.record),
-        *estimation_cli.commands(counts_as_work=_counts_as_work),
+        *estimation_cli.commands(counts_as_work=counts_as_work),
         *ticket_cli.commands(),
         *description_cli.commands(),
         *docs_cli.commands(kinds=scopes),
@@ -3009,8 +2988,15 @@ def default_cli_commands(
         ),
         *milestone_cli.commands(),
         *wait_cli.commands(),
+        # Accept and Send Back answer a pass's gate as `question answer` does; Accepting a pass
+        # that is through is `status set done --because`, with the note titled its own way.
         *playbook_cli.commands(
-            harnesses=harnesses, advance=engine.advance, end_claim=end_claim, release=release
+            harnesses=harnesses,
+            advance=engine.advance,
+            end_claim=end_claim,
+            release=release,
+            answer=questions_cli.answer_in,
+            set_status=set_status,
         ),
         # A branch's two ends are born dressed as the window's Put on a Branch makes them.
         *branches_cli.commands(
@@ -3042,12 +3028,12 @@ def default_cli_commands(
         # module's own writes (attach, name) stay in its cli.py — the `scope` split.
         *catalog_commands(sources=sources, titles=read_titles),
         *assets_cli.commands(sources=sources),
-        *order_cli.commands(counts_as_work=_counts_as_work),
+        *order_cli.commands(counts_as_work=counts_as_work),
         # Progression reads statuses through the aspects' Qt-free readers — handed over
         # here so no cli.py imports another module's.
         *progression_cli.commands(
             status_in=_ready_in,
-            counts_as_work=_counts_as_work,
+            counts_as_work=counts_as_work,
             is_agent=is_agent,
             asks_person=asks_person,
         ),
@@ -3058,7 +3044,7 @@ def default_cli_commands(
         ),
         # The staffing matrix reads estimates, agent-ness and the start date through the
         # owners' Qt-free readers — handed over here so no cli.py imports another module's.
-        *schedule_cli.commands(time_readers, counts_as_work=_counts_as_work),
+        *schedule_cli.commands(time_readers, counts_as_work=counts_as_work),
         *github_cli.commands(finish_merged=finish_merged),
         # A note names the step it was made on by id and prints it by key — the
         # same rule every row prints, handed over rather than imported.
@@ -3084,10 +3070,7 @@ def default_cli_commands(
     # A status said from the terminal is a day of work on record, window or no window: an
     # agent reports with `status set`, and nobody opens a window to record it.
     commands = [
-        _status_written(
-            command,
-            lambda context, project: schedule_cli.record_day(context, project, time_readers),
-        )
+        schedule_cli.recording_day(command, time_readers)
         if command.path in STATUS_WRITES
         else command
         for command in commands

@@ -191,6 +191,13 @@ STALL_SECONDS = 600.0
 KILLED = (128 + 15, 128 + 9)
 
 
+def summary_of(log: TurnLog) -> str:
+    """A work turn's account of what it did: its typed final message's ``summary``, else its
+    final text — a CLI with no schema flag ends in prose."""
+    said = (log.typed or {}).get("summary")
+    return said.strip() if isinstance(said, str) and said.strip() else log.final.strip()
+
+
 @dataclass(frozen=True)
 class Headless:
     """How a harness runs one unattended turn, reads it and says how it ended."""

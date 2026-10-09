@@ -21,7 +21,7 @@ ACTORS: list[Actor] = [Person(), AgentRun(), Daemon()]
 # -- the workflow, with no application at all --------------------------------------------------
 
 
-def _keep_reason(view: PlanView, step: Step, reason: str, today: date):
+def _keep_reason(view: PlanView, step: Step, reason: str, today: date, title: str):
     return "N1", SetModuleDataCommand(step.id, "notes_probe", {"reason": reason})
 
 
