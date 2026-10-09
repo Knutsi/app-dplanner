@@ -71,8 +71,10 @@ paths:
   `GitHubStorage.pull`/`push` take it, and so does a claim's publish from another process —
   which never fetches or rebases at all, so nothing but the window rewrites the checkout.
   **The lock never makes its directory**: a root with no git directory is refused with a
-  `StorageError`, never given a `.git` (`docs/architecture/persistence.md`'s *Two writers,
-  one folder*).
+  `StorageError`, never given a `.git` — and **a repository is what git says is one**:
+  `find_repo_root` takes a `.git` file or a `.git` directory holding `HEAD`, never a bare
+  `.git`, so a stray one cannot pull loose folders into a repository or the `.dplanner`
+  index above them (`docs/architecture/persistence.md`'s *Two writers, one folder*).
 - **The window takes an outside change in place, entry by entry.** The same per-file
   record says *which* files changed, and each plan file is one entry of one node, so
   `LibraryStore.adopt_outside_changes` reads the change into the live model through the

@@ -31,9 +31,17 @@ DEFAULT_BRANCH = "main"
 
 
 def find_repo_root(start: Path) -> Path | None:
-    """The nearest ancestor holding a ``.git``, or None when there is no repository."""
+    """The nearest ancestor that is a repository, or None when there is none.
+
+    A repository is a ``.git`` *file* (a linked worktree's) or a ``.git`` directory holding
+    ``HEAD``, as git itself requires — never a bare ``.git`` directory. Builds before the
+    sync lock stopped making its own directory planted ``/tmp/.git`` holding nothing but a
+    lock file, and a walk that took that for a repository put every loose project under
+    ``/tmp`` into one, and the ``.dplanner`` index written for them at ``/tmp``.
+    """
     for candidate in (start, *start.parents):
-        if (candidate / ".git").exists():
+        dot = candidate / ".git"
+        if dot.is_file() or (dot / "HEAD").is_file():
             return candidate
     return None
 
