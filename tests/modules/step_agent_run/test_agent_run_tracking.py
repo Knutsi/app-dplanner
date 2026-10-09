@@ -643,7 +643,7 @@ def test_retry_now_and_an_answer_resume_with_the_windows_library(services, step,
     """The resumed supervisor resolved the default library, not the window's: its turns'
     `dplanner` calls and its pass's advance then reached another plan."""
     started: list[list[str]] = []
-    monkeypatch.setattr(supervisor, "spawn_detached", started.append)
+    monkeypatch.setattr(supervisor, "spawn_detached", lambda argv, **_k: started.append(argv))
     project_dir = module(services)._deps.project_dir(step.id)
     project = services.document.project_of(step.id)
     question = questions.asked(
@@ -688,3 +688,4 @@ def test_retry_now_and_an_answer_resume_with_the_windows_library(services, step,
     assert advanced[advanced.index("advance") + 1] == step.id
     for argv in started:
         assert argv[argv.index("--library") + 1] == library
+        assert argv[argv.index("--project") + 1] == project.id

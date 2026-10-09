@@ -189,5 +189,5 @@ def test_following_leaves_an_uninitialised_config_directory_as_it_found_it(tmp_p
 
 
 def test_the_argv_runs_this_build_on_this_library(tmp_path):
-    argv = follow_argv(tmp_path / "lib.json", tmp_path, "R1")
+    argv = follow_argv(tmp_path / "lib.json", "p1", tmp_path, "R1")
     assert argv[-5:] == ["agent", "follow", "R1", "--project-dir", str(tmp_path)]

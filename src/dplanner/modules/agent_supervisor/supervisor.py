@@ -1171,13 +1171,15 @@ def resumed_by(question: Question) -> tuple[str, str]:
     return "answer", questions.answer_text(question)
 
 
-def dplanner_argv(library: Path | None, *words: str) -> list[str]:
+def dplanner_argv(library: Path | None, project: str, *words: str) -> list[str]:
     """``dplanner <words>`` as this interpreter runs this build (``python -m dplanner``), never
     whatever ``dplanner`` is on PATH: a run launched from a branch's build is driven by that
     build, not by the installed one, which may not know the record's words. ``library`` is the
-    library it acts on."""
+    library it acts on and ``project`` — an id — the project it acts in: **a child never
+    resolves its project from its working directory**, because a window started in a code
+    repository several library projects plan has a working directory that names none."""
     named = ["--library", str(library.expanduser().resolve())] if library is not None else []
-    return [sys.executable, "-m", "dplanner", *named, *words]
+    return [sys.executable, "-m", "dplanner", *named, "--project", project, *words]
 
 
 def start_detached(
@@ -1186,32 +1188,39 @@ def start_detached(
     prompt: str = "",
     text: str = "",
     *,
+    project: str,
     library: Path | None = None,
 ) -> None:
     """Start a supervisor for the run that outlives whoever started it — ``agent run``'s
-    launch, an answer, a reset, *Retry now* — this build's (:func:`dplanner_argv`).
-    ``library`` is the library it was launched from, which its turns are told."""
-    argv = dplanner_argv(library, "agent", "supervise", run, "--project-dir", str(project_dir))
+    launch, an answer, a reset, *Retry now* — this build's (:func:`dplanner_argv`), in the
+    run's project directory. ``library`` is the library it was launched from, which its turns
+    are told."""
+    argv = dplanner_argv(
+        library, project, "agent", "supervise", run, "--project-dir", str(project_dir)
+    )
     if prompt:
         argv += ["--prompt", prompt]
     if text:
         argv += ["--text", text]
-    spawn_detached(argv)
+    spawn_detached(argv, cwd=project_dir)
 
 
-def advance_detached(step: str, *, library: Path | None = None) -> None:
+def advance_detached(
+    project_dir: Path, project: str, step: str, *, library: Path | None = None
+) -> None:
     """Start ``dplanner playbook advance <step>`` that outlives whoever started it: a pass's
     stage ended, or its gate was answered, and the engine decides what is due next. This
     interpreter, as :func:`start_detached` is."""
-    spawn_detached(dplanner_argv(library, "playbook", "advance", step))
+    spawn_detached(dplanner_argv(library, project, "playbook", "advance", step), cwd=project_dir)
 
 
-def wake_detached(project_dir: Path, question: str, *, library: Path | None = None) -> None:
+def wake_detached(
+    project_dir: Path, project: str, question: str, *, library: Path | None = None
+) -> None:
     """Start ``dplanner playbook wake <question>``: a pass held on its account's usage waits
     for the reset in a process of its own, then answers the card for the clock and advances."""
-    spawn_detached(
-        dplanner_argv(library, "playbook", "wake", question, "--project-dir", str(project_dir))
-    )
+    words = ("playbook", "wake", question, "--project-dir", str(project_dir))
+    spawn_detached(dplanner_argv(library, project, *words), cwd=project_dir)
 
 
 def revive(
@@ -1263,7 +1272,7 @@ def revive(
                 ):
                     started.append(record.run)
                 continue
-            start_detached(project_dir, record.run, library=library)
+            start_detached(project_dir, record.run, project=record.project, library=library)
             started.append(record.run)
     return started
 
@@ -1298,7 +1307,7 @@ def _settle(
         # review runs on a step at Ready for review); only a pass's first record stands on
         # the step as its launch leaves it (launch_stands).
         if claimed(fresh) or (fresh.pass_ and fresh.settings is None):
-            start_detached(project_dir, fresh.run, library=library)
+            start_detached(project_dir, fresh.run, project=fresh.project, library=library)
             return True
         if _age(fresh) > grace:
             ledger.path_for(project_dir, fresh).unlink(missing_ok=True)

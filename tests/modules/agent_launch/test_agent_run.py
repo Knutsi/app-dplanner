@@ -2165,7 +2165,9 @@ def _playbook_launch(services, monkeypatch, *, said=(0, "execute (attempt 1) lau
     module = next(m for m in services.modules if m.id == "agent_launch")
     ran: list[list[str]] = []
 
-    def run_cli(argv):
+    def run_cli(argv, cwd):
+        # From the project it names, never from wherever the window was started.
+        assert cwd == services.repo.project_dir(argv[argv.index("--project") + 1])
         ran.append(list(argv))
         return said
 
@@ -2183,7 +2185,7 @@ def test_stop_playbook_runs_on_a_task_of_its_own_beside_a_start_and_another_stop
 
     starting, ran = threading.Event(), []
 
-    def run_cli(argv):
+    def run_cli(argv, _cwd):
         ran.append(list(argv))
         if "agent" in argv:  # The start holds on until both stops have run.
             starting.wait(10)
@@ -2211,12 +2213,16 @@ def test_run_playbook_runs_agent_run_with_the_playbook_and_says_how_it_went(
     from dplanner.cli.gate import ReadRecord
     from dplanner.cli.main import build_tree
     from dplanner.modules import default_cli_commands
-    from dplanner.modules.agent_launch.launch import start_pass_argv
+    from dplanner.modules.agent_launch.launch import start_pass_words
+    from dplanner.modules.agent_supervisor.supervisor import dplanner_argv
 
-    module, ran = _playbook_launch(services, monkeypatch)
+    moved: list[bool] = []
+    module, ran = _playbook_launch(services, monkeypatch, records_moved=lambda: moved.append(True))
     module.start_playbook(step, "plan-execute-review-other")
-    library = services.repo.library_path
-    assert ran == [start_pass_argv(library, step.id, "plan-execute-review-other", anyway=False)]
+    assert moved == [True]  # The card's strip reads what the verb wrote, not the next poll.
+    library, project = services.repo.library_path, services.document.project_of(step.id).id
+    words = start_pass_words(step.id, "plan-execute-review-other", anyway=False)
+    assert ran == [dplanner_argv(library, project, *words)]
     message = services.window.statusBar().currentMessage()
     assert message == "Playbook started on “Deploy” — execute (attempt 1) launched"
 
@@ -2227,11 +2233,30 @@ def test_run_playbook_runs_agent_run_with_the_playbook_and_says_how_it_went(
     args = build_tree(registry)[0].parse_args(words)
     assert (args.step, args.playbook, args.anyway) == (step.id, "plan-execute-review-other", False)
     assert Path(args.library) == library.expanduser().resolve()
+    assert args.project_scope == project
 
-    module, ran = _playbook_launch(services, monkeypatch, said=(1, "a pass is under way"))
+
+def test_a_refused_playbook_verb_stands_as_a_notice_until_the_steps_next_verb(
+    services, step, monkeypatch
+):
+    """A refusal is never only a fleeting status-bar line: it names the step and the reason
+    across the window until it is dismissed or the step's next start or stop runs."""
+    bar = services.window.notices
+    module, _ran = _playbook_launch(services, monkeypatch, said=(1, "a pass is under way"))
     module.start_playbook(step, "execute")
-    message = services.window.statusBar().currentMessage()
-    assert message == "No playbook started on “Deploy” — a pass is under way"
+    (notice,) = bar.notices()
+    assert notice.words == "No playbook started on “Deploy” — a pass is under way"
+    assert notice.tone == "error"
+    assert notice.act is not None
+    notice.act()
+    assert bar.notices() == []
+
+    module.start_playbook(step, "execute")
+    assert len(bar.notices()) == 1
+    module, _ran = _playbook_launch(services, monkeypatch, said=(0, "stopped pass P"))
+    module.stop_playbook(step)
+    assert bar.notices() == []
+    assert services.window.statusBar().currentMessage().startswith("Playbook stopped")
 
 
 def test_run_playbook_asks_the_graph_gate_and_passes_its_answer_on(
@@ -2260,7 +2285,8 @@ def test_stop_playbook_runs_playbook_stop_and_says_how_it_went(services, step, m
 
     module, ran = _playbook_launch(services, monkeypatch, said=(0, "stopped pass P"))
     module.stop_playbook(step)
-    assert ran == [dplanner_argv(services.repo.library_path, "playbook", "stop", step.id)]
+    project = services.document.project_of(step.id).id
+    assert ran == [dplanner_argv(services.repo.library_path, project, "playbook", "stop", step.id)]
     message = services.window.statusBar().currentMessage()
     assert message == "Playbook stopped on “Deploy” — stopped pass P"
 

@@ -80,9 +80,10 @@ def follow(
     return words
 
 
-def follow_argv(library: Path | None, project_dir: Path, run: str) -> list[str]:
+def follow_argv(library: Path | None, project: str, project_dir: Path, run: str) -> list[str]:
     """``dplanner agent follow <run>`` as a terminal runs it: this build, this library."""
-    return dplanner_argv(library, "agent", "follow", run, "--project-dir", str(project_dir))
+    words = ("agent", "follow", run, "--project-dir", str(project_dir))
+    return dplanner_argv(library, project, *words)
 
 
 def heading(record: LedgerRecord, agent: str) -> str:

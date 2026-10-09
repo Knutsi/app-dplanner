@@ -293,9 +293,13 @@ class AgentLaunchDeps:
     # before its terminal is started.
     flush: Callable[[], bool] = field(default=lambda: True)
     # The library a pass's `dplanner agent run --playbook` acts on, and how that verb is run
-    # to its end — its exit code and its one line. A task's body, never the GUI thread.
+    # to its end from a directory — its exit code and its one line. A task's body, never
+    # the GUI thread.
     library_path: Path | None = None
-    run_cli: Callable[[Sequence[str]], tuple[int, str]] = launch.run_dplanner
+    run_cli: Callable[[Sequence[str], Path], tuple[int, str]] = launch.run_dplanner
+    # Reads what such a verb wrote at once — the playbook's standings, handed over by the
+    # root — so the card's strip answers the gesture rather than the next poll.
+    records_moved: Callable[[], None] = field(default=lambda: None)
 
 
 class AgentLaunchModule:
@@ -998,10 +1002,9 @@ class AgentLaunchModule:
         self._start_pass(step, playbook_id, anyway=bool(waiting))
 
     def _start_pass(self, step: Step, playbook_id: str, *, anyway: bool) -> None:
-        argv = launch.start_pass_argv(self._deps.library_path, step.id, playbook_id, anyway=anyway)
         self._run_pass_verb(
             step,
-            argv,
+            launch.start_pass_words(step.id, playbook_id, anyway=anyway),
             doing="Starting a playbook on",
             ok="Playbook started on",
             refused="No playbook started on",
@@ -1011,10 +1014,9 @@ class AgentLaunchModule:
         """Stop the step's pass by running ``dplanner playbook stop`` — the one stop, on both
         surfaces; the status it writes and the claim it releases arrive through the library
         watcher. The person confirmed it already."""
-        argv = supervisor.dplanner_argv(self._deps.library_path, "playbook", "stop", step.id)
         self._run_pass_verb(
             step,
-            argv,
+            ["playbook", "stop", step.id],
             doing="Stopping the playbook on",
             ok="Playbook stopped on",
             refused="The playbook was not stopped on",
@@ -1024,37 +1026,57 @@ class AgentLaunchModule:
     def _run_pass_verb(
         self,
         step: Step,
-        argv: Sequence[str],
+        words: Sequence[str],
         *,
         doing: str,
         ok: str,
         refused: str,
         own_task: bool = False,
     ) -> None:
-        """Save, then run a pass's ``dplanner`` verb to its end on a task, and say its one
-        line in the status bar. Saving first means the process writes over no unsaved edit.
-        Starts go one at a time; a stop has a task of its own (``own_task``), so a start or
-        another stop running never refuses it — stops of one step wait for each other on
-        its launch lock, in the verb."""
+        """Save, then run a pass's ``dplanner`` verb to its end on a task — in the step's
+        project, named, from its directory, so it never reads its project from wherever the
+        window was started — and say its one line in the status bar, or a refusal as a notice
+        that stands until it is dismissed or the step's next verb runs. Saving first means
+        the process writes over no unsaved edit. Starts go one at a time; a stop has a task
+        of its own (``own_task``), so a start or another stop running never refuses it —
+        stops of one step wait for each other on its launch lock, in the verb."""
         deps = self._deps
         title = _titled(step)
+        notice_id = f"{MODULE_ID}.playbook.{step.id}"
+        if deps.notices is not None:
+            deps.notices.clear_notice(notice_id)
         if not deps.flush():
             deps.status.show_status(
                 f"{refused} “{title}” — the plan could not be saved; save it, then try again",
                 8000,
             )
             return
+        project = deps.library.project_of(step.id).id
+        argv = supervisor.dplanner_argv(deps.library_path, project, *words)
+        cwd = deps.project_dir(step.id) or Path.home()
         result: list[tuple[int, str]] = []
 
         def body() -> None:  # Worker thread: the verb runs to its end, the model untouched.
-            result.append(deps.run_cli(argv))
+            result.append(deps.run_cli(argv, cwd))
 
         def done() -> None:
             code, said = result[0] if result else (1, "the verb did not finish")
+            deps.records_moved()
             if code == 0:
                 deps.status.show_status(f"{ok} “{title}” — {said}", 6000)
-            else:
+            elif deps.notices is None:
                 deps.status.show_status(f"{refused} “{title}” — {said}", 10000)
+            else:
+                notices = deps.notices
+                notices.show_notice(
+                    Notice(
+                        notice_id,
+                        f"{refused} “{title}” — {said}",
+                        tone="error",
+                        action="Dismiss",
+                        act=lambda: notices.clear_notice(notice_id),
+                    )
+                )
 
         if deps.tasks is None:
             body()

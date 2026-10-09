@@ -651,9 +651,8 @@ def _agents(
             files=store.files,
             # How staged assets are read at launch — bytes by absolute path.
             read_asset=read_absolute,
-            # Where the agent runs is the module's reading of these: the code checkout
-            # for a project that records its code repository, the plan's own repository
-            # for one that does not.
+            # Where the agent runs is the module's reading of these: the code checkout for a project
+            # that records its code repository, the plan's own repository for one that does not.
             facts_for=root.facts_for,
             # Code nobody checked out here is cloned before the agent opens in it.
             ensure_checkouts=checkouts.ensure_many,
@@ -693,8 +692,9 @@ def _agents(
             tasks=services.tasks,
             notices=services.window,
             flush=services.autosave.saved,
-            # A playbook's pass starts as `dplanner agent run --playbook` on this library.
+            # A pass starts as `dplanner agent run --playbook` on this library; the strip re-reads.
             library_path=store.library_path,
+            records_moved=lambda: standings.refresh(),  # Built below.
         )
     )
     instruction = StepAgentInstructionModule(

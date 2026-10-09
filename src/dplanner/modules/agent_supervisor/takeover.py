@@ -38,9 +38,10 @@ RUNNING = "running — Follow it, or Stop Playbook first"
 HaltPass = Callable[[Path, str, str, str, str, float], Sequence[str]]
 
 
-def open_session_argv(library: Path | None, project_dir: Path, run: str) -> list[str]:
+def open_session_argv(library: Path | None, project: str, project_dir: Path, run: str) -> list[str]:
     """``dplanner agent open-session <run>`` as a terminal runs it: this build, this library."""
-    return dplanner_argv(library, "agent", "open-session", run, "--project-dir", str(project_dir))
+    words = ("agent", "open-session", run, "--project-dir", str(project_dir))
+    return dplanner_argv(library, project, *words)
 
 
 def elsewhere(record: LedgerRecord, config: Path | None = None) -> str:

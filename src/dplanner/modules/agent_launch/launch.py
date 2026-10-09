@@ -30,6 +30,7 @@ from pathlib import Path
 
 from dplanner.cli.main import PROG
 from dplanner.core.process import detached_environment, detached_flags
+from dplanner.core.telemetry import current
 from dplanner.domain import claims, ledger
 from dplanner.domain.agents import AgentHarness
 from dplanner.domain.headless import StageKind
@@ -443,7 +444,12 @@ def _start(prepared: Prepared, harnesses: tuple[AgentHarness, ...], library: Pat
     if files is None:
         assert prepared.project_dir is not None  # A headless run has a ledger: it was asked.
         try:
-            supervisor.start_detached(prepared.project_dir, prepared.record.run, library=library)
+            supervisor.start_detached(
+                prepared.project_dir,
+                prepared.record.run,
+                project=prepared.record.project,
+                library=library,
+            )
         except OSError as error:
             return f"the supervisor did not start — {error.strerror or error}"
         return ""
@@ -460,23 +466,32 @@ def _start(prepared: Prepared, harnesses: tuple[AgentHarness, ...], library: Pat
 START_TIMEOUT_S = 300.0  # A worktree is fetched first; past this, the launch is left to finish.
 
 
-def start_pass_argv(
-    library: Path | None, step_id: str, playbook_id: str, *, anyway: bool
-) -> list[str]:
-    """``dplanner agent run <step> --playbook <id>``: how the window starts a pass. A pass
-    starts only through that verb, so its gates, its lock and its claim are never written
-    twice; ``anyway`` is the person's answer to the graph gate the window asked."""
+def start_pass_words(step_id: str, playbook_id: str, *, anyway: bool) -> list[str]:
+    """``agent run <step> --playbook <id>``: how the window starts a pass. A pass starts only
+    through that verb, so its gates, its lock and its claim are never written twice;
+    ``anyway`` is the person's answer to the graph gate the window asked."""
     words = ["agent", "run", step_id, "--playbook", playbook_id]
-    return supervisor.dplanner_argv(library, *words, *(["--anyway"] if anyway else []))
+    return [*words, *(["--anyway"] if anyway else [])]
 
 
-def run_dplanner(argv: Sequence[str]) -> tuple[int, str]:
-    """Run a ``dplanner`` verb to its end — its exit code and its last line, stdout on
-    success, stderr on a refusal. In a session of its own, so a window closed meanwhile does
-    not end a launch holding the step's launch lock; a task's body, never the GUI thread."""
+def run_dplanner(argv: Sequence[str], cwd: Path) -> tuple[int, str]:
+    """Run a ``dplanner`` verb (:func:`~supervisor.dplanner_argv`) to its end in ``cwd`` —
+    its exit code and its last line, stdout on success, stderr on a refusal — and journal
+    both, so a verb that "did nothing" leaves its answer behind. In a session of its own, so
+    a window closed meanwhile does not end a launch holding the step's launch lock; a task's
+    body, never the GUI thread."""
+    telemetry = current()
+    span = telemetry.begin("child", PROG, argv=list(argv), cwd=str(cwd))
+    code, said = _run_to_end(argv, cwd)
+    telemetry.end(span, exit_code=code, said=said)
+    return code, said
+
+
+def _run_to_end(argv: Sequence[str], cwd: Path) -> tuple[int, str]:
     try:
         done = subprocess.run(
             list(argv),
+            cwd=cwd,
             stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,

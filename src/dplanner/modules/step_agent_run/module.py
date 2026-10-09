@@ -571,11 +571,11 @@ class StepAgentRunModule:
             raise LookupError(f"run {run} is no longer in the ledger")
         if refused := elsewhere(record):
             raise ValueError(refused)
-        argv = follow_argv(self._deps.library_path, project_dir, run)
+        argv = follow_argv(self._deps.library_path, record.project, project_dir, run)
         title = self._title_of(record.step)
         following = f"Following the run on “{title}” in a terminal"
         self._open_on(
-            project_dir, record.step, record.directory, f"Follow {title}", argv, following
+            project_dir, record.project, record.directory, f"Follow {title}", argv, following
         )
         return f"Opening a terminal to follow the run on “{title}”…"
 
@@ -593,14 +593,14 @@ class StepAgentRunModule:
             deps.parent, OPEN_SESSION, _taking(title, run), verb=OPEN_SESSION
         ):
             return
-        argv = open_session_argv(deps.library_path, run.project_dir, run.run)
+        argv = open_session_argv(deps.library_path, run.project, run.project_dir, run.run)
         opened = f"The session of the run on “{title}” is opening in a terminal"
-        self._open_on(run.project_dir, run.step, run.directory, f"Session {title}", argv, opened)
+        self._open_on(run.project_dir, run.project, run.directory, f"Session {title}", argv, opened)
 
     def _open_on(
         self,
         project_dir: Path,
-        step_id: str,
+        project: str,
         worked_in: str,
         title: str,
         argv: Sequence[str],
@@ -610,7 +610,6 @@ class StepAgentRunModule:
         that is gone — and say on the status bar ``opened``, or why none opened."""
         deps = self._deps
         directory = Path(worked_in) if worked_in and Path(worked_in).is_dir() else project_dir
-        project = deps.library.project_of(step_id).id if deps.library.has(step_id) else ""
 
         def said(why: str) -> None:
             if why:

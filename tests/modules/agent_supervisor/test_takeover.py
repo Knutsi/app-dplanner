@@ -137,7 +137,7 @@ def test_a_run_that_is_over_is_opened_without_a_fence(tmp_path):
 
 
 def test_the_argv_runs_this_build_on_this_library(tmp_path):
-    argv = takeover.open_session_argv(tmp_path / "lib.json", tmp_path, "R1")
+    argv = takeover.open_session_argv(tmp_path / "lib.json", "p1", tmp_path, "R1")
     assert argv[-5:] == ["agent", "open-session", "R1", "--project-dir", str(tmp_path)]
 
 

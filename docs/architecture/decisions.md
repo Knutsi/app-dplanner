@@ -808,3 +808,14 @@ launch lock, halts the pass with the engine's stop, stops every run on the sessi
 releases by the run's claim. The window's terminal starts on a task, and Follow reads the
 machine id without minting one. Now: `agents.md`'s *A headless run is watched from the
 Agents browser, and taken over by a fence*.
+
+## 2026-10-09 — A child `dplanner` names its project
+
+The window, a supervisor, an advance and a wake ran their `dplanner` verbs with the library
+alone and the starter's working directory, so each child resolved its project from wherever
+the window was started. Started in a checkout of a code repository three library projects
+plan, Run Playbook was refused with *pass --project*, and the refusal was a ten-second
+status-bar line: the gesture "did nothing". Now `supervisor.dplanner_argv` takes the project
+and every builder passes it, a child runs from its project's directory, a refusal of a window
+verb stands as a notice, and each verb's exit code and line are journaled. Now: `agents.md`'s
+*Every `dplanner` a process of ours starts names its project*.

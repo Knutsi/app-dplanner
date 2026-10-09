@@ -186,7 +186,7 @@ def test_an_answer_and_a_retry_resume_the_run_with_the_library_named(
     """`--library` named an alternate library; the supervisor an answer or Retry now started
     resolved the default one, so the resumed run's `dplanner` calls reached another plan."""
     started: list[list[str]] = []
-    monkeypatch.setattr(supervisor, "spawn_detached", started.append)
+    monkeypatch.setattr(supervisor, "spawn_detached", lambda argv, **_k: started.append(argv))
     record = ledger.find(project, RUN)
     assert record is not None
     library = str(cli_library.expanduser().resolve())
@@ -210,3 +210,4 @@ def test_an_answer_and_a_retry_resume_the_run_with_the_library_named(
         argv = started.pop()
         assert argv[argv.index("supervise") + 1] == RUN
         assert argv[argv.index("--library") + 1] == library
+        assert argv[argv.index("--project") + 1] == record.project
