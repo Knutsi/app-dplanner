@@ -2,6 +2,7 @@
 over runs and questions written to a plan directory, and ``passes.choices`` — what *Accept*
 and *Send Back* mean for a pass now."""
 
+import shutil
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -14,6 +15,7 @@ from dplanner.domain.model import Step
 from dplanner.modules.agent_claude import harness as claude
 from dplanner.modules.agent_supervisor.supervisor import PLAN_FILE
 from dplanner.modules.github import aspect as github
+from dplanner.modules.step_playbook import passes
 from dplanner.modules.step_playbook.engine import facts_of
 from dplanner.modules.step_playbook.history import ANSWER, REVIEW, WORK, history
 from dplanner.planning import status
@@ -155,3 +157,16 @@ def test_what_accept_and_send_back_mean_follows_where_the_pass_stands(tmp_path):
     assert (
         history(tmp_path, done.id, facts_of(done), NOW)[0].choices.send_back == "the step is done"
     )
+
+
+def test_a_plan_stage_keeps_its_summary_on_its_record_for_another_machine(drive):
+    """Read where the run directory is not — another machine's pass, through git."""
+    drive.cli("playbook", "set", "Build it", "plan-execute-person")
+    drive.play({"lines": [INIT, result("## Plan\n\nAdd the lock.", session="s")]})
+    drive.cli("agent", "run", "Build it", "--playbook")
+    planned = drive.supervise()
+    assert planned.summary.startswith("## Plan")
+    shutil.rmtree(ledger.run_dir(planned.run))
+    (passed,) = history(drive.plan, planned.step, passes.Facts(), NOW, drive.harnesses)
+    (work,) = passed.events
+    assert work.kind == WORK and "Add the lock." in work.summary

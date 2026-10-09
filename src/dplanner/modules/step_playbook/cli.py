@@ -22,6 +22,7 @@ from typing import Protocol
 from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.discovery import acting
 from dplanner.cli.lookup import find_step, step_arg
+from dplanner.domain import questions
 from dplanner.domain.agents import AgentHarness, shell_marker
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.library_file import resolve_library_path
@@ -39,8 +40,9 @@ from dplanner.modules.step_playbook.aspect import (
 )
 from dplanner.modules.step_playbook.engine import (
     Answer,
+    Reviewed,
     halted_pass,
-    review_choices,
+    reviewed,
     send_back,
     standing_of,
     stop,
@@ -83,30 +85,62 @@ def commands(
     def by(args: Namespace) -> dict[str, str]:
         return acting(args.by, bool(shell_marker(harnesses)))
 
-    def _accept(context: CliContext, args: Namespace) -> int:
-        """The pass's open gate answered *Pass*; or, a pass that is through, its step done."""
+    def _review(
+        context: CliContext, args: Namespace, verdict: Callable[[Step, Path, Reviewed], str]
+    ) -> int:
+        """A person's verdict on the step's pass as they saw it (:func:`~.engine.reviewed`),
+        under the step's launch lock from before the reading until what it wrote is flushed
+        and followed up — so no advance, launch or other verdict acts in between. A pass that
+        is through waits on a person's look, which an agent never gives."""
         step = find_step(context.library, args.step, context.current)
-        project_dir = context.store.project_dir(context.library.project_of(step.id).id)
-        pass_, chosen = review_choices(project_dir, step)
-        if chosen.accept or pass_ is None:
-            raise CliError(f"{step.title} cannot be accepted: {chosen.accept}")
-        if chosen.gate is not None:
-            said = answer(context, project_dir, chosen.gate.id, PASS, by(args))
-            context.report({"step": step.id, "question": chosen.gate.id, "said": said}, said)
-            return 0
-        reason = acceptance(pass_.id, pass_.playbook.name, args.because or "")
-        set_status(context, step, Status.DONE, reason, ACCEPTED)
-        context.report(
-            {"step": step.id, "status": "done", "pass": pass_.id},
-            f"{step.title}: done — {reason}",
-        )
+        project = context.library.project_of(step.id).id
+        project_dir = context.store.project_dir(project)
+        locked = ExitStack()
+        locked.enter_context(supervisor.launching(project, step.id, wait=True))
+        context.unwritten.append(locked.close)
+        adopted = context.store.adopt_outside_changes()
+        if adopted.deferred or adopted.rebuild_required:
+            raise CliError(f"{step.title}: the plan was being written meanwhile — run it again")
+        step = context.library.step(step.id)
+        review = reviewed(project_dir, step, args.pass_, args.run, args.question)
+        if review.choices.gate is None and by(args)["kind"] != questions.PERSON:
+            raise CliError(
+                f"{step.title}: pass {review.pass_.id} is through and waits on a person's"
+                " look — an agent escalates it, never gives it"
+            )
+        said = verdict(step, project_dir, review)
+        gate = review.choices.gate
+        seen = f"pass {review.pass_.id}" + (f", run {review.run}" if review.run else "")
+        data = {
+            "step": step.id,
+            "pass": review.pass_.id,
+            "run": review.run,
+            "question": gate.id if gate is not None else None,
+            "said": said,
+        }
+        context.after_flush.append(lambda: context.report(data, f"{step.title}: {said} ({seen})"))
+        context.after_flush.append(locked.close)
         return 0
 
+    def _accept(context: CliContext, args: Namespace) -> int:
+        """The pass's open gate answered *Pass*; or, a pass that is through, its step done."""
+
+        def accept(step: Step, project_dir: Path, review: Reviewed) -> str:
+            if why := review.choices.accept:
+                raise CliError(f"{step.title} cannot be accepted: {why}")
+            if (gate := review.choices.gate) is not None:
+                return answer(context, project_dir, gate.id, PASS, by(args))
+            reason = acceptance(review.pass_.id, review.pass_.playbook.name, args.because or "")
+            set_status(context, step, Status.DONE, reason, ACCEPTED)
+            return f"done — {reason}"
+
+        return _review(context, args, accept)
+
     def _send_back(context: CliContext, args: Namespace) -> int:
-        step = find_step(context.library, args.step, context.current)
-        said = send_back(context, step, args.note, by(args), answer)
-        context.report({"step": step.id, "said": said}, f"{step.title}: sent back — {said}")
-        return 0
+        def back(step: Step, _project_dir: Path, review: Reviewed) -> str:
+            return "sent back — " + send_back(context, step, review, args.note, by(args), answer)
+
+        return _review(context, args, back)
 
     def _advance(context: CliContext, args: Namespace) -> int:
         step = find_step(context.library, args.step, context.current)
@@ -296,14 +330,28 @@ def commands(
 
 
 def _configure_accept(parser: ArgumentParser) -> None:
-    step_arg(parser)
+    _configure_review(parser)
     parser.add_argument("--because", help="what the acceptance rests on, kept in the note")
-    _configure_by(parser)
 
 
 def _configure_send_back(parser: ArgumentParser) -> None:
-    step_arg(parser)
+    _configure_review(parser)
     parser.add_argument("--note", required=True, help="what must change, in your own words")
+
+
+def _configure_review(parser: ArgumentParser) -> None:
+    """The pass as the person saw it: a verdict on anything else is refused."""
+    step_arg(parser)
+    parser.add_argument(
+        "--pass", dest="pass_", help="the pass you looked at (default: the step's latest)"
+    )
+    parser.add_argument(
+        "--run", help="its latest run, the work you looked at (default: whatever ran last)"
+    )
+    parser.add_argument(
+        "--question",
+        help="the gate you answer, by its id — '' when it waited on none (default: the open one)",
+    )
     _configure_by(parser)
 
 

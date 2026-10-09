@@ -1870,19 +1870,6 @@ def _aspects(
     # The collectors, wired once: the docs and tests modules group by them, and every walk
     # either module makes stops where these say.
     scopes = scope_kinds()
-    status = StepStatusModule(
-        StepStatusDeps(
-            library=library,
-            undo=services.undo,
-            actions=services.actions,
-            clock=services.clock,
-            workflow=_status_workflow(),
-            end_claim=lambda claim: board.end(claim.project, claim.step),
-            release=agents.claims.release,
-            notices=services.window,
-            flush=services.autosave.saved,
-        )
-    )
 
     def set_separate_instruction(step_id: str, separate: bool) -> None:
         """The Description block's checkbox, translated into the agent aspect's writes.
@@ -2086,12 +2073,11 @@ def _aspects(
                 readings=root.availability,
                 parent=services.window,
                 standings=agents.standings,
-                # The Playbook tab: a run's verbs as the Agents browser has them, a terminal
-                # as Open Terminal opens one, and Accept as the Status verbs set done.
+                # The Playbook tab: a run's verbs as the Agents browser has them, and a
+                # terminal as Open Terminal opens one.
                 sections=services.inspector_sections,
                 runs=agents.runs,
                 open_terminal=agents.launch.open_in_terminal,
-                accept=status.set_done_because,
                 tasks=services.tasks,
             )
         ),
@@ -2102,7 +2088,19 @@ def _aspects(
         # No tab: the status vocabulary is a Status submenu of checkable Step verbs. The
         # window is the director's, so a status that says the work stopped ends the agent's
         # claim on the board the banner reads.
-        status,
+        StepStatusModule(
+            StepStatusDeps(
+                library=library,
+                undo=services.undo,
+                actions=services.actions,
+                clock=services.clock,
+                workflow=_status_workflow(),
+                end_claim=lambda claim: board.end(claim.project, claim.step),
+                release=agents.claims.release,
+                notices=services.window,
+                flush=services.autosave.saved,
+            )
+        ),
         # No tab either: a check carries nothing, and the Covers tab that shows what it
         # gathers is the tests module's — it renders a list of tests, which is that
         # module's business, not this one's.

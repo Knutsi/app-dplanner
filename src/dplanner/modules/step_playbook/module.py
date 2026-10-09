@@ -58,7 +58,12 @@ from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import confirm
 from dplanner.modules.step_playbook.aspect import DATA_FORMAT, MODULE_ID, SPEC, read, resolve
 from dplanner.modules.step_playbook.engine import standings, stoppable
-from dplanner.modules.step_playbook.pass_section import OpenTerminal, PassSection, RunVerbs
+from dplanner.modules.step_playbook.pass_section import (
+    OpenTerminal,
+    PassSection,
+    PassVerbs,
+    RunVerbs,
+)
 from dplanner.modules.step_playbook.passes import Standing, agents_of, describe, pinned
 from dplanner.modules.step_playbook.presets import PRESETS, Playbook
 from dplanner.modules.step_playbook.project_section import ProjectPlaybookSection
@@ -146,8 +151,9 @@ class PassStandings:
                 self.changed.emit(project.id)
 
 
-class PlaybookLauncher(Protocol):
-    """What Run Playbook needs of the launch: the agent launch module, handed in by the root."""
+class PlaybookLauncher(PassVerbs, Protocol):
+    """What Run Playbook and the Playbook tab need of the launch: the agent launch module,
+    handed in by the root."""
 
     def playbook_refusal(self, step: Step) -> str:
         """Why no pass can start on ``step`` here, "" when one can."""
@@ -167,14 +173,6 @@ class PlaybookLauncher(Protocol):
 
     def stop_playbook(self, step: Step) -> None:
         """Stop the step's pass, saying how it went."""
-        ...
-
-    def accept_playbook(self, step: Step) -> None:
-        """Answer the gate the step's pass waits on *Pass*, saying how it went."""
-        ...
-
-    def send_back(self, step: Step, note: str) -> None:
-        """Send the step's pass back with ``note``, saying how it went."""
         ...
 
 
@@ -209,8 +207,6 @@ class StepPlaybookDeps:
     sections: InspectorSectionRegistry
     runs: RunVerbs  # Follow and Open Session on one of a pass's runs.
     open_terminal: OpenTerminal  # Its worktree, or its diff, in a terminal.
-    # A person sets the step done with a reason kept as a note so titled: why not, or "".
-    accept: Callable[[Step, str, str], str]
     # Where the readings are refreshed and the tab reads, off the GUI thread; None: inline.
     tasks: TaskService | None = None
 
@@ -330,7 +326,6 @@ class StepPlaybookModule:
             runs=deps.runs,
             verbs=deps.launcher,
             open_terminal=deps.open_terminal,
-            accept=deps.accept,
             tasks=deps.tasks,
             changed=deps.standings.changed.connect,
         )

@@ -13,7 +13,6 @@ from tests.modules.step_playbook.test_passes import CHANGED, PASSED, gate, run
 from dplanner.domain.commands import AddNodeCommand
 from dplanner.domain.model import Step
 from dplanner.modules.step_playbook.pass_section import NO_PASS, PassSection
-from dplanner.modules.step_playbook.workflows import ACCEPTED
 from dplanner.planning import status
 from dplanner.planning.agent import MODULE_ID as AGENT_ID
 from dplanner.planning.agent import write_state as agent_state
@@ -23,9 +22,8 @@ from dplanner.planning.agent import write_state as agent_state
 class Fakes:
     """Every verb the tab hands on, recorded."""
 
-    sent: list[tuple[str, str]] = field(default_factory=list)
-    passed: list[str] = field(default_factory=list)
-    accepted: list[tuple[str, str, str]] = field(default_factory=list)
+    sent: list[tuple[str, str, str, str, str]] = field(default_factory=list)
+    accepted: list[tuple[str, str, str, str]] = field(default_factory=list)
     followed: list[str] = field(default_factory=list)
     terminals: list[tuple[Path, Sequence[str]]] = field(default_factory=list)
 
@@ -38,15 +36,11 @@ class Fakes:
     def open_session_by_id(self, _project_dir: Path, run: str) -> None:
         raise AssertionError("greyed")
 
-    def accept_playbook(self, step: Step) -> None:
-        self.passed.append(step.id)
+    def accept_playbook(self, step: Step, pass_id: str, run: str, question: str) -> None:
+        self.accepted.append((step.id, pass_id, run, question))
 
-    def send_back(self, step: Step, note: str) -> None:
-        self.sent.append((step.id, note))
-
-    def accept(self, step: Step, reason: str, titled: str) -> str:
-        self.accepted.append((step.id, reason, titled))
-        return ""
+    def send_back(self, step: Step, note: str, pass_id: str, run: str, question: str) -> None:
+        self.sent.append((step.id, note, pass_id, run, question))
 
     def open_terminal(
         self,
@@ -85,7 +79,6 @@ def tab(services, step, tmp_path, fakes, qapp):
         runs=fakes,
         verbs=fakes,
         open_terminal=fakes.open_terminal,
-        accept=fakes.accept,
         tasks=None,
         changed=lambda _slot: lambda: None,
     )
@@ -114,7 +107,8 @@ def test_a_two_round_pass_reads_as_its_work_its_findings_and_its_verbs(tab, step
         summary="Fixed the race",
         declined=({"finding": {"run": review.run, "index": 0}, "reason": "cannot race"},),
     )
-    write(tmp_path, step, planned, executed, review, fix, run("review", verdict=PASSED))
+    fix_review = run("review", verdict=PASSED)
+    write(tmp_path, step, planned, executed, review, fix, fix_review)
     tab.show_target(step.id)
     assert tab.content.isVisibleTo(tab) and tab.empty.isHidden()
     assert tab.head.words().startswith("Waits for you · ready for review")
@@ -131,10 +125,10 @@ def test_a_two_round_pass_reads_as_its_work_its_findings_and_its_verbs(tab, step
     tab.note_edit.setPlainText("the empty state says nothing")
     assert tab.send_back_button.isEnabled()
     tab.send_back_button.click()
-    assert fakes.sent == [(step.id, "the empty state says nothing")]
+    # Each verdict names the pass as the tab showed it: the verb refuses one that moved on.
+    assert fakes.sent == [(step.id, "the empty state says nothing", "P", fix_review.run, "")]
     tab.accept_button.click()
-    ((accepted, reason, titled),) = fakes.accepted
-    assert (accepted, titled) == (step.id, ACCEPTED) and reason.startswith("Accepted after pass P")
+    assert fakes.accepted == [(step.id, "P", fix_review.run, "")]
 
     tab.table.setCurrentCell(finding, 0)
     assert "cannot race" in tab.detail.toPlainText()
@@ -144,11 +138,14 @@ def test_a_two_round_pass_reads_as_its_work_its_findings_and_its_verbs(tab, step
 
 
 def test_an_open_gate_is_answered_from_the_tab(tab, step, tmp_path, fakes):
-    write(tmp_path, step, run("execute"), gate("person"), preset="plan-execute-person")
+    worked, asked = run("execute"), gate("person")
+    write(tmp_path, step, worked, asked, preset="plan-execute-person")
     tab.show_target(step.id)
     assert tab.accept_button.text() == "Pass"
+    # The pass moves on before the tab reads it again: the click still names what it showed.
+    write(tmp_path, step, run("execute"), gate("person"), preset="plan-execute-person")
     tab.accept_button.click()
-    assert fakes.passed == [step.id] and not fakes.accepted
+    assert fakes.accepted == [(step.id, "P", worked.run, asked.id)]
 
 
 def test_earlier_passes_are_folded_under_the_latest(tab, step, tmp_path):

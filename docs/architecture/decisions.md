@@ -840,3 +840,15 @@ what the work changed in git and the verbs — Accept, Send Back with a note —
 send-back became a gate of its own, `look`, rather than a verb outside the pass. Now:
 `canvas.md`'s playbook-strip bullet and `playbooks.md`'s *A pass is reviewed in Step Details'
 Playbook tab*.
+
+## 2026-10-09 — A verdict on a pass names the pass it was given on
+
+The Playbook tab's first cut trusted its last reading: Accept of a pass that is through set the
+step done in the window, on the undo stack, and Pass and Send Back ran `playbook accept|
+send-back` naming only the step, which acted on whatever stood by then. Kettle Watch's review
+found the three ways that went wrong — a click meant for one gate passing the next, done set on
+work a send-back had reopened or an open PR still held, and an old pass looped back beside a
+plain run in the same worktree — and that an agent could give the person's look. Now both
+surfaces run the CLI verbs, which name the pass, its latest run and its gate and are refused
+under the step's launch lock when any has moved on; `look` is person-only; and Accept is no
+longer an undo step. Now: `playbooks.md`'s *A pass is reviewed in its step's Playbook tab*.

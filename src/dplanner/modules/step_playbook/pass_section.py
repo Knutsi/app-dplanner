@@ -14,8 +14,10 @@ card. Three blocks, over one reading:
   Worktree in Terminal* open a terminal there. No commits says so, and points at the summary.
 - **Verbs** — *Accept* and *Send Back* mean what ``passes.choices`` says for the pass now:
   the open gate answered *Pass* or *Changes*, or for a pass that is through, the step done (a
-  person's decision, one undo step) or another round with the note as its finding. Each is
-  greyed with its reason. *Follow* and *Open Session* act on the picked row's run.
+  person's decision note) or another round with the note as its finding. Each is greyed with
+  its reason, and each runs ``dplanner playbook accept|send-back`` naming the pass, its latest
+  run and its gate as the tab shows them — which the verb refuses once they have moved on.
+  *Follow* and *Open Session* act on the picked row's run.
 
 Reading is records and git, so it runs on a task whenever the tab is aimed, the pass's
 records move (``PassStandings.changed``) or the step's data does; a read asked for while one
@@ -61,7 +63,6 @@ from dplanner.modules.step_playbook.history import (
     history,
 )
 from dplanner.modules.step_playbook.passes import FIX, LOOK, Facts
-from dplanner.modules.step_playbook.workflows import ACCEPTED, acceptance
 from dplanner.theme.tokens import CAPTION_GAP, FIELD_GAP, PANEL_MARGIN, SECTION_GAP
 
 NO_PASS = "This step has no playbook pass yet — Step ▸ Run Playbook starts one."
@@ -91,13 +92,13 @@ class RunVerbs(Protocol):
 
 
 class PassVerbs(Protocol):
-    """The pass's verbs a ``dplanner`` process runs — the launch module's, as Stop is."""
+    """The pass's verbs a ``dplanner`` process runs — the launch module's, as Stop is. Each
+    names the pass, its latest run ("" for none) and its open gate ("" for none) as the person
+    saw them."""
 
-    def accept_playbook(self, step: Step) -> None:
-        """The pass's open gate answered *Pass*."""
-        ...
+    def accept_playbook(self, step: Step, pass_id: str, run: str, question: str) -> None: ...
 
-    def send_back(self, step: Step, note: str) -> None: ...
+    def send_back(self, step: Step, note: str, pass_id: str, run: str, question: str) -> None: ...
 
 
 # Open a terminal in a directory on a command (title, project id); told why none opened.
@@ -130,7 +131,6 @@ class PassSection(QWidget):
         runs: RunVerbs,
         verbs: PassVerbs,
         open_terminal: OpenTerminal,
-        accept: Callable[[Step, str, str], str],
         tasks: TaskService | None,
         changed: Callable[[Callable[[str], None]], Callable[[], None]],
     ) -> None:
@@ -141,7 +141,6 @@ class PassSection(QWidget):
         self._runs = runs
         self._verbs = verbs
         self._open_terminal = open_terminal
-        self._accept = accept
         self._runner = TaskRunner(tasks, self) if tasks is not None else None
         self._step_id: StepId | None = None
         self._reading: _Reading | None = None
@@ -439,20 +438,16 @@ class PassSection(QWidget):
         step, latest = self._step(), self._latest()
         if step is None or latest is None or latest.choices.accept:
             return
-        if latest.choices.gate is not None:
-            self._verbs.accept_playbook(step)
-            self.said.say(f"Answering {latest.choices.gate.short} Pass…", "busy")
-            return
-        why = self._accept(step, acceptance(latest.pass_id, latest.playbook), ACCEPTED)
-        self.said.say(why or "Accepted — the step is done", "error" if why else "ok")
-        self.refresh()
+        self._verbs.accept_playbook(step, *_seen(latest))
+        gate = latest.choices.gate
+        self.said.say(f"Answering {gate.short} Pass…" if gate else "Accepting the pass…", "busy")
 
     def _on_send_back(self) -> None:
         step, latest = self._step(), self._latest()
         words = self.note_edit.toPlainText().strip()
         if step is None or latest is None or latest.choices.send_back or not words:
             return
-        self._verbs.send_back(step, words)
+        self._verbs.send_back(step, words, *_seen(latest))
         self.note_edit.clear()
         self.said.say("Sending the work back…", "busy")
 
@@ -504,6 +499,13 @@ def _read(
     work = changes.read_work(runs[-1] if runs else None, refs)
     difftool = work.compared and changes.has_difftool(Path(work.directory))
     return _Reading(step_id, passes, work, difftool)
+
+
+def _seen(latest: PassHistory) -> tuple[str, str, str]:
+    """The pass as the tab shows it — its id, latest run and open gate — which a verdict names
+    so that it is refused once the pass has moved on."""
+    gate = latest.choices.gate
+    return latest.pass_id, latest.runs[-1].run if latest.runs else "", gate.id if gate else ""
 
 
 def _row(layout: QVBoxLayout, *buttons: QWidget) -> QHBoxLayout:

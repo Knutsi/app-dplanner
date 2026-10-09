@@ -438,46 +438,97 @@ def _settle_answers(project_dir: Path, pass_: Pass) -> None:
 type Answer = Callable[[CliContext, Path, str, str, Mapping[str, str]], str]
 
 
+@dataclass(frozen=True)
+class Reviewed:
+    """The pass a person's verdict is on, as its records stand, and what the verdict means."""
+
+    pass_: Pass
+    choices: passes.Choices
+    run: str  # Its latest run: the work the person looked at; "" for none yet.
+
+
+def reviewed(
+    project_dir: Path,
+    step: Step,
+    pass_id: str | None = None,
+    run: str | None = None,
+    question: str | None = None,
+) -> Reviewed:
+    """The step's latest pass, for *Accept* or *Send Back* — or ``CliError`` when it no longer
+    stands as the person saw it: ``pass_id`` not the step's latest work (another pass, or a
+    run of no pass since it began, is newer), ``run`` not its latest run, ``question`` not the
+    gate it waits on ("" for none open), or a run on the step not over. None for any of the
+    three is whatever stands now.
+
+    The caller holds the step's launch lock, and has adopted the plan as it stands, from
+    before this reading until what the verdict writes is flushed and followed up: a verdict
+    acted on the records the person saw, never on work that came after it."""
+    records = [r for r in ledger.records(project_dir) if r.step == step.id]
+    asked = [q for q in questions.records(project_dir) if q.step == step.id and q.pass_]
+    if busy := [r for r in records if not r.over]:
+        raise CliError(f"{step.title}: run {busy[-1].run} on it is not over")
+    pass_ = _pass_of(step.id, records, asked)
+    if isinstance(pass_, str):
+        raise CliError(f"{step.title}: {pass_}")
+    # A plain run's stamp is to the second, so one launched in the second the pass began counts
+    # as after it: no run is launched and over within a second.
+    began = _second(passes.in_order_key(pass_.entries[0])[0])
+    if plain := [r for r in records if not r.pass_ and _second(r.launched) >= began]:
+        raise CliError(f"{step.title}: run {plain[-1].run}, of no playbook, is newer work")
+    if pass_id is not None and pass_id != pass_.id:
+        raise CliError(f"{step.title}: pass {pass_id} is no longer its latest — {pass_.id} is")
+    runs = [e.run for e in pass_.entries if isinstance(e, LedgerRecord)]
+    last_run = runs[-1] if runs else ""
+    if run is not None and run != last_run:
+        raise CliError(f"{step.title}: pass {pass_.id} has run since — its latest is {last_run}")
+    chosen = passes.choices(pass_.playbook, pass_.settings, pass_.entries, facts_of(step))
+    open_ = chosen.gate.id if chosen.gate is not None else ""
+    if question is not None and question != open_:
+        raise CliError(
+            f"{step.title}: {questions.short(question)} is no longer the gate it waits on"
+            if question
+            else f"{step.title}: pass {pass_.id} now waits on {questions.short(open_)}"
+        )
+    return Reviewed(pass_, chosen, last_run)
+
+
+def _second(stamp: str) -> datetime:
+    moment = limits.parse(stamp)
+    return moment.replace(microsecond=0) if moment is not None else datetime.min.replace(tzinfo=UTC)
+
+
 def send_back(
-    context: CliContext, step: Step, note: str, by: Mapping[str, str], answer: Answer
+    context: CliContext,
+    step: Step,
+    review: Reviewed,
+    note: str,
+    by: Mapping[str, str],
+    answer: Answer,
 ) -> str:
-    """Send the step's latest pass back with ``note``: the gate it waits on answered
-    *Changes* with it, or — a pass that is through — a :data:`~passes.LOOK` gate asked and
-    answered so; either way the answer's advance loops the work back, round cap and all.
-    ``CliError`` says why not."""
+    """Send the pass back with ``note``: the gate it waits on answered *Changes* with it, or
+    — a pass that is through — a :data:`~passes.LOOK` gate asked and answered so; either way
+    the answer's advance loops the work back, round cap and all. The caller holds the lock
+    :func:`reviewed` names. ``CliError`` says why not."""
     if not note.strip():
         raise CliError("say what must change: --note")
-    project = context.library.project_of(step.id)
-    project_dir = context.store.project_dir(project.id)
-    with supervisor.launching(project.id, step.id, wait=True):
-        pass_ = _latest_pass(project_dir, step.id)
-        if isinstance(pass_, str):
-            raise CliError(f"{step.title}: {pass_}")
-        chosen = passes.choices(pass_.playbook, pass_.settings, pass_.entries, facts_of(step))
-        if chosen.send_back:
-            raise CliError(f"{step.title} cannot be sent back: {chosen.send_back}")
-        gate = chosen.gate or _ask(
-            context,
-            step,
-            pass_,
-            Ask(
-                LOOK,
-                1 + sum(1 for e in pass_.entries if isinstance(e, Question) and e.stage == LOOK),
-                GATE,
-                questions.DECISION,
-                "The pass is through. Does the work pass, or what must change?",
-                GATE_OPTIONS,
-            ),
-        )
+    if why := review.choices.send_back:
+        raise CliError(f"{step.title} cannot be sent back: {why}")
+    pass_ = review.pass_
+    project_dir = context.store.project_dir(context.library.project_of(step.id).id)
+    gate = review.choices.gate or _ask(
+        context,
+        step,
+        pass_,
+        Ask(
+            LOOK,
+            1 + sum(1 for e in pass_.entries if isinstance(e, Question) and e.stage == LOOK),
+            GATE,
+            questions.DECISION,
+            "The pass is through. Does the work pass, or what must change?",
+            GATE_OPTIONS,
+        ),
+    )
     return answer(context, project_dir, gate.id, f"{CHANGES}: {note.strip()}", by)
-
-
-def review_choices(project_dir: Path, step: Step) -> tuple[Pass | None, passes.Choices]:
-    """The step's latest pass, and what *Accept* and *Send Back* mean for it now."""
-    pass_ = _latest_pass(project_dir, step.id)
-    if isinstance(pass_, str):
-        return None, passes.Choices(None, pass_, pass_)
-    return pass_, passes.choices(pass_.playbook, pass_.settings, pass_.entries, facts_of(step))
 
 
 def active(project_dir: Path, step: Step) -> str:

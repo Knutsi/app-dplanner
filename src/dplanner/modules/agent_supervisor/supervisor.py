@@ -929,7 +929,7 @@ class Session:
             if done and log.typed and self.kind is StageKind.EXECUTE
             else ()
         )
-        summary = summary_of(log) if done and self.kind is StageKind.EXECUTE else ""
+        summary = summary_of(log) if done and self.kind is not StageKind.REVIEW else ""
 
         def finished(record: LedgerRecord) -> LedgerRecord:
             record = _with_turn(record, turn)

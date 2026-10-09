@@ -245,15 +245,16 @@ def asked(
 # -- what may happen to one ---------------------------------------------------------------------
 
 
-# The gates only a person answers: a `person` stage, and a `progress` that could not merge on
-# its own — on the mainline a person merges, and an agent's *pass* would stand in for them.
-PERSON_ONLY = (PERSON, "progress")
+# The gates only a person answers: a `person` stage, a `progress` that could not merge on its
+# own — on the mainline a person merges, and an agent's *pass* would stand in for them — and a
+# `look`, a person's look at a pass that is through (the playbook's ``passes.LOOK``).
+PERSON_ONLY = (PERSON, "progress", "look")
 
 
 def may_answer(question: Question, by_kind: str) -> str:
     """Why ``by_kind`` may not answer this question, or "" when it may. A person may answer
-    anything; the coordinator may not answer a ``person`` gate — that gate is the playbook's
-    promise that a person looked — and must escalate it instead."""
+    anything; the coordinator may not answer a :data:`PERSON_ONLY` gate — that gate is the
+    playbook's promise that a person looked — and must escalate it instead."""
     if by_kind == COORDINATOR and question.purpose == "gate" and gate_role(question) in PERSON_ONLY:
         return f"{question.short} is a person gate: the coordinator escalates it, never answers"
     return ""

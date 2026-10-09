@@ -656,8 +656,7 @@ tab was asked for.
 Back* with a note, which is the gate's *changes* through the one answer path. A pass that is
 through, on a step not done, is a person's look: **Accept** sets the step done through the
 status workflow as a person, the reason kept as a decision note titled *Accepted after its
-playbook* — one undo step in the window — and is greyed while a PR is open, whose merge sets the
-step done; **Send Back** asks a gate of its own and answers it with the note at once. That
+playbook*, and is greyed while a PR is open, whose merge sets the step done; **Send Back** asks a gate of its own and answers it with the note at once. That
 gate is `look`, the one stage id beside `fix` that no playbook lists, and it **stands after
 every stage**: its *changes* loop back to the last work stage (or a fix, in *Review only*),
 resuming the implementer's session with the note as its finding, and its rounds are counted
@@ -667,8 +666,23 @@ round count the loop-back exists for — or a person's changes that bypassed the
 is the silent extra round the design refuses for agents and has no reason to grant a person
 either. Anything else — at work, parked, a round cap or an escalation waiting in the Control
 Centre, halted, done — greys both with the reason. `dplanner playbook accept|send-back` are
-the same verbs; the window runs them as processes, as it runs Stop, except Accept of a pass
-that is through, which is a plan change and goes on the undo stack. *Follow* and *Open
+the same verbs, and the window runs them as processes, as it runs Stop — Accept of a pass
+that is through included, so it is not on the undo stack.
+
+**A verdict acts only on the pass as the person saw it** (`engine.reviewed`). The tab names
+the pass, its latest run and the gate it waits on (`--pass`, `--run`, `--question`; the CLI
+defaults each to what stands now and says which it acted on), and the verb takes the step's
+launch lock, adopts the plan as it stands, re-reads the records and refuses when any has
+moved on: another pass or a plain run on the step since the pass began, a run of the pass
+since, any run on the step not over, a gate answered or a newer one asked. The lock is held
+until the status, its flush and its follow-ups are done, as Stop holds it. The alternative —
+the tab's last reading trusted — let a click meant for *Q1* pass *Q2*, set done work a
+send-back had already reopened, and loop an old pass back beside a plain run that was editing
+the same worktree. Only the run names *newer work within the pass*: a send-back on a pass that
+is through adds a fix to the same pass, and the pass id alone cannot tell the look before it
+from the one after. **A pass that is through waits on a person's look** — `look` is in
+`questions.PERSON_ONLY`, and neither verb gives it from an agent's shell, since Accept's
+reason would otherwise satisfy the agent's done-without-review override. *Follow* and *Open
 Session* act on the picked row's run, the Agents browser's verbs by run id.
 
 ## Each stage is one headless turn per harness
