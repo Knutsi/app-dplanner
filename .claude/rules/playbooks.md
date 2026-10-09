@@ -123,6 +123,8 @@ paths:
   Qt-free reading of its runs, its questions and the questions its runs parked on, said by
   the card's playbook strip and by `playbook show` alike (`engine.standings` for a project,
   an ended pass shown for `ENDED_SHOWN`). A new phrase goes there, never in a surface.
+  **A pass a person took reads *Taken over*** — its latest run fenced `ledger.TAKEN_OVER`
+  (*Open Session*) or a round cap answered *Take over* — never *Stopped*.
   **A pass through its stages reads *Done* only once its step does**; until then a pass that
   produced work reads *Waits for merge* and has not ended. `docs/architecture/playbooks.md`'s
   *The presets*, *A step names its playbook; a project names its default* and *The mark on the

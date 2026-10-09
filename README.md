@@ -606,7 +606,9 @@ src/dplanner/
 │   │                        (stall, runaway, wall clock), writes it into the ledger
 │   │                        record, then ends, parks or retries the run (supervisor.py);
 │   │                        each account's last-known usage and the launch hold (limits.py,
-│   │                        `dplanner agent limits`)
+│   │                        `dplanner agent limits`); a run watched as it streams
+│   │                        (follow.py, `agent follow`) and a person's takeover of its
+│   │                        session (takeover.py, `agent open-session`)
 │   ├── agent_questions/     the question door: `dplanner question ask` from a headless
 │   │                        run, `question list|answer|escalate` over the project's
 │   │                        questions/ (`domain/questions.py`); answering resumes the
@@ -621,7 +623,8 @@ src/dplanner/
 │   ├── step_agent_run/      where a launched agent stands — stamped at launch, moved by
 │   │                        `dplanner agent-state`, cleared when the shell ends (`runs.py`
 │   │                        reads the wrapper's report; `terminal.py` finds the window or
-│   │                        pane again; the Agents browser is `browser_dialog.py`)
+│   │                        pane again; the Agents browser is `browser_dialog.py`, which
+│   │                        lists the headless runs beside the shells: `headless.py`)
 │   ├── agent_usage/         what agent runs consumed: the per-project ledger's words and
 │   │                        readers (`aspect.py`, over `domain/ledger.py`), the harvest that
 │   │                        fills it and the window's sweep, `dplanner usage show|list|harvest|record`,

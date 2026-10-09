@@ -171,6 +171,10 @@ def _titled(step: Step) -> str:
     return step.title or "Untitled step"
 
 
+# What a person is told when no terminal opened on their gesture.
+NO_TERMINAL = "check the default profile's terminal in Settings ▸ Agent profiles."
+
+
 @dataclass(frozen=True)
 class _Job:
     """One step of a launch, read on the GUI thread before its worktree is prepared."""
@@ -855,21 +859,25 @@ class AgentLaunchModule:
         if directory is None:
             return  # The state gate already says why.
         subject = f"{key_of(step)} {step.title}".strip()
-        files = launcher.shell_script(
-            directory,
-            _window_title(subject, "shell"),
-            project_id=deps.library.project_of(step.id).id,
-        )
-        command = launcher.resolve_command(launch_command(), files, directory)
-        if command is None or launcher.spawn(command, directory, harnesses=deps.harnesses):
+        project_id = deps.library.project_of(step.id).id
+        if self.open_in_terminal(directory, _window_title(subject, "shell"), (), project_id):
             notice(
-                deps.parent,
-                "Open Terminal",
-                f"No terminal opened in {directory} — check the default profile's terminal"
-                " in Settings ▸ Agent profiles.",
+                deps.parent, "Open Terminal", f"No terminal opened in {directory} — {NO_TERMINAL}"
             )
             return
         deps.status.show_status(f"Terminal opened in {directory}", 4000)
+
+    def open_in_terminal(
+        self, directory: Path, title: str, command: Sequence[str], project_id: str = ""
+    ) -> str:
+        """Open the default profile's terminal in ``directory`` on ``command`` — a person's own
+        shell when there is none — and answer why it did not open, "" when it did. Nothing is
+        tracked: it is not a run."""
+        files = launcher.shell_script(directory, title, project_id=project_id, command=command)
+        argv = launcher.resolve_command(launch_command(), files, directory)
+        if argv is None:
+            return "no terminal is set or installed"
+        return launcher.spawn(argv, directory, harnesses=self._deps.harnesses)
 
     def _confirm_unfinished(
         self, waiting: Sequence[tuple[Step, Sequence[Step]]], *, count: int, title: str = ""

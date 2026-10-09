@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from dplanner.domain import questions
+from dplanner.domain import ledger, questions
 from dplanner.domain.headless import StageKind, TurnEnd, stage_kind, verdict_of
 from dplanner.domain.ledger import LedgerRecord
 from dplanner.domain.questions import Question
@@ -551,14 +551,6 @@ def _ref(finding: Mapping[str, Any]) -> tuple[str, str, int]:
 
 # -- where a pass stands, in words --------------------------------------------------------------
 
-# What a question waits for, by its kind — a round cap is a decision of its own purpose.
-_WAITS_FOR = {
-    questions.PLAN_APPROVAL: "plan approval",
-    questions.PERMISSION: "a permission",
-    questions.BLOCKED: "blocked",
-    questions.LIMIT: "a usage limit",
-}
-
 
 @dataclass(frozen=True)
 class Standing:
@@ -613,16 +605,8 @@ def describe(standing: Standing) -> str:
     return "\n".join(lines)
 
 
-def until_words(reset: datetime, now: datetime) -> str:
-    """When a held account comes back, on this machine's clock: the time, and the date too
-    when it is not today."""
-    local, today = reset.astimezone(), now.astimezone()
-    if local.date() == today.date():
-        return local.strftime("%H:%M")
-    return f"{local.day} {local.strftime('%b %H:%M')}"
-
-
 DONE = "Done"
+TAKEN_OVER = "Taken over"
 
 
 def _words(
@@ -641,7 +625,8 @@ def _words(
             return DONE, "good", ""
         return "Waits for merge", "warn", ""
     if isinstance(next_, Halted):
-        return "Stopped", "bad", last.stage if last is not None else ""
+        stage = last.stage if last is not None else ""
+        return (TAKEN_OVER, "", stage) if _taken_over(reading, last) else ("Stopped", "bad", stage)
     if isinstance(next_, Progress):
         return "Merging", "busy", next_.stage
     if isinstance(next_, Launch):
@@ -654,13 +639,27 @@ def _words(
             return _working(reading, last.stage, last.attempt), "busy", last.stage
         held = limits.parse(turn.resets) if turn.end == TurnEnd.LIMIT else None
         if held is not None:
-            return f"Parked until {until_words(held, now)}", "", last.stage
+            return f"Parked until {limits.clock(held, now)}", "", last.stage
         asked = next((q for q in parks if q.id == turn.question), None)
         phrase, tone = _asked(asked, now) if asked is not None else (_waiting("", "", ""), "warn")
         return phrase, tone, last.stage
     if isinstance(last, Question):
         return (*_asked(last, now), last.stage)
     return "", "", ""
+
+
+def _taken_over(reading: _Reading, last: Entry | None) -> bool:
+    """A halted pass a person took from here: its latest run fenced by *Open Session*, or a
+    round cap answered *Take over*."""
+    runs = [entry for entry in reading.entries if isinstance(entry, LedgerRecord)]
+    fence = runs[-1].fence if runs else None
+    if fence is not None and fence.get("why") == ledger.TAKEN_OVER:
+        return True
+    return (
+        isinstance(last, Question)
+        and last.purpose == ROUND_CAP
+        and _is(answer_word(last), TAKE_OVER)
+    )
 
 
 def _working(reading: _Reading, stage: str, attempt: int) -> str:
@@ -681,12 +680,12 @@ def _asked(question: Question, now: datetime) -> tuple[str, str]:
     if question.state == questions.ESCALATED:
         return "Escalated", "warn"
     if held is not None:
-        return f"Parked until {until_words(held, now)}", ""
+        return f"Parked until {limits.clock(held, now)}", ""
     return _waiting(question.kind, question.purpose, question.stage), "warn"
 
 
 def _waiting(kind: str, purpose: str, stage: str) -> str:
-    what = "round cap" if purpose == ROUND_CAP else _WAITS_FOR.get(kind, "a decision")
+    what = "round cap" if purpose == ROUND_CAP else questions.waits_for(kind)
     # A stage id is its role, numbered when the role repeats (``coordinator-2``).
     coordinator = stage.partition("-")[0] == StageRole.COORDINATOR
     who = "the coordinator" if purpose == GATE and coordinator else "you"

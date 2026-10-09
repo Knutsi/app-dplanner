@@ -581,7 +581,9 @@ A review run carries its `verdict`, and the fix run after it what it `declined`:
   as the question's file, through git. `callsign` and `claim` say which squad's worker ran it.
   **The one exception is a `fence`** — `{at, by, why}`, written by a takeover from anywhere —
   after which the run is over: the launching machine fetches before every turn and ends a
-  fenced run `stopped` instead of resuming it, and in a merge the fence wins.
+  fenced run `stopped` instead of resuming it, and in a merge the fence wins. `why` is
+  prose, but one value is read: `taken over by a person` (*Open Session*), which a pass
+  reads as *Taken over* rather than *Stopped*.
 - **A plan stage's final text** — the plan — is copied to the run directory's `plan.md`, so
   DPlanner's copy does not depend on the one Claude leaves in `~/.claude/plans/`.
 - **Why the format is 2:** a format-1 harvest rewrites the record whole from the keys it

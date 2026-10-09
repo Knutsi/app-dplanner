@@ -234,6 +234,27 @@ paths:
   the empty state names the switch that has the rest — an empty state per filter.
   `docs/architecture/agents.md`'s *The peer reports back through its run directory* has the
   reasoning.
+- **Headless runs are rows in the Agents browser, read and never tracked; Follow and Open
+  Session are verbs a terminal runs.** `step_agent_run/headless.py` lists every project's
+  headless runs, re-read when `ledger.fingerprint`/`questions.fingerprint` move, on the
+  module's two-second tick, which runs for the window's life. Each is listed while not over,
+  and for a day after it ends (*Clear ended* is a per-user stamp, never a deletion). A row
+  speaks the card's words: the pass's latest run leads with `passes.standing`'s phrase
+  (`pass_phrase`), any other with `headless.state_of`, whose words come from
+  `questions.waits_for` and `limits.clock` — **a new run phrase goes in those, never in the
+  browser**. *Follow* is `dplanner agent follow <run>` (`agent_supervisor/follow.py`: the
+  record, then the stream to its end, said by `Headless.say`, read-only, no lock). *Open
+  Session* is `dplanner agent open-session <run>` (`takeover.py`): refused while a turn
+  runs (`takeover.RUNNING`); a run not over is fenced `ledger.TAKEN_OVER` through
+  `supervisor.stop_and_wait` on that run alone, with none of *Stop Playbook*'s plan
+  follow-ups, its step released from its squad (`Release`, a person's override); then
+  the harness's `resume` runs in the run's directory. The window asks before a run that is
+  not over and opens an ended one without asking. The row, *Step ▸ Follow Agent Run|Open
+  Agent Session*, *Tools ▸ Agent List* and the question card's *Follow* all open the default
+  profile's terminal on those verbs (`launcher.shell_script(command=)`,
+  `AgentLaunchModule.open_in_terminal`), greyed by the same `open_session_refusal`/`elsewhere`
+  the verbs refuse with. `docs/architecture/agents.md`'s *A headless run is watched from the
+  Agents browser, and taken over by a fence* has the reasoning.
 - **What a run consumed is a ledger record, harvested by anyone — never caught at the
   end.** The launch writes the run's record into `<project>/ledger/YYYY-MM/<run id>.json`
   (`domain/ledger.py`; `agent_usage/aspect.py`'s `launch_record`, through the tracker's

@@ -5,7 +5,7 @@ The aspect on the step is written by Run Agent (through the composition root's
 through the composition root's accent translation. What this module adds is the other
 half of a launch — **the shell is a peer this window keeps an eye on**:
 
-- A two-second timer, running only while a run is live, reads each run's exit file and
+- A two-second timer, running for the window's life, reads each live run's exit file and
   pid (``runs.settle``). When the shell has ended, the step's state is cleared the way the
   launch was stamped — directly, off the undo stack, with the launch origin — and the
   status bar says how it ended. That write is skipped while the workspace has changed
@@ -30,6 +30,13 @@ half of a launch — **the shell is a peer this window keeps an eye on**:
   entry raising its terminal. Availability is per run (``terminal.focus_reason`` — a tmux
   pane is reachable on a desktop whose bare windows are not), and a run that cannot be
   switched to is greyed with the reason, in the list, the browser and the Step verb alike.
+- **Headless runs are listed beside the shells** (``headless.py``): every project's ledger and
+  questions read again whenever their fingerprints move, on the same two-second tick, which
+  runs while the window does. Each row's *Follow* and *Open Session* open the default profile's
+  terminal on ``dplanner agent follow`` / ``agent open-session`` (``deps.open_terminal``), so the
+  window and a person's own terminal run the one verb; *Open Session* on a run that is not over
+  asks first, since it takes the run from its playbook. Both are Step-menu verbs too, over
+  the step's latest headless run.
 - Three Step-menu verbs: *Show Agent Terminal* (the focus provider in ``terminal.py``, greyed
   with the reason when the desktop cannot), *Retry Now* — the step's headless run, parked on
   a usage limit or a block, resumed at once (``dplanner agent retry``'s twin, through the
@@ -40,17 +47,18 @@ Runs live in the user's store (``user_config``), never the plan: a temp director
 pid are facts about this machine.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QMenu, QWidget
 
-from dplanner.domain import ledger
+from dplanner.domain import ledger, questions
 from dplanner.domain.agents import AgentHarness, harness_by_id
 from dplanner.domain.commands import SetModuleDataCommand
-from dplanner.domain.model import Library, StepId
+from dplanner.domain.model import Library, StepId, now_stamp
 from dplanner.framework.action_menu import append_action
 from dplanner.framework.action_registry import (
     DISABLED,
@@ -63,11 +71,13 @@ from dplanner.framework.action_registry import (
 from dplanner.framework.context import Context, ContextService
 from dplanner.framework.undo import UndoService
 from dplanner.framework.user_config import get_global, set_global
-from dplanner.framework.widgets import StatusBarButton
+from dplanner.framework.widgets import StatusBarButton, confirm
 from dplanner.framework.window import StatusHost
 from dplanner.framework.window_watch import WatchableRepository
+from dplanner.modules.agent_supervisor.follow import follow_argv
+from dplanner.modules.agent_supervisor.takeover import elsewhere, open_session_argv
 from dplanner.modules.agent_usage.aspect import end, launch_record, words
-from dplanner.modules.step_agent_run import terminal
+from dplanner.modules.step_agent_run import headless, terminal
 from dplanner.modules.step_agent_run.aspect import (
     DATA_FORMAT,
     MODULE_ID,
@@ -75,7 +85,12 @@ from dplanner.modules.step_agent_run.aspect import (
     record_exit,
     record_launch,
 )
-from dplanner.modules.step_agent_run.browser_dialog import AgentBrowserDialog, button_text
+from dplanner.modules.step_agent_run.browser_dialog import (
+    AgentBrowserDialog,
+    button_text,
+    stage_label,
+)
+from dplanner.modules.step_agent_run.headless import HeadlessRun, ProjectRuns
 from dplanner.modules.step_agent_run.runs import (
     AgentRun,
     describe,
@@ -86,6 +101,10 @@ from dplanner.modules.step_agent_run.runs import (
 
 POLL_MS = 2000
 RUNS_KEY = "runs"
+# When *Clear ended* last took the ended headless runs off the list: their records are the
+# plan's, so clearing them is a per-user stamp, never a deletion.
+CLEARED_KEY = "headless_cleared"
+OPEN_SESSION = "Open Session"
 
 
 @dataclass(frozen=True)
@@ -113,6 +132,17 @@ class StepAgentRunDeps:
     # and doing it, as a person — what became of it, or ValueError saying why not.
     retry_refusal: Callable[[StepId], str] = lambda _step: "no headless runs here"
     retry_now: Callable[[StepId], str] = lambda _step: ""
+    # Every project's ledger directory: where the headless runs listed beside the shells are.
+    project_dirs: Callable[[], list[Path]] = lambda: []
+    # The card's playbook phrase for the step's pass ("Review 1/2"), "" for none: what a
+    # headless row of the pass's latest run leads with, so the browser and the card agree.
+    pass_phrase: Callable[[StepId], str] = lambda _step: ""
+    # Open a terminal in a directory on a command (title, project id): why none opened, or "".
+    open_terminal: Callable[[Path, str, Sequence[str], str], str] = (
+        lambda _directory, _title, _command, _project: "no terminal here"
+    )
+    # The library the window has open, which a terminal's `dplanner` verb acts on.
+    library_path: Path | None = None
 
 
 class StepAgentRunModule:
@@ -125,6 +155,9 @@ class StepAgentRunModule:
         self._timer: QTimer | None = None
         self._button: StatusBarButton | None = None
         self._browser: AgentBrowserDialog | None = None
+        self._seen: dict[Path, tuple[object, ...]] = {}
+        self._projects: dict[Path, ProjectRuns] = {}
+        self._headless: list[HeadlessRun] = []
 
     def register(self) -> None:
         deps = self._deps
@@ -147,6 +180,9 @@ class StepAgentRunModule:
             forget=self._forget,
             clear_ended=self._clear_ended,
             relist=self.refresh,  # Show ended changes what is listed, not what is known.
+            follow=self._follow,
+            open_session=self._open_session,
+            reveal_step=deps.reveal,
         )
         self._timer = QTimer(self._button)
         self._timer.setInterval(POLL_MS)
@@ -163,6 +199,30 @@ class StepAgentRunModule:
                 tip="Bring the terminal the agent runs in to the front",
                 state=self._can_show_terminal,
                 run=lambda context: self._show_terminal_for(context),
+            )
+        )
+        deps.actions.register(
+            ActionSpec(
+                id="agent.follow",
+                label="&Follow Agent Run",
+                menu="Step",
+                group="agent",
+                order=31,
+                tip="Watch the step's headless run in a terminal as it streams — read-only",
+                state=lambda context: self._can_headless(context, "Follow Agent Run", follow=True),
+                run=lambda context: self._on_latest(context, self._follow),
+            )
+        )
+        deps.actions.register(
+            ActionSpec(
+                id="agent.open_session",
+                label="Open A&gent Session",
+                menu="Step",
+                group="agent",
+                order=32,
+                tip="Take the step's headless run's session into a terminal of your own",
+                state=lambda context: self._can_headless(context, "Open Agent Session"),
+                run=lambda context: self._on_latest(context, self._open_session),
             )
         )
         deps.actions.register(
@@ -274,6 +334,7 @@ class StepAgentRunModule:
         is a handful of stats, so the tick costs nothing until there is an exit to write.
         """
         deps = self._deps
+        self._read_headless()
         ended = [
             (index, settled)
             for index, run in enumerate(self._runs)
@@ -304,7 +365,9 @@ class StepAgentRunModule:
 
     def _clear_ended(self) -> None:
         self._runs = [run for run in self._runs if run.live]
+        set_global(MODULE_ID, CLEARED_KEY, now_stamp())
         self._store()
+        self._read_headless()
         self.refresh()
 
     def _store(self) -> None:
@@ -312,22 +375,46 @@ class StepAgentRunModule:
 
     def refresh(self) -> None:
         """Say the runs again — the button, and the browser when it is open, which shows
-        what each consumed once a harvest has read it."""
+        what each consumed once a harvest has read it. The tick runs while the window does:
+        a headless run is started by other processes, and nothing else would notice it."""
         if self._button is None or self._browser is None or self._timer is None:
             return
-        self._button.show_text(button_text(self._runs, self._title_of))
+        self._button.show_text(button_text(self._runs, self._title_of, self._headless))
         if self._browser.isVisible():
-            self._browser.refresh(self._runs, self._focus_reason, self._resume_of, self._usage_of)
-        live = any(run.live for run in self._runs)
-        if live and not self._timer.isActive():
+            self._refresh_browser()
+        if not self._timer.isActive():
             self._timer.start()
-        elif not live:
-            self._timer.stop()
+
+    def _refresh_browser(self) -> None:
+        assert self._browser is not None
+        self._browser.refresh(
+            self._runs,
+            self._focus_reason,
+            self._resume_of,
+            self._usage_of,
+            headless=self._headless,
+            phrase_of=lambda run: self._deps.pass_phrase(run.step),
+            harness_label=self._harness_label,
+        )
+
+    def _read_headless(self) -> None:
+        """Re-read each project whose ledger or questions moved, and list the headless runs
+        again — every tick, since how long ago a run last spoke changes while nothing moves."""
+        for directory in self._deps.project_dirs():
+            stamp = (ledger.fingerprint(directory), questions.fingerprint(directory))
+            if stamp != self._seen.get(directory):
+                self._seen[directory] = stamp
+                self._projects[directory] = headless.read(directory)
+        cleared = str(get_global(MODULE_ID, CLEARED_KEY, ""))
+        self._headless = headless.listed(
+            list(self._projects.values()), self._deps.harnesses, datetime.now(UTC), cleared=cleared
+        )
 
     def _open_browser(self) -> None:
         assert self._browser is not None
-        self._browser.refresh(self._runs, self._focus_reason, self._resume_of, self._usage_of)
+        self._read_headless()
         self._browser.show()  # Non-modal: the agents keep working underneath.
+        self.refresh()  # The button too: what was just read may be news to it.
         self._browser.raise_()
 
     def _title_of(self, step_id: StepId) -> str:
@@ -413,7 +500,8 @@ class StepAgentRunModule:
         reachable on a desktop whose bare windows are not.
         """
         live = [run for run in self._runs if run.live]
-        if not live:
+        followed = [run for run in self._headless if run.live]
+        if not live and not followed:
             nothing = menu.addAction("No agents running from this window")
             nothing.setEnabled(False)
         for run in live:
@@ -422,6 +510,13 @@ class StepAgentRunModule:
             entry = menu.addAction(f"{name} — {reason}" if reason else name)
             entry.setEnabled(not reason)
             entry.triggered.connect(lambda _checked=False, r=run: self._show_terminal(r))
+        for each in followed:
+            name = f"Follow “{self._title_of(each.step)}”"
+            entry = menu.addAction(
+                f"{name} — {each.follow_refusal}" if each.follow_refusal else name
+            )
+            entry.setEnabled(not each.follow_refusal)
+            entry.triggered.connect(lambda _checked=False, r=each: self._follow(r))
         menu.addSeparator()
         append_action(menu, self._deps.actions, self._deps.context, "agent_run.show_agents")
 
@@ -456,8 +551,101 @@ class StepAgentRunModule:
             return
         self._deps.undo.push(SetModuleDataCommand(step_id, MODULE_ID, {}, label="Clear Agent Run"))
 
+    # -- headless runs ---------------------------------------------------------------------------
+
+    def _follow(self, run: HeadlessRun) -> None:
+        try:
+            said = self.follow_run(run.project_dir, run.run)
+        except (LookupError, ValueError) as refused:
+            said = f"Cannot follow the run — {refused}"
+        self._deps.status.show_status(said, 6000)
+
+    def follow_run(self, project_dir: Path, run: str) -> str:
+        """Open a terminal following the run — ``dplanner agent follow``, read-only — and say
+        so; ``ValueError`` or ``LookupError`` says why not. What the browser's row, the Step
+        menu and the Control Centre's question card all do."""
+        record = ledger.find(project_dir, run)
+        if record is None:
+            raise LookupError(f"run {run} is no longer in the ledger")
+        if refused := elsewhere(record):
+            raise ValueError(refused)
+        argv = follow_argv(self._deps.library_path, project_dir, run)
+        title = self._title_of(record.step)
+        if reason := self._open_on(
+            project_dir, record.step, record.directory, f"Follow {title}", argv
+        ):
+            raise ValueError(f"no terminal opened — {reason}")
+        return f"Following the run on “{title}” in a terminal"
+
+    def _open_session(self, run: HeadlessRun) -> None:
+        """Open a terminal taking the run's session: ``dplanner agent open-session``, which
+        fences a run that is not over as taken over — asked first, since the run is then no
+        longer its playbook's — and releases its step from the squad holding it."""
+        deps = self._deps
+        if run.open_refusal:
+            deps.status.show_status(f"Cannot open the session — {run.open_refusal}", 6000)
+            return
+        title = self._title_of(run.step)
+        if run.live and not confirm(
+            deps.parent, OPEN_SESSION, _taking(title, run), verb=OPEN_SESSION
+        ):
+            return
+        argv = open_session_argv(deps.library_path, run.project_dir, run.run)
+        if reason := self._open_on(
+            run.project_dir, run.step, run.directory, f"Session {title}", argv
+        ):
+            deps.status.show_status(f"No terminal opened — {reason}", 8000)
+
+    def _open_on(
+        self, project_dir: Path, step_id: str, worked_in: str, title: str, argv: Sequence[str]
+    ) -> str:
+        """Open a terminal on ``argv`` where the run worked — its project's directory when that
+        is gone — and answer why none opened, or ""."""
+        deps = self._deps
+        directory = Path(worked_in) if worked_in and Path(worked_in).is_dir() else project_dir
+        project = deps.library.project_of(step_id).id if deps.library.has(step_id) else ""
+        return deps.open_terminal(directory, title, argv, project)
+
+    def _latest(self, step_id: StepId) -> HeadlessRun | None:
+        """The step's latest headless run, from its project's records as last read."""
+        directory = self._deps.project_dir(step_id)
+        if directory is None:
+            return None
+        project = self._projects.get(directory) or headless.read(directory)
+        return headless.latest_on(project, step_id, self._deps.harnesses)
+
+    def _can_headless(self, context: Context, verb: str, *, follow: bool = False) -> ActionState:
+        step_id = self._focused(context)
+        if step_id is None:
+            return DISABLED
+        run = self._latest(step_id)
+        if run is None:
+            return ActionState(enabled=False, label=f"{verb} — no headless run on this step")
+        refused = run.follow_refusal if follow else run.open_refusal
+        return ActionState(enabled=False, label=f"{verb} — {refused}") if refused else ENABLED
+
+    def _on_latest(self, context: Context, act: Callable[[HeadlessRun], None]) -> None:
+        step_id = self._focused(context)
+        run = self._latest(step_id) if step_id is not None else None
+        if run is not None:
+            act(run)
+
+    def _harness_label(self, harness_id: str) -> str:
+        harness = harness_by_id(self._deps.harnesses, harness_id)
+        return harness.label if harness is not None else harness_id
+
     def _focused(self, context: Context) -> StepId | None:
         step_id = context.focus_entity("step")
         if step_id is None or not self._deps.library.has(step_id):
             return None
         return step_id
+
+
+def _taking(title: str, run: HeadlessRun) -> str:
+    """What *Open Session* on a run that is not over does, asked before it does it."""
+    stage = stage_label(run.stage) or "headless"
+    return (
+        f"The {stage.lower()} run on “{title}” is the playbook's until you take it. Opening its"
+        " session fences the run as taken over by you, so nothing resumes it by itself again,"
+        " and releases the step from the squad holding it. The step is yours from here."
+    )

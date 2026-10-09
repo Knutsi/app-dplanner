@@ -65,6 +65,10 @@ FORMAT = 2
 TERMINAL_FORMAT = 1
 HEADLESS = "headless"
 
+# The fence a person writes on a run they take into a terminal of their own (*Open Session*):
+# the run is over to DPlanner, and the step is theirs.
+TAKEN_OVER = "taken over by a person"
+
 # How a record's counts were come by: read from the vendor's records (``native``), read
 # with part of the tree missing (``partial``), typed by hand (``manual``), or carried over
 # from the step aspect that kept usage before the ledger (``legacy``).

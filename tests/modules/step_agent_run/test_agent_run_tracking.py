@@ -13,12 +13,13 @@ from pathlib import Path
 import pytest
 
 from dplanner.domain import ledger, questions
-from dplanner.domain.commands import AddNodeCommand, SetModuleDataCommand
+from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.ledger import LedgerRecord, Turn
 from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
 from dplanner.modules.agent_supervisor import supervisor
 from dplanner.modules.step_agent_run import aspect, terminal
+from dplanner.modules.step_agent_run.browser_dialog import NO_RUNS
 from dplanner.modules.step_agent_run.runs import AgentRun, describe, new_run, read_shell, settle
 
 RUN = "20261007T180000Z-5e55a0c1"
@@ -236,15 +237,6 @@ def module(services):
     return next(m for m in services.modules if m.id == aspect.MODULE_ID)
 
 
-@pytest.fixture
-def step(services, make_project):
-    project = make_project("Discovery", legacy=True)
-    step = Step(title="Deploy")
-    AddNodeCommand(project.id, step).redo(services.document)
-    services.autosave.flush_now()
-    return step
-
-
 def select(services, step):
     services.context.set_scope(SCOPE_SELECTION, (ContextNode(selection_uri("step", step.id)),))
 
@@ -258,7 +250,9 @@ def test_a_tracked_launch_stamps_the_step_and_shows_in_the_status_bar(services, 
     assert runs._timer.isActive()
 
 
-def test_the_shells_exit_clears_the_chip_and_stops_the_clock(services, step, tmp_path):
+def test_the_shells_exit_clears_the_chip_and_the_clock_keeps_ticking(services, step, tmp_path):
+    """The tick outlives the shell: a headless run is started by another process, and only
+    the tick notices it."""
     runs = module(services)
     runs.track(step.id, str(tmp_path / "shell"), str(tmp_path / "exit"))
     services.autosave.flush_now()
@@ -266,7 +260,7 @@ def test_the_shells_exit_clears_the_chip_and_stops_the_clock(services, step, tmp
     runs.check()
     assert aspect.read(services.document.step(step.id)) == ""
     assert runs.runs()[0].outcome == "finished"
-    assert not runs._timer.isActive()
+    assert runs._timer.isActive()
     assert "finished" in runs._button.text()
 
 
@@ -456,7 +450,7 @@ def test_the_browser_keeps_the_ended_runs_off_screen_until_they_are_asked_for(
 
     browser.clear_button.click()
     assert runs.runs() == []
-    assert browser.empty.text() == "No agent has been launched from this window."
+    assert browser.empty.text() == NO_RUNS
 
 
 def test_the_browser_greys_show_terminal_per_run(services, step, tmp_path, monkeypatch):

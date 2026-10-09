@@ -362,10 +362,10 @@ wrapper writes it into the shell facts beside `dir` (where the agent works, reco
 it is in place — a worktree, usually) and `resume` (`cd "<dir>" && claude --resume <id>`,
 composed from the preset's `resume` template, only for a preset's own command since a
 custom command's resume syntax is unknown), and prints the same command above *Press
-Enter* when a run ends badly. The Agents browser shows it under an ended row. A *Resume
-Agent* verb that opens a terminal on it is the obvious next step and is deliberately not
-built yet: the hint is what the recovery needed, and a second launch path is a feature to
-ask for.
+Enter* when a run ends badly. The Agents browser shows it under an ended row. A terminal
+run's way back stays that hint; a *headless* run's is *Open Session*, which opens the same
+resume in a terminal for you — see *A headless run is watched from the Agents browser, and
+taken over by a fence*.
 
 **A preset that changes carries the texts it replaced.** The settings page stores the
 picked preset's *text* — the dropdown reflects the field, which is what lets a preset be
@@ -392,7 +392,9 @@ terminal table and for an agent CLI nobody has heard of yet.
 The other half is the window's, in `modules/step_agent_run/`. It remembers every run it
 launched in the **user's store** (`user_config`) — a temp directory and a pid are facts
 about this machine, and a per-user file is what a rebuilt window re-adopts from — and
-polls them every two seconds *while one is live*. `runs.settle` reads the two files:
+polls them every two seconds. The tick once ran only while a shell was live; it runs for
+the window's life now, because the same tick reads the headless runs other processes start
+(the section after the inbox's), and settling a shell or comparing a fingerprint is a stat. `runs.settle` reads the two files:
 exit 0 is *finished*, anything else *failed*, the trap's word or a dead pid *closed*, a
 vanished directory *lost*. An ended run clears the step's state the way the launch stamped
 it — directly, off the undo stack, with the launch origin — because a chip on a step
@@ -1202,6 +1204,60 @@ than saying *no questions*, since the board under it already says what needs nob
 is as tall as its cards up to about two, then scrolls: the board keeps the rest of the page.
 A splitter between them was tried and dropped — two framed wells either side of a seam drew
 three lines where one belongs, and a lane that fits its cards needs no dragging.
+
+### A headless run is watched from the Agents browser, and taken over by a fence
+
+A playbook works for hours with no window of its own, and the first thing a person asked of
+it was to see what it is doing (#249). Three surfaces answer, each over the run's own records.
+
+**The Agents browser lists headless runs beside the shells** (`step_agent_run/headless.py`).
+A terminal run is the window's to watch, but a headless run is its supervisor's. So the
+browser does not track a headless run; it reads every project's ledger and questions again
+whenever their fingerprints move, on the tick it already had. A row says where its run
+stands in the very words the card's playbook strip uses. The pass's latest run leads with
+the strip's own phrase (`passes.standing`, handed in as `pass_phrase`), and every other
+row with `headless.state_of`, which takes its question-kind words from
+`questions.waits_for` and its reset from `limits.clock`, as the strip does. Two surfaces
+that drew their words from two places would one day say a run two ways. After the phrase
+come the member, the harness, how long ago the run last spoke (the mtime of its stream)
+and its tokens so far. An ended run stays a day, under *Show ended*, and *Clear ended*
+is a per-user stamp: the records are the plan's, so clearing them is never a deletion.
+
+**Follow is a verb, and the button opens a terminal on it.** `dplanner agent follow <run>`
+(`agent_supervisor/follow.py`) reads the record and then the stream to its end. Each event
+is said by its harness (`Headless.say`, one hook beside the reader, so a fourth harness is
+a fourth module): what the agent wrote, each tool it called with its argument shortened,
+the first line of what came back. A turn's end says how it ended and, for a park, the
+question it waits on. The next turn is followed as soon as it is recorded, because an
+answer resumes the run. Reading the record *before* the stream is what makes "the turn
+has ended" mean "the stream has nothing left": the supervisor writes the end only after
+it has drained the stream. Follow takes no lock and writes nothing. The browser's row,
+*Step ▸ Follow Agent Run*, *Tools ▸ Agent List* and the Control Centre's question card all
+open the default profile's terminal on that verb (`launcher.shell_script(command=)`). So
+the window and a person's own terminal run one command, and there is no second printer.
+
+**Open Session takes the run, and a fence is how.** A parked run is still its
+supervisor's: an answer, a reset or *Retry now* resumes it. A person typing into the same
+session meanwhile would leave two processes writing one conversation. So `dplanner agent
+open-session <run>` (`agent_supervisor/takeover.py`) first stops the run being DPlanner's.
+It does that through the one stopper, `supervisor.stop_and_wait`, on **that run alone**,
+with `why` `taken over by a person` (`ledger.TAKEN_OVER`): a supervisor waiting out a
+limit is signalled, and a parked run nobody drives is ended here with its questions
+withdrawn. It does not take the plan follow-ups of *Stop Playbook*, because the work
+is not stopped: a person has it. The step leaves its squad's claim through `ownership`'s
+person's override (the `Release` handed to the verb), since a coordinator must not
+relaunch a step a person took over. The pass reads *Taken over* — a branch of
+`passes._words`, quiet rather than the bad news *Stopped* is — and so does a round cap
+answered *Take over*. Only then does the harness's own resume (`AgentHarness.resume`:
+`claude --resume`, `codex resume`, `opencode -s`) run in the directory the run worked in,
+as a child of the verb rather than an `exec`, which Windows does not have.
+
+While a turn runs, Open Session is refused: "running — Follow it, or Stop Playbook first".
+Interrupting a turn is what *Stop Playbook* is for, and it says what it stops. A run that
+is over is opened without a fence, and without asking. A run that is not over asks first in
+the window, because the run will not come back to its playbook. The greyed reason and the
+verb's refusal are one function (`open_session_refusal`), and a run of another machine is
+refused by both: its streams and its session are there.
 
 ### A claim is a lease in git, and at-work stays beside it
 

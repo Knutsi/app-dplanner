@@ -15,6 +15,9 @@ and :class:`Headless` holds them:
   tokens, the account's limit telemetry, the final text and its typed form, the CLI's own
   error and any denied permission. The log is fed a line at a time, so the supervisor reads
   it live while it tees the stream, and a test reads a recorded stream the same way;
+- **how to say an event to a person** (``Headless.say``): ``dplanner agent follow``'s lines —
+  what the agent wrote, each tool it called with its arguments shortened, the first line of
+  what came back — so a run is watched in the stream's own order, read-only;
 - **how the turn ended** (:meth:`Headless.classify`) in S3's words, ``done``, ``asked``,
   ``denied``, ``limit`` or ``failed`` — never from the exit alone, because a headless run
   that exits 0 can hide an open question (Claude asks in prose), a denied edit (Claude's
@@ -157,6 +160,10 @@ def _no_denials(_stderr: str) -> list[str]:
     return []
 
 
+def _says_nothing(_event: Mapping[str, object]) -> list[str]:
+    return []
+
+
 @dataclass(frozen=True)
 class Ending:
     """How a turn ended, and what a person would need to know about it."""
@@ -198,6 +205,8 @@ class Headless:
     model: Callable[[TurnLog], str] = _streamed_model
     # Denials the CLI prints to stderr rather than its stream (opencode).
     stderr_denials: Callable[[str], list[str]] = _no_denials
+    # One event in a person's words, for ``agent follow``: none, for an event worth no line.
+    say: Callable[[Mapping[str, object]], list[str]] = _says_nothing
     # How long the stream may be silent, no tool running, before the turn is a hang: none of
     # the three CLIs times out a hung API on its own (the 10-03 probes sat 330 s and more).
     stall: float = STALL_SECONDS
@@ -406,6 +415,42 @@ def typed_message(text: str) -> Mapping[str, object] | None:
     except ValueError:
         return None
     return value if isinstance(value, dict) and "outcome" in value else None
+
+
+# How wide ``agent follow`` lets an argument or a result's line run before it is cut.
+SAID_WIDTH = 100
+CALLED = "→ "
+CAME_BACK = "  ← "
+
+
+def shorten(text: object, width: int = SAID_WIDTH) -> str:
+    """``text`` on one line, its whitespace collapsed and cut at ``width`` with an ellipsis."""
+    flat = " ".join(str(text).split())
+    return flat if len(flat) <= width else flat[: width - 1] + "…"
+
+
+def first_line(text: object, width: int = SAID_WIDTH) -> str:
+    """The first line of ``text`` that says anything, shortened; "" for none."""
+    lines = [line for line in str(text).splitlines() if line.strip()]
+    return shorten(lines[0], width) if lines else ""
+
+
+def called(tool: object, arguments: object) -> str:
+    """A tool call as ``agent follow`` says it: the tool, then its most telling argument — a
+    command, a path, a pattern — or its arguments as JSON, shortened."""
+    given = arguments if isinstance(arguments, Mapping) else {}
+    keys = ("command", "file_path", "filePath", "path", "pattern", "query", "url", "description")
+    telling = next((given[key] for key in keys if isinstance(given.get(key), str)), None)
+    shown = (
+        telling if telling is not None else json.dumps(given, ensure_ascii=False) if given else ""
+    )
+    return f"{CALLED}{tool}: {shorten(shown)}" if shown else f"{CALLED}{tool}"
+
+
+def came_back(output: object, error: bool = False) -> str:
+    """What a tool returned, as its first line — "(nothing)" for no output."""
+    line = first_line(output) or "(nothing)"
+    return f"{CAME_BACK}{'error: ' if error else ''}{line}"
 
 
 def last_line(text: str) -> str:

@@ -7,17 +7,18 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from tests.modules.step_playbook.test_passes import CHANGED, PASSED, gate, run, settings
 
-from dplanner.domain import questions
+from dplanner.domain import ledger, questions
+from dplanner.modules.agent_supervisor import limits
 from dplanner.modules.step_playbook.passes import (
     CHANGES,
     ESCALATION,
     PASS,
     ROUND_CAP,
     STOP,
+    TAKE_OVER,
     Facts,
     describe,
     standing,
-    until_words,
 )
 from dplanner.modules.step_playbook.presets import preset
 
@@ -110,19 +111,14 @@ def test_a_usage_hold_says_when_it_comes_back():
     (turn,) = held.turns
     held = replace(held, turns=(replace(turn, resets=reset.isoformat()),))
     shown = stands(REVIEWED, run("plan"), held)
-    assert (shown.phrase, shown.tone) == (f"Parked until {until_words(reset, NOW)}", "")
+    assert (shown.phrase, shown.tone) == (f"Parked until {limits.clock(reset, NOW)}", "")
     resets = (NOW + timedelta(days=2)).isoformat()
     card = questions.asked(
         "p1", "s1", "2026-10-08T11:00:00+00:00", [questions.one("?")], kind=questions.LIMIT,
         pass_="P", stage="execute", purpose=ESCALATION, resets=resets,
     )  # fmt: skip
     later = stands(REVIEWED, run("plan"), card).phrase
-    assert later == f"Parked until {until_words(NOW + timedelta(days=2), NOW)}"
-
-
-def test_a_reset_today_is_a_time_and_another_day_carries_its_date():
-    assert ":" in until_words(NOW, NOW) and not any(c.isalpha() for c in until_words(NOW, NOW))
-    assert any(c.isalpha() for c in until_words(NOW + timedelta(days=3), NOW))
+    assert later == f"Parked until {limits.clock(NOW + timedelta(days=2), NOW)}"
 
 
 @pytest.mark.parametrize(
@@ -197,3 +193,18 @@ def test_a_pass_that_ended_is_shown_for_a_day_and_one_under_way_always(tmp_path)
     # `playbook show` says how the last pass ended, however long ago.
     shown = standing_of(tmp_path, finished, later)
     assert shown is not None and shown.phrase == "Done"
+
+
+def test_a_pass_a_person_took_over_says_so_and_is_over():
+    """Open Session's fence, and a round cap answered *Take over*, both read *Taken over*: the
+    step is a person's now, which is not the bad news a stop is."""
+    executing = run("execute", end="asked", over=False)
+    fence = {"at": "2026-10-08T11:00:00+00:00", "by": "knut", "why": ledger.TAKEN_OVER}
+    taken = replace(executing, ended=executing.launched, fence=fence)
+    shown = stands(REVIEWED, run("plan"), taken)
+    assert (shown.phrase, shown.tone, shown.ended) == ("Taken over", "", True)
+    reviewed = (run("plan"), run("execute"), run("review", verdict=CHANGED))
+    capped = stands(REVIEWED, *reviewed, gate("review", TAKE_OVER, ROUND_CAP))
+    assert capped.phrase == "Taken over"
+    stopped = replace(taken, fence={**fence, "why": "the playbook was stopped"})
+    assert stands(REVIEWED, run("plan"), stopped).phrase == "Stopped"

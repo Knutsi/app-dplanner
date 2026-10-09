@@ -219,7 +219,11 @@ for days, and the step panel says so.
 
 The card wears **one phrase** derived from the step's latest runs and questions: *Planning*,
 *Executing*, *Review 1/2*, *Fixing (round 1)*, *Waits for you · plan approval*, *Parked until
-21:30*, *Escalated*, *Stopped*, *Waits for merge*, *Done*. It is never stored — a stored phrase could disagree with
+21:30*, *Escalated*, *Stopped*, *Taken over*, *Waits for merge*, *Done*. *Taken over* is a halted
+pass a person took — its latest run fenced by *Open Session*, or a round cap answered *Take
+over* — and is quiet where *Stopped* is bad news: the work goes on, in somebody's hands
+(`agents.md`'s *A headless run is watched from the Agents browser, and taken over by a fence*).
+The Agents browser leads a pass's latest run with this same phrase. It is never stored — a stored phrase could disagree with
 the runs it summarises — and it is `passes.standing`'s, beside `due` and reading the same
 records, so the card's strip and `playbook show` say the same words. It rides **a strip of its
 own under the card**, below the branch strip, with the stages behind it in the strip's tooltip
