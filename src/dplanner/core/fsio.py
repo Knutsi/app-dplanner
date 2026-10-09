@@ -91,12 +91,14 @@ _WINDOWS_LOCK_RETRY = 0.05
 
 
 @contextmanager
-def os_lock(path: Path, *, wait: bool) -> Iterator[IO[str]]:
+def os_lock(path: Path, *, wait: bool, parents: bool = True) -> Iterator[IO[str]]:
     """An exclusive lock the operating system holds on ``path`` and drops when its holder
     exits, however it exits. ``wait`` waits as long as the holder holds it, on every platform;
     ``BlockingIOError`` when another holds it and ``wait`` is False. The file is never
-    deleted: a lock on a file somebody can unlink is no lock."""
-    path.parent.mkdir(parents=True, exist_ok=True)
+    deleted: a lock on a file somebody can unlink is no lock. Its directory is made when
+    missing unless ``parents`` is False, when a missing one is ``FileNotFoundError``."""
+    if parents:
+        path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a+", encoding="utf-8") as held:
         if sys.platform == "win32":
             import msvcrt

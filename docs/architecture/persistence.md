@@ -85,6 +85,16 @@ structural review's probe, `tests/domain/test_store_adoption.py`). Around that o
 The same check is why **two CLI runs need no lock between them**: the second is refused for
 exactly the same reason and can be run again. One mechanism, three cases.
 
+Git is the exception, because a commit, a fetch or a rebase is not a file write the stamp can
+judge: every one of them holds the repository's **sync lock**, a file in its common git
+directory. **The lock is taken only inside a git directory that exists, and is never what
+makes one.** It once made its directory when missing, so a root that was no repository got a
+`.git` holding nothing but the lock — `/tmp/.git`, and every pytest temporary directory read
+as inside a repository, and the tests that then wrote a repository's project index wrote it
+into `/tmp`. So `git_common_dir` refuses a root with neither a `.git` directory nor a `.git`
+file leading to one, naming it; and since a provider keeps its root for its life, a root
+whose `.git` went from under it refuses the next Save rather than starting a repository again.
+
 ### Adopting the other writer's changes in place
 
 The simple answer to an outside change is the whole rebuild: `AppSession.reload()` builds a
