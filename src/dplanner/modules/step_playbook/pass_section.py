@@ -324,6 +324,7 @@ class PassSection(QWidget):
         table.fit_columns()
         if latest_work >= 0:
             table.setCurrentCell(latest_work, 0)
+            table.scrollTo(table.model().index(latest_work, 0))
         else:
             self.detail.show_markdown(passes[0].summary or NO_SUMMARY)
         self._show_run_verbs()
