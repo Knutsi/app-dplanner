@@ -17,10 +17,13 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from textwrap import indent
+from typing import Protocol
 
 from dplanner.cli import CliCommand, CliContext, CliError
+from dplanner.cli.discovery import acting
 from dplanner.cli.lookup import find_step, step_arg
-from dplanner.domain.agents import AgentHarness
+from dplanner.domain import questions
+from dplanner.domain.agents import AgentHarness, shell_marker
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.library_file import resolve_library_path
 from dplanner.domain.model import Step
@@ -35,12 +38,21 @@ from dplanner.modules.step_playbook.aspect import (
     write,
     write_project,
 )
-from dplanner.modules.step_playbook.engine import halted_pass, standing_of, stop, wake
-from dplanner.modules.step_playbook.passes import describe
+from dplanner.modules.step_playbook.engine import (
+    Answer,
+    Reviewed,
+    halted_pass,
+    reviewed,
+    send_back,
+    standing_of,
+    stop,
+    wake,
+)
+from dplanner.modules.step_playbook.passes import PASS, describe
 from dplanner.modules.step_playbook.presets import MAX_ROUNDS, PRESETS, ROUNDS, Playbook, preset
-from dplanner.modules.step_playbook.workflows import stopped
+from dplanner.modules.step_playbook.workflows import ACCEPTED, acceptance, stopped
 from dplanner.modules.step_status.workflows import perform
-from dplanner.planning.status import stored, word
+from dplanner.planning.status import Status, stored, word
 
 DEFAULT = "default"  # `set <step> default`: the step goes back to the project's choice.
 NONE = "none"  # `set --project-default none`: steps that never chose get Run Agent.
@@ -52,13 +64,84 @@ _SOURCES = {
 }
 
 
+class SetStatus(Protocol):
+    def __call__(
+        self, context: CliContext, step: Step, status: Status, because: str, titled: str
+    ) -> None: ...
+
+
 def commands(
     *,
     harnesses: tuple[AgentHarness, ...],
     advance: Callable[[CliContext, Step], str],
     end_claim: Callable[[EndClaim], bool],
     release: Callable[[Path, Release], bool],
+    answer: Answer,
+    set_status: SetStatus,
 ) -> list[CliCommand]:
+    """``answer`` is the one answer path; ``set_status`` writes a status as ``status set``
+    does, a ``because`` kept as a decision note."""
+
+    def by(args: Namespace) -> dict[str, str]:
+        return acting(args.by, bool(shell_marker(harnesses)))
+
+    def _review(
+        context: CliContext, args: Namespace, verdict: Callable[[Step, Path, Reviewed], str]
+    ) -> int:
+        """A person's verdict on the step's pass as they saw it (:func:`~.engine.reviewed`),
+        under the step's launch lock from before the reading until what it wrote is flushed
+        and followed up — so no advance, launch or other verdict acts in between. A pass that
+        is through waits on a person's look, which an agent never gives."""
+        step = find_step(context.library, args.step, context.current)
+        project = context.library.project_of(step.id).id
+        project_dir = context.store.project_dir(project)
+        locked = ExitStack()
+        locked.enter_context(supervisor.launching(project, step.id, wait=True))
+        context.unwritten.append(locked.close)
+        adopted = context.store.adopt_outside_changes()
+        if adopted.deferred or adopted.rebuild_required:
+            raise CliError(f"{step.title}: the plan was being written meanwhile — run it again")
+        step = context.library.step(step.id)
+        review = reviewed(project_dir, step, args.pass_, args.run, args.question)
+        if review.choices.gate is None and by(args)["kind"] != questions.PERSON:
+            raise CliError(
+                f"{step.title}: pass {review.pass_.id} is through and waits on a person's"
+                " look — an agent escalates it, never gives it"
+            )
+        said = verdict(step, project_dir, review)
+        gate = review.choices.gate
+        seen = f"pass {review.pass_.id}" + (f", run {review.run}" if review.run else "")
+        data = {
+            "step": step.id,
+            "pass": review.pass_.id,
+            "run": review.run,
+            "question": gate.id if gate is not None else None,
+            "said": said,
+        }
+        context.after_flush.append(lambda: context.report(data, f"{step.title}: {said} ({seen})"))
+        context.after_flush.append(locked.close)
+        return 0
+
+    def _accept(context: CliContext, args: Namespace) -> int:
+        """The pass's open gate answered *Pass*; or, a pass that is through, its step done."""
+
+        def accept(step: Step, project_dir: Path, review: Reviewed) -> str:
+            if why := review.choices.accept:
+                raise CliError(f"{step.title} cannot be accepted: {why}")
+            if (gate := review.choices.gate) is not None:
+                return answer(context, project_dir, gate.id, PASS, by(args))
+            reason = acceptance(review.pass_.id, review.pass_.playbook.name, args.because or "")
+            set_status(context, step, Status.DONE, reason, ACCEPTED)
+            return f"done — {reason}"
+
+        return _review(context, args, accept)
+
+    def _send_back(context: CliContext, args: Namespace) -> int:
+        def back(step: Step, _project_dir: Path, review: Reviewed) -> str:
+            return "sent back — " + send_back(context, step, review, args.note, by(args), answer)
+
+        return _review(context, args, back)
+
     def _advance(context: CliContext, args: Namespace) -> int:
         step = find_step(context.library, args.step, context.current)
         said = advance(context, step)
@@ -216,6 +299,26 @@ def commands(
             examples=("dplanner playbook stop S7",),
         ),
         CliCommand(
+            path=("playbook", "accept"),
+            summary="Accept a step's playbook pass: the gate it waits on answered Pass, or — a"
+            " pass that is through — the step done, kept as a person's decision note.",
+            configure=_configure_accept,
+            run=_accept,
+            examples=(
+                "dplanner playbook accept S7",
+                "dplanner playbook accept S7 --because 'read the summary and the diff'",
+            ),
+        ),
+        CliCommand(
+            path=("playbook", "send-back"),
+            summary="Send a step's playbook pass back with what must change: the gate it waits"
+            " on answered so, or — a pass that is through — another round of the work, the"
+            " note its finding. The round cap holds.",
+            configure=_configure_send_back,
+            run=_send_back,
+            examples=("dplanner playbook send-back S7 --note 'the empty state says nothing'",),
+        ),
+        CliCommand(
             path=("playbook", "advance"),
             summary="Move a step's playbook pass on: launch the stage that is due, ask its gate,"
             " or accept the work — once, however often it is run.",
@@ -224,6 +327,36 @@ def commands(
             examples=("dplanner playbook advance S7",),
         ),
     ]
+
+
+def _configure_accept(parser: ArgumentParser) -> None:
+    _configure_review(parser)
+    parser.add_argument("--because", help="what the acceptance rests on, kept in the note")
+
+
+def _configure_send_back(parser: ArgumentParser) -> None:
+    _configure_review(parser)
+    parser.add_argument("--note", required=True, help="what must change, in your own words")
+
+
+def _configure_review(parser: ArgumentParser) -> None:
+    """The pass as the person saw it: a verdict on anything else is refused."""
+    step_arg(parser)
+    parser.add_argument(
+        "--pass", dest="pass_", help="the pass you looked at (default: the step's latest)"
+    )
+    parser.add_argument(
+        "--run", help="its latest run, the work you looked at (default: whatever ran last)"
+    )
+    parser.add_argument(
+        "--question",
+        help="the gate you answer, by its id — '' when it waited on none (default: the open one)",
+    )
+    _configure_by(parser)
+
+
+def _configure_by(parser: ArgumentParser) -> None:
+    parser.add_argument("--by", default="", help="your name (default: your user name)")
 
 
 def _configure_wake(parser: ArgumentParser) -> None:

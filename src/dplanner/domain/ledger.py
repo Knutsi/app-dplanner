@@ -189,6 +189,9 @@ class LedgerRecord:
     verdict: Mapping[str, Any] | None = None  # A review's typed final message, as given.
     # A fix's findings it would not act on: [{finding: {run|question, index}, reason}].
     declined: tuple[Mapping[str, Any], ...] = ()
+    # A work run's account of what it did: its typed final message's summary, else its final
+    # text — what a person reviewing the pass reads first.
+    summary: str = ""
     # What the pass pinned, on its first record only: {preset, revision, rounds, roles,
     # overrides} (playbooks.md's *A pass pins its settings*).
     settings: Mapping[str, Any] | None = None
@@ -286,6 +289,7 @@ class LedgerRecord:
             "claim": self.claim,
             "verdict": dict(self.verdict) if self.verdict is not None else None,
             "declined": [dict(each) for each in self.declined],
+            "summary": self.summary,
             "settings": dict(self.settings) if self.settings is not None else None,
             "fence": dict(self.fence) if self.fence is not None else None,
         }
@@ -343,6 +347,7 @@ class LedgerRecord:
             declined=tuple(d for d in declined if isinstance(d, dict))
             if isinstance(declined, list)
             else (),
+            summary=_text(raw, "summary"),
             settings=settings if isinstance(settings, dict) else None,
             fence=({str(k): str(v) for k, v in fence.items()} if isinstance(fence, dict) else None),
         )

@@ -241,8 +241,9 @@ records one, not merged (`Facts.unmerged_pr`, read by `engine._facts`). Work tha
 a PR — a temp file, a local change — has nothing to merge, so the pass reads *Waits for you ·
 ready for review* (warn) instead: what is left is a person's look. A pass that ended — done or
 stopped — shows for a day after its last record (`engine.ENDED_SHOWN`); one waiting for a
-person has not ended and stays. Stages are
-read in the step panel's Playbook section, never as cards; `canvas.md`'s *A card running a
+person has not ended and stays. A pass is
+read in Step Details' Playbook tab, which a click on the strip opens (*A pass is reviewed in
+its step's Playbook tab*), never as cards; `canvas.md`'s *A card running a
 playbook says where its pass stands* has the canvas's half.
 
 **Until a pass has records, the mark is a medallion.** Nothing derives a phrase before the
@@ -336,10 +337,10 @@ record that already owns it:
   stamp's job, now the run file's.
 - **A conversation still going is a section of the briefing**, built from the runs and the
   questions of the pass, so a fresh fix is briefed with every finding and every answer.
-- **One builder names each message** for the panel and a conversation dialog alike, when a
-  view of a pass's conversation is built — none is yet. The `message_rows` /
-  `where_it_stands` pair S6 removed (`step_review/conversation_dialog.py` at `dfc0de0`) is the
-  shape to rebuild over runs and questions.
+- **One builder names each message** for the panel and a conversation dialog alike:
+  `step_playbook/history.py`, rebuilt over runs and questions in the shape of the
+  `message_rows` / `where_it_stands` pair S6 removed (*A pass is reviewed in its step's
+  Playbook tab*).
 
 **What left** (S6, *Remove review steps*): a review as a step (`Kind.REVIEW`, the `R` letter,
 its subject read off `requires`); lenses as a step setting — they become the review stage's
@@ -621,6 +622,68 @@ starts as any pass does: `agent run --playbook`. The stopped pass has reached it
 - **the context ceiling's fresh run.** A turn's summed usage counts the context once per
   call, so it is no reading of the context's size.
 - **fetching and pushing** around consuming an answer.
+
+## A pass is reviewed in its step's Playbook tab
+
+A pass that ends at *Waits for you · ready for review* with no PR left the person it waits for
+asking how to review it: the card said a phrase, and everything the pass knew — the
+implementer's account, each verdict and its findings, what was declined and why — was in run
+records only an agent read. **The step's Playbook tab in Step Details is where a pass is
+reviewed**, and a click on the card's playbook strip opens it (`StripPressMode` emits
+`playbook_opened`; the canvas runs `steps.details` with the step and a `playbook` entity, the
+focus kind the tab answers for — the Feature tab's way of being landed on). It shows for a step
+that runs a playbook or is an agent's, and says one line when the step has no pass.
+
+**What it shows is one reading, `history.py`** — the *one builder names each message* rule
+kept: every pass of the step, latest first, as its records in the order they were made. A
+work run says the **summary** its agent gave, which the supervisor now records on the run
+(`LedgerRecord.summary`: the typed final message's `summary`, else the final text; FORMAT.md's
+*Format 2*). The alternative, reading every run's stream on demand, works only on the machine
+that launched it; a record travels with the plan. A run from before the key is read back from
+its own stream where this machine has it, so a pass already reviewed by hand still shows what
+it did. A review says its verdict and a row per finding, the implementer's reason beside a
+finding it declined; an answer to a gate says who gave it and, for *changes*, its note as the
+finding it became. Earlier passes fold under the latest. **What changed is asked of git**
+(`changes.py`): the latest run's worktree, the branch checked out there against the base the
+worktree's prepare recorded for `gh` (`branch.<b>.gh-merge-base`, else the PR's base), its
+commits and diff stat, the PR where the GitHub aspect records one; *Open Diff* runs the
+person's difftool when one is set, else `git diff` in a terminal there, and *Open Worktree in
+Terminal* a shell. Work that left no commits says so and points at the summary — the case the
+tab was asked for.
+
+**Its verbs mean what `passes.choices` says, and both surfaces read it.** A pass waiting on a
+`person` or `coordinator` gate is answered there: *Pass* (the button reads so), or *Send
+Back* with a note, which is the gate's *changes* through the one answer path. A pass that is
+through, on a step not done, is a person's look: **Accept** sets the step done through the
+status workflow as a person, the reason kept as a decision note titled *Accepted after its
+playbook*, and is greyed while a PR is open, whose merge sets the step done; **Send Back** asks a gate of its own and answers it with the note at once. That
+gate is `look`, the one stage id beside `fix` that no playbook lists, and it **stands after
+every stage**: its *changes* loop back to the last work stage (or a fix, in *Review only*),
+resuming the implementer's session with the note as its finding, and its rounds are counted
+against the pass's cap like any gate's, so a second send-back asks the ordinary `round-cap`
+question. The alternatives were a verb that started a new pass — losing the session and the
+round count the loop-back exists for — or a person's changes that bypassed the cap, which
+is the silent extra round the design refuses for agents and has no reason to grant a person
+either. Anything else — at work, parked, a round cap or an escalation waiting in the Control
+Centre, halted, done — greys both with the reason. `dplanner playbook accept|send-back` are
+the same verbs, and the window runs them as processes, as it runs Stop — Accept of a pass
+that is through included, so it is not on the undo stack.
+
+**A verdict acts only on the pass as the person saw it** (`engine.reviewed`). The tab names
+the pass, its latest run and the gate it waits on (`--pass`, `--run`, `--question`; the CLI
+defaults each to what stands now and says which it acted on), and the verb takes the step's
+launch lock, adopts the plan as it stands, re-reads the records and refuses when any has
+moved on: another pass or a plain run on the step since the pass began, a run of the pass
+since, any run on the step not over, a gate answered or a newer one asked. The lock is held
+until the status, its flush and its follow-ups are done, as Stop holds it. The alternative —
+the tab's last reading trusted — let a click meant for *Q1* pass *Q2*, set done work a
+send-back had already reopened, and loop an old pass back beside a plain run that was editing
+the same worktree. Only the run names *newer work within the pass*: a send-back on a pass that
+is through adds a fix to the same pass, and the pass id alone cannot tell the look before it
+from the one after. **A pass that is through waits on a person's look** — `look` is in
+`questions.PERSON_ONLY`, and neither verb gives it from an agent's shell, since Accept's
+reason would otherwise satisfy the agent's done-without-review override. *Follow* and *Open
+Session* act on the picked row's run, the Agents browser's verbs by run id.
 
 ## Each stage is one headless turn per harness
 

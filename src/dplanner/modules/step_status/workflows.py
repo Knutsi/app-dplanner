@@ -34,6 +34,7 @@ from dplanner.domain.workflow import (
     PlanView,
     Release,
 )
+from dplanner.modules.notes.aspect import note_on
 from dplanner.planning.agent import enabled as is_agent
 from dplanner.planning.kinds import works_nobody
 from dplanner.planning.status import (
@@ -50,6 +51,8 @@ from dplanner.planning.status import (
 STOPPED = frozenset({*REVIEW_AND_MERGE, Status.DONE, Status.BLOCKED})
 
 LABEL = "Set Status"
+# The title of the decision note a ``because`` is kept as, unless the verb names its own.
+WITHOUT_REVIEW = "Done without review"
 
 
 @dataclass(frozen=True)
@@ -64,10 +67,11 @@ class Kept:
 @dataclass(frozen=True)
 class StatusWorkflow:
     """The one effect the composition root supplies: ``keep_reason`` builds the decision note
-    a ``because`` is kept as, answering its id and the command that adds it — None when the
-    step already carries that note. What a step is comes from ``planning.kinds``."""
+    a ``because`` is kept as — its reason, its day and its title — answering its id and the
+    command that adds it, None when the step already carries that note. What a step is comes
+    from ``planning.kinds``."""
 
-    keep_reason: Callable[[PlanView, Step, str, date], tuple[str, Command | None]]
+    keep_reason: Callable[[PlanView, Step, str, date, str], tuple[str, Command | None]]
 
     def refusal(
         self, steps: Sequence[Step], status: Status, actor: Actor, because: str = ""
@@ -103,17 +107,18 @@ class StatusWorkflow:
         actor: Actor,
         today: date,
         because: str = "",
+        titled: str = WITHOUT_REVIEW,
     ) -> tuple[Change, Kept | None]:
         """Set ``step`` to ``status``: the note a ``because`` is kept as and the status, as
         one command, and the claim to end when the work has stopped — with the note it kept,
-        for a surface that says so. Raises ``ValueError`` on a refusal — the model's word
-        for a change that cannot be true."""
+        ``titled``, for a surface that says so. Raises ``ValueError`` on a refusal — the
+        model's word for a change that cannot be true."""
         if why := self.refusal([step], status, actor, because):
             raise ValueError(why)
         commands: list[Command] = []
         kept = None
         if because:
-            note, command = self.keep_reason(view, step, because, today)
+            note, command = self.keep_reason(view, step, because, today, titled)
             kept = Kept(note, added=command is not None)
             commands.extend([command] if command is not None else [])
         previous = step.module_data.get(MODULE_ID)
@@ -127,6 +132,14 @@ class StatusWorkflow:
                 follow_ups += (Release(project, step.id, f"set {status.value}"),)
         command = CompositeCommand(LABEL, commands) if commands else None
         return Change(command, follow_ups), kept
+
+
+def kept_as_note(
+    view: PlanView, step: Step, reason: str, today: date, title: str
+) -> tuple[str, Command | None]:
+    """A reason kept as a decision note on the step — added the way ``note add`` adds one, so
+    a retried verb is one note: the ``keep_reason`` every surface uses."""
+    return note_on(view.project_of(step.id), step, "decision", title, reason, today)
 
 
 @dataclass(frozen=True)

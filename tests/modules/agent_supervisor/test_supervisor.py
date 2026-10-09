@@ -164,6 +164,19 @@ def test_a_done_turn_ends_the_run_with_its_stream_teed_and_its_usage_counted(rig
         pass
 
 
+def test_a_done_work_turn_keeps_the_summary_it_gave(rig, tmp_path):
+    """What a person reviewing the pass reads first: the typed final message's summary —
+    or, from a CLI with no schema, its final text."""
+    said = {"outcome": "done", "summary": "Built the tab", "question": "", "declined": []}
+    rig.play({"lines": [INIT, result("{}", typed=said)]})
+    rig.supervise()
+    assert rig.record.summary == "Built the tab"
+    prose = Rig(tmp_path / "prose")
+    prose.play({"lines": [INIT, result("Built it, and its tests.")]})
+    prose.supervise()
+    assert prose.record.summary == "Built it, and its tests."
+
+
 def test_a_turn_is_the_member_that_runs_it_never_the_shell_that_started_it(
     rig, tmp_path, monkeypatch
 ):

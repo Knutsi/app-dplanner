@@ -584,6 +584,11 @@ A review run carries its `verdict`, and the fix run after it what it `declined`:
   fenced run `stopped` instead of resuming it, and in a merge the fence wins. `why` is
   prose, but one value is read: `taken over by a person` (*Open Session*), which a pass
   reads as *Taken over* rather than *Stopped*.
+- **`summary`** is on a work run (`plan`, `execute`, `fix`) that ended `done`: the agent's own
+  account of what it did — its typed final message's `summary`, or, from a CLI with no schema,
+  its final text — what a person reviewing the pass reads first. A run recorded before the key
+  existed has none; the Playbook tab reads it back from the run's own stream, which only the
+  launching machine keeps.
 - **A plan stage's final text** — the plan — is copied to the run directory's `plan.md`, so
   DPlanner's copy does not depend on the one Claude leaves in `~/.claude/plans/`.
 - **Why the format is 2:** a format-1 harvest rewrites the record whole from the keys it
@@ -636,7 +641,10 @@ git never conflicts:
   stage's launch refused, or `progress` unable to merge), which is `limit` with `resets` when
   the account is held and `blocked` otherwise, answered *Retry now* or by the clock. An
   agent's own question has no `purpose`. A `progress` gate, like a `person` gate, only a
-  person answers.
+  person answers. **A person's look at a pass that is through is a gate too**, at the stage
+  `look`, which no playbook lists: *Send Back* asks it and answers it with the note at once
+  (`dplanner playbook send-back`), and it stands after every stage, so its *changes* goes
+  back to the last work stage and its rounds count like any gate's.
 - **`questions` is Claude's `AskUserQuestion` shape exactly** — question, header, options
   with descriptions, `multiSelect` — so a hosted Claude's own question is written through
   unchanged, and `dplanner question ask` writes a list of one. `answer.answers` is the shape Claude

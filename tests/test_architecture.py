@@ -141,8 +141,9 @@ HEADLESS_FILES: dict[str, tuple[str, ...]] = {
     "spec_git": ("source.py",),
     "step_agent_run": ("runs.py", "terminal.py"),
     "step_order": ("export.py",),
-    # The playbook engine: `agent run --playbook` and `playbook advance` drive it.
-    "step_playbook": ("engine.py", "passes.py", "presets.py"),
+    # The playbook engine: `agent run --playbook` and `playbook advance` drive it; and what a
+    # pass did and changed, which the Playbook tab reads on a worker thread.
+    "step_playbook": ("changes.py", "engine.py", "history.py", "passes.py", "presets.py"),
     "testing": ("export.py", "filing.py", "format.py", "references.py", "runs.py"),
 }
 
@@ -166,7 +167,7 @@ CONCRETE_STORAGE = (
 
 # Ceilings (rule 12), recorded on 4 October 2026. Lower one by hand when its count falls;
 # never raise it.
-ROOT_LINES = 3375
+ROOT_LINES = 3358
 DIRECT_COMMANDS = 137
 
 # Every id a module stores data, settings or files under (rule 13). Stored ids are public:

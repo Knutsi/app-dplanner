@@ -38,7 +38,6 @@ from PySide6.QtWidgets import (
     QGraphicsScene,
     QGraphicsSceneMouseEvent,
     QGraphicsView,
-    QToolTip,
     QWidget,
 )
 
@@ -192,6 +191,8 @@ class GraphScene(QGraphicsScene):
         self.redirect_requested: Signal[StepId, EdgeEnd] = Signal()
         # A stack's "+" was pressed: a step is wanted below this one, its last.
         self.stack_add_requested: Signal[StepId] = Signal()
+        # A card's playbook strip was clicked: its step's pass is wanted, in Step Details.
+        self.playbook_opened: Signal[StepId] = Signal()
         # A card restacked and let go in the stack with this id, at this slot — to move
         # there if it is a member, to join if it is not.
         self.dropped_into_stack: Signal[StepId, str, int] = Signal()
@@ -441,12 +442,6 @@ class GraphScene(QGraphicsScene):
             if frame is not None:
                 frame.set_hinted(True)
             self._hinted = frame
-
-    def show_tip(self, scene_pos: QPointF, text: str) -> None:
-        for view in self.views():
-            at = view.viewport().mapToGlobal(view.mapFromScene(scene_pos))
-            QToolTip.showText(at, text, view)
-            return
 
     def lift_links(self, step_id: StepId | None) -> None:
         """Stop drawing this step's arrows until it lands — or, with None, draw them all."""

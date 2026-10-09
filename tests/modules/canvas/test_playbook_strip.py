@@ -14,6 +14,7 @@ from tests.modules.step_playbook.test_passes import run, settings
 from dplanner.domain import ledger
 from dplanner.domain.commands import AddNodeCommand
 from dplanner.domain.model import Step
+from dplanner.framework.context import Context
 from dplanner.modules.canvas.items import GROW_S
 from dplanner.modules.canvas.layouts.positions import NODE_H, NODE_W, STRIP_H
 from dplanner.modules.canvas.renderers import (
@@ -172,21 +173,39 @@ def test_the_playbook_strip_stands_under_the_branch_strip(qapp):
     assert pass_band.blue() > pass_band.red()  # Busy blue.
 
 
-def test_a_click_on_the_strip_names_the_stages_and_still_picks_the_card(
+def test_a_click_on_the_strip_picks_the_card_and_opens_its_pass_in_step_details(
     qapp, services, project, tab, monkeypatch
 ):
     from PySide6.QtCore import QEvent
     from tests.modules.canvas.test_canvas import send
+
+    ran: list[tuple[str, Context]] = []
+    monkeypatch.setattr(
+        tab, "run_action", lambda action, context=None: ran.append((action, context))
+    )
 
     write_pass(services, project, run("plan", end="", over=False))
     node = card(tab, project)
     settle(tab._scene)
     tab.widget.resize(800, 600)
     tab._view.centerOn(node)
-    shown = []
-    monkeypatch.setattr(tab._scene, "show_tip", lambda _at, text: shown.append(text))
+    asked: list[str] = []
+    tab._scene.playbook_opened.connect(asked.append)
     at = node.mapToScene(QPointF(NODE_W / 2, NODE_H + STRIP_H / 2 - 2))
     send(qapp, tab, QEvent.Type.MouseButtonPress, at)
     send(qapp, tab, QEvent.Type.MouseButtonRelease, at, buttons=Qt.MouseButton.NoButton)
-    assert len(shown) == 1 and shown[0].startswith("Planning · ")
+    assert asked == [node.step_id]
     assert node.isSelected()
+    qapp.processEvents()  # The dialog opens a turn later, never inside the release.
+    [(action, context)] = ran
+    assert action == "steps.details"
+    assert context.selected_entity("step") == node.step_id
+    assert context.selected_entity("playbook") == node.step_id
+    # Let go off the strip, and nothing is asked for — nor does the card move.
+    seat = node.pos()
+    away = node.mapToScene(QPointF(NODE_W / 2, -40))
+    send(qapp, tab, QEvent.Type.MouseButtonPress, at)
+    send(qapp, tab, QEvent.Type.MouseMove, away)
+    send(qapp, tab, QEvent.Type.MouseButtonRelease, away, buttons=Qt.MouseButton.NoButton)
+    assert asked == [node.step_id]
+    assert node.pos() == seat

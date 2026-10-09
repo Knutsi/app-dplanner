@@ -82,6 +82,12 @@ def works_nobody(step: Step) -> str:
     return "a wait" if is_wait(step) else A_CUT if is_cut(step) else ""
 
 
+def counts_as_work(step: Step) -> bool:
+    """Whether a step is work: a wait and a branch cut are not — no worker takes them and no
+    count holds them."""
+    return not works_nobody(step)
+
+
 def scope_kinds() -> tuple[ScopeKind, ...]:
     """The collectors this build knows, and where each one's cone stops.
 

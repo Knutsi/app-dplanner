@@ -44,7 +44,7 @@ from dplanner.modules.step_properties.name import NameBlock
 
 MODULE_ID = "step_properties"
 # The kinds a details dialog can be asked to land on, beside the step itself.
-FOCUS_KINDS = ("test", "feature")
+FOCUS_KINDS = ("test", "feature", "playbook")
 
 NAME_BLOCK_ID = f"{MODULE_ID}.name"
 

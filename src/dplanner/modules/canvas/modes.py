@@ -75,6 +75,7 @@ CONTRACT_VERTICAL = "contract-vertical"
 CONTRACT_HORIZONTAL = "contract-horizontal"
 REDIRECT_TO = "redirect-to"
 REDIRECT_FROM = "redirect-from"
+STRIP_PRESS = "strip-press"
 
 # The redirect modes by the end of the arrow they move. An arrow runs from the step waited
 # on to the step that waits, so moving the waiter end aims the picked links *at* a step and
@@ -200,6 +201,8 @@ class Canvas(Protocol):
     nodes_moved: Signal[list[tuple[StepId, float, float]]]
     # A stack's "+" was pressed: a step is wanted below this one, the stack's last.
     stack_add_requested: Signal[StepId]
+    # A card's playbook strip was clicked: the step's pass is wanted, in Step Details.
+    playbook_opened: Signal[StepId]
     # A card restacked — let go in the stack with this id at this slot, or out of its own
     # stack at this seat: where it went; which verb that is, is the model's to say.
     dropped_into_stack: Signal[StepId, str, int]
@@ -229,9 +232,6 @@ class Canvas(Protocol):
 
     # The frame round a point says what Shift does; None quiets every one.
     def hint_at(self, scene_pos: QPointF | None) -> None: ...
-
-    # Words beside a point, as a tooltip: a press on a card's playbook strip names its stages.
-    def show_tip(self, scene_pos: QPointF, text: str) -> None: ...
 
     # A card in the hand: its arrows are not drawn until it lands, or None to draw them all.
     def lift_links(self, step_id: StepId | None) -> None: ...
@@ -1520,6 +1520,35 @@ def visible_scene_rect(view: QGraphicsView) -> QRectF:
     return view.mapToScene(view.viewport().rect()).boundingRect()
 
 
+class StripPressMode(ModeBase):
+    """A press on a card's playbook strip, which is a button and not a handle: let go on the
+    strip, it asks for the step's pass in Step Details (``playbook_opened``); anywhere else,
+    nothing. Nothing drags from it — the strip is not the card's footprint, so a card is
+    taken by its body."""
+
+    name = STRIP_PRESS
+
+    def __init__(self, deps: ModeDeps, node: StepNodeItem) -> None:
+        super().__init__(deps)
+        self._node = node
+
+    def mouse_move(self, event: CanvasEvent) -> bool:
+        return True
+
+    def mouse_release(self, event: CanvasEvent) -> bool:
+        if self.stack is not None:
+            self.stack.pop()
+        if self._node.playbook_tip_at(event.scene_pos):
+            self.deps.canvas.playbook_opened.emit(self._node.step_id)
+        return True
+
+    def key_press(self, key: CanvasKey) -> bool:
+        if key.key == Qt.Key.Key_Escape and self.stack is not None:
+            self.stack.pop()
+            return True
+        return False
+
+
 class IdleMode(ModeBase):
     """The base. Qt does selection, rubber banding and the drag of several loose cards; this
     catches the rest: every right press, and a left press on a card's link handle, a stack's
@@ -1553,9 +1582,9 @@ class IdleMode(ModeBase):
             if edge:
                 self._push(NodeResizeMode(self.deps, node, edge))
                 return True
-            tip = node.playbook_tip_at(event.scene_pos)
-            if tip:
-                canvas.show_tip(event.scene_pos, tip)  # What hovering says; the press still picks.
+            if node.playbook_tip_at(event.scene_pos) and not event.modifiers:
+                canvas.select_step(node.step_id)
+                return self._push(StripPressMode(self.deps, node))
             if event.modifiers & Qt.KeyboardModifier.ControlModifier:
                 return False  # Qt's toggle of one card in the pick.
             # The one card into, through or out of a stack: Shift on any card, and a loose

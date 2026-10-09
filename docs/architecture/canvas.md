@@ -1119,7 +1119,12 @@ second exception to *nothing in words*, for the same reason as the branch: a med
 say only *some* playbook, and the point of the strip is which stage and who it waits on. The
 words are `passes.standing`'s, one Qt-free reading of the pass's runs and questions that
 `playbook show` prints too, so the card and the terminal cannot disagree; the stages behind
-them, the current one marked, are the strip's tooltip and what a click on it shows.
+them, the current one marked, are the strip's tooltip. **A click on the strip opens the pass**
+— Step Details on the step, at its Playbook tab (`playbooks.md`'s *A pass is reviewed in its
+step's Playbook tab*). It used to show the tooltip and still pick the card; a strip that said
+*Waits for you* and then only said it again in a tip left the person it waited for with
+nowhere to go. The press is a button's, never a handle's: nothing drags from the strip, which
+is not the card's footprint, and the dialog opens a turn after the release, never inside it.
 
 **It is not in the footprint, and that is the one difference from the branch strip.** A
 branch is a fact of the plan that lasts the stretch; a pass lasts hours. Counted in

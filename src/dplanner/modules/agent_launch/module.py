@@ -166,6 +166,11 @@ def _window_title(subject: str, note: str) -> str:
     return f"{subject} ({note})" if note else subject
 
 
+def _seen(pass_id: str, run: str, question: str) -> list[str]:
+    """A verdict's flags naming the pass as the person saw it — "" for no run or no gate."""
+    return [f"--pass={pass_id}", f"--run={run}", f"--question={question}"]
+
+
 def _titled(step: Step) -> str:
     """A step's title as a person reads it — the placeholder when it has none."""
     return step.title or "Untitled step"
@@ -1020,6 +1025,31 @@ class AgentLaunchModule:
             doing="Stopping the playbook on",
             ok="Playbook stopped on",
             refused="The playbook was not stopped on",
+            own_task=True,
+        )
+
+    def accept_playbook(self, step: Step, pass_id: str, run: str, question: str) -> None:
+        """Accept the step's pass as the person saw it, by ``dplanner playbook accept``: the
+        gate it waits on answered *Pass*, or a pass that is through, the step done."""
+        self._run_pass_verb(
+            step,
+            ["playbook", "accept", step.id, *_seen(pass_id, run, question)],
+            doing="Accepting the playbook pass on",
+            ok="Pass accepted on",
+            refused="The pass was not accepted on",
+            own_task=True,
+        )
+
+    def send_back(self, step: Step, note: str, pass_id: str, run: str, question: str) -> None:
+        """Send the step's pass, as the person saw it, back with ``note``, by ``dplanner
+        playbook send-back`` — the gate's answer or a person's look, which the engine loops
+        back."""
+        self._run_pass_verb(
+            step,
+            ["playbook", "send-back", step.id, "--note", note, *_seen(pass_id, run, question)],
+            doing="Sending the work back on",
+            ok="Work sent back on",
+            refused="The work was not sent back on",
             own_task=True,
         )
 
