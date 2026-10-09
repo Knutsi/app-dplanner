@@ -214,8 +214,11 @@ paths:
   meet the *body's* middle, and a resize stores the body. `docs/architecture/canvas.md`'s *A card on
   a branch names it* has the reasoning. **The second is the playbook strip**
   (`NodeAccent.playbook`: `passes.standing`'s phrase, tone and stages, through the root's
-  `PassStandings`), under the branch strip at the very foot, its stages the tooltip and a
-  click's tip — and **never in the footprint**: a pass is transient, so the card adds it to
+  `PassStandings`), under the branch strip at the very foot, its stages the tooltip — **and a
+  click on it opens the step's pass in Step Details**: `StripPressMode` claims the press (a
+  button, never a handle), and a release on the strip emits `playbook_opened`, which the
+  activity turns into `steps.details` with a `playbook` entity, a turn later — and **never in
+  the footprint**: a pass is transient, so the card adds it to
   what it draws, hits and hands its stack (`size()`), never to what the scene pushes
   (`footprint()`), a resize stores or the arrows meet. `docs/architecture/canvas.md`'s *A card
   running a playbook says where its pass stands* has the reasoning.

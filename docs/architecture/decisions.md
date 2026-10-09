@@ -828,3 +828,15 @@ review with no PR, and the strip asked for a merge there was nothing to make. *W
 now needs a PR the step's GitHub aspect records and has not seen merged; with none, a pass
 through its stages reads *Waits for you · ready for review* (warn) until the step reads done.
 Now: `playbooks.md`'s *The mark on the one card*.
+
+## 2026-10-09 — A click on a card's playbook strip opens the pass, not a tip
+
+A click on the playbook strip showed its tooltip — the stages, the current one marked — and
+still picked the card. Knut, testing the playbooks branch, met a pass that ended at *Waits for
+you · ready for review* with no PR and asked how he would review it: the tip said the same
+phrase again, and the implementer's summary, the verdicts and the declined findings lived only
+in run records. The click now opens Step Details on the step's Playbook tab, which shows them,
+what the work changed in git and the verbs — Accept, Send Back with a note — and a person's
+send-back became a gate of its own, `look`, rather than a verb outside the pass. Now:
+`canvas.md`'s playbook-strip bullet and `playbooks.md`'s *A pass is reviewed in Step Details'
+Playbook tab*.

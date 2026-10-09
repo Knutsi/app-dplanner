@@ -23,11 +23,10 @@ from dplanner.domain import ledger, questions
 from dplanner.domain.agents import AgentHarness, harness_by_id
 from dplanner.domain.headless import StageKind, TurnEnd, stage_kind, summary_of, verdict_of
 from dplanner.domain.ledger import LedgerRecord
-from dplanner.domain.model import Step
 from dplanner.domain.questions import Question
 from dplanner.modules.agent_supervisor.supervisor import PLAN_FILE
 from dplanner.modules.step_playbook import passes
-from dplanner.modules.step_playbook.engine import Pass, facts_of, grouped, pass_of
+from dplanner.modules.step_playbook.engine import Pass, grouped, pass_of
 from dplanner.modules.step_playbook.passes import Choices, Standing
 
 WORK, REVIEW, ANSWER = "work", "review", "answer"
@@ -84,16 +83,17 @@ class PassHistory:
 
 def history(
     project_dir: Path,
-    step: Step,
+    step_id: str,
+    facts: passes.Facts,
     now: datetime,
     harnesses: Sequence[AgentHarness] = (),
     config: Path | None = None,
 ) -> tuple[PassHistory, ...]:
-    """Every pass of ``step`` this build can read, latest first."""
+    """Every pass of the step this build can read, latest first. ``facts`` is what the plan
+    says of the step (``engine.facts_of``), read where the model may be: this reads files."""
     asked = questions.records(project_dir)
-    facts = facts_of(step)
     found = []
-    for entries in grouped(step.id, ledger.records(project_dir), asked):
+    for entries in grouped(step_id, ledger.records(project_dir), asked):
         pass_ = pass_of(entries)
         if isinstance(pass_, str):
             continue

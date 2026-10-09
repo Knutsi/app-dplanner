@@ -640,9 +640,11 @@ src/dplanner/
 │   │                        the step's choice and the project's defaults (aspect.py), its
 │   │                        Details block, the Playbooks tab of Project ▸ Settings…, Step ▸
 │   │                        Run Playbook and Stop Playbook (module.py), `dplanner playbook
-│   │                        list|show|set|advance|stop|wake` — and the engine: where a pass
-│   │                        stands (passes.py), what advances it (engine.py) and the
-│   │                        changes it makes to the plan (workflows.py)
+│   │                        list|show|set|advance|stop|wake|accept|send-back` — the engine:
+│   │                        where a pass stands (passes.py), what advances it (engine.py) and
+│   │                        the changes it makes to the plan (workflows.py) — and the review
+│   │                        of a pass: what it did (history.py), what it changed in git
+│   │                        (changes.py) and the Playbook tab of Step Details (pass_section.py)
 │   ├── feature/             a step that is a feature: the Type ▸ Feature toggle, the Feature
 │   │                        tab (the spec passages it was read from), the Specs tab's Cite…
 │   │                        menu, `dplanner feature` (list, show, cite, uncite, reanchor)

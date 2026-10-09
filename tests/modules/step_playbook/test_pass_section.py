@@ -6,7 +6,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import pytest
-from tests.modules.step_playbook.test_changes import git, repo  # noqa: F401 - a fixture
+from tests.modules.step_playbook.test_changes import repo  # noqa: F401 - a fixture
 from tests.modules.step_playbook.test_history import write
 from tests.modules.step_playbook.test_passes import CHANGED, PASSED, gate, run
 
@@ -67,7 +67,8 @@ def step(services, make_project) -> Step:
     AddNodeCommand(project.id, made).redo(services.document)
     services.document.set_module_data(made.id, AGENT_ID, agent_state(True))
     services.document.set_module_data(made.id, status.MODULE_ID, {"status": "ready-for-review"})
-    return services.document.step(made.id)
+    found: Step = services.document.step(made.id)
+    return found
 
 
 @pytest.fixture
@@ -95,7 +96,7 @@ def tab(services, step, tmp_path, fakes, qapp):
 
 def texts(tab: PassSection) -> list[str]:
     table = tab.table
-    return [table.item(row, 0).text() for row in range(table.rowCount())]
+    return [table.model().index(row, 0).data() or "" for row in range(table.rowCount())]
 
 
 def test_a_step_with_no_pass_says_so_in_one_line(tab, step):
@@ -120,7 +121,7 @@ def test_a_two_round_pass_reads_as_its_work_its_findings_and_its_verbs(tab, step
     rows = texts(tab)
     assert rows[0].startswith("Pass P ·") and "↳ A race" in rows
     finding = rows.index("↳ A race")
-    assert tab.table.item(finding, 2).text() == "declined"
+    assert tab.table.model().index(finding, 2).data() == "declined"
     assert "Fixed the race" in tab.detail.toPlainText()  # The latest work's own account.
     assert "No commits" not in tab.commits.text()
     assert "no run of the pass recorded where it worked" in tab.where.text()

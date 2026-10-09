@@ -14,6 +14,7 @@ from tests.modules.step_playbook.test_passes import run, settings
 from dplanner.domain import ledger
 from dplanner.domain.commands import AddNodeCommand
 from dplanner.domain.model import Step
+from dplanner.framework.context import Context
 from dplanner.modules.canvas.items import GROW_S
 from dplanner.modules.canvas.layouts.positions import NODE_H, NODE_W, STRIP_H
 from dplanner.modules.canvas.renderers import (
@@ -178,7 +179,7 @@ def test_a_click_on_the_strip_picks_the_card_and_opens_its_pass_in_step_details(
     from PySide6.QtCore import QEvent
     from tests.modules.canvas.test_canvas import send
 
-    ran: list[tuple[str, object]] = []
+    ran: list[tuple[str, Context]] = []
     monkeypatch.setattr(
         tab, "run_action", lambda action, context=None: ran.append((action, context))
     )

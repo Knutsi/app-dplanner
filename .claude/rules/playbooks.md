@@ -136,6 +136,17 @@ paths:
   and *Waits for you · ready for review* when it records none — and has not ended. `docs/architecture/playbooks.md`'s
   *The presets*, *A step names its playbook; a project names its default* and *The mark on the
   one card*.
+- **A pass is reviewed in Step Details' Playbook tab** (`pass_section.py`), opened by a click
+  on the card's strip: what it did is `history.py` — the one builder of a pass's messages —
+  and what it changed `changes.py`, both Qt-free and read on a task. A work run's `summary`
+  is on its record (the supervisor writes it); an older run's is read back from its stream.
+  **Accept and Send Back mean what `passes.choices` says**, for the tab and `dplanner
+  playbook accept|send-back` alike: an open `person`/`coordinator` gate is answered (*Pass*,
+  or *Changes* with the note); a pass that is through is a person's look — Accept sets the
+  step done as a person with a decision note (greyed while a PR is open), Send Back asks and
+  answers a **`look` gate**, which stands after every stage, loops back to the last work
+  stage and keeps the round cap. `docs/architecture/playbooks.md`'s *A pass is reviewed in its
+  step's Playbook tab*.
 - **Every stage is one headless turn**, with the invocation per harness in
   `docs/architecture/playbooks.md`'s *Each stage is one headless turn per harness*: the JSON stream,
   Claude's `--strict-mcp-config`, the plan repository and the run directory writable,

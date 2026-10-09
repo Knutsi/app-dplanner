@@ -33,7 +33,7 @@ def repo(tmp_path) -> Path:
     git(checkout, "commit", "-q", "-m", "Start")
     git(checkout, "switch", "-q", "-c", "agent/s1")
     git(checkout, "config", "branch.agent/s1.gh-merge-base", "main")
-    return checkout
+    return Path(checkout)
 
 
 def worked_in(directory: Path, config: Path) -> ledger.LedgerRecord:

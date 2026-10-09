@@ -47,8 +47,10 @@ from dplanner.framework.task_runner import TaskRunner
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.widgets import EmptyState, caption, note, quiet, well
 from dplanner.modules.github import aspect as github
+from dplanner.modules.github.aspect import GithubRefs
 from dplanner.modules.step_playbook import changes
 from dplanner.modules.step_playbook.changes import Work
+from dplanner.modules.step_playbook.engine import facts_of
 from dplanner.modules.step_playbook.history import (
     ANSWER,
     REVIEW,
@@ -58,7 +60,7 @@ from dplanner.modules.step_playbook.history import (
     PassHistory,
     history,
 )
-from dplanner.modules.step_playbook.passes import FIX, LOOK
+from dplanner.modules.step_playbook.passes import FIX, LOOK, Facts
 from dplanner.modules.step_playbook.workflows import ACCEPTED, acceptance
 from dplanner.theme.tokens import CAPTION_GAP, FIELD_GAP, PANEL_MARGIN, SECTION_GAP
 
@@ -243,11 +245,13 @@ class PassSection(QWidget):
             self._apply(None)
             return
         step = self._library.step(self._step_id)
-        project_dir = self._project_dir(step.id)
-        harnesses = self._harnesses
+        # What the plan says of the step is read here, where the model may be; the worker
+        # reads files and git with plain data alone.
+        step_id, facts, refs = step.id, facts_of(step), github.read(step)
+        project_dir, harnesses = self._project_dir(step.id), self._harnesses
 
-        def body() -> None:  # Worker thread: plain data in, plain data out.
-            self._result.append(_read(step, project_dir, harnesses))
+        def body() -> None:
+            self._result.append(_read(step_id, facts, refs, project_dir, harnesses))
 
         if self._runner is None:
             body()
@@ -486,13 +490,19 @@ class PassSection(QWidget):
         self._open_terminal(Path(directory), title, argv, project, opened)
 
 
-def _read(step: Step, project_dir: Path, harnesses: tuple[AgentHarness, ...]) -> _Reading:
+def _read(
+    step_id: StepId,
+    facts: Facts,
+    refs: GithubRefs | None,
+    project_dir: Path,
+    harnesses: tuple[AgentHarness, ...],
+) -> _Reading:
     """Every pass of the step, and what its latest worked run changed — off the GUI thread."""
-    passes = history(project_dir, step, datetime.now(UTC), harnesses)
+    passes = history(project_dir, step_id, facts, datetime.now(UTC), harnesses)
     runs = [run for run in passes[0].runs if run.directory] if passes else []
-    work = changes.read_work(runs[-1] if runs else None, github.read(step))
+    work = changes.read_work(runs[-1] if runs else None, refs)
     difftool = work.compared and changes.has_difftool(Path(work.directory))
-    return _Reading(step.id, passes, work, difftool)
+    return _Reading(step_id, passes, work, difftool)
 
 
 def _row(layout: QVBoxLayout, *buttons: QWidget) -> QHBoxLayout:
