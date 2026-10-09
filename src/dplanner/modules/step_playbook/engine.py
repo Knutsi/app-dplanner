@@ -30,6 +30,7 @@ from dplanner.domain.questions import Question
 from dplanner.modules.agent_briefing.prompt import PromptPart
 from dplanner.modules.agent_briefing.stages import approved_part, findings_part, review_part
 from dplanner.modules.agent_supervisor import limits, supervisor
+from dplanner.modules.github import aspect as github
 from dplanner.modules.step_playbook import passes
 from dplanner.modules.step_playbook.aspect import read, resolve
 from dplanner.modules.step_playbook.passes import (
@@ -320,7 +321,12 @@ def precise_stamp() -> str:
 
 def _facts(step: Step) -> Facts:
     status = stored(step)
-    return Facts(done=status is Status.DONE, at_review=status is Status.READY_FOR_REVIEW)
+    refs = github.read(step)
+    return Facts(
+        done=status is Status.DONE,
+        at_review=status is Status.READY_FOR_REVIEW,
+        unmerged_pr=refs is not None and refs.has_pr() and refs.pr_state != github.PR_MERGED,
+    )
 
 
 def _parts(launch: Launch) -> tuple[PromptPart, ...]:

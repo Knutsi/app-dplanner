@@ -150,11 +150,28 @@ def test_a_pass_that_ended_says_how(last, status, phrase, tone):
     assert (shown.phrase, shown.tone, shown.ended) == (phrase, tone, True)
 
 
-def test_a_pass_through_with_its_work_unmerged_waits_for_the_merge():
-    through = (run("plan"), run("execute"), gate("person", PASS))
-    waits = stands("plan-execute-person", *through, at_review=True)
+THROUGH = (run("plan"), run("execute"), gate("person", PASS))
+
+
+def test_a_pass_through_with_its_pr_unmerged_waits_for_the_merge():
+    waits = stands("plan-execute-person", *THROUGH, at_review=True, unmerged_pr=True)
     assert (waits.phrase, waits.tone, waits.ended) == ("Waits for merge", "warn", False)
-    assert stands("plan-execute-person", *through, done=True).phrase == "Done"
+
+
+def test_a_pass_through_with_no_pr_waits_for_a_persons_review():
+    """Work that never became a PR — a temp file, a local change — has nothing to merge."""
+    waits = stands("plan-execute-person", *THROUGH, at_review=True)
+    assert (waits.phrase, waits.tone, waits.ended) == (
+        "Waits for you · ready for review",
+        "warn",
+        False,
+    )
+
+
+def test_a_pass_through_on_a_done_step_is_done_pr_or_not():
+    for unmerged_pr in (False, True):
+        shown = stands("plan-execute-person", *THROUGH, done=True, unmerged_pr=unmerged_pr)
+        assert (shown.phrase, shown.tone, shown.ended) == ("Done", "good", True)
 
 
 def test_a_pass_that_produced_nothing_to_merge_is_done_when_through():
@@ -183,6 +200,7 @@ def test_nothing_written_yet_reads_as_the_first_stage_due():
 def test_a_pass_that_ended_is_shown_for_a_day_and_one_under_way_always(tmp_path):
     from dplanner.domain import ledger
     from dplanner.domain.model import Step
+    from dplanner.modules.github import aspect as github
     from dplanner.modules.step_playbook.engine import ENDED_SHOWN, standing_of, standings
     from dplanner.planning import status
 
@@ -190,22 +208,33 @@ def test_a_pass_that_ended_is_shown_for_a_day_and_one_under_way_always(tmp_path)
     finished = Step(title="Finished")
     finished.module_data[status.MODULE_ID] = {"status": "done"}
     unmerged = Step(title="Unmerged")
+    unmerged.module_data[github.MODULE_ID] = github.write(
+        github.GithubRefs(branch="b", pr_number=7, pr_state=github.PR_OPEN)
+    )
+    unreviewed = Step(title="Unreviewed")  # Through, with no PR: a person's look is left.
+    unreviewed.module_data[status.MODULE_ID] = {"status": "ready-for-review"}
     pinned = settings(REVIEWED).to_json()
-    for step, verdict in ((working, None), (finished, PASSED), (unmerged, PASSED)):
+    for step, verdict in (
+        (working, None),
+        (finished, PASSED),
+        (unmerged, PASSED),
+        (unreviewed, PASSED),
+    ):
         made = [replace(run("plan"), settings=pinned), run("execute")]
         made.append(run("review", verdict=PASSED) if verdict else run("review", end="", over=False))
         for record in made:
             ledger.write(tmp_path, replace(record, step=step.id, pass_=f"P-{step.title}"))
     ended_at = datetime.fromisoformat(ledger.records(tmp_path)[-1].launched)
     soon, later = ended_at + timedelta(hours=1), ended_at + ENDED_SHOWN + timedelta(hours=1)
-    steps = [working, finished, unmerged]
+    steps = [working, finished, unmerged, unreviewed]
     assert {k: s.phrase for k, s in standings(tmp_path, steps, soon).items()} == {
         working.id: "Review 1/2",
         finished.id: "Done",
         unmerged.id: "Waits for merge",
+        unreviewed.id: "Waits for you · ready for review",
     }
-    # A pass waiting on a person's merge is not over: its strip stays until the step is done.
-    assert list(standings(tmp_path, steps, later)) == [working.id, unmerged.id]
+    # A pass waiting on a person is not over: its strip stays until the step is done.
+    assert list(standings(tmp_path, steps, later)) == [working.id, unmerged.id, unreviewed.id]
     # `playbook show` says how the last pass ended, however long ago.
     shown = standing_of(tmp_path, finished, later)
     assert shown is not None and shown.phrase == "Done"

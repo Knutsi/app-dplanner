@@ -819,3 +819,12 @@ status-bar line: the gesture "did nothing". Now `supervisor.dplanner_argv` takes
 and every builder passes it, a child runs from its project's directory, a refusal of a window
 verb stands as a notice, and each verb's exit code and line are journaled. Now: `agents.md`'s
 *Every `dplanner` a process of ours starts names its project*.
+
+## 2026-10-09 — A pass with nothing to merge waits for review, not merge
+
+*Waits for merge* (2026-10-08) assumed every pass that produced work left a PR. Knut's test step
+S30 ran *Plan → execute ⇄ review* on work that was a temp file: the pass ended at Ready for
+review with no PR, and the strip asked for a merge there was nothing to make. *Waits for merge*
+now needs a PR the step's GitHub aspect records and has not seen merged; with none, a pass
+through its stages reads *Waits for you · ready for review* (warn) until the step reads done.
+Now: `playbooks.md`'s *The mark on the one card*.
