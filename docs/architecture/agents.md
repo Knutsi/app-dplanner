@@ -151,6 +151,18 @@ projects planning one repository, an agent's `dplanner` calls are otherwise ambi
 reach whatever project the caller's shell named — and a launch from `--library` elsewhere
 loses its library altogether.
 
+**Every `dplanner` a process of ours starts names its project.** `supervisor.dplanner_argv` is
+the one builder, and it takes the project's id as well as the library: the supervisor, an
+advance, a wake, Follow, Open Session and the window's own Run and Stop Playbook all pass
+`--project <id>`, and a detached or waited-on child runs from its project's directory. Every
+library verb resolves a current project before it runs, from the working directory when
+nothing names one — and a window started in a checkout of a code repository that several
+library projects plan has a working directory that names none. Run Playbook from there was
+refused with *pass --project* and did nothing a person could see. A refusal of a verb the
+window ran therefore stands as an error notice naming the step until it is dismissed or the
+step's next verb runs, and `run_dplanner` journals each verb's exit code and its line (a
+`child` span), so a gesture that did nothing leaves its answer behind.
+
 **A machine's start picks up its lost turns.** A reboot or a killed supervisor leaves a run
 whose last turn never ended; `revive` starts a supervisor for each such run of this machine
 that no supervisor holds, which ends the turn `failed`/`lost` and retries it. A parked run —

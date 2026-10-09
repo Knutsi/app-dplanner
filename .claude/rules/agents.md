@@ -96,7 +96,11 @@ paths:
   repository not checked out here, a profile whose agent has no headless mode. It is
   headless by default (`--terminal` for a terminal) and always claims — `--playbook` starts a
   playbook's pass instead, through the same gate, lock and claim (`playbooks.md`). **A supervisor is
-  `sys.executable -m dplanner --library <the launch's>`** — and one an answer, *Retry now* or
+  `sys.executable -m dplanner --library <the launch's> --project <its project's id>`, run from
+  its project's directory** — every `dplanner` a process of ours starts names its project
+  through `supervisor.dplanner_argv`, the one builder, since a working directory in a code
+  repository several projects plan names none (`docs/architecture/agents.md`'s *Every
+  `dplanner` a process of ours starts names its project*) — and one an answer, *Retry now* or
   a pass's advance starts carries the library of the surface that acted (`store.library_path`,
   in the CLI and the window alike), never the default — and every turn's environment
   carries `DPLANNER_LIBRARY`, `DPLANNER_PROJECT` and `DPLANNER_RUN` — which nothing started

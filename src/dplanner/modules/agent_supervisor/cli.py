@@ -61,7 +61,9 @@ def commands(
                 text=args.text,
                 library=library,
                 # A playbook's stage that ended done hands its pass on, in a process of its own.
-                advance=lambda _dir, record: advance_detached(record.step, library=library),
+                advance=lambda directory, record: advance_detached(
+                    directory, record.project, record.step, library=library
+                ),
             )
         except RefusedError as error:
             raise CliError(str(error)) from error

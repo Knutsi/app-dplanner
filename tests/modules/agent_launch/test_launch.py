@@ -198,12 +198,14 @@ def test_a_machine_picks_up_its_lost_turns_and_nothing_else(tmp_path, started):
 
 def test_a_supervisor_is_this_build_never_whatever_is_on_path(tmp_path, monkeypatch):
     """A run launched from a branch's build is supervised by that build."""
-    argv: list[list[str]] = []
-    monkeypatch.setattr(supervisor, "spawn_detached", lambda command, **_k: argv.append(command))
-    supervisor.start_detached(tmp_path, "r1", prompt="answer", text="Keep both")
+    argv: list[tuple[list[str], Path]] = []
+    monkeypatch.setattr(
+        supervisor, "spawn_detached", lambda command, cwd: argv.append((command, cwd))
+    )
+    supervisor.start_detached(tmp_path, "r1", prompt="answer", text="Keep both", project="p1")
     assert argv == [
-        [sys.executable, "-m", "dplanner", "agent", "supervise", "r1", "--project-dir",
-         str(tmp_path), "--prompt", "answer", "--text", "Keep both"]
+        ([sys.executable, "-m", "dplanner", "--project", "p1", "agent", "supervise", "r1",
+          "--project-dir", str(tmp_path), "--prompt", "answer", "--text", "Keep both"], tmp_path)
     ]  # fmt: skip
 
 
@@ -810,33 +812,75 @@ def test_a_turn_that_will_not_end_holds_the_step_with_the_reason(plan, orphan, m
     assert is_live(stamp)
 
 
-def test_a_dplanner_verb_is_this_build_on_the_library_it_names(tmp_path):
+def test_a_dplanner_verb_is_this_build_on_the_library_and_project_it_names(tmp_path):
     from dplanner.modules.agent_supervisor.supervisor import dplanner_argv
 
-    assert dplanner_argv(None, "playbook", "advance", "S1") == [
+    assert dplanner_argv(None, "p1", "playbook", "advance", "S1") == [
         sys.executable,
         "-m",
         "dplanner",
+        "--project",
+        "p1",
         "playbook",
         "advance",
         "S1",
     ]
     library = tmp_path / "lib.dplanner"
-    assert dplanner_argv(library, "agent", "run")[3:] == [
+    assert dplanner_argv(library, "p1", "agent", "run")[3:] == [
         "--library",
         str(library.resolve()),
+        "--project",
+        "p1",
         "agent",
         "run",
     ]
 
 
 def test_a_verb_run_to_its_end_says_its_last_line_and_a_refusal_without_the_prefix(
-    allow_spawn,
+    allow_spawn, tmp_path
 ):
     from dplanner.modules.agent_launch.launch import run_dplanner
 
     allow_spawn(Path(sys.executable))
     said = "print('one'); print('started as run r1')"
-    assert run_dplanner([sys.executable, "-c", said]) == (0, "started as run r1")
+    assert run_dplanner([sys.executable, "-c", said], tmp_path) == (0, "started as run r1")
     refused = "import sys; print('dplanner: a pass is under way', file=sys.stderr); sys.exit(1)"
-    assert run_dplanner([sys.executable, "-c", refused]) == (1, "a pass is under way")
+    assert run_dplanner([sys.executable, "-c", refused], tmp_path) == (1, "a pass is under way")
+
+
+def test_a_verb_runs_where_it_is_told_and_its_answer_is_journaled(allow_spawn, tmp_path):
+    """A window-started verb never inherits the window's working directory, and a verb that
+    "did nothing" leaves its exit code and its line in the journal."""
+    from dplanner.core.telemetry import current
+    from dplanner.modules.agent_launch.launch import run_dplanner
+
+    allow_spawn(Path(sys.executable))
+    where = "import os, sys; print(os.getcwd(), file=sys.stderr); sys.exit(1)"
+    code, said = run_dplanner([sys.executable, "-c", where], tmp_path)
+    assert (code, Path(said).resolve()) == (1, tmp_path.resolve())
+    span = current().recent()[-1]
+    assert (span.kind, span.detail["exit_code"], span.detail["said"]) == ("child", 1, said)
+    assert span.detail["cwd"] == str(tmp_path)
+
+
+def test_a_window_started_verb_runs_from_a_repository_several_projects_plan(
+    cli, plan, code, monkeypatch
+):
+    """The window started in a code checkout two library projects plan: a child verb that
+    read its project from that working directory was refused — "pass --project" — and Run
+    Playbook did nothing. Every window-started verb names its project."""
+    from tests.modules.conftest import URL
+
+    from dplanner.modules.agent_supervisor.supervisor import dplanner_argv
+
+    _git(code, "remote", "add", "origin", URL)
+    cli("project", "create", "Gadget")
+    cli("location", "add", "gadget", "--role", "code", "--repository", URL)
+    projects = json.loads(cli("project", "list", "--json"))["projects"]
+    widget = next(each["id"] for each in projects if each["title"] == "Widget")
+    monkeypatch.chdir(code)
+    assert "pass --project" in cli("step", "show", "Build it", expect=1)
+
+    argv = dplanner_argv(None, widget, "step", "show", "Build it")
+    assert argv[3:5] == ["--project", widget]
+    assert "Build it" in cli(*argv[3:])

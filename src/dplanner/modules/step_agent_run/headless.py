@@ -35,6 +35,7 @@ ENDED_LISTED = timedelta(hours=24)
 class HeadlessRun:
     run: str
     step: str
+    project: str
     project_dir: Path
     directory: str  # Where it worked.
     harness: str
@@ -184,6 +185,7 @@ def row_of(
     return HeadlessRun(
         run=record.run,
         step=record.step,
+        project=record.project,
         project_dir=project.project_dir,
         directory=record.directory,
         harness=record.harness,

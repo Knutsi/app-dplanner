@@ -223,7 +223,7 @@ def test_a_question_asked_through_the_door_is_answered_consumed_and_resumes_the_
         resume=lambda *args, **kwargs: resumed.append((*args, kwargs)),
     )
     assert (
-        resumed == [(rig.plan, RUN, {"prompt": "answer", "library": None})]
+        resumed == [(rig.plan, RUN, {"prompt": "answer", "project": "p1", "library": None})]
         and "resumes with it" in done.said
     )
 

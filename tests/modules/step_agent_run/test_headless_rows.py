@@ -95,9 +95,10 @@ def test_follow_opens_a_terminal_on_the_verb(services, step, opened):
 
     ((directory, title, argv, project),) = calls
     project_dir = runs._deps.project_dir(step.id)
-    assert argv == follow_argv(runs._deps.library_path, project_dir, record.run)
-    assert directory == project_dir and title == "Follow Deploy"
     assert project == services.document.project_of(step.id).id
+    assert argv == follow_argv(runs._deps.library_path, project, project_dir, record.run)
+    assert argv[argv.index("--project") + 1] == project
+    assert directory == project_dir and title == "Follow Deploy"
 
 
 def test_open_session_is_greyed_while_a_turn_runs(services, step, opened):
@@ -136,7 +137,9 @@ def test_open_session_on_a_parked_run_asks_first(services, step, opened, monkeyp
 
     assert len(asks) == 1 and "taken over by you" in asks[0]
     project_dir = runs._deps.project_dir(step.id)
-    expected = open_session_argv(runs._deps.library_path, project_dir, record.run)
+    project = services.document.project_of(step.id).id
+    expected = open_session_argv(runs._deps.library_path, project, project_dir, record.run)
+    assert expected[expected.index("--project") + 1] == project
     assert [call[2] for call in calls] == ([expected] if agreed else [])
 
 

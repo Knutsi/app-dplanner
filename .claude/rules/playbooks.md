@@ -62,7 +62,9 @@ paths:
   starts only as `agent run --playbook`**, Run Agent's own gates and claim (none on a step at
   Ready for review, which starts at its first gate) — *Step ▸ Run Playbook ▸* in the window
   runs that very verb as a process (`AgentLaunchModule.start_playbook`, `launch.run_dplanner`)
-  after only the window's own asks: the graph gate (answered `--anyway`), the clone, the save.
+  after only the window's own asks: the graph gate (answered `--anyway`), the clone, the save —
+  naming the step's project, from its directory; a refusal stands as an error notice on the
+  step until dismissed or its next verb, and the card's strip re-reads the records at once.
   Its entries — every preset, the step's own first and marked — are each greyed by Run Agent's
   step gates, `passes.pinned` and `why_not` over `passes.agents_of`; one step at a time, and
   no *Remote ▸* until workers exist. **A launch resumes a session exactly when

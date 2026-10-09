@@ -484,15 +484,20 @@ written twice.
 **Run Playbook in the window runs the verb.** *Step ▸ Run Playbook ▸ <playbook>*, beside Run
 Agent's child menu and in the card's right-click with it, starts a pass by running `dplanner
 agent run <step> --playbook <id>` as a process of this build (`supervisor.dplanner_argv`), to
-its end on a task, and says its one line in the status bar. The engine, its launcher and its
-merge all stand on a `CliContext` — its save, the follow-ups after the save, what a refused
-save takes back — and the window applying the claim to its own model would be that order
+its end on a task, in the step's project and from its directory, and says its one line in the
+status bar — or, for a refusal, in an error notice naming the step, which stands until it is
+dismissed or the step's next verb runs: a refusal that was only a ten-second status line was
+how Run Playbook "did nothing" (`agents.md`'s *Every `dplanner` a process of ours starts names
+its project*). The engine, its launcher and its merge all stand on a `CliContext` — its save,
+the follow-ups after the save, what a refused save takes back — and the window applying the claim to its own model would be that order
 written a second time, which is exactly what one launch under both surfaces exists to prevent.
 So the window does only what is its own and the CLI refuses: it asks the graph gate (and passes
 `--anyway`), clones a repository this machine lacks, and saves, so the process writes over no
-unsaved edit. The claim and the pass's records arrive through the library watcher, as every
-agent's own `dplanner` call does; the process runs in a session of its own, so a window closed
-mid-launch does not end a process holding the step's launch lock.
+unsaved edit. The claim arrives through the library watcher, as every agent's own `dplanner`
+call does, and the pass's records through the standings' poll — read at once when the verb
+returns, so the card's strip answers the gesture rather than the next tick; the process runs
+in a session of its own, so a window closed mid-launch does not end a process holding the
+step's launch lock.
 
 The child menu lists every preset — the step's own first, marked by where it was chosen
 (*this step's*, *project default*, *landing default*) — and greys each with its own reason:
