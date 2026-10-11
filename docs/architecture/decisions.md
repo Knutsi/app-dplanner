@@ -864,3 +864,14 @@ and a work stage it launches again sets the step back in progress, so a merge ca
 being fixed. Codex's review of the plan named the two limits kept: *Execute* and *Plan → human
 review → execute* accept nothing, because no gate looked at the finished work. Now:
 `playbooks.md`'s *The mark on the one card*.
+
+## 2026-10-11 — A review held for usage may run on another agent, or be skipped
+
+A review whose agent's account was held waited for its reset on a card offering *Try again now*
+or *Stop*, though another agent often had usage left. Knut asked, after the playbook test run,
+for the review to go to another agent or be skipped instead. The card now offers both, for a
+review held on usage only; the developer's choice is the coordinator's to ask for once. The
+first plan also had an automatic `--on-limit` policy and rerouting a review parked mid-turn;
+Codex's review of it cut both from this change (delivery and crash recovery for an answer
+nobody gave, and a race with the parked run's supervisor). Now: `playbooks.md`'s *How the
+engine drives a pass*.

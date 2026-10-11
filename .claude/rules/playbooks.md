@@ -76,7 +76,10 @@ paths:
   the words the finding. A fix declines findings by their number, recorded through
   `findings.json`. **A pass that cannot act writes a card on itself** — `limit` with the reset
   for a held account (`playbook wake` answers it for the clock), else `blocked` — and *Retry
-  now* re-runs what was due; never an advance that exits with nothing written. **`progress`
+  now* re-runs what was due; never an advance that exits with nothing written. A **review**
+  held for usage also offers *Review with <agent>* (another agent whose account no limit holds,
+  this round only) and *Skip this review* (the gate passes, no round spent) —
+  `passes.held_review_options`; never for a work stage or another refusal. **`progress`
   checks before it merges** — the plan's feature branch now (`merge_target`), the PR's base
   and head, the step under review — merges (`--merge`) only into a non-default branch, makes
   the mainline a person-only gate (`questions.PERSON_ONLY`) and anything else a `blocked`

@@ -20,7 +20,7 @@ The rules are ``docs/architecture/playbooks.md``'s:
 """
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Any
 
@@ -233,6 +233,32 @@ REFUSED_OPTIONS = (
     (questions.RETRY_NOW, "Try again now"),
     (STOP, "End the pass here"),
 )
+# A review whose agent's account is held may also run on another agent for this round, or be
+# skipped — a person's or the coordinator's choice, the answered card its record.
+SKIP_REVIEW = "Skip this review"
+REVIEW_WITH = "Review with "
+
+
+def held_review_options(others: Sequence[str]) -> tuple[tuple[str, str], ...]:
+    """What a card on a review held for its account offers: ``others`` are the agents some
+    profile runs headless here whose accounts are not held."""
+    return (
+        REFUSED_OPTIONS[0],
+        *(
+            (f"{REVIEW_WITH}{harness}", f"A fresh review by {harness}, this round only")
+            for harness in others
+        ),
+        (SKIP_REVIEW, "Go on as if the review passed"),
+        REFUSED_OPTIONS[1],
+    )
+
+
+def reviewer_named(word: str) -> str:
+    """The agent a *Review with <agent>* answer names, or "" for any other answer."""
+    said = " ".join(word.split()).rstrip(".!")
+    if not said.casefold().startswith(REVIEW_WITH.casefold()):
+        return ""
+    return said[len(REVIEW_WITH) :].strip().casefold()
 
 
 def retried(question: Question) -> bool:
@@ -344,8 +370,15 @@ class _Reading:
             if is_answer(word, STOP):
                 return Halted(f"{question.short} stopped the pass")
             return self._changes(stage, (note_of(question),))
-        if is_answer(word, ACCEPT):
+        if is_answer(word, ACCEPT) or (
+            question.purpose == ESCALATION and is_answer(word, SKIP_REVIEW)
+        ):
             return self._after(stage, reviewed=self._is_gate(stage))
+        harness = reviewer_named(word) if question.purpose == ESCALATION else ""
+        if harness and stage in self.ids and self.roles[stage] is StageRole.REVIEW:
+            launch = self._enter(self.ids.index(stage))
+            assert isinstance(launch, Launch)
+            return replace(launch, harness=harness)
         if question.purpose == ROUND_CAP and is_answer(word, ONE_MORE):
             return self._loop_back(stage, self._open_findings(stage))
         if question.purpose == ESCALATION and is_answer(word, RETRY):
@@ -505,10 +538,14 @@ class _Reading:
     def _passed(self, gate: str) -> bool:
         if any(_verdict(r).get("outcome") == "pass" for r in self._run_list(gate)):
             return True
-        return any(is_answer(w, PASS) for w in self._settled_answers(gate, GATE)) or any(
-            is_answer(w, ACCEPT)
-            for purpose in (ROUND_CAP, ESCALATION)
-            for w in self._settled_answers(gate, purpose)
+        return (
+            any(is_answer(w, PASS) for w in self._settled_answers(gate, GATE))
+            or any(
+                is_answer(w, ACCEPT)
+                for purpose in (ROUND_CAP, ESCALATION)
+                for w in self._settled_answers(gate, purpose)
+            )
+            or any(is_answer(w, SKIP_REVIEW) for w in self._settled_answers(gate, ESCALATION))
         )
 
     def _open_findings(self, gate: str) -> tuple[Mapping[str, Any], ...]:

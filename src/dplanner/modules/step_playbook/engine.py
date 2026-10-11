@@ -51,6 +51,7 @@ from dplanner.modules.step_playbook.passes import (
     Settings,
     Standing,
     Wait,
+    held_review_options,
 )
 from dplanner.modules.step_playbook.presets import Playbook, preset
 from dplanner.modules.step_playbook.workflows import approved, awaiting_merge, reopened
@@ -75,6 +76,10 @@ class StageLauncher(Protocol):
 
     def runnable(self) -> tuple[str, ...]:
         """The harnesses some launch profile runs headless: what a role may name."""
+        ...
+
+    def unheld(self, among: Sequence[str]) -> tuple[str, ...]:
+        """Those of ``among`` whose account no usage limit holds now."""
         ...
 
     def merge_target(self, context: CliContext, step: Step) -> tuple[str, str]:
@@ -224,9 +229,22 @@ class Engine:
             begun.start()
             return begun.said
         except limits.HeldError as held:
-            return _refused(context, step, pass_, stage, attempt, str(held), held.until)
+            options = (
+                self._held_review_options(next_.harness)
+                if isinstance(next_, Launch) and next_.kind is StageKind.REVIEW
+                else REFUSED_OPTIONS
+            )
+            return _refused(
+                context, step, pass_, stage, attempt, str(held), held.until, options=options
+            )
         except CliError as error:
             return _refused(context, step, pass_, stage, attempt, str(error), None)
+
+    def _held_review_options(self, held: str) -> tuple[tuple[str, str], ...]:
+        """A review held for its agent's account may run on another agent this round, or be
+        skipped. Only for a usage hold — any other refusal is not the reviewer's quota."""
+        others = [harness for harness in self.launch.runnable() if harness != held]
+        return held_review_options(self.launch.unheld(others))
 
     def _do(self, context: CliContext, step: Step, pass_: "Pass", next_: Next) -> Begun:
         match next_:
@@ -407,10 +425,13 @@ def _refused(
     attempt: int,
     why: str,
     until: datetime | None,
+    *,
+    options: tuple[tuple[str, str], ...] = REFUSED_OPTIONS,
 ) -> str:
     """The card a pass waits on when it could not act: ``limit`` with the reset for a held
     account — the clock answers it then (:func:`wake`) — else ``blocked``; *Retry now*
-    answers either, and the pass does again what it could not."""
+    answers either, and the pass does again what it could not. A held review's card offers
+    more (:meth:`PlaybookEngine._held_review_options`)."""
     asked = _ask(
         context,
         step,
@@ -421,7 +442,7 @@ def _refused(
             ESCALATION,
             questions.LIMIT if until is not None else questions.BLOCKED,
             f"The pass could not go on: {why}",
-            REFUSED_OPTIONS,
+            options,
             resets=until.isoformat() if until is not None else "",
         ),
     )

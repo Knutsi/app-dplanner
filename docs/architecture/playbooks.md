@@ -430,7 +430,19 @@ card is `limit`, with the hold's reset, and a detached `playbook wake` waits for
 answers the card for the clock and advances (`engine.wake`). Any later advance answers a
 lapsed one too, which covers a waker that died with its machine. Every other refusal is
 `blocked`. *Retry now* — the label `inbox.retry_now` writes — answers either kind, and the
-pass does again what it could not; *Stop* halts it. The alternative was a pass whose advance
+pass does again what it could not; *Stop* halts it. **A review held for its agent's usage offers two answers more**
+(`passes.held_review_options`): *Review with <agent>*, one per agent a profile runs headless
+here whose account no limit holds (`StageLauncher.unheld`), which runs this round's review on
+that agent in a fresh session — the pass's pinned reviewer is kept, so the next round asks it
+again — and *Skip this review*, which counts as the gate passing, like a round cap's *Accept as
+is*, spends no round, and leaves any person gate after it to ask. Both are answers on the card,
+so the ledger keeps them and `passes.due` replays them; neither is offered for a work stage, a
+`blocked` card or anything but a usage hold, because none of those is the reviewer's quota.
+Which to give is the developer's policy: the coordinator asks for it once when nobody has said
+(`coordinator.py`). An automatic policy — the engine answering the card by itself — and
+rerouting a review that parks mid-turn were left out: Codex's review of the plan found the first
+needs a delivery and crash-recovery design of its own, and the second races the supervisor
+that owns the parked run. The alternative was a pass whose advance
 exited with nothing written: no run parked, no card shown, and no reset or answer that could
 ever wake it.
 

@@ -318,6 +318,8 @@ def test_a_held_account_parks_the_pass_on_a_limit_card_the_clock_answers(drive, 
     assert "could not go on" in drive.advance()
     card = drive.asked()
     assert (card.kind, card.purpose, card.stage) == ("limit", "escalation", "execute")
+    labels = [option["label"] for option in card.questions[0]["options"]]
+    assert labels == ["Retry now", "Stop"]  # Only a review may be rerouted or skipped.
     assert card.resets == reset.isoformat() and len(drive.started) == 1
     assert drive.advanced == [str(drive.plan)]  # `playbook wake` waits for the reset.
     # The reset comes: the clock answers the card, and the pass advances on it.
@@ -330,6 +332,32 @@ def test_a_held_account_parks_the_pass_on_a_limit_card_the_clock_answers(drive, 
     assert answered is not None and answered.answer["by"]["kind"] == "clock"
     drive.advance()
     assert (drive.latest().stage, drive.latest().attempt) == ("execute", 1)
+
+
+def test_a_held_review_offers_another_agent_or_a_skip_and_a_skip_goes_on(drive, monkeypatch):
+    """Only a review held for its agent's usage offers more than *Try again now*: another agent
+    with usage left — none here, the only one is held too — or skipping the review, which the
+    card records and the pass goes on from."""
+    from dplanner.modules.agent_supervisor import limits
+
+    drive.cli("playbook", "set", "Build it", "plan-execute-review-self")
+    drive.play(
+        {"lines": [INIT, result("A plan", session="s")]}, {"lines": [INIT, result(typed=done())]}
+    )
+    drive.cli("agent", "run", "Build it", "--playbook")
+    drive.supervise()
+    drive.advance()
+    drive.supervise()
+    monkeypatch.setattr(limits, "hold", lambda *_a, **_k: "Claude Code is at 97 %")
+    monkeypatch.setattr(limits, "held_until", lambda *_a, **_k: datetime.now(UTC))
+    assert "could not go on" in drive.advance()
+    card = drive.asked()
+    assert (card.kind, card.stage) == ("limit", "review")
+    labels = [option["label"] for option in card.questions[0]["options"]]
+    assert labels == ["Retry now", "Skip this review", "Stop"]
+    drive.answer(card, "Skip this review")
+    assert "is through" in drive.advance()
+    assert drive.latest().stage == "execute"  # No review ran.
 
 
 def test_a_role_no_profile_runs_any_more_blocks_until_retry_now(drive, monkeypatch):

@@ -24,6 +24,7 @@ from dplanner.modules.step_playbook.passes import (
     PASS,
     RETRY,
     ROUND_CAP,
+    SKIP_REVIEW,
     STOP,
     Ask,
     Complete,
@@ -220,6 +221,33 @@ def test_a_pass_is_reviewed_only_through_a_gate_passed_after_the_last_work():
         "plan-person-execute", run("plan"), gate("person", PASS), run("execute")
     )
     assert isinstance(approved_first, Complete) and not approved_first.reviewed
+
+
+def test_a_held_review_can_run_on_another_agent_this_round_or_be_skipped():
+    """A review whose agent ran out of usage: the card may send this round to another agent —
+    a fresh session, the pinned reviewer kept for the next — or skip it, which passes the
+    gate without spending a round, so a person gate after it still asks."""
+    work = [run("plan"), run("execute")]
+    held = gate("review", "Review with Claude", purpose=ESCALATION)
+    rerouted = next_of("plan-execute-review-other", *work, held)
+    assert isinstance(rerouted, Launch) and (rerouted.stage, rerouted.harness) == (
+        "review",
+        "claude",
+    )
+    assert rerouted.resume is None
+    skipped = next_of(
+        "plan-execute-review-other", *work, gate("review", SKIP_REVIEW, purpose=ESCALATION)
+    )
+    assert isinstance(skipped, Complete) and skipped.reviewed
+    landing = next_of("land", run("execute"), gate("review", SKIP_REVIEW, purpose=ESCALATION))
+    assert isinstance(landing, Ask) and (landing.stage, landing.purpose) == ("person", GATE)
+    # Only a review stage is rerouted: the same words on a work stage's card are no answer.
+    on_work = next_of(
+        "plan-execute-review-other",
+        run("plan"),
+        gate("execute", "Review with claude", purpose=ESCALATION),
+    )
+    assert isinstance(on_work, Halted)
 
 
 def test_a_person_sending_the_plan_back_reruns_the_plan_with_the_note():
