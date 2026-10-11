@@ -109,6 +109,25 @@ def test_the_projects_code_repository_answers_over_the_plans_origin(services, pr
     assert editor._repository_for(project.steps[0].id) == "https://github.com/acme/other"
 
 
+def test_a_step_working_in_another_code_repository_has_its_refs_there(services, project, editor):
+    """Two code repositories each number their PRs from one: the window's refresher, this tab
+    and the PR chip read a step's PR where the step works, never in the primary."""
+    from dplanner.domain.commands import SetFieldCommand
+    from dplanner.domain.locations import Location
+    from dplanner.planning.agent import MODULE_ID as AGENT_ID
+    from dplanner.planning.agent import with_workplace
+
+    step = project.steps[0]
+    rows = (
+        Location("l1", "code", "https://github.com/acme/widget"),
+        Location("l2", "code", "https://github.com/acme/ui", label="UI"),
+    )
+    services.undo.push(SetFieldCommand(project.id, "locations", rows))
+    assert editor._repository_for(step.id) == "https://github.com/acme/widget"
+    services.undo.push(SetModuleDataCommand(step.id, AGENT_ID, with_workplace(step, "l2")))
+    assert editor._repository_for(step.id) == "https://github.com/acme/ui"
+
+
 def test_no_repository_means_no_fetch_and_a_hint(editor):
     """The fixture library has no repository URL, so showing a step must not have started
     a loader — the status explains what to set instead."""

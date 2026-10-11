@@ -16,6 +16,7 @@ from dplanner.domain.repositories import UNSET, RepositoryFacts
 from dplanner.modules.agent_briefing.prompt import quoted
 from dplanner.modules.agent_briefing.worktree import run_name_of
 from dplanner.modules.notes.aspect import project_ref
+from dplanner.planning.agent import code_placement
 from dplanner.planning.branches import BranchPlan, reading
 from dplanner.planning.kinds import key_of
 from dplanner.planning.status import is_done
@@ -87,7 +88,7 @@ def preamble(
             " beside you, but this one shares the developer's working tree."
         )
     if facts is not None:
-        lines.append(plan_whereabouts(facts))
+        lines.append(plan_whereabouts(facts, step))
         told = locations_told(facts, roles)
         if told:
             lines.append(told)
@@ -146,10 +147,11 @@ def locations_told(facts: RepositoryFacts, roles_known: Sequence[LocationRole]) 
     )
 
 
-def plan_whereabouts(facts: RepositoryFacts) -> str:
+def plan_whereabouts(facts: RepositoryFacts, step: Step | None = None) -> str:
     """Where the plan lives, told to the agent: in a repository of its own, or — warned
     about unless the people on the project accepted it — inside the code it plans; or, before
-    anybody named the code, in a repository of its own with nothing yet to work in."""
+    anybody named the code, in a repository of its own with nothing yet to work in. The code
+    named is the step's own repository; with no step, every one the project works in."""
     if facts.state == UNSET:
         return (
             f"The plan is kept in its own repository, {facts.plan_label}, and no code"
@@ -158,7 +160,8 @@ def plan_whereabouts(facts: RepositoryFacts) -> str:
             " `dplanner location add <project> --role code --repository URL`."
         )
     if not facts.plan_in_code:
-        code = f" ({facts.code_label})" if facts.code_label else ""
+        named = _code_told(facts, step)
+        code = f" ({named})" if named else ""
         return (
             f"The plan is kept in its own repository, {facts.plan_label}, apart from the"
             f" code you are working in{code}: every `dplanner` command writes to the plan"
@@ -184,6 +187,17 @@ def plan_whereabouts(facts: RepositoryFacts) -> str:
             " every verb keeps reaching the plan where it lands."
         )
     return text
+
+
+def _code_told(facts: RepositoryFacts, step: Step | None) -> str:
+    """The code repository an agent works in, as a person knows it (``acme/widget``): the
+    step's own — never the primary for a step whose workplace is another — or, with no
+    step, each one the project names."""
+    if step is not None:
+        placement = code_placement(facts, step)
+        return placement.location.repository_label if placement is not None else ""
+    rows = (found.location for found in facts.placements if found.location.role == CODE.id)
+    return ", ".join(dict.fromkeys(row.repository_label for row in rows))
 
 
 def epilogue(library: Library, step: Step, branches: BranchPlan) -> str:

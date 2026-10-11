@@ -1856,6 +1856,7 @@ def _aspects(
     from dplanner.modules.step_wait.module import StepWaitDeps, StepWaitModule
     from dplanner.modules.testing.module import TestsDeps, TestsModule
     from dplanner.planning.agent import MODULE_ID as AGENT_INSTRUCTION_ID
+    from dplanner.planning.agent import code_remote_of
     from dplanner.planning.agent import enabled as is_agent
     from dplanner.planning.agent import read as agent_instruction_read
     from dplanner.planning.agent import separate_instruction as agent_separate
@@ -2153,11 +2154,11 @@ def _aspects(
                 sections=services.inspector_sections,
                 tasks=services.tasks,
                 parent=services.window,
-                # Which repository a step's GitHub refs belong to: the code repository the
-                # project records, else — the older shape, a plan kept beside its code — the
-                # plan's own origin, and none while the code is not set. Git's answer either
-                # way; nothing stored can disagree with it.
-                repository_for=lambda step_id: root.facts_for(step_id).code_remote,
+                # A step's GitHub refs belong to the code repository it works in — never the
+                # primary for every step, whose PR numbers another repository reuses.
+                repository_for=lambda step_id: code_remote_of(
+                    root.facts_for(step_id), library.step(step_id)
+                ),
                 finish_merged=lambda step_id: record_merged(
                     library,
                     step_id,

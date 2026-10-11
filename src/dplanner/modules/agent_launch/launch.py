@@ -47,7 +47,14 @@ from dplanner.modules.agent_launch import launcher
 from dplanner.modules.agent_launch.profiles import Profile, agent_command, read_profiles
 from dplanner.modules.agent_supervisor import limits, supervisor
 from dplanner.modules.agent_usage.aspect import launch_record
-from dplanner.planning.agent import enabled, no_agent, read_project, uses_worktree, workplace
+from dplanner.planning.agent import (
+    code_placement,
+    enabled,
+    no_agent,
+    read_project,
+    uses_worktree,
+    workplace,
+)
 from dplanner.planning.branches import BranchPlan
 from dplanner.planning.kinds import key_of, works_nobody
 from dplanner.planning.progression import outstanding
@@ -63,7 +70,7 @@ TERMINAL = "terminal"  # In a terminal the person owns, as Run Agent has always 
 def unplaced(facts: RepositoryFacts, step: Step | None = None) -> str:
     """The code repository this agent would work in that this machine has no checkout of
     — what the window's Run Agent clones first — or "" when it is placed or there is none."""
-    placement = where.code_placement(facts, step)
+    placement = code_placement(facts, step)
     if placement is not None and placement.root is None:
         return placement.location.repository
     return ""
@@ -73,7 +80,7 @@ def workdir_refusal(facts: RepositoryFacts, step: Step | None = None) -> str:
     """Why no agent can work where this project's code is; "" when one can. A repository
     not checked out here is a refusal only for a verb that cannot clone — Run Agent asks
     :func:`unplaced` first and clones."""
-    placement = where.code_placement(facts, step)
+    placement = code_placement(facts, step)
     if placement is not None:
         label = placement.location.repository_label
         if not placement.here:

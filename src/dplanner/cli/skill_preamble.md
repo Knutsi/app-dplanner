@@ -372,9 +372,10 @@ says where the code is:
 - **The moment a PR exists**, add it: `dplanner github set <step> --pr <number>`. With the
   GitHub CLI (`gh`) installed, DPlanner fills in the PR's title and state for you.
 - `dplanner github refresh` updates the stored state of open PRs, and a step ready to
-  merge whose PR has merged is done — the window's refresher does the same. `dplanner
-  github prs` and `dplanner github branches` list what the repository has, for finding the
-  right ref.
+  merge whose PR has merged is done — the window's refresher does the same. A step's PR is
+  looked up in the repository the step works in (`dplanner agent workplace`), so record the
+  PR the step's own worktree opened. `dplanner github prs` and `dplanner github branches`
+  list what the primary code repository has, for finding the right ref.
 - `dplanner github show <step>` says where a step's refs stand now — the PR's state and
   title, and whether its branch is still on the remote (gone after a merge is normal).
 - Without `gh`, recording still works — the refs are stored as written, and the state
