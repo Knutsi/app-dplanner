@@ -145,9 +145,7 @@ def _examples(command: CliCommand) -> str:
     return "examples:\n" + "\n".join(f"  {line}" for line in command.examples)
 
 
-def _current_project(
-    context: CliContext, command: CliCommand, args: Namespace
-) -> Project | None:
+def _current_project(context: CliContext, command: CliCommand, args: Namespace) -> Project | None:
     """The project the invocation is about. A project verb's positional names it — that is
     the project it acts on, so it is also the one whose keys and titles it looks steps up in;
     otherwise ``--project``, the environment, or where it runs (``find_current_project``). A

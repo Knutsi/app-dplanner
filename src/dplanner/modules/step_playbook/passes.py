@@ -180,6 +180,10 @@ class Progress:
 class Complete:
     why: str
     set_done: bool = False  # A playbook with nothing to merge: its approval is the step done.
+    # Reached through a gate that passed after the last work: the work is accepted, and its
+    # merge makes the step done. A pass whose last stage was work (Execute; Plan → human
+    # review → execute) is through without anybody having looked at what it made.
+    reviewed: bool = False
 
 
 @dataclass(frozen=True)
@@ -204,6 +208,7 @@ class Facts:
     unmerged_pr: bool = (
         False  # It has a PR recorded that is not merged: a pass through waits on it.
     )
+    merged_pr: bool = False  # Its PR merged: accepted work that has landed is done.
 
 
 def in_order(runs: Sequence[LedgerRecord], asked: Sequence[Question]) -> list[Entry]:
@@ -309,7 +314,7 @@ class _Reading:
             return self._after(run.stage)
         outcome = _verdict(run).get("outcome")
         if outcome == "pass":
-            return self._after(run.stage)
+            return self._after(run.stage, reviewed=True)
         if outcome == "changes":
             findings = _verdict(run).get("findings")
             listed = findings if isinstance(findings, list) else []
@@ -335,12 +340,12 @@ class _Reading:
         word, stage = answer_word(question), question.stage
         if question.purpose == GATE:
             if is_answer(word, PASS):
-                return self._after(stage)
+                return self._after(stage, reviewed=True)
             if is_answer(word, STOP):
                 return Halted(f"{question.short} stopped the pass")
             return self._changes(stage, (note_of(question),))
         if is_answer(word, ACCEPT):
-            return self._after(stage)
+            return self._after(stage, reviewed=self._is_gate(stage))
         if question.purpose == ROUND_CAP and is_answer(word, ONE_MORE):
             return self._loop_back(stage, self._open_findings(stage))
         if question.purpose == ESCALATION and is_answer(word, RETRY):
@@ -349,8 +354,12 @@ class _Reading:
 
     # -- moving through the list --------------------------------------------------------------
 
-    def _after(self, stage: str) -> Next:
-        """The stage after ``stage`` that is still to run."""
+    def _is_gate(self, stage: str) -> bool:
+        return stage == LOOK or (stage in self.roles and self.roles[stage].is_gate)
+
+    def _after(self, stage: str, *, reviewed: bool = False) -> Next:
+        """The stage after ``stage`` that is still to run — ``reviewed`` when ``stage`` is a
+        gate that just passed, which is what makes a pass that is through accepted work."""
         if stage in self.ids:
             start = self.ids.index(stage) + 1
         else:  # A fix runs before every stage; a person's look after them all.
@@ -359,7 +368,9 @@ class _Reading:
             if not (self.roles[self.ids[index]].is_gate and self._passed(self.ids[index])):
                 return self._enter(index)
         produced = any(r in (StageRole.EXECUTE, StageRole.REVIEW) for r in self.roles.values())
-        return Complete(f"{self.playbook.name} is through", set_done=not produced)
+        return Complete(
+            f"{self.playbook.name} is through", set_done=not produced, reviewed=reviewed
+        )
 
     def _enter(self, index: int) -> Next:
         stage, role = self.ids[index], self.playbook.stages[index].role

@@ -24,6 +24,7 @@ from dplanner.domain.ledger import LedgerRecord
 from dplanner.modules.agent_claude import harness as claude
 from dplanner.modules.agent_supervisor import supervisor
 from dplanner.modules.github import cli as github_cli
+from dplanner.modules.github.gh import PrInfo
 from dplanner.modules.step_playbook.passes import Settings
 from dplanner.planning.status import Status, stored
 
@@ -175,6 +176,26 @@ def test_a_pass_plans_executes_and_loops_back_to_its_session_until_review_passes
     assert "is through" in drive.advance()
     assert "is through" in drive.advance()  # Advancing again does nothing more.
     assert len(drive.started) == runs
+
+
+def test_work_sent_back_is_in_progress_again_until_its_fix_says_otherwise(drive):
+    """What the agent called finished no longer is once a gate sends it back — and a step
+    accepted as ready to merge must not be finished by its merge while it is being fixed."""
+    drive.cli("playbook", "set", "Build it", "plan-execute-review-self")
+    drive.play(
+        {"lines": [INIT, result("## Plan", session="plan-s")]},
+        {"lines": [INIT, result(typed=done(), session="plan-s")]},
+        {"lines": [INIT, result(typed=CHANGES, session="review-1")]},
+        {"lines": [INIT, result(typed=done(), session="plan-s")]},
+    )
+    drive.cli("agent", "run", "Build it", "--playbook")
+    for _stage in ("plan", "execute", "review"):
+        drive.supervise()
+        if _stage == "execute":
+            drive.cli("status", "set", "Build it", "ready-for-review")
+        drive.advance()
+    assert drive.latest().stage == "execute" and drive.latest().attempt == 2
+    assert _status(drive.cli, "Build it") == "in-progress"
 
 
 def test_the_round_cap_asks_and_one_more_round_sends_a_fix_then_a_person_decides(drive):
@@ -526,12 +547,9 @@ def test_every_stage_of_a_pass_runs_as_the_member_that_started_it(drive):
     assert "You are Kettle Two, of the squad Kettle Actual coordinates" in drive.prompt(execute)
 
 
-def test_a_landing_that_never_chose_lands_is_reviewed_and_waits_for_a_person_to_merge(
-    drive, code, tmp_path, monkeypatch
-):
-    """A landing runs *Land* by default: its execute is briefed with the landing's own work,
-    the other agent's review passes, and the person's pass ends the pass with nothing merged —
-    the mainline is a person's to merge, so gh is never asked."""
+def _landing_at_its_person_gate(drive, code, tmp_path, monkeypatch) -> questions.Question:
+    """S3 lands feature/x under *Land*: executed, passed by the other agent's review, and
+    waiting at its person gate. gh is never asked and nothing is merged by DPlanner."""
     drive.cli("branch", "put", "Build it", "--branch", "feature/x")  # B2 cuts it, S3 lands it.
     origin = tmp_path / "origin.git"  # The landing's worktree is cut from a remote.
     for argv in (
@@ -557,10 +575,53 @@ def test_a_landing_that_never_chose_lands_is_reviewed_and_waits_for_a_person_to_
     drive.advance("S3")
     gate = drive.asked()
     assert (gate.stage, gate.purpose) == ("person", "gate")
+    return gate
+
+
+def _record_pr(drive, monkeypatch, state: str) -> None:
+    info = PrInfo(number=4, title="Land feature/x", state=state, url="u4", head_ref="feature/x")
+    monkeypatch.setattr(github_cli, "_fetch_pr", lambda *_a: info)
+    drive.cli("github", "set", "S3", "--pr", "4")
+
+
+def test_a_landing_that_never_chose_lands_is_reviewed_and_waits_for_a_person_to_merge(
+    drive, code, tmp_path, monkeypatch
+):
+    """A landing runs *Land* by default: its execute is briefed with the landing's own work,
+    the other agent's review passes, and the person's pass ends the pass with nothing merged —
+    the mainline is a person's to merge, so gh is never asked. With no PR recorded there is
+    nothing for a merge to finish, so the step waits for a person's look."""
+    gate = _landing_at_its_person_gate(drive, code, tmp_path, monkeypatch)
     drive.answer(gate, "Pass")
     said = drive.advance("S3")
     assert "is through" in said and "the step is done" not in said
     assert _status(drive.cli, "S3") != "done"
+
+
+def test_a_landing_passed_with_its_pr_open_is_ready_to_merge_and_its_merge_finishes_it(
+    drive, code, tmp_path, monkeypatch
+):
+    """The person's *Pass* accepts the work: ready to merge — so the person's merge of the PR
+    into the mainline finishes the step, rather than asking for a third look."""
+    gate = _landing_at_its_person_gate(drive, code, tmp_path, monkeypatch)
+    _record_pr(drive, monkeypatch, "open")
+    drive.answer(gate, "Pass")
+    assert "ready to merge" in drive.advance("S3")
+    assert _status(drive.cli, "S3") == "ready-to-merge"
+    assert "ready to merge" not in drive.advance("S3")  # Advancing again writes nothing.
+    _record_pr(drive, monkeypatch, "merged")
+    assert "the step is done" in drive.advance("S3")
+    assert _status(drive.cli, "S3") == "done"
+
+
+def test_a_landing_whose_pr_merged_before_its_pass_was_read_is_done(
+    drive, code, tmp_path, monkeypatch
+):
+    gate = _landing_at_its_person_gate(drive, code, tmp_path, monkeypatch)
+    _record_pr(drive, monkeypatch, "merged")
+    drive.answer(gate, "Pass")
+    assert "the step is done" in drive.advance("S3")
+    assert _status(drive.cli, "S3") == "done"
 
 
 def test_a_claim_ended_while_an_advance_prepares_its_next_stage_launches_nothing(

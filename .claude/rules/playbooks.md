@@ -133,7 +133,12 @@ paths:
   round cap answered *Take over* — never *Stopped*.
   **A pass through its stages reads *Done* only once its step does**; until then a pass that
   produced work reads *Waits for merge* when the step's GitHub aspect records a PR not merged,
-  and *Waits for you · ready for review* when it records none — and has not ended. `docs/architecture/playbooks.md`'s
+  and *Waits for you · ready for review* when it records none — and has not ended.
+  **A pass through a gate that passed after its last work has accepted it**
+  (`Complete.reviewed`): the engine sets the step ready to merge while its PR is open — so the
+  merge finishes it, mainline or feature branch alike — and done when it has merged. A work
+  stage the pass launches again sets a step that read Ready for review or ready to merge back
+  in progress (`workflows.reopened`). Work no gate looked at changes no status. `docs/architecture/playbooks.md`'s
   *The presets*, *A step names its playbook; a project names its default* and *The mark on the
   one card*.
 - **A pass is reviewed in Step Details' Playbook tab** (`pass_section.py`), opened by a click

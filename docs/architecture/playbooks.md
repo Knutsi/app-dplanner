@@ -239,7 +239,24 @@ until the step reads done — the dogfood run's card said *Done* on a Ready-for-
 person still had to land. *Waits for merge* needs a PR to merge: the step's GitHub aspect
 records one, not merged (`Facts.unmerged_pr`, read by `engine._facts`). Work that never became
 a PR — a temp file, a local change — has nothing to merge, so the pass reads *Waits for you ·
-ready for review* (warn) instead: what is left is a person's look. A pass that ended — done or
+ready for review* (warn) instead: what is left is a person's look.
+
+**Accepted work is ready to merge, and work sent back is not.** A pass reaches its end through
+a gate that passed after its last work — a review's *pass*, a gate's *Pass*, a round cap's
+*Accept as is* — or with work nobody looked at (*Execute*; *Plan → human review → execute*,
+whose gate came before the work). Only the first accepts the work (`Complete.reviewed`), and
+the engine writes it so (`engine._completed`, through `workflows.awaiting_merge`): with its PR
+open the step is **ready to merge**, so the person's merge into the mainline finishes it by the
+merge's own path (`github refresh`, the window's refresher) exactly as a merge into a feature
+branch does; with its PR merged already — read before this advance — it is done. Without that,
+a landing whose person had passed it stayed at Ready for review, the mainline merge did not
+finish it, and the pass asked the same person a third time (the playbook test run of
+2026-10-11). The other half: **a work stage launched again by the pass sets the step in
+progress** (`workflows.reopened`) when it read Ready for review or ready to merge — what was
+finished no longer is, and a merge must not finish it while it is being fixed. A pass that is
+through with nothing reviewed changes nothing, and waits for a person's look as before.
+
+A pass that ended — done or
 stopped — shows for a day after its last record (`engine.ENDED_SHOWN`); one waiting for a
 person has not ended and stays. A pass is
 read in Step Details' Playbook tab, which a click on the strip opens (*A pass is reviewed in

@@ -27,6 +27,7 @@ from dplanner.domain.headless import StageKind, TurnEnd
 from dplanner.domain.ledger import LedgerRecord
 from dplanner.domain.model import Step, now_stamp
 from dplanner.domain.questions import Question
+from dplanner.domain.workflow import Change
 from dplanner.modules.agent_briefing.prompt import PromptPart
 from dplanner.modules.agent_briefing.stages import approved_part, findings_part, review_part
 from dplanner.modules.agent_supervisor import limits, supervisor
@@ -52,7 +53,7 @@ from dplanner.modules.step_playbook.passes import (
     Wait,
 )
 from dplanner.modules.step_playbook.presets import Playbook, preset
-from dplanner.modules.step_playbook.workflows import approved
+from dplanner.modules.step_playbook.workflows import approved, awaiting_merge, reopened
 from dplanner.planning.status import Status, stored
 
 
@@ -231,13 +232,8 @@ class Engine:
         match next_:
             case Wait(why) | Halted(why):
                 return Begun(why)
-            case Complete(why, set_done):
-                if set_done:
-                    change = approved(step, today=context.clock.today())
-                    if change.command is not None:
-                        context.apply(change.command)
-                        return Begun(f"{why} — the step is done")
-                return Begun(why)
+            case Complete(why, set_done, reviewed):
+                return Begun(_completed(context, step, why, set_done=set_done, reviewed=reviewed))
             case Launch():
                 staged = self.launch(
                     context,
@@ -251,6 +247,8 @@ class Engine:
                     member=pass_.member,
                     claim=pass_.claim,
                 )
+                if next_.kind is not StageKind.REVIEW:
+                    _apply(context, reopened(step, today=context.clock.today()))
                 said = f"{next_.stage} (attempt {next_.attempt}) launched as run {staged.run}"
                 return Begun(said, staged=staged)
             case Ask():
@@ -326,11 +324,37 @@ def precise_stamp() -> str:
 def facts_of(step: Step) -> Facts:
     status = stored(step)
     refs = github.read(step)
+    pr = refs is not None and refs.has_pr()
+    merged = pr and refs is not None and refs.pr_state == github.PR_MERGED
     return Facts(
         done=status is Status.DONE,
         at_review=status is Status.READY_FOR_REVIEW,
-        unmerged_pr=refs is not None and refs.has_pr() and refs.pr_state != github.PR_MERGED,
+        unmerged_pr=pr and not merged,
+        merged_pr=merged,
     )
+
+
+def _completed(context: CliContext, step: Step, why: str, *, set_done: bool, reviewed: bool) -> str:
+    """What a pass that is through does to its step. Nothing to merge: done. Accepted work:
+    done if its PR has merged already — the merge may have been read before this advance —
+    else ready to merge, which the merge finishes. Work nobody looked at is left at Ready for
+    review, for a person."""
+    today = context.clock.today()
+    facts = facts_of(step)
+    if set_done or (reviewed and facts.merged_pr):
+        if _apply(context, approved(step, today=today)):
+            return f"{why} — the step is done"
+    elif reviewed and facts.unmerged_pr and _apply(context, awaiting_merge(step, today=today)):
+        return f"{why} — the step is ready to merge"
+    return why
+
+
+def _apply(context: CliContext, change: Change) -> bool:
+    """Apply a pass's own change to its step; whether it changed anything."""
+    if change.command is None:
+        return False
+    context.apply(change.command)
+    return True
 
 
 def _parts(launch: Launch) -> tuple[PromptPart, ...]:

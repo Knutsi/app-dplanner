@@ -189,9 +189,37 @@ def test_a_landing_executes_is_reviewed_by_the_other_agent_and_ends_at_a_person_
     passed = [execute, run("review", verdict=PASSED, harness="codex")]
     person = next_of("land", *passed)
     assert isinstance(person, Ask) and (person.stage, person.purpose) == ("person", GATE)
-    # The mainline is a person's to merge: the pass ends without a merge or a status of its own.
+    # The mainline is a person's to merge: the pass ends without a merge, its work accepted —
+    # which the engine writes as ready to merge, for the person's merge to finish.
     through = next_of("land", *passed, gate("person", PASS))
-    assert through == Complete("Land: execute ⇄ review (other agent) → human review is through")
+    assert through == Complete(
+        "Land: execute ⇄ review (other agent) → human review is through", reviewed=True
+    )
+
+
+def test_a_pass_is_reviewed_only_through_a_gate_passed_after_the_last_work():
+    """Only a gate that passed after the last work makes the work accepted — so its merge
+    can finish the step. Execute, and a plan approved before the work, accept nothing."""
+    passed = next_of(
+        "plan-execute-review-other", run("plan"), run("execute"), run("review", verdict=PASSED)
+    )
+    assert isinstance(passed, Complete) and passed.reviewed
+    capped = next_of(
+        "plan-execute-review-other",
+        run("plan"),
+        run("execute"),
+        run("review", verdict=CHANGED),
+        run("execute"),
+        run("review", verdict=CHANGED),
+        gate("review", ACCEPT, purpose=ROUND_CAP),
+    )
+    assert isinstance(capped, Complete) and capped.reviewed
+    alone = next_of("execute", run("execute"))
+    assert isinstance(alone, Complete) and not alone.reviewed
+    approved_first = next_of(
+        "plan-person-execute", run("plan"), gate("person", PASS), run("execute")
+    )
+    assert isinstance(approved_first, Complete) and not approved_first.reviewed
 
 
 def test_a_person_sending_the_plan_back_reruns_the_plan_with_the_note():

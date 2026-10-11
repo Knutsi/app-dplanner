@@ -852,3 +852,15 @@ plain run in the same worktree — and that an agent could give the person's loo
 surfaces run the CLI verbs, which name the pass, its latest run and its gate and are refused
 under the step's launch lock when any has moved on; `look` is person-only; and Accept is no
 longer an undo step. Now: `playbooks.md`'s *A pass is reviewed in its step's Playbook tab*.
+
+## 2026-10-11 — A pass that accepted work leaves it ready to merge
+
+A pass through its stages changed no status unless it had nothing to merge. Knut's playbook test
+run landed `feature/dictations` under *Land*: the person passed the gate, merged the PR into the
+mainline — and the step stayed at Ready for review, since a mainline merge finishes only a step
+ready to merge, so the pass asked the same person a third time. Now a pass whose last gate
+passed after its last work sets the step ready to merge (done when its PR has merged already),
+and a work stage it launches again sets the step back in progress, so a merge cannot finish work
+being fixed. Codex's review of the plan named the two limits kept: *Execute* and *Plan → human
+review → execute* accept nothing, because no gate looked at the finished work. Now:
+`playbooks.md`'s *The mark on the one card*.
