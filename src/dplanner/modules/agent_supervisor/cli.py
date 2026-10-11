@@ -10,6 +10,7 @@ import subprocess
 import sys
 from argparse import ArgumentParser, Namespace
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 
 from dplanner.cli.command import CliCommand, CliContext, CliError
@@ -101,18 +102,37 @@ def commands(
     def show_limits(context: CliContext, args: Namespace) -> int:
         threshold = limits.hold_at()
         known = limits.accounts()
+        now = datetime.now(UTC)
         rows, lines = [], [f"new headless launches wait at {threshold:.0%} of a window"]
         for harness in harnesses:
             key = limits.account_of(harness)
             account = known.get(key, limits.Account(key))
             held = limits.hold(key, harness.label, threshold)
+            # The numbers are the last turn's on the account, so they say when that was, and a
+            # window whose reset has passed since is no longer what they say.
             windows = ", ".join(
                 f"{w.name.replace('_', '-')} {w.used:.0%}"
-                + (f" until {limits.clock(w.resets)}" if w.resets else "")
+                + (
+                    ""
+                    if w.resets is None
+                    else " (reset since)"
+                    if w.resets <= now
+                    else f" until {limits.clock(w.resets, now)}"
+                )
                 for w in account.windows
             )
-            rows.append({"harness": harness.id, "windows": windows, "held": held})
-            lines.append(f"{harness.label}: {windows or 'nothing reported yet'}")
+            seen = account.seen
+            rows.append(
+                {
+                    "harness": harness.id,
+                    "windows": windows,
+                    "held": held,
+                    "seen": seen.isoformat() if seen is not None else None,
+                    "run": account.run or None,
+                }
+            )
+            when = f" (as of {limits.clock(seen, now)})" if seen is not None and windows else ""
+            lines.append(f"{harness.label}{when}: {windows or 'nothing reported yet'}")
             if held:
                 lines.append(f"  held — {held}")
         context.report({"hold_at": threshold, "accounts": rows}, "\n".join(lines))
