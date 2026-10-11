@@ -347,6 +347,35 @@ def test_re_check_asks_again(app, services):
     assert dialog.rows[0].line.tone() == "ok"
 
 
+def test_closing_the_dialog_mid_sweep_leaves_no_task_running(app, services):
+    """The task centre once said "Checking this machine · 9m 23s" for good: the dialog was
+    closed while an agent CLI was still answering, and the sweep's end had nowhere to go."""
+    import threading
+
+    from PySide6.QtCore import QCoreApplication, QEvent
+
+    gate = threading.Event()
+    dialog = ChecklistDialog(
+        [
+            MachineCheck(
+                id="agents.cli",
+                group="Agents",
+                label="slow",
+                probe=lambda: Reading(ok=gate.wait(timeout=5)),
+            )
+        ],
+        services.tasks,
+        lambda _id: None,
+        services.window,
+    )
+    assert [task.label for task in services.tasks.active()] == ["Checking this machine"]
+    dialog.close()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    gate.set()
+
+    wait_for(app, lambda: not services.tasks.active())
+
+
 # -- remedies ------------------------------------------------------------------------------
 
 

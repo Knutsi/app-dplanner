@@ -15,13 +15,12 @@ run directory is gone — a reboot cleaned the temp files). A run with no outcom
 live, which is the only state that keeps the watcher's timer running.
 """
 
-import os
-import sys
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
+from dplanner.core.process import process_alive
 from dplanner.domain.model import now_stamp
 
 CLOSED = "closed"
@@ -169,44 +168,6 @@ def settle(run: AgentRun, alive: Callable[[int], bool] | None = None) -> AgentRu
 
 def _ended(run: AgentRun, outcome: str, code: int | None = None) -> AgentRun:
     return replace(run, outcome=outcome, code=code, ended=now_stamp())
-
-
-def process_alive(pid: int) -> bool:
-    """Whether a process with this id still exists — the wrapper shell's, here.
-
-    The ``else`` is load-bearing rather than style: mypy exempts a block guarded by a
-    ``sys.platform`` comparison from its checks on the platform that never reaches it, and a
-    fall-through after an always-taken ``return`` is not such a block — ``mypy --platform
-    win32`` read it as dead code. One branch each, and each checked where it runs.
-    """
-    if sys.platform == "win32":
-        return _windows_process_alive(pid)
-    else:
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            return False
-        except PermissionError:
-            return True  # Somebody else's process, but a process.
-        return True
-
-
-def _windows_process_alive(pid: int) -> bool:
-    import ctypes
-
-    still_active = 259
-    query_limited_information = 0x1000
-    kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined,unused-ignore]
-    handle = kernel32.OpenProcess(query_limited_information, False, pid)
-    if not handle:
-        return False
-    try:
-        code = ctypes.c_ulong()
-        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
-            return False
-        return int(code.value) == still_active
-    finally:
-        kernel32.CloseHandle(handle)
 
 
 def describe(run: AgentRun, state: str) -> str:

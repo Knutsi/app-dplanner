@@ -6,7 +6,11 @@
 the agent CLI says it consumed back into it. This module's share is the window's half of
 the harvest — **the sweep**, at start, every few minutes and whenever a run ends, through a
 ``TaskRunner``, started only when a run of this machine is due — and the one surface that
-reads the ledger whole.
+reads the ledger whole. **The window's start also picks up this machine's lost headless
+turns** (``agent_supervisor.supervisor.revive``): a reboot or a killed supervisor leaves a
+run whose last turn never ended, and a new supervisor ends it ``failed``/``lost`` and
+retries — read from the same records the sweep reads, once; a launch interrupted between
+its record and its supervisor is started while its step is claimed and dropped once not.
 
 **Expenditure** is the order read for what it consumed: each step's agent runs, in tokens,
 against what its estimate predicted (``expenditure_activity.py`` has the tab, its columns and words,
@@ -49,6 +53,7 @@ from dplanner.framework.step_selection import focused_project
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.task_runner import TaskRunner
 from dplanner.framework.tasks import TaskService
+from dplanner.modules.agent_supervisor import supervisor
 from dplanner.modules.agent_usage import harvest
 from dplanner.modules.agent_usage.aspect import (
     DATA_FORMAT,
@@ -140,6 +145,7 @@ class AgentUsageModule:
             )
         )
         follow_project_tabs(deps.tabs, ExpenditureActivity, deps.library)
+        supervisor.revive(self._ledger_dirs(), library=deps.store.library_path)
         if deps.tasks is not None:
             self._runner = TaskRunner(deps.tasks, deps.parent)
             self._runner.busy_changed.connect(self._on_sweep_busy)
@@ -157,11 +163,7 @@ class AgentUsageModule:
         if self._runner is None:
             return
         deps = self._deps
-        dirs = [
-            directory
-            for project in deps.library.projects
-            if (directory := ledger_dir(deps.store, project.id)) is not None
-        ]
+        dirs = self._ledger_dirs()
         if not harvest.anything_due(dirs):
             return
         harnesses = deps.harnesses
@@ -171,6 +173,14 @@ class AgentUsageModule:
 
         if not self._runner.run("Reading agent usage", body, key="agent_run.sweep"):
             self._sweep_again = True
+
+    def _ledger_dirs(self) -> list[Path]:
+        deps = self._deps
+        return [
+            directory
+            for project in deps.library.projects
+            if (directory := ledger_dir(deps.store, project.id)) is not None
+        ]
 
     def _on_sweep_busy(self, busy: bool) -> None:
         if busy:

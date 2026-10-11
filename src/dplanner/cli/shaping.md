@@ -132,7 +132,7 @@ should do.
    `estimate set`, and a description written as the executing agent's instructions (`step
    add … --feature --agent --days N --describe-file -` when you read it out of the spec
    already knowing this). Its briefing carries the passages it was read from, it gathers
-   its own tests, and the check or review the topology asks for follows it directly. A
+   its own tests, and the check the topology asks for follows it directly. A
    feature and its only work step, one waiting on the other, is one launch and one review
    drawn as two steps, and a card on the graph that says nothing the other does not. Keep
    them apart only when the feature gathers several steps, or work a different person does.
@@ -141,7 +141,7 @@ should do.
    makes the feature wait on the work that flows into it, and `scope show '<feature>'`
    prints what it then gathers. A feature you only thought of here is born the same way it
    was at step 4, with `step add … --feature`. Follow the topology for what comes after — a
-   check, a review. `agent prompt <step>` shows exactly what any executing agent will
+   check. `agent prompt <step>` shows exactly what any executing agent will
    receive: read it and ask whether it is enough to work from.
 9. **Run `dplanner project lint <project>` before handing the plan over.** It lists every
    step missing a description or estimate, every agent step with nothing to brief it,
@@ -169,14 +169,14 @@ should do.
 
 ## Cutting steps for an agent
 
-An agent step is one run: one terminal, one branch, one review when it lands. Every step
+An agent step is one launch: one branch, one review when it lands. Every step
 costs the user a launch and a review, so the plan pays for a step boundary in time — and
 an agent works best on one coherent batch of related changes, where the second task
 already has the first one's context. So, **unless the project's topology says otherwise,
 lump similar work into one large step**: the five endpoints of one API, the three views
 that share a layout, the migrations and the model they serve. Cut a step only where the
 graph needs a boundary — a real dependency another step waits on, a feature step that
-gathers the work of several, a check or a review the topology asks for, or work that
+gathers the work of several, a check the topology asks for, or work that
 belongs to a different person or agent. A feature is not a boundary on its own: a feature
 one run delivers *is* its work step (step 7). A plan of many thin steps is a plan
 of many launches; a plan of a few well-batched steps is what an agent and its reviewer both
@@ -216,31 +216,42 @@ shape visible. If the waves are all singletons, revisit the links before adding 
 between two milestones that usually means the fan-out was never drawn, and a release's work
 starts from the milestone before it, in parallel, not in a queue.
 
-## Parallel, then collect
+## Parallel, then together
 
-Parallel agents each land a branch and a PR, and something has to put them together: merge
-them in one place, settle what the branches could not see of each other, and review the
-whole. When that is a step of its own — **a collector** — its links into the parallel steps
-should **auto-progress**: `dplanner step add <project> '<title>' --agent --after A --after B
---auto-progress`, or `dplanner auto-progress set <collector> <source> on` for a link that
-exists. A plain link waits for its source to be done, but a source is done only once the
-collector has landed it, so without the flag the two wait on each other. With it, the
-collector is Ready to start as soon as its sources read ready for review; its briefing lists
-each one's branch, PR and worktree, and it sets them done once their work has landed.
+Parallel agents each land a branch and a PR, and where that work has to be put together —
+merged in one place, reconciled where the branches could not see each other, reviewed as a
+whole — put the parallel steps **on a branch** (*A stretch on its own branch*, below): each
+step's PR merges into the feature branch, and the landing brings the whole of it back as
+one PR. A link waits for its source to be done, so never draw a step that merges its own
+prerequisites' work — it would wait on them while they wait on it. Where each step can be
+reviewed and merged on its own, leave them on the mainline and let every step land by itself.
 
-A collector earns its place when the parallel work shares files or a review nobody could
-give it in pieces — a round of steps that each touch the same few modules, landed and
-reconciled as one PR. Where each step can be reviewed and merged on its own, leave the links
-plain and let every step land by itself; a collector over independent work is one more
-launch for nothing. A collector is an agent step: nobody else reads the briefing that says
-what to collect, and `project lint` names one that is not (`auto-progress.waiter`). `project
-graph` draws its links `==>`.
+**Never draw a review as a step of its own.** Reviewing is how a step gets done, not more
+work beside it: it is a stage of the step's **playbook**, or a person reading its PR.
 
-**A review step** is the same idea for one step: an agent that reviews the step it waits on,
-with a cap on the rounds before a person decides. `dplanner step add <project> 'Review the
-parser' --after S7 --agent --review` puts it between S7 and whatever follows. Every link into
-a review auto-progresses by rule, so it needs no flag. Link what comes next after the review,
-never after S7 directly: `project lint` names a step that goes round it (`review.bypassed`).
+## How each step gets done: its playbook
+
+A step's **playbook** is the list of stages its work goes through — plan, execute, a review
+that loops back to the work, a gate where a person or the coordinator decides — run headless
+on the one step, with no card per stage. `dplanner playbook list` prints the presets with what
+each is for; choosing one is part of shaping the plan, so say which when you propose it.
+
+- **A project default covers most steps**: `dplanner playbook set --project-default <preset>`
+  (`none` for a plain Run Agent). A step that differs names its own: `dplanner playbook set S7
+  <preset>`, with `--rounds N` for how many verdicts a review may give before it escalates
+  and `--reviewer <agent CLI>` for who reviews.
+- **Which preset fits which step:** `plan-execute-review-other` where a second vendor's eyes
+  pay — core changes; `plan-person-execute` where a person must approve the plan before code
+  is written; `plan-execute-progress` for a step on a feature branch whose work should be
+  accepted there so what waits on it may start; `spike` for research whose plan is the
+  output; `review-only` for a PR that already exists; plain `execute` for a small change a
+  person reviews anyway.
+- **A landing runs `land` unless the project says otherwise**: the landing's own work, a
+  cross-vendor review, then a person, who merges. DPlanner never merges into the mainline.
+  `--landing-default <preset>` changes it for the project.
+
+A playbook needs no step drawn for it: the stages are read from the step's record of runs and
+questions, and the card says where its pass stands.
 
 ## A stretch on its own branch
 
@@ -250,8 +261,9 @@ branch put S4 S5 S6 --branch feature/<name>`. A *cut* is born before the steps a
 *landing* after, and the links from outside move onto the two, so the stretch has one way in
 and one way out. Each step's PR then merges into the feature branch, and merging there is
 what accepts it; the landing — an agent step — merges the mainline in and opens the
-branch's own PR. **Review the landing, not each step**: a review step after the landing
-reads the whole branch at once. Link work the stretch builds on into the cut, never into
+branch's own PR. **Review the landing, not each step**: a person reviews the landing's PR —
+the whole branch at once — and the landing's *Land* playbook reviews it before a person
+merges (*How each step gets done*). Link work the stretch builds on into the cut, never into
 its middle (`project lint` names it, `branch.late-entry`), and keep milestones outside it —
 a release whose work is not on the mainline yet is not a release. `dplanner branch show`
 says what is on each branch; `dplanner branch remove` takes one away again.

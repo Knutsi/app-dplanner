@@ -13,8 +13,9 @@ import keyring.backends.fail
 import pytest
 
 from dplanner.cli.checklist import GROUPS
-from dplanner.domain.agents import AgentHarness
+from dplanner.domain.agents import AgentHarness, SignedIn, SignIn
 from dplanner.modules.agent_launch import checks as agent_checks
+from dplanner.modules.agent_launch.availability import Availability
 from dplanner.modules.checklist import checks as generic
 from dplanner.modules.github import checks as github_checks
 from dplanner.modules.llm import checks as llm_checks
@@ -117,25 +118,62 @@ def test_gh_installed_but_signed_out_is_its_own_row(monkeypatch):
 
 def harness(harness_id, binary):
     return AgentHarness(
-        id=harness_id, label=harness_id.title(), command=f"{binary} --print", binary=binary
-    )
-
-
-def test_one_agent_row_reads_every_harnesss_own_binary():
-    harnesses = (harness("claude", "claude"), harness("codex", "codex"))
-
-    _check, found = read(
-        agent_checks.checks(
-            harnesses=harnesses, which=lambda name: f"/usr/bin/{name}" if name == "codex" else None
+        id=harness_id,
+        label=harness_id.title(),
+        command=f"{binary} --print",
+        binary=binary,
+        sign_in=SignIn(
+            probe=lambda shell: SignedIn(shell(("status",))[0] == 0, "signed in"),
+            command=f"{binary} login",
         ),
-        "agents.cli",
-    )
-    _check, none = read(
-        agent_checks.checks(harnesses=harnesses, which=lambda _name: None), "agents.cli"
     )
 
-    assert found.ok and found.detail == "Codex on PATH"
+
+def agents(harnesses, *, installed, signed_in):
+    """The agent rows over a fake machine: which CLIs are on PATH, and which signed in."""
+
+    def which(name):
+        return f"/usr/bin/{name}" if name in installed else None
+
+    def shell_for(path):
+        def run(arguments):
+            if arguments == ("--version",):
+                return 0, f"{path} 1.0.0"
+            return (0 if path.rsplit("/", 1)[-1] in signed_in else 1), ""
+
+        return run
+
+    known = Availability(harnesses, which=which, shell_for=shell_for)
+    return agent_checks.checks(harnesses=harnesses, which=which, availability=known)
+
+
+HARNESSES = (harness("claude", "claude"), harness("codex", "codex"))
+
+
+def test_the_summary_row_is_well_when_any_agent_can_run():
+    found = read(agents(HARNESSES, installed={"codex"}, signed_in={"codex"}), "agents.cli")[1]
+    none = read(agents(HARNESSES, installed=set(), signed_in=set()), "agents.cli")[1]
+    out = read(agents(HARNESSES, installed={"codex"}, signed_in=set()), "agents.cli")[1]
+
+    assert found.ok and found.detail == "Codex can run here"
     assert not none.ok and none.detail == "none of Claude, Codex is on PATH"
+    assert not out.ok and out.detail == "Codex is installed but not signed in"
+
+
+def test_each_agent_has_a_row_saying_how_far_it_got():
+    rows = agents(HARNESSES, installed={"claude", "codex"}, signed_in={"claude"})
+
+    check, usable = read(rows, "agents.claude")
+    _check, signed_out = read(rows, "agents.codex")
+
+    assert check.label == "Claude" and usable.ok and usable.detail == "1.0.0, signed in"
+    assert not signed_out.ok and signed_out.detail.startswith("1.0.0")
+    assert check.remedy is not None and check.remedy.command == "claude login"
+
+
+def test_an_agent_that_is_not_installed_is_optional_not_a_problem():
+    _check, missing = read(agents(HARNESSES, installed=set(), signed_in=set()), "agents.claude")
+    assert missing.ok and missing.detail == "not installed — optional"
 
 
 def test_a_terminal_is_judged_by_the_launchers_own_rule():

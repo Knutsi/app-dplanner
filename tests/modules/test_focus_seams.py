@@ -122,3 +122,22 @@ def test_the_cite_menu_can_start_a_feature_step(services, project, monkeypatch):
 
     assert read_position(born) is not None
     assert services.undo.undo_text() == "New Feature"
+
+
+def test_the_details_dialog_lands_on_the_playbook_tab(services, project, monkeypatch):
+    """What a click on a card's playbook strip runs: the dialog on the step's passes."""
+    from dplanner.planning.agent import MODULE_ID as AGENT_ID
+    from dplanner.planning.agent import write_state as agent_state
+
+    work, _imp = project.steps
+    services.document.set_module_data(work.id, AGENT_ID, agent_state(True))
+    seen: list[str] = []
+
+    def fake_exec(dialog: StepDetailsDialog) -> int:
+        panel = dialog.panel
+        seen.append(panel.tab_bar.tabText(panel.tab_bar.currentIndex()))
+        return 0
+
+    monkeypatch.setattr(StepDetailsDialog, "exec", fake_exec)
+    services.actions.run("steps.details", selection(("step", work.id), ("playbook", work.id)))
+    assert seen == ["Playbook"]

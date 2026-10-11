@@ -5,6 +5,7 @@ flush — without a QApplication is the real proof the layering holds; the archi
 checks the imports, this checks the behaviour.
 """
 
+import io
 import json
 import re
 from io import StringIO
@@ -485,6 +486,111 @@ def test_redirect_needs_one_end_named(cli):
     cli("step", "add", "Discovery", "A")
     with pytest.raises(SystemExit):
         cli("step", "redirect", "A")
+
+
+# -- a step named inside the current project -----------------------------------------------------
+
+
+@pytest.fixture
+def two_projects(cli):
+    """Discovery has one step; Delivery has two, so only Delivery has an S2."""
+    cli("project", "create", "Discovery")
+    cli("project", "create", "Delivery")
+    cli("step", "add", "Discovery", "Alpha")
+    cli("step", "add", "Delivery", "Beta one")
+    cli("step", "add", "Delivery", "Beta two")
+    return data(cli("step", "show", "Beta two", "--json"))["id"]
+
+
+def test_a_key_the_current_project_lacks_is_refused_not_found_elsewhere(cli, two_projects):
+    """A verb run in project A on `R26` once rewrote project B's S26."""
+    message = cli("status", "set", "S2", "done", "--project", "Discovery", expect=1)
+    assert "no step matching 'S2' in 'Discovery'" in message
+    assert data(cli("status", "show", two_projects, "--json"))["status"] != "done"
+
+
+def test_the_environment_scopes_a_key_as_the_flag_does(cli, two_projects, monkeypatch):
+    monkeypatch.setenv("DPLANNER_PROJECT", "Discovery")
+    assert "in 'Discovery'" in cli("step", "show", "S2", expect=1)
+    assert "in 'Discovery'" in cli("step", "show", "Beta", expect=1)
+
+
+def test_an_id_names_a_step_in_any_project(cli, two_projects):
+    for needle in (two_projects, two_projects[:8]):
+        shown = data(cli("step", "show", needle, "--project", "Discovery", "--json"))
+        assert shown["id"] == two_projects
+
+
+def test_less_of_an_id_than_a_listing_prints_stays_in_the_current_project(cli, two_projects):
+    cli("step", "show", two_projects[:4], "--project", "Discovery", expect=1)
+
+
+def test_with_no_current_project_a_key_is_looked_up_across_the_library(cli, two_projects):
+    assert data(cli("step", "show", "S2", "--json"))["id"] == two_projects
+
+
+def test_step_add_links_after_a_key_of_its_own_project(cli, two_projects):
+    """`--after S1` once refused as "a step in several projects" with the project named."""
+    cli("step", "add", "Delivery", "Gamma", "--after", "S1")
+    gamma = data(cli("step", "show", "Gamma", "--project", "Delivery", "--json"))
+    beta_one = data(cli("step", "show", "Beta one", "--json"))["id"]
+    assert gamma["requires"] == [beta_one]
+
+
+def test_a_title_typed_whole_wins_over_longer_titles_that_contain_it(cli):
+    cli("project", "create", "Discovery")
+    for title in ("Cut feature/dictations", "Dictations", "Land feature/dictations"):
+        cli("step", "add", "Discovery", title)
+    assert data(cli("step", "show", "dictations", "--json"))["title"] == "Dictations"
+    assert "matches several" in cli("step", "show", "feature/dictations", expect=1)
+
+
+# -- inside a plan repository of several projects ------------------------------------------------
+
+
+@pytest.fixture
+def inside_two(cli, workspace, monkeypatch):
+    """Two library projects in one plan repository, and the call made from its root, where
+    nothing says which of them is meant."""
+    cli("project", "create", "Discovery")
+    cli("project", "create", "Delivery")
+    monkeypatch.chdir(workspace)
+    return workspace
+
+
+def test_inside_several_projects_a_verb_needing_one_still_asks(cli, inside_two):
+    cli("step", "add", "Delivery", "Alpha")
+    assert "pass --project" in cli("step", "show", "S1", expect=1)
+
+
+def test_inside_several_projects_project_create_and_list_need_none(cli, inside_two):
+    cli("project", "create", "Dispatch")
+    titles = {row["title"] for row in data(cli("project", "list", "--json"))["projects"]}
+    assert titles == {"Discovery", "Delivery", "Dispatch"}
+
+
+def test_inside_several_projects_verbs_that_name_their_own_projects_run(
+    cli, inside_two, monkeypatch
+):
+    """Every verb that never acts on *the* current project runs from a plan repository of
+    several: the library-wide ones, and those that take their projects as arguments."""
+    # Lint exits 1 on findings (no code repository yet): it ran, which is the point.
+    assert "2 findings" in cli("project", "lint", expect=1)
+    assert "Delivery:" in cli("project", "lint", "Delivery", expect=1)
+    cli("location", "roles")
+    cli("progression", "show", "--all")
+    cli("progression", "show", "Delivery")
+    exported = cli("project", "export", "Delivery")
+    monkeypatch.setattr("sys.stdin", io.StringIO(exported))
+    cli("project", "import", "--title", "Delivery copy", "--dir", str(inside_two / "copy"))
+
+
+def test_inside_several_projects_the_positional_names_the_project(cli, inside_two):
+    cli("step", "add", "Delivery", "Alpha")
+    cli("step", "add", "Delivery", "Beta", "--after", "S1")
+    alpha = data(cli("step", "show", "Alpha", "--project", "Delivery", "--json"))["id"]
+    beta = data(cli("step", "show", "Beta", "--project", "Delivery", "--json"))
+    assert beta["requires"] == [alpha]
 
 
 # -- the agent instruction at both levels ------------------------------------------------------

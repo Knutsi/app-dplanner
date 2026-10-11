@@ -18,7 +18,6 @@ from dplanner.planning.status import (
     read_since,
     read_started,
     record_merged,
-    record_started,
     stored,
     write,
 )
@@ -120,19 +119,6 @@ def _one_step():
     return library, step
 
 
-def test_record_started_claims_in_progress():
-    library, step = _one_step()
-    assert record_started(library, step.id, date(2026, 9, 21)) is True
-    assert stored(step) is Status.IN_PROGRESS
-
-
-def test_record_started_writes_nothing_twice():
-    """The claim is idempotent: a second launch on a running step dirties nothing."""
-    library, step = _one_step()
-    record_started(library, step.id, date(2026, 9, 21))
-    assert record_started(library, step.id, date(2026, 9, 21)) is False
-
-
 def test_record_merged_finishes_only_a_step_waiting_on_its_merge():
     """A merged PR finishes a step ready to merge, with the merge's own origin — and says
     nothing about a step nobody has accepted, which keeps its status."""
@@ -148,20 +134,6 @@ def test_record_merged_finishes_only_a_step_waiting_on_its_merge():
     assert stored(step) is Status.DONE
     assert origins == [MERGED_ORIGIN]
     assert record_merged(library, step.id, TUESDAY) is False  # Done already: nothing twice.
-
-
-def test_record_started_overrides_a_finished_claim():
-    """Launching on a step that reads done means work resumed — there is no other honest
-    reading of it, and the person who did not want that switched the launch setting off."""
-    library, step = _one_step()
-    step.module_data[MODULE_ID] = write(Status.DONE, today=date(2026, 9, 21))
-    assert record_started(library, step.id, date(2026, 9, 21)) is True
-    assert stored(step) is Status.IN_PROGRESS
-
-
-def test_record_started_on_a_step_that_is_gone_answers_false():
-    library, _step = _one_step()
-    assert record_started(library, "nobody", date(2026, 9, 21)) is False
 
 
 def test_review_and_merge_sit_between_in_progress_and_done():

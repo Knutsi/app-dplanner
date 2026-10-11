@@ -1,0 +1,23 @@
+# S21 dogfood log (Kettle Twenty-One)
+
+- 08:46Z S1 Word count, `execute`, Codex — one turn, done, PR #1, step Ready for review. Nothing to do for a person.
+- Setup snags: `topology set` does not count as reading it (the next `step add` refused until `topology show`); closing the offscreen window asks to save ("5 unsaved changes") because CLI writes are uncommitted.
+- 09:00Z killed S8's plan-stage supervisor (pid 3380154, SIGKILL) mid-turn; its claude turn 3380158 kept running orphaned.
+- 08:50Z S2–S5 launched together (S3 on Codex). Two cards within 4 min: S5's plan approval (card says "An agent" asked) and S4's own name question (says "Claude Code").
+- 08:5xZ S4 name answered from the card (status bar: "Q-e7aa answered; run 20261008T085057Z-95593154 resumes with it" — a run id, not the step); S5 plan approved with Pass ("Took 4 changes from outside DPlanner" replaced the confirmation at once).
+- S4 person gate: sent back with own words → execute attempt 2 resumed the session, fixed it, gate asked again; Pass.
+- 09:00Z S8 supervisor SIGKILLed mid plan turn; the orphaned claude exited on its own within ~40 s (pipe gone). Nothing anywhere said the run was dead: no card, the step read in progress. A window start (offscreen) revived it: turn 1 failed/lost, turn 2 retry → done, then execute, then progress merged PR #6 into feature/toy and set S8 done.
+- S6 spike (Codex): plan approval card, Pass → done.
+- PRs for S1–S5 are open against main; a person gate's Pass leaves the step at Ready for review and the PR unmerged.
+- 09:03Z S1 `review-only` (Codex implemented, so Claude reviewed): pass; person gate passed from the card.
+- 09:04Z Coordinator (claude -p on `agent coordinate S9 S10 S11`): stopped at once — `skill status` read *stale* (a branch build against the installed skill). Resumed with "treat it as passing".
+- 09:05Z It chose **teapot**, took claim C-769f, went on the net, compared S9's and S11's files, launched both as teapot-two and teapot-four, and called ScheduleWakeup — which ends a `-p` process. Resumed by hand.
+- 09:10Z Round 2: read both diffs, built `teapot-actual/verify` over feature/toy with both merged, 13 tests passed, answered both coordinator gates Pass. `gh pr merge` was refused by Claude's auto mode ("merge without review"); it stopped and asked. Resumed with `--allowedTools "Bash(gh pr merge:*)"`.
+- 09:13Z Merged #8 and #7, `github refresh`, released S9 and S11 (done), launched S10 as teapot-three.
+- 09:14Z S12 hold: fake API in `usage` mode, `agent run` with ANTHROPIC_BASE_URL pointing at it. Card in 1 s ("The account ran out of usage. The run resumes by itself at 15:20" — the account's last-known reset); `agent limits`: held.
+- S10's plan finishing on the real account lifted the hold at once (a turn answered after the exhaustion).
+- Retry Now on S12 from the card: the waiting supervisor resumed in its own environment, still pointing at the now-stopped fake → ECONNREFUSED after Claude's own 3-minute retry; then retries at 30 s, 2 min and 10 min, each ~3 min. Blocked card at 09:39Z, 25 minutes after the hold. Nothing showed meanwhile.
+- 09:19Z Round 3: Teapot passed S10's gate, merged #9, released, ended the claim (already ended by the last release), handoff note, off the net. Coordinator total: $0.74.
+- 09:20Z S14 hold again, through `fake_api.py --release`: card in 3 s, account held at five-hour 100 %. Flag touched, Retry Now on the card → turn 2 done 46 s later; limits back to the real 43 %.
+- 09:21Z S13 landing `--playbook` (landing default `review-only`) went straight to review: Codex reviewed feature/toy and passed (no landing PR existed; "remote refresh restricted by the sandbox"). Stopped at the person gate from the card; the step still reads in progress.
+- 09:40Z Retry Now on S12's blocked card: a fresh supervisor (the window's environment) ran turn 6 to done.

@@ -33,6 +33,14 @@ Nothing derived is stored: a step's totals, a project's, the running sums of the
 Expenditure tab are all summed on read. A file this build cannot read is skipped, never a
 crash — a newer build may have written it — and there is no migration: the format is in
 every record.
+
+**A headless run is format 2: the record is the run** (FORMAT.md's *Format 2*). It carries
+its **turns** — one per process the run supervisor started — each with how it ended and
+what it consumed, and the playbook's words (``pass``, ``stage``, ``attempt``). Usage lives
+on the turns, so a session two runs share is counted once per turn and never twice; the
+record's ``agents`` is their sum, made on read and never written. A terminal run is still
+written as format 1, which every older build reads. Whether a run is running, parked or
+over is read from its turns, never stored.
 """
 
 import json
@@ -52,7 +60,14 @@ from dplanner.core.fsio import write_atomic
 from dplanner.domain.agents import AgentUsage, RunReport, Tokens, summed
 
 LEDGER_DIR = "ledger"
-FORMAT = 1
+FORMAT = 2
+# What a run with no turns is written as, so a build from before format 2 still counts it.
+TERMINAL_FORMAT = 1
+HEADLESS = "headless"
+
+# The fence a person writes on a run they take into a terminal of their own (*Open Session*):
+# the run is over to DPlanner, and the step is theirs.
+TAKEN_OVER = "taken over by a person"
 
 # How a record's counts were come by: read from the vendor's records (``native``), read
 # with part of the tree missing (``partial``), typed by hand (``manual``), or carried over
@@ -63,6 +78,84 @@ MANUAL = "manual"
 LEGACY = "legacy"
 # The model a count was recorded against when nobody said which.
 UNKNOWN_MODEL = "unknown"
+
+
+@dataclass(frozen=True)
+class Turn:
+    """One process of a headless run: why it began, how it ended, what it consumed.
+
+    ``end`` is a :class:`~dplanner.domain.headless.TurnEnd` word, or "" while it runs — or
+    since its machine lost it, which only ``pid``, ``boot`` and ``pid_started`` can tell.
+    """
+
+    n: int
+    prompt: str  # Why it began: "launch", "answer", "continue", "reset", "retry" or "verdict".
+    started: str
+    pid: int = 0
+    boot: str = ""
+    pid_started: str = ""
+    ended: str = ""
+    end: str = ""
+    why: str = ""  # For "failed": which failure (headless.Ending.why), or the supervisor's own.
+    reason: str = ""
+    exit: int | None = None
+    resets: str = ""  # For "limit", when the account comes back, if known.
+    question: str = ""
+    consumed: Mapping[str, str] = field(default_factory=dict)
+    # When the supervisor was about to start the process of a turn claimed on an answer: after
+    # it, an absent pid no longer proves the answer was never acted on.
+    spawning: str = ""
+    agents: tuple[AgentUsage, ...] = ()  # The turn's own consumption: FORMAT.md's "usage".
+
+    def to_json(self) -> dict[str, Any]:
+        data: dict[str, Any] = {"n": self.n, "prompt": self.prompt, "started": self.started}
+        optional: dict[str, Any] = {
+            "pid": self.pid,
+            "boot": self.boot,
+            "pid_started": self.pid_started,
+            "ended": self.ended,
+            "end": self.end,
+            "why": self.why,
+            "reason": self.reason,
+            "resets": self.resets,
+            "question": self.question,
+            "consumed": dict(self.consumed),
+            "spawning": self.spawning,
+        }
+        data.update({key: value for key, value in optional.items() if value})
+        if self.exit is not None:
+            data["exit"] = self.exit
+        if self.agents:
+            data["usage"] = {"agents": [_agent_json(agent) for agent in self.agents]}
+        return data
+
+    @classmethod
+    def from_json(cls, raw: object) -> "Turn | None":
+        if not isinstance(raw, dict) or not isinstance(raw.get("n"), int):
+            return None
+        usage = raw.get("usage")
+        agents = usage.get("agents") if isinstance(usage, dict) else None
+        consumed = raw.get("consumed")
+        return cls(
+            n=raw["n"],
+            prompt=_text(raw, "prompt"),
+            started=_text(raw, "started"),
+            pid=_count(raw.get("pid")),
+            boot=_text(raw, "boot"),
+            pid_started=_text(raw, "pid_started"),
+            ended=_text(raw, "ended"),
+            end=_text(raw, "end"),
+            why=_text(raw, "why"),
+            reason=_text(raw, "reason"),
+            exit=_code(raw.get("exit")),
+            resets=_text(raw, "resets"),
+            question=_text(raw, "question"),
+            consumed=(
+                {str(k): str(v) for k, v in consumed.items()} if isinstance(consumed, dict) else {}
+            ),
+            spawning=_text(raw, "spawning"),
+            agents=_agents_from_json(agents),
+        )
 
 
 @dataclass(frozen=True)
@@ -81,8 +174,51 @@ class LedgerRecord:
     harvested: str = ""  # When the vendor's records were last read; "" before the first read.
     measurement: str = NATIVE
     account: Mapping[str, str] = field(default_factory=dict)
+    # A headless run's: the sum of its turns' usage, made on read and never written.
     agents: tuple[AgentUsage, ...] = ()
     prompt_chars: int = 0  # What the briefing came to, in characters.
+    # Format 2, a headless run: FORMAT.md's words, playbooks.md's meanings.
+    mode: str = ""  # "headless", or "" for a run in a terminal.
+    playbook: str = ""
+    pass_: str = ""  # "pass" on disk.
+    stage: str = ""
+    attempt: int = 0
+    callsign: str = ""
+    claim: str = ""
+    turns: tuple[Turn, ...] = ()
+    verdict: Mapping[str, Any] | None = None  # A review's typed final message, as given.
+    # A fix's findings it would not act on: [{finding: {run|question, index}, reason}].
+    declined: tuple[Mapping[str, Any], ...] = ()
+    # A work run's account of what it did: its typed final message's summary, else its final
+    # text — what a person reviewing the pass reads first.
+    summary: str = ""
+    # What the pass pinned, on its first record only: {preset, revision, rounds, roles,
+    # overrides} (playbooks.md's *A pass pins its settings*).
+    settings: Mapping[str, Any] | None = None
+    fence: Mapping[str, str] | None = None  # A takeover's {at, by, why}: the run is over.
+
+    @property
+    def headless(self) -> bool:
+        return self.mode == HEADLESS
+
+    @property
+    def over(self) -> bool:
+        return bool(self.ended)
+
+    @property
+    def last_turn(self) -> Turn | None:
+        return self.turns[-1] if self.turns else None
+
+    @property
+    def parked(self) -> bool:
+        """Its last turn ended and the run did not: it waits for an answer, a reset, a
+        retry — or for its supervisor's backoff, which only the supervisor's lock knows."""
+        last = self.last_turn
+        return not self.over and last is not None and bool(last.end)
+
+    def with_turns(self, turns: Sequence[Turn]) -> "LedgerRecord":
+        """The record with these turns, and its usage summed from them."""
+        return replace(self, turns=tuple(turns), agents=merged(turn.agents for turn in turns))
 
     @property
     def tokens(self) -> Tokens:
@@ -122,15 +258,18 @@ class LedgerRecord:
 
     def to_json(self) -> dict[str, Any]:
         data: dict[str, Any] = {
-            "format": FORMAT,
+            "format": FORMAT if self.headless else TERMINAL_FORMAT,
             "run": self.run,
             "project": self.project,
             "step": self.step,
             "harness": self.harness,
             "launched": self.launched,
             "measurement": self.measurement,
-            "agents": [_agent_json(agent) for agent in self.agents],
         }
+        if self.headless:
+            data["turns"] = [turn.to_json() for turn in self.turns]
+        else:
+            data["agents"] = [_agent_json(agent) for agent in self.agents]
         # Absence encodes the default, FORMAT.md's rule: an unended run has no "ended".
         optional: dict[str, Any] = {
             "machine": self.machine,
@@ -141,6 +280,18 @@ class LedgerRecord:
             "harvested": self.harvested,
             "account": dict(self.account),
             "prompt_chars": self.prompt_chars,
+            "mode": self.mode,
+            "playbook": self.playbook,
+            "pass": self.pass_,
+            "stage": self.stage,
+            "attempt": self.attempt,
+            "callsign": self.callsign,
+            "claim": self.claim,
+            "verdict": dict(self.verdict) if self.verdict is not None else None,
+            "declined": [dict(each) for each in self.declined],
+            "summary": self.summary,
+            "settings": dict(self.settings) if self.settings is not None else None,
+            "fence": dict(self.fence) if self.fence is not None else None,
         }
         data.update({key: value for key, value in optional.items() if value})
         if self.exit is not None:
@@ -157,10 +308,16 @@ class LedgerRecord:
         run, project, step = _text(raw, "run"), _text(raw, "project"), _text(raw, "step")
         if not (run and project and step):
             return None
-        agents = raw.get("agents")
         account = raw.get("account")
-        code = raw.get("exit")
-        return cls(
+        raw_turns = raw.get("turns")
+        turns = tuple(
+            turn
+            for turn in map(Turn.from_json, raw_turns if isinstance(raw_turns, list) else [])
+            if turn is not None
+        )
+        verdict, fence = raw.get("verdict"), raw.get("fence")
+        declined, settings = raw.get("declined"), raw.get("settings")
+        record = cls(
             run=run,
             project=project,
             step=step,
@@ -171,19 +328,30 @@ class LedgerRecord:
             directory=_text(raw, "dir"),
             session=_text(raw, "session"),
             ended=_text(raw, "ended"),
-            exit=code if isinstance(code, int) and not isinstance(code, bool) else None,
+            exit=_code(raw.get("exit")),
             harvested=_text(raw, "harvested"),
             measurement=_text(raw, "measurement") or NATIVE,
             account=(
                 {str(k): str(v) for k, v in account.items()} if isinstance(account, dict) else {}
             ),
-            agents=tuple(
-                agent
-                for agent in map(_agent_from_json, agents if isinstance(agents, list) else [])
-                if agent is not None
-            ),
+            agents=_agents_from_json(raw.get("agents")),
             prompt_chars=_count(raw.get("prompt_chars")),
+            mode=_text(raw, "mode"),
+            playbook=_text(raw, "playbook"),
+            pass_=_text(raw, "pass"),
+            stage=_text(raw, "stage"),
+            attempt=_count(raw.get("attempt")),
+            callsign=_text(raw, "callsign"),
+            claim=_text(raw, "claim"),
+            verdict=verdict if isinstance(verdict, dict) else None,
+            declined=tuple(d for d in declined if isinstance(d, dict))
+            if isinstance(declined, list)
+            else (),
+            summary=_text(raw, "summary"),
+            settings=settings if isinstance(settings, dict) else None,
+            fence=({str(k): str(v) for k, v in fence.items()} if isinstance(fence, dict) else None),
         )
+        return record.with_turns(turns) if record.headless else record
 
 
 def _agent_json(agent: AgentUsage) -> dict[str, Any]:
@@ -198,6 +366,27 @@ def _agent_json(agent: AgentUsage) -> dict[str, Any]:
         if value:
             data[key] = value
     return data
+
+
+def _agents_from_json(raw: object) -> tuple[AgentUsage, ...]:
+    found = map(_agent_from_json, raw if isinstance(raw, list) else [])
+    return tuple(agent for agent in found if agent is not None)
+
+
+def merged(trees: Iterable[Sequence[AgentUsage]]) -> tuple[AgentUsage, ...]:
+    """Several turns' trees as one: each agent's counts summed per model, by its id."""
+    by_id: dict[str, AgentUsage] = {}
+    for tree in trees:
+        for agent in tree:
+            known = by_id.get(agent.id)
+            if known is None:
+                by_id[agent.id] = agent
+                continue
+            models = dict(known.models)
+            for model, counts in agent.models.items():
+                models[model] = models.get(model, Tokens()) + counts
+            by_id[agent.id] = replace(known, models=models)
+    return tuple(by_id.values())
 
 
 def _agent_from_json(raw: object) -> AgentUsage | None:
@@ -230,6 +419,10 @@ def _text(raw: dict[str, Any], key: str) -> str:
     return value if isinstance(value, str) else ""
 
 
+def _code(value: object) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
 def _count(value: object) -> int:
     return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 0
 
@@ -244,16 +437,21 @@ def new_run_id(now: datetime | None = None) -> str:
     return f"{moment:%Y%m%dT%H%M%SZ}-{secrets.token_hex(4)}"
 
 
+MACHINE_ID_FILE = "machine-id"
+
+
+def known_machine_id(directory: Path | None = None) -> str:
+    """This machine's id when one was minted, "" when none was — read without writing, for a
+    reader that must leave the config directory as it found it (``agent follow``)."""
+    return _stored_machine_id(directory)
+
+
 def machine_id(directory: Path | None = None) -> str:
     """This machine's id for the ledger: minted once into the config directory, so a
     renamed host is still the machine that can read its own agents' records."""
-    path = (directory or config_dir()) / "machine-id"
-    try:
-        known = path.read_text(encoding="utf-8").strip()
-    except OSError:
-        known = ""
-    if known:
+    if known := _stored_machine_id(directory):
         return known
+    path = (directory or config_dir()) / MACHINE_ID_FILE
     minted = uuid.uuid4().hex
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -263,11 +461,25 @@ def machine_id(directory: Path | None = None) -> str:
     return minted
 
 
+def _stored_machine_id(directory: Path | None) -> str:
+    try:
+        return ((directory or config_dir()) / MACHINE_ID_FILE).read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
 def host_name() -> str:
     return socket.gethostname() or os.environ.get("COMPUTERNAME", "")
 
 
 # -- the files ----------------------------------------------------------------------------------
+
+
+def run_dir(run: str, directory: Path | None = None) -> Path:
+    """A headless run's working files — its briefing, each turn's stream and stderr, the
+    plan it wrote — derived from its id and never stored, because only the launching machine
+    can use them. Not ``/tmp``: a parked run must find them after a reboot."""
+    return (directory or config_dir()) / "runs" / run
 
 
 def path_for(project_dir: Path, record: LedgerRecord) -> Path:

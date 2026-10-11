@@ -12,8 +12,7 @@ between a stack's cards is its own, drawn short and straight down the frame's mi
 (``docs/architecture/canvas.md``'s *A stack's frame is the stack's handle*).
 """
 
-from itertools import pairwise
-from math import hypot
+from dataclasses import replace
 
 from PySide6.QtCore import QPointF, QRectF, QSizeF, Qt
 from PySide6.QtGui import (
@@ -29,22 +28,22 @@ from PySide6.QtWidgets import (
     QApplication,
     QGraphicsItem,
     QGraphicsPathItem,
+    QGraphicsSceneHoverEvent,
     QStyleOptionGraphicsItem,
     QWidget,
 )
 
 from dplanner.domain.model import StepId
+from dplanner.framework.motion.curves import out_cubic
 from dplanner.modules.canvas.layouts.positions import NODE_H, NODE_W, STRIP_H
 from dplanner.modules.canvas.marks import Marks
 from dplanner.modules.canvas.renderers import (
-    ICON_D,
     PAINT_MARGIN,
     PROBLEM_INK,
     EdgeAccent,
     NodeAccent,
     NodeState,
     RenderHints,
-    paint_medallion,
     paint_node,
 )
 from dplanner.modules.canvas.selection import EdgeRef
@@ -56,6 +55,10 @@ from dplanner.theme.tones import INVALID_TINT, VALID_TINT
 
 # How far a press may land from the handle's centre and still mean it.
 HANDLE_GRAB = 12.0
+
+# How long a playbook strip takes to grow out of a card's foot, or to fold back into it: long
+# enough to see the edge move, short enough never to be waited on.
+GROW_S = 0.2
 
 # The resize band round a card's border: this far inside it, and EDGE_REACH outside. A press
 # in the band grabs that edge — both bands at once grab the corner — and a press further in
@@ -77,25 +80,6 @@ LIT_ALPHA = 190
 # enough that two edges through the same gap stay tellable apart.
 EDGE_GRAB = 14.0
 
-# A doubled arrow — work that moves along it on its own — is two rails this far apart,
-# centre to centre, with a chevron every CHEVRON_PITCH between them pointing at the step
-# that waits. The rails read from across the graph, where a medallion at the middle would
-# be a dot; the chevrons say which way, close up. Both stay inside EDGE_GRAB's margin.
-RAIL_GAP = 6.0
-CHEVRON_PITCH = 14.0
-CHEVRON_ARM = 2.2  # Half the chevron's height, clear of the rails' inner edges.
-# Clear of the tail where it leaves the card, and of the head where it arrives.
-CHEVRON_TAIL = 6.0
-CHEVRON_HEAD = 12.0
-# How far the chevrons travel per step of the scene's ring phase: the pace of the ring's
-# own dashes (RING_STEP of a dash measured in 1.5 px pens), so the two motions are one.
-FLOW_PER_PHASE = 1.5
-# An arrow's medallion sits at the middle of its length, and the chevrons stop this far
-# either side of its centre, so a flowing mark passes behind it rather than through it. An
-# arrow too short to hold it clear of both cards — a stack's own link — wears none.
-MEDALLION_R = ICON_D / 2
-MEDALLION_CLEAR = MEDALLION_R + CHEVRON_ARM + 2.0
-MEDALLION_ROOM = 2 * MEDALLION_CLEAR + CHEVRON_TAIL + CHEVRON_HEAD
 # A branch's lane is a band this wide under the arrow — inside EDGE_GRAB's margin, so an
 # arrow wearing one keeps the bounds it had — at this much of its colour, so the ink on top
 # still reads and a lit arrow is still lit.
@@ -162,6 +146,11 @@ class StepNodeItem(QGraphicsItem):
     default footprint, with a branch strip's height under it when the card wears one — and
     every rect below is measured from it, never from ``NODE_W``. The body is the card less
     that strip: arrows, the handle and the marks meet its middle, and a resize stores it.
+
+    Under all of it a running playbook's strip grows out of the card's foot on the scene's
+    motion clock, and folds back when the pass is no longer shown. It is no part of the
+    footprint the scene pushes (a pass is transient, and an arrangement must not move for
+    one): the card adds it to what it draws, hits and hands its stack as its :meth:`size`.
     """
 
     def __init__(self, step_id: StepId) -> None:
@@ -184,6 +173,11 @@ class StepNodeItem(QGraphicsItem):
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges, True)
         self.setAcceptHoverEvents(True)
         self._hovered = False
+        # The playbook strip: how far it has grown (0..1, in time), where it is going, and
+        # the accent it last showed — still painted while it folds away.
+        self._grow = 0.0
+        self._grow_to = 0.0
+        self._band = ("", "", "")
 
     def set_title(self, title: str) -> None:
         if title != self._title:
@@ -202,6 +196,11 @@ class StepNodeItem(QGraphicsItem):
                 scene.reflow_edges(self.step_id)
 
     def size(self) -> tuple[float, float]:
+        """The card as drawn: its footprint and as much playbook strip as has grown."""
+        return self._size[0], self._size[1] + self._grown()
+
+    def footprint(self) -> tuple[float, float]:
+        """The card as the scene sized it: the body and the branch strip, no playbook strip."""
         return self._size
 
     def body_size(self) -> tuple[float, float]:
@@ -223,19 +222,68 @@ class StepNodeItem(QGraphicsItem):
         if accent != self._accent:
             moved = bool(accent.strip) != bool(self._accent.strip)
             self._accent = accent
+            if accent.playbook[0]:
+                self._band = accent.playbook
+            self._grow_toward(1.0 if accent.playbook[0] else 0.0)
             self.update()
             scene = self.scene()
             if moved and scene is not None and hasattr(scene, "reflow_edges"):
                 scene.reflow_edges(self.step_id)  # A strip moves the body's middle.
 
+    def _grow_toward(self, target: float) -> None:
+        """Start the playbook strip growing or folding — at once for a card not on a canvas
+        yet (a tab opening animates nothing) and while the user has motion reduced."""
+        if target == self._grow_to:
+            return
+        self._grow_to = target
+        scene = self.scene()
+        if scene is None or getattr(scene, "motion_reduced", True):
+            self._set_grow(target)
+
+    def growing(self) -> bool:
+        return self._grow != self._grow_to
+
+    def advance(self, seconds: float) -> None:
+        """Move the playbook strip on by ``seconds`` of the scene's motion clock."""
+        if self.growing():
+            step = seconds / GROW_S
+            self._set_grow(
+                min(self._grow + step, 1.0) if self._grow_to else max(self._grow - step, 0.0)
+            )
+
+    def _set_grow(self, grow: float) -> None:
+        self.prepareGeometryChange()
+        self._grow = grow
+        self.update()
+        scene = self.scene()
+        if scene is not None and hasattr(scene, "reflow_edges"):
+            scene.reflow_edges(self.step_id)  # A stack's column makes room for it.
+
+    def _shown(self) -> float:
+        """The strip's growth as drawn: eased out both ways, so the edge arrives gently."""
+        if self._grow_to:
+            return out_cubic(self._grow)
+        return 1.0 - out_cubic(1.0 - self._grow)
+
+    def _grown(self) -> float:
+        return STRIP_H * self._shown() if self._grow else 0.0
+
+    def playbook_tip_at(self, scene_pos: QPointF) -> str:
+        """The playbook's stages, when ``scene_pos`` is on the strip that names its pass."""
+        if not self._accent.playbook[0] or not self._grow:
+            return ""
+        band = self.body_rect()
+        band.setTop(band.bottom() - self._grown())
+        return self._accent.playbook[2] if band.contains(self.mapFromScene(scene_pos)) else ""
+
     def wears_ring(self) -> bool:
-        """Whether this node has a live agent run, and so wears the marching ring."""
-        return bool(self._accent.chip_text)
+        """Whether a run is at work on this node, and so it wears the marching ring."""
+        return bool(self._accent.ring)
 
     def moves(self) -> bool:
-        """Whether anything on this card moves — the ring or the pulse — which is what keeps
-        the scene's motion clock running."""
-        return self.wears_ring() or self._accent.pulse
+        """Whether anything on this card moves — the ring, the pulse or its playbook strip
+        growing — which is what keeps the scene's motion clock running."""
+        return self.wears_ring() or self._accent.pulse or self.growing()
 
     def set_phase(self, phase: float) -> None:
         """Where the scene's motion clock stands — the ring's dashes, the pulse's breath —
@@ -332,7 +380,7 @@ class StepNodeItem(QGraphicsItem):
 
     def body_rect(self) -> QRectF:
         """The card, in its own coordinates: the rect every painter measures from."""
-        return QRectF(0.0, 0.0, self._size[0], self._size[1])
+        return QRectF(0.0, 0.0, *self.size())
 
     def handle_scene_pos(self) -> QPointF:
         return self.mapToScene(QPointF(self._size[0], self._middle_y()))
@@ -360,7 +408,7 @@ class StepNodeItem(QGraphicsItem):
         if self._pinned:
             return ""
         local = self.mapFromScene(scene_pos)
-        w, h = self._size
+        w, h = self.size()
         reach = QRectF(-EDGE_REACH, -EDGE_REACH, w + 2 * EDGE_REACH, h + 2 * EDGE_REACH)
         if not reach.contains(local):
             return ""
@@ -421,12 +469,16 @@ class StepNodeItem(QGraphicsItem):
         _widget: QWidget | None = None,
     ) -> None:
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        # A strip folding away still says what it said until it is gone.
+        accent = self._accent
+        if not accent.playbook[0] and self._grow:
+            accent = replace(accent, playbook=self._band)
         paint_node(
             painter,
             live_palette(self),
             self.body_rect(),
             self._title,
-            self._accent,
+            accent,
             NodeState(
                 selected=self.isSelected(),
                 hovered=self._hovered,
@@ -436,12 +488,18 @@ class StepNodeItem(QGraphicsItem):
                 ports=self._ports,
                 marks=self._marks,
                 handle=self.has_handle(),
+                grow=self._shown() if self._grow else 0.0,
             ),
         )
 
     def hoverEnterEvent(self, event: object) -> None:  # noqa: N802 - Qt override
         self._hovered = True
         self.update()
+
+    def hoverMoveEvent(self, event: QGraphicsSceneHoverEvent) -> None:  # noqa: N802 - Qt override
+        # The playbook strip's stages, over the strip alone: the rest of the card is the step.
+        self.setToolTip(self.playbook_tip_at(event.scenePos()))
+        super().hoverMoveEvent(event)
 
     def hoverLeaveEvent(self, event: object) -> None:  # noqa: N802 - Qt override
         self._hovered = False
@@ -453,12 +511,8 @@ class EdgeItem(QGraphicsPathItem):
 
     ``requires`` is solid with a head because it orders the graph; ``relates`` is dashed
     without one because it does not — what ``EDGE_KINDS`` means. An :class:`EdgeAccent`
-    says the rest, translated by the composition root: a *doubled* arrow is two rails with
-    chevrons between them (the work moves along it on its own — an auto-progress link),
-    a *flowing* one moves its chevrons on the scene's motion clock (that work is being
-    done right now), a *medallion* is a glyph in a circle at the middle of its length
-    (a review's talk bubble), part of what a press and a hover hit, and a *lane* is a
-    translucent band of a colour under the whole arrow (a feature branch it is work on).
+    says the rest, translated by the composition root: a *lane* is a translucent band of a
+    colour under the whole arrow (a feature branch it is work on).
     """
 
     def __init__(self, source: StepNodeItem, waiter: StepNodeItem, kind: str) -> None:
@@ -471,16 +525,6 @@ class EdgeItem(QGraphicsPathItem):
         self._hovered = False
         self._lit = False
         self._accent = EdgeAccent()
-        self._phase = 0.0
-        # A doubled arrow's two drawings, kept with the path and redrawn only when it moves
-        # or its chevrons do.
-        self._rails = QPainterPath()
-        self._chevrons = QPainterPath()
-        # The curve flattened to a polyline, kept while the path stands: the chevrons are
-        # placed by walking it, since asking Qt for a point at a length costs ~40 µs a time.
-        self._track: list[QPointF] = []
-        # Where the medallion sits, when the accent names one and the arrow has room for it.
-        self._middle: QPointF | None = None
         self._ends: tuple[float, ...] | None = None
         self.setZValue(-1)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
@@ -501,44 +545,19 @@ class EdgeItem(QGraphicsPathItem):
     def set_accent(self, accent: EdgeAccent) -> None:
         """How the arrow looks beyond its kind — the scene hands it over on every sync."""
         if accent != self._accent:
-            if bool(accent.medallion) != bool(self._accent.medallion):
-                self.prepareGeometryChange()  # A medallion reaches past the line's margin.
             self._accent = accent
-            self._dress()
             self.update()
 
     def accent(self) -> EdgeAccent:
         return self._accent
 
-    def flows(self) -> bool:
-        """Whether this arrow's chevrons move — what keeps the scene's motion clock running."""
-        return self._accent.doubled and self._accent.flowing
-
-    def set_phase(self, phase: float) -> None:
-        """One tick of the scene's motion clock: a flowing arrow's chevrons move on."""
-        if self.flows():
-            self._phase = phase
-            self._chevrons = self._chevron_marks()
-            self.update()
-
-    def medallion_centre(self) -> QPointF | None:
-        """Where the medallion sits — half the arrow's length along it — or None."""
-        return self._middle
-
     def shape(self) -> QPainterPath:
         stroker = QPainterPathStroker()
         stroker.setWidth(EDGE_GRAB)
-        stroke = stroker.createStroke(self.path())
-        if self._middle is None:
-            return stroke
-        disc = QPainterPath()
-        disc.addEllipse(self._middle, MEDALLION_R, MEDALLION_R)
-        return stroke.united(disc)
+        return stroker.createStroke(self.path())
 
     def boundingRect(self) -> QRectF:  # noqa: N802 - Qt override
-        # A function of the path and whether the accent names a medallion, never of where
-        # the medallion landed: set_accent and setPath are then the only geometry changes.
-        margin = max(EDGE_GRAB / 2, MEDALLION_R + 1.0) if self._accent.medallion else EDGE_GRAB / 2
+        margin = EDGE_GRAB / 2
         return self.path().boundingRect().adjusted(-margin, -margin, margin, margin)
 
     def hoverEnterEvent(self, event: object) -> None:  # noqa: N802 - Qt override
@@ -571,57 +590,6 @@ class EdgeItem(QGraphicsPathItem):
         self._head = (
             _arrow_head(path.pointAtPercent(0.92), end) if self.kind == "requires" else None
         )
-        self._dress()
-
-    def _dress(self) -> None:
-        """The doubled arrow's rails and chevrons and the medallion's seat, over the current
-        path — or nothing."""
-        doubled, medallion = self._accent.doubled, bool(self._accent.medallion)
-        self._rails = self._chevrons = QPainterPath()
-        self._track, self._middle = [], None
-        if not (doubled or medallion):
-            return
-        polygons = self.path().toSubpathPolygons()
-        curve = polygons[0] if polygons else QPolygonF()
-        self._track = [curve.at(index) for index in range(curve.size())]
-        if medallion:
-            self._middle = _halfway(self._track, MEDALLION_ROOM)
-        if doubled:
-            stroker = QPainterPathStroker()
-            stroker.setWidth(RAIL_GAP)
-            stroker.setCapStyle(Qt.PenCapStyle.FlatCap)
-            self._rails = stroker.createStroke(self.path()).simplified()
-            self._chevrons = self._chevron_marks()
-
-    def _chevron_marks(self) -> QPainterPath:
-        """A chevron every CHEVRON_PITCH along the track, pointing at the step that waits
-        and shifted along by the flow's phase — each one a short open polyline, and none
-        within MEDALLION_CLEAR of a medallion's centre."""
-        marks = QPainterPath()
-        segments = []
-        for start, end in zip(self._track, self._track[1:], strict=False):
-            dx, dy = end.x() - start.x(), end.y() - start.y()
-            if length := hypot(dx, dy):
-                segments.append((start, dx, dy, length))
-        total = sum(length for *_rest, length in segments)
-        stop = total - CHEVRON_HEAD
-        # How far a mark must stand from the medallion's centre, measured along the track.
-        clear = MEDALLION_CLEAR if self._middle is not None else -1.0
-        at = CHEVRON_TAIL + ((self._phase * FLOW_PER_PHASE) % CHEVRON_PITCH if self.flows() else 0)
-        walked = 0.0
-        for start, dx, dy, length in segments:
-            while at < min(walked + length, stop):
-                if abs(at - total / 2) > clear:
-                    share = (at - walked) / length
-                    ahead = QPointF(dx / length, dy / length)
-                    across = QPointF(-ahead.y(), ahead.x())
-                    tip = start + QPointF(dx * share, dy * share) + ahead * CHEVRON_ARM * 0.6
-                    marks.moveTo(tip - ahead * CHEVRON_ARM + across * CHEVRON_ARM)
-                    marks.lineTo(tip)
-                    marks.lineTo(tip - ahead * CHEVRON_ARM - across * CHEVRON_ARM)
-                at += CHEVRON_PITCH
-            walked += length
-        return marks
 
     def paint(
         self,
@@ -648,34 +616,12 @@ class EdgeItem(QGraphicsPathItem):
             lane.setCapStyle(Qt.PenCapStyle.RoundCap)
             painter.setPen(lane)
             painter.drawPath(self.path())
-        if self._accent.doubled:
-            # Thinner than a single line, since there are two of them and the chevrons.
-            painter.setPen(QPen(colour, 1.6 if stressed else 1.0, style))
-            painter.drawPath(self._rails)
-            chevron = QPen(colour, 1.4 if stressed else 1.1)
-            chevron.setCapStyle(Qt.PenCapStyle.RoundCap)
-            chevron.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-            painter.setPen(chevron)
-            painter.drawPath(self._chevrons)
-        else:
-            painter.setPen(QPen(colour, 2.4 if stressed else 1.4, style))
-            painter.drawPath(self.path())
+        painter.setPen(QPen(colour, 2.4 if stressed else 1.4, style))
+        painter.drawPath(self.path())
         if self._head is not None:
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(colour)
             painter.drawPolygon(self._head)
-        if self._middle is not None:
-            # Opaque, so the rails do not run through it; inked like the arrow, so it is lit,
-            # picked and hovered with it.
-            paint_medallion(
-                painter,
-                self._middle,
-                self._accent.medallion,
-                colour,
-                QColor(palette.window().color()),
-                colour,
-                1.6 if stressed else 1.0,
-            )
 
 
 class StackItem(QGraphicsItem):
@@ -980,25 +926,6 @@ class OutlinePreviewItem(QGraphicsPathItem):
         painter.setPen(QPen(ink, 1.4, Qt.PenStyle.DashLine))
         painter.setBrush(wash)
         painter.drawPath(self.path())
-
-
-def _halfway(track: list[QPointF], least: float) -> QPointF | None:
-    """The point half a polyline's length along it, or None for one shorter than ``least``.
-
-    Walked by hand for the reason the chevrons are: asking Qt for a point at a length costs
-    ~40 µs a time, and every sync dresses every arrow that moved.
-    """
-    lengths = [hypot(b.x() - a.x(), b.y() - a.y()) for a, b in pairwise(track)]
-    total = sum(lengths)
-    if total < least:
-        return None
-    left = total / 2
-    for (start, end), length in zip(pairwise(track), lengths, strict=True):
-        if left <= length and length:
-            share = left / length
-            return start + (end - start) * share
-        left -= length
-    return track[-1]
 
 
 def _reach(start: QPointF, end: QPointF, heading: QPointF) -> float:

@@ -60,7 +60,7 @@ def visible_labels(panel):
 def test_showing_a_step_reveals_the_aspect_tabs(services, project, panel):
     """A tab follows its aspect: a plain step shows only the always-on sections, and the
     toggleable ones (Ticket, Tests, Covers, Agent, Milestone) stay off screen until the step
-    carries them."""
+    carries them — and Playbook until it is an agent's or runs a playbook."""
     all_labels = [panel.tab_bar.tabText(i) for i in range(panel.tab_bar.count())]
     expected = [
         "Details",
@@ -69,7 +69,7 @@ def test_showing_a_step_reveals_the_aspect_tabs(services, project, panel):
         "Tests",
         "Covers",
         "Agent",
-        "Review",
+        "Playbook",
         "Feature",
         "Milestone",
         "GitHub",
@@ -121,6 +121,7 @@ def test_a_toggled_aspect_shows_its_tab_live(services, project, panel):
         "Tests",
         "Covers",
         "Agent",
+        "Playbook",
         "Milestone",
         "GitHub",
     ]
@@ -167,7 +168,6 @@ def test_the_bar_words_the_templates_left_and_glyphs_every_toggle_right(services
         "Milestone",
         "Feature",
         "Agent",
-        "Review",
         "Check",
         "Wait",
         "Branch cut",

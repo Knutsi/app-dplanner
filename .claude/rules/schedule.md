@@ -29,23 +29,15 @@ paths:
   frontier is a per-step check, not `ordering.ready()`'s wave one. **Ready for review and
   ready to merge are on the board and not done**: each is a partition of its own
   (`review`, `merge`), one move away for the lookahead, out of the percent — and a plain
-  `requires` is fulfilled by `done` alone, so nothing starts on work nobody accepted.
-  **An auto-progress link is fulfilled from review on** (`auto_progresses`, handed in beside
-  `status_for`): `progression.outstanding()` is the one answer the frontier, the lookahead
-  and Run Agent's gate read, so a step that collects its sources is Ready to start once they
-  are under review (`graph-model.md`).
-  **Some of Ready to start is due, and an agent waiting on a person is on the board.**
-  `progression.due` is the part of the frontier nobody decides to launch — an agent step,
-  pending, no run, a prerequisite fulfilled *through* an auto-progress link — read with the
-  review turns by `agent_launch/due.py`'s `due_now`, marked `due` by `progression show`, and launched by
-  a window (`agents.md`). `asks_person` (the agent-run aspect's reading: `plan-for-review`,
+  `requires` is fulfilled by `done` alone, so nothing starts on work nobody accepted —
+  `progression.outstanding()` is the one answer the frontier, the lookahead and Run Agent's
+  gate read.
+  **An agent waiting on a person is on the board.** `asks_person` (the agent-run aspect's
+  reading: `plan-for-review`,
   `needs-input`, or a plan-mode launch that has said nothing since) splits running work
   into `asking`, the **Waits for you** group under Blocked on both boards and in
   `progression show`; the report keeps the default, since it publishes the plan.
-  **Ready for review is a person's turn**: `progression.taken` — a step waiting on it across
-  an auto-progress link, worked by an agent (`is_agent`, handed in beside `asks_person`),
-  neither blocked nor done — splits work an agent takes on into `taken`, off both boards
-  like running work and *Taken by an agent* in `progression show`, so the boards' *Ready for
+  **Ready for review is a person's turn**, whatever waits on it, so the boards' *Ready for
   review* is exactly what the canvas pulses for (`canvas.md`).
   **Every partition a person acts on is ranked by `unlocks`** (the map covers every step
   of work not done), ties in project order. **The surface is named for the question and
@@ -65,7 +57,9 @@ paths:
   each project is walked on its own and the board is `progression.merge` of the walks — `across()` in the
   terminal — re-ranked by `unlocks`, ties going library order then the project's own; rows
   name their project (the Project column stands down on one project's tab) and a
-  *Projects* `FilterButton` narrows by re-merging, never re-walking. The two tabs are
+  *Projects* `FilterButton` narrows by re-merging, never re-walking. **The open questions
+  are cards on top of it**, under the strip, narrowed by the same filter and counted with the
+  rows in its title (`agents.md`'s question door). The two tabs are
   siblings on `StatusBoard`, never one class with a scope, because `follow_project_tabs`
   closes a project's tab with its project; both re-run on `clock.day_changed`, so a step
   behind a dated wait joins Ready the morning it may start. `dplanner progression show
@@ -214,7 +208,7 @@ paths:
   the status aspect's `since`), so a day of work is told from a quiet one when nothing
   landed, while a day that only differs from yesterday by that count is not written —
   last-wins within the day, by `recorder.py` after every settled change in the window, by
-  `dplanner status set`/`clear` (the root's `_recording_status`, since an agent reports
+  `dplanner status set`/`clear` (the root's `_status_written`, since an agent reports
   with no window open) and by `dplanner progress record` from the terminal — directly,
   with its own origin, off the undo stack
   (the PR refresher's rule — Ctrl+Z undoes the status, not the record). And **saved**

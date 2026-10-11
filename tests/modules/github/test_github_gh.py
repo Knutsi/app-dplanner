@@ -21,6 +21,7 @@ def fake_run(monkeypatch, *, stdout="", stderr="", returncode=0):
         return SimpleNamespace(stdout=stdout, stderr=stderr, returncode=returncode)
 
     monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr(gh, "run_bounded", run)
     monkeypatch.setattr(shutil, "which", lambda _name: "/usr/bin/gh")
     return calls
 

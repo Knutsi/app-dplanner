@@ -112,6 +112,51 @@ def test_the_sweep_reads_this_machines_due_runs_and_nothing_else(tmp_path, monke
     assert harvest.sweep([plan], HARNESSES, TEST_MACHINE, NOW) == 0
 
 
+def test_a_headless_run_is_its_supervisors_alone_and_keeps_its_turns(tmp_path, monkeypatch):
+    """Its turns count themselves from their own streams; a harvest beside a live
+    supervisor would be a second writer, and would count a shared session twice."""
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
+    plan, tree = tmp_path / "plan", tmp_path / "tree"
+    _transcript(tmp_path / "claude", "s-1", tree, input_tokens=900, output_tokens=900)
+    turn = ledger.Turn(
+        n=1,
+        prompt="launch",
+        started=NOW.isoformat(),
+        end="done",
+        agents=(AgentUsage("main", {"m": Tokens(7, 0, 3)}),),
+    )
+    headless = replace(_launched(plan, "h", "claude", tree, session="s-1"), mode="headless")
+    ledger.write(plan, headless.with_turns((turn,)).ended_at(NOW.isoformat(), 0))
+
+    assert not harvest.anything_due([plan], TEST_MACHINE)
+    record = harvest.harvest_run([plan], "h", HARNESSES)
+    assert record is not None and record.turns == (turn,) and record.tokens == Tokens(7, 0, 3)
+
+
+def test_a_harvest_never_writes_over_a_supervisor_that_wrote_meanwhile(tmp_path, monkeypatch):
+    """The wrapper's `usage harvest --run … --exit 0` reads a headless record, the supervisor
+    writes the turn that just ended, and the harvest must neither end the run nor write its
+    older copy back."""
+    plan, tree = tmp_path / "plan", tmp_path / "tree"
+    headless = replace(_launched(plan, "h", "claude", tree, session="s-1"), mode="headless")
+    ledger.write(plan, headless)
+    turn = ledger.Turn(n=1, prompt="launch", started=NOW.isoformat(), end="asked")
+    real = harvest._records
+
+    def supervisor_writes_after_the_read(project_dirs):
+        found = real(project_dirs)
+        ledger.write(plan, headless.with_turns((turn,)))
+        return found
+
+    monkeypatch.setattr(harvest, "_records", supervisor_writes_after_the_read)
+    harvest.harvest_run([plan], "h", HARNESSES, code=0, ended=True)
+    usage.end(plan, "h", 0)
+    stored = ledger.find(plan, "h")
+    assert stored is not None and not stored.ended and stored.turns == (turn,)
+    assert not harvest.store(plan, headless)
+    assert ledger.find(plan, "h") == stored
+
+
 def test_two_runs_in_one_checkout_take_two_sessions(tmp_path, monkeypatch):
     """Codex names no session up front: each run claims the earliest one nobody else owns,
     so a second launch in the same directory cannot swallow the first one's."""
@@ -280,7 +325,7 @@ def test_usage_rows_kept_on_a_step_move_into_the_ledger_at_the_next_open(cli, wo
 
 
 def test_a_window_opened_over_kept_usage_rows_moves_them_into_the_ledger(
-    app, cli, cli_library, workspace, at_work_board, launch_locks
+    app, cli, cli_library, workspace, at_work_board
 ):
     """The window absorbs the retired aspect as the CLI does: ``AgentUsageModule`` declares
     its format, so the builder's migration moves the rows before any module reads."""
@@ -293,7 +338,7 @@ def test_a_window_opened_over_kept_usage_rows_moves_them_into_the_ledger(
     old.parent.mkdir(exist_ok=True)
     old.write_text(json.dumps({"runs": [{"harness": "claude", "session": "s1", "input": 9}]}))
 
-    session = new_session(at_work=at_work_board, launch_locks=launch_locks)
+    session = new_session(at_work=at_work_board)
     try:
         assert session.open_initial(cli_library)
         assert not old.exists()
@@ -344,3 +389,19 @@ def test_usage_show_list_record_and_harvest(cli, tmp_path, monkeypatch):
     assert "both --input and --output" in err
     err = cli("usage", "record", "S1", "--agent", "claude", "--session", "nope", expect=1)
     assert "no Claude Code record found" in err
+
+
+def test_the_window_picks_up_this_machines_lost_turns_when_it_starts(app, request, monkeypatch):
+    """A reboot or a killed supervisor leaves a headless run whose turn never ended: the
+    window's start hands every project's ledger to ``revive``, once."""
+    from dplanner.modules.agent_supervisor import supervisor
+
+    asked: list[list[object]] = []
+
+    def revive(dirs, **_kw):
+        asked.append(list(dirs))
+        return []
+
+    monkeypatch.setattr(supervisor, "revive", revive)
+    request.getfixturevalue("services")
+    assert asked == [[]]  # The library starts empty; each project's ledger when it has some.

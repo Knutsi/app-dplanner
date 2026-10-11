@@ -62,8 +62,8 @@ The rules worth writing down, because each was a decision:
   answer, does: it is stuck on somebody as surely as a blocked step. `asks_person`, handed
   in like `status_for`, splits it from `running` into `asking`, the *Waits for you* group
   under Blocked, with `progression show` saying the same. It reads the agent-run aspect: the
-  states that ask, and a launch into plan mode that has said nothing since, which is the
-  auto-launched Claude this was decided for (*Auto-progress is launched by the window*).
+  states that ask, and a launch into plan mode that has said nothing since: a Claude
+  launched in plan mode writes a plan and waits for somebody to approve it.
   The report keeps it in running — it publishes the plan, not a live session.
 - **Blocked is attention, not waiting.** A blocked step is stuck on a person, so it leads
   the table rather than disappearing into the waited-on mass — it is the row that needs
@@ -73,24 +73,12 @@ The rules worth writing down, because each was a decision:
   percent — and **a plain `requires` is fulfilled by done alone**: nothing starts on work
   nobody has accepted, or on work not merged yet. The Run Agent gate asks the same
   question and so agrees, which a test pins.
-- **An auto-progress link is fulfilled from review on.** A step that exists to land its
-  sources' work cannot wait for them to be done, because they are done only once it has
-  landed them; so across a link its waiter flags, a source reading ready for review or
-  ready to merge frees it. The walk is handed `auto_progresses(waiter, source)` beside
-  `status_for`, and `outstanding()` is the one answer the frontier, the lookahead and the
-  Run Agent gate all read (*An auto-progress link is an aspect on the step that waits*).
-- **Ready for review is a person's turn, and what an agent takes on is not.** The same
-  link that frees a collector from review on hands it the work: once a live agent — a
-  review of the step, a collector of it, neither blocked nor done — waits on it across a
-  link that auto-progresses, the step is that agent's to move, and a board of what needs a
-  person listing it would send somebody to review work a reviewer is about to review.
-  `taken()` is the rule, handed `is_agent` beside `auto_progresses`; the walk puts such a
-  step in `taken`, off both boards like running work and *Taken by an agent* in
-  `progression show`. It is the canvas's rule too — a card pulses exactly when it is on
-  the boards' *Ready to merge* or *Ready for review* (*A card pulses where a person moves
-  next*) — which is what "the Control Centre says the same" meant: one answer, two
-  surfaces. A blocked or finished agent takes nothing on, so a review that escalated puts
-  its subject back in front of a person on both at once. The report keeps the default.
+- **Ready for review is a person's turn.** Whatever waits on a step under review, a person
+  moves it next — to merge, or back to its agent — so it is on the boards' *Ready for review*
+  and its card pulses (*A card pulses where a person moves next*): one answer, two surfaces.
+  The rule that let a waiting agent take such a step over — a collector or a review step across
+  a link that auto-progressed — left with auto-progress and review steps (`decisions.md`,
+  2026-10-07).
 - **A blocked or reviewed prerequisite still counts as "on the board"** for the one-move
   lookahead: its dependents stay in *upcoming*, pointing at it. The alternative — demoting
   them to waiting — would make the queue churn every time a prerequisite flips between

@@ -465,7 +465,9 @@ composite is all-or-nothing: a refusal on the third step leaves the first two un
 claim ended. The CLI applies the command and owes the follow-ups to
 `CliContext.after_flush`, which `open_library` runs only once the whole invocation is written
 — and the verb's report goes with them, so a run that wrote nothing neither released a claim
-nor said it did. The window keeps the same order: it pushes the composite, then asks
+nor said it did. Its mirror is `CliContext.unwritten`: what a verb did outside the plan
+*before* its change — a run's record written ahead of the claim it waits on — is taken back
+when nothing was written (`agents.md`'s *One launch under both surfaces*). The window keeps the same order: it pushes the composite, then asks
 autosave's `saved()` — flush now, and is everything on disk — and performs the follow-ups
 only on yes; while the save is paused or refused they stand on a notice whose retry saves
 first, then ends only the claims whose step still reads stopped — between the gesture and

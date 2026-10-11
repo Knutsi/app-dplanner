@@ -1,0 +1,14 @@
+{
+ "cli": "claude",
+ "exit": 0,
+ "probe": "claude-denied-1",
+ "source": "docs/research/2026-10-07-headless-agents/ experiment E10: --permission-mode auto on Haiku; the edit was denied",
+ "signal_sent": null,
+ "timed_out_after_s": null,
+ "stdout_lines": 1,
+ "stdout_head": [
+  "{\"duration_api_ms\":6091,\"stop_reason\":\"end_turn\",\"session_id\":\"42c9eb29-c1ed-47d8-aaf0-1bf97290b3a7\",\"total_cost_usd\":0.024907299999999997,\"usage\":{\"input_tokens\":26,\"cache_creation_input_tokens\":8381,\"cache_read_input_tokens\":56843,\"output_tokens\":487,\"output_tokens_details\":{\"thinking_tokens\":129},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":8381,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"not_available\",\"iterations\":[{\"input_tokens\":8,\"output_tokens\":52,\"cache_read_input_tokens\":21719,\"cache_creation_input_tokens\":351,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":351},\"type\":\"message\"}],\"speed\":\"standard\"},\"modelUsage\":{\"claude-haiku-4-5-20251001\":{\"inputTokens\":26,\"outputTokens\":487,\"cacheReadInputTokens\":56843,\"cacheCreationInputTokens\":8381,\"webSearchRequests\":0,\"costUSD\":0.024907299999999997,\"contextWindow\":200000,\"maxOutputTokens\":32000,\"thinkingTokens\":129,\"canonicalModel\":\"claude-haiku-4-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[{\"tool_name\":\"Edit\",\"tool_use_id\":\"toolu_01BhmrXFSmGbKSmXdqNyUd3i\",\"tool_input\":{\"file_path\":\"<scratch>/hx/w/e10c/calc.py\",\"old_string\":\"def add(a, b):\\n    return a + b\",\"new_string\":\"def add(a, b):\\n    return a + b\\n\\ndef multiply(a, b):\\n    return a * b\",\"replace_all\":false}}],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"is_error\":false,\"num_turns\":3,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"I need permission to edit calc.py. Please grant it so I can proceed with adding the multiply function.\",\"ttft_ms\":1291,\"type\":\"result\",\"duration_ms\":6154,\"uuid\":\"2d0b6d92-0b28-4731-bebf-bed593baeabb\",\"ttft_stream_ms\":663,\"time_to_request_ms\":46,\"first_content_frame_ms\":663,\"queued_turn_count\":0,\"result_index\":0}"
+ ],
+ "stdout_tail": [],
+ "stderr_tail": []
+}

@@ -38,7 +38,7 @@ Qt-free by rule — see ``HEADLESS_FILES`` in ``tests/test_architecture.py``.
 
 from argparse import ArgumentParser, Namespace
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from typing import Any
 
@@ -762,6 +762,22 @@ def record_day(context: CliContext, project: Project, readers: Readers) -> bool:
     nothing to record."""
     now = readers.snapshot(context.library, project, context.clock.today())
     return now is not None and _write_day(context, project, now)
+
+
+def recording_day(command: CliCommand, readers: Readers) -> CliCommand:
+    """``command`` — a verb naming one step — followed by :func:`record_day` for that step's
+    project: a status said from the terminal is a day of work on record, window or no window."""
+    inner = command.run
+
+    def run(context: CliContext, args: Namespace) -> int:
+        project = context.library.project_of(
+            find_step(context.library, args.step, context.current).id
+        )
+        code = inner(context, args)
+        record_day(context, project, readers)
+        return code
+
+    return replace(command, run=run)
 
 
 def _write_day(context: CliContext, project: Project, now: Snapshot) -> bool:

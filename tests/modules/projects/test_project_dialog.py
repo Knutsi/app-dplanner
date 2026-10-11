@@ -575,10 +575,11 @@ def test_the_tabs_are_repositories_then_every_registered_section_in_order(tabbed
     assert [bar.tabText(i) for i in range(bar.count())] == [
         "Repositories",
         "Agent",
+        "Playbooks",
         "Compilation instructions",
     ]
     assert bar.currentIndex() == 0
-    assert "every document an agent compiles" in bar.tabToolTip(2)
+    assert "every document an agent compiles" in bar.tabToolTip(3)
 
 
 def test_the_name_and_summary_edit_the_project_undoably_and_follow_edits_elsewhere(

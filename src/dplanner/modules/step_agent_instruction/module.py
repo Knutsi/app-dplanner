@@ -25,7 +25,6 @@ from dplanner.framework.dictation import DictationService
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.mime_files import Payload
 from dplanner.framework.undo import UndoService
-from dplanner.modules.agent_briefing import worktree as where
 from dplanner.modules.agent_briefing.blocks import note_parts, step_sections
 from dplanner.modules.agent_briefing.prompt import AssembledPrompt, PromptPart
 from dplanner.modules.step_agent_instruction.section import (
@@ -119,9 +118,8 @@ class StepAgentInstructionModule:
                 ),
                 preview=lambda: deps.actions.run("agent.preview", deps.context.current()),
                 pick_assets=deps.pick_assets,
-                worktree=lambda step_id: where.worktree(deps.library.step(step_id)),
+                worktree=lambda step_id: uses_worktree(deps.library.step(step_id)),
                 set_worktree=self._set_worktree,
-                no_worktree=lambda step_id: where.no_worktree(deps.library.step(step_id)),
                 usage=deps.usage_words,
                 dictation=deps.dictation,
             )

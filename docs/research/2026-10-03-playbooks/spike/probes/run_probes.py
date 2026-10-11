@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-OUT = HERE / "out"
+OUT = HERE.parents[4] / "tests" / "fixtures" / "agent_turns" / "probes"  # moved there at S8
 SERVER_MODES = ["401", "403", "404model", "credit", "429", "529", "500", "garbage", "hang"]
 TIMEOUT_S = 330.0
 KILL_AFTER_S = 8.0

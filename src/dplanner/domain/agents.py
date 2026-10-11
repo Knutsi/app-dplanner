@@ -46,10 +46,27 @@ writes — ``cached`` what was read back from the prompt cache, and ``output`` e
 generated, reasoning included. Cached is its own number because it dwarfs the rest: an
 agent re-reads its whole context on every request, and a session that sent half a million
 fresh tokens read eleven million from cache. One "input" figure would be mostly that.
+
+**A harness has a headless half too** (:class:`~dplanner.domain.headless.Headless`): the argv
+for one unattended turn of each playbook stage, a reader for the CLI's JSON events and how
+the turn ended. It is a second record rather than more templates here, because nothing about
+it is a terminal's: the supervisor spawns the argv itself and never waits on a person.
+
+**Installed is not usable.** A CLI on PATH may be broken or signed out, and a headless turn on
+a dead login is a three-minute retry storm rather than an answer. So a harness says how to ask
+whether it is signed in (:class:`SignIn`), and an :class:`AgentStatus` is the level a probe
+reached — on PATH, a version, signed in. The probe talks to the CLI only through a
+:data:`Shell`, never by path, which is the seam a probe *on another machine* will take.
 """
 
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from enum import IntEnum
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # domain.headless reads Tokens from here.
+    from dplanner.domain.headless import Headless
 
 
 @dataclass(frozen=True)
@@ -136,6 +153,61 @@ class RunReport:
 
 RunReader = Callable[[RunFacts], RunReport | None]
 
+# Runs *this* CLI with these arguments: its exit code and what it said, stdout and stderr
+# together (Codex says "Logged in" on stderr). Raises OSError, or TimeoutError when it does
+# not answer in time. The harness never names its binary: the shell found it.
+Shell = Callable[[Sequence[str]], tuple[int, str]]
+
+
+@dataclass(frozen=True)
+class SignedIn:
+    ok: bool
+    detail: str = ""  # "signed in (claude.ai, max)", "not signed in"
+
+
+@dataclass(frozen=True)
+class SignIn:
+    """How a harness tells whether it can run here: a probe over its own CLI, and what a
+    person types to sign in."""
+
+    probe: Callable[[Shell], SignedIn]
+    command: str  # "claude auth login"
+
+
+class AgentLevel(IntEnum):
+    """How far a status probe got, in the order it asks."""
+
+    MISSING = 0  # Not on PATH.
+    BROKEN = 1  # On PATH, but would not say its version.
+    SIGNED_OUT = 2
+    USABLE = 3
+
+
+@dataclass(frozen=True)
+class AgentStatus:
+    """Whether one agent CLI can run here, and the words for it."""
+
+    harness: str  # The harness id.
+    label: str  # "Claude Code".
+    level: AgentLevel
+    version: str = ""
+    detail: str = ""  # What the last level reached said: "not on PATH", "signed in (…)".
+
+    @property
+    def usable(self) -> bool:
+        return self.level is AgentLevel.USABLE
+
+    @property
+    def reason(self) -> str:
+        """Why it cannot run here — what a disabled entry says; "" when it can."""
+        if self.usable:
+            return ""
+        if self.level is AgentLevel.MISSING:
+            return f"{self.label} is not installed"
+        if self.level is AgentLevel.BROKEN:
+            return f"{self.label} is installed but broken: {self.detail}"
+        return f"{self.label} is installed but not signed in"
+
 
 @dataclass(frozen=True)
 class AgentHarness:
@@ -173,6 +245,16 @@ class AgentHarness:
     # launch waits on somebody is read off the command it ran (``launcher.plans_first``),
     # so a profile edited to drop the words launches an agent that does not wait.
     plan_mode: str = ""
+    # How it runs one unattended turn of a playbook stage; None for a CLI this build cannot
+    # run headless.
+    headless: "Headless | None" = None
+    # How to ask whether it is signed in; None for a CLI this build cannot ask, which counts
+    # as usable once it says its version.
+    sign_in: SignIn | None = None
+    # Where the CLI keeps its login and state under this process's environment
+    # (``$CLAUDE_CONFIG_DIR``, ``$CODEX_HOME``…): with the id, the account a usage limit is
+    # held on — two homes are two logins. None for one this build does not know.
+    home: Callable[[], Path] | None = None
 
     def marks(self, name: str) -> bool:
         """Whether an environment variable of this name marks one of this CLI's shells."""
@@ -194,6 +276,10 @@ class AgentHarness:
     def counts_tokens(self) -> bool:
         return self.report is not None
 
+    @property
+    def runs_headless(self) -> bool:
+        return self.headless is not None
+
     def capabilities(self) -> tuple[str, ...]:
         """The harness's abilities in words, for a settings page or a listing."""
         words = []
@@ -203,6 +289,8 @@ class AgentHarness:
             words.append("resumes")
         if self.counts_tokens:
             words.append("counts tokens")
+        if self.runs_headless:
+            words.append("runs headless")
         return tuple(words)
 
 
@@ -214,14 +302,46 @@ def shell_markers(harnesses: tuple[AgentHarness, ...]) -> tuple[str, ...]:
     return tuple(h.shell_markers[0] for h in harnesses if h.shell_markers)
 
 
-def shell_marker(harnesses: tuple[AgentHarness, ...], env: Mapping[str, str]) -> str:
-    """The marker set in ``env``, or "" when no agent's shell is around us. Set to nothing
-    is not set."""
+def shell_marker(
+    harnesses: tuple[AgentHarness, ...], env: "Mapping[str, str] | None" = None
+) -> str:
+    """The marker set in ``env`` (this process's environment by default), or "" when no
+    agent's shell is around us — read by the entry point's window guard and by
+    ``status set``, which holds an agent's done at review. Set to nothing is not set."""
+    import os
+
+    env = os.environ if env is None else env
     return next((name for name in shell_markers(harnesses) if env.get(name)), "")
+
+
+def is_session_marker(name: str, harnesses: tuple[AgentHarness, ...]) -> bool:
+    """Whether an environment variable of this name says "inside an agent's session" —
+    for any of the harnesses this build knows."""
+    return any(harness.marks(name) for harness in harnesses)
+
+
+def scrubbed_environment(
+    env: Mapping[str, str], harnesses: tuple[AgentHarness, ...]
+) -> dict[str, str]:
+    """``env`` without any harness's session markers, so the agent starts a session of
+    its own.
+
+    Inside another agent's session markers a nested ``claude``
+    is a child session — no transcript, ended with its parent — and every agent launched
+    from a window that inherited them died with the agent that had started the window.
+    """
+    return {name: value for name, value in env.items() if not is_session_marker(name, harnesses)}
 
 
 def harness_by_id(harnesses: tuple[AgentHarness, ...], harness_id: str) -> AgentHarness | None:
     return next((h for h in harnesses if h.id == harness_id), None)
+
+
+def names_session(harnesses: tuple[AgentHarness, ...], harness_id: str) -> bool:
+    """Whether ``harness_id`` names its own session up front — the one a launch records
+    for a resume; a harness that mints its own is found by its record once the run ends."""
+    harness = harness_by_id(harnesses, harness_id)
+    return harness is not None and harness.names_session
 
 
 def harness_for_command(harnesses: tuple[AgentHarness, ...], command: str) -> AgentHarness | None:

@@ -47,14 +47,55 @@ answers ``None`` for anything it cannot read rather than raising.
 
 **The account** is read from ``.claude.json``'s ``oauthAccount``: the organisation type
 (``claude_max``) and the opaque account id, and nothing else in that file.
+
+**Headless.** One turn is ``claude -p`` with the ``stream-json`` stream (which needs
+``--verbose``), ``--strict-mcp-config`` and no MCP list — a headless Claude otherwise
+inherits the person's claude.ai connectors, mail and calendar among them — and the run
+directory and the plan repository as ``--add-dir``. A plan and a review run in plan mode,
+which still runs read-only Bash (a review's ``find`` did, 2026-10-07); an execute turn runs in
+``auto``, because ``acceptEdits`` denies every Bash call. Never pin Haiku for one: its
+``auto`` refused the edit. A fresh turn names its session (``--session-id``), a resumed one
+continues it (``--resume``). Execute and review carry the stage's schema inline
+(``--json-schema``), and the answer comes back as the result's ``structured_output``.
+
+The stream says everything the classifier needs, in four events: ``system``/``init`` names
+the session; ``rate_limit_event`` carries the account's windows (``unifiedWindows``, each a
+``utilization`` and a ``resetsAt``); ``assistant`` is the agent producing something; and
+``result`` has the final text, the typed answer, the turn's usage, ``permission_denials`` —
+which a turn that ended ``success`` may still carry — and, on a failure, ``is_error`` with the
+API's status. Its ``subtype`` says ``success`` even then: ``is_error`` is what says it failed.
+
+**Signed in** is ``claude auth status``, which answers JSON (``loggedIn``, ``authMethod``,
+``subscriptionType``) whatever its exit code.
 """
 
 import json
 import os
 import re
+from collections.abc import Mapping
 from pathlib import Path
 
-from dplanner.domain.agents import AgentHarness, AgentUsage, RunFacts, RunReport, Tokens
+from dplanner.domain.agents import (
+    AgentHarness,
+    AgentUsage,
+    RunFacts,
+    RunReport,
+    Shell,
+    SignedIn,
+    SignIn,
+    Tokens,
+)
+from dplanner.domain.headless import (
+    Headless,
+    StageKind,
+    TurnLog,
+    TurnSpec,
+    called,
+    came_back,
+    schema_text,
+    shorten,
+    window,
+)
 
 SESSION_MARKERS = (
     "CLAUDECODE",
@@ -222,6 +263,139 @@ def report(
     return RunReport(session=facts.session, agents=agents, account=read_account(account))
 
 
+def headless_command(spec: TurnSpec) -> list[str]:
+    # ``--add-dir`` takes a list, so a single-valued option always follows it.
+    argv = ["claude", "-p", "--output-format", "stream-json", "--verbose", "--strict-mcp-config"]
+    argv += ["--add-dir", spec.run_dir, *spec.writable]
+    if spec.resume:
+        argv += ["--resume", spec.session]
+    elif spec.session:
+        argv += ["--session-id", spec.session]
+    argv += ["--permission-mode", "auto" if spec.stage is StageKind.EXECUTE else "plan"]
+    if schema := schema_text(spec.stage):
+        argv += ["--json-schema", schema]
+    # "--" ends the options, so an answer that reads like a flag ("--help") is still a prompt.
+    return [*argv, "--", spec.prompt]
+
+
+def read_event(log: TurnLog, event: Mapping[str, object]) -> None:
+    kind = event.get("type")
+    if kind == "system" and event.get("subtype") == "init":
+        log.session = str(event.get("session_id") or log.session)
+        log.model = _model_name(str(event.get("model") or "")) or log.model
+    elif kind == "rate_limit_event":
+        info = event.get("rate_limit_info")
+        windows = info.get("unifiedWindows") if isinstance(info, dict) else None
+        if isinstance(windows, dict):
+            log.limits = tuple(
+                found
+                for name, given in windows.items()
+                if isinstance(given, dict)
+                and (found := window(name, given.get("utilization"), given.get("resetsAt")))
+            )
+    elif kind == "assistant":
+        log.progressed()
+        log.tools |= {str(block.get("id")) for block in _blocks(event, "tool_use")}
+        # A failed request is written as an assistant message carrying the reason's code —
+        # "rate_limit" whatever the words, which on a subscription say "You've hit your limit".
+        code = event.get("error")
+        if isinstance(code, str) and code:
+            log.code = code
+    elif kind == "user":
+        log.tools -= {str(block.get("tool_use_id")) for block in _blocks(event, "tool_result")}
+    elif kind == "result":
+        _read_result(log, event)
+
+
+def _blocks(event: Mapping[str, object], kind: str) -> list[Mapping[str, object]]:
+    """The message's content blocks of one kind: a tool call, or a tool's result."""
+    message = event.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    if not isinstance(content, list):
+        return []
+    return [block for block in content if isinstance(block, dict) and block.get("type") == kind]
+
+
+def _read_result(log: TurnLog, result: Mapping[str, object]) -> None:
+    log.session = str(result.get("session_id") or log.session)
+    text = result.get("result")
+    log.final = text if isinstance(text, str) else ""
+    typed = result.get("structured_output")
+    log.typed = typed if isinstance(typed, dict) else None
+    usage = result.get("usage")
+    if isinstance(usage, dict):
+        log.tokens = Tokens(
+            input=_count(usage.get("input_tokens"))
+            + _count(usage.get("cache_creation_input_tokens")),
+            cached=_count(usage.get("cache_read_input_tokens")),
+            output=_count(usage.get("output_tokens")),
+        )
+    denials = result.get("permission_denials")
+    log.denials = (
+        [_denial(d) for d in denials if isinstance(d, dict)] if isinstance(denials, list) else []
+    )
+    if result.get("is_error") or result.get("subtype") != "success":
+        log.error = log.final or str(result.get("subtype") or "error")
+        status = result.get("api_error_status")
+        log.status = status if isinstance(status, int) else None
+
+
+def _denial(denial: Mapping[str, object]) -> str:
+    """ "Edit calc.py", "Bash git commit …": the tool and what it was to touch."""
+    given = denial.get("tool_input")
+    target = ""
+    if isinstance(given, dict):
+        target = str(given.get("file_path") or given.get("command") or given.get("path") or "")
+    return f"{denial.get('tool_name') or 'a tool'} {target}".strip()
+
+
+def say_event(event: Mapping[str, object]) -> list[str]:
+    """An event as ``agent follow`` says it: what the agent wrote, each tool it called and the
+    first line of what came back, and a limit the account hit."""
+    kind = event.get("type")
+    if kind == "assistant":
+        lines = [str(block.get("text") or "") for block in _blocks(event, "text")]
+        lines += [
+            called(block.get("name"), block.get("input")) for block in _blocks(event, "tool_use")
+        ]
+        return [line for line in lines if line.strip()]
+    if kind == "user":
+        return [
+            came_back(_result_text(block.get("content")), block.get("is_error") is True)
+            for block in _blocks(event, "tool_result")
+        ]
+    if kind == "rate_limit_event":
+        info = event.get("rate_limit_info")
+        status = info.get("status") if isinstance(info, dict) else None
+        if isinstance(status, str) and status != "allowed":
+            return [f"· usage limit: {status}"]
+    if kind == "result" and (event.get("is_error") or event.get("subtype") != "success"):
+        return [f"· {shorten(event.get('result') or event.get('subtype') or 'error')}"]
+    return []
+
+
+def _result_text(content: object) -> str:
+    """A tool result's text: a string, or the text blocks of a list."""
+    if isinstance(content, list):
+        return "\n".join(str(part.get("text") or "") for part in content if isinstance(part, dict))
+    return content if isinstance(content, str) else ""
+
+
+HEADLESS = Headless(command=headless_command, read=read_event, say=say_event)
+
+
+def signed_in(shell: Shell) -> SignedIn:
+    _code, said = shell(("auth", "status"))
+    try:
+        status = json.loads(said)
+    except ValueError:
+        return SignedIn(ok=False, detail="`claude auth status` did not answer JSON")
+    if not isinstance(status, dict) or status.get("loggedIn") is not True:
+        return SignedIn(ok=False, detail="not signed in")
+    how = [str(status[key]) for key in ("authMethod", "subscriptionType") if status.get(key)]
+    return SignedIn(ok=True, detail=f"signed in ({', '.join(how)})" if how else "signed in")
+
+
 HARNESS = AgentHarness(
     id="claude",
     label="Claude Code",
@@ -238,4 +412,7 @@ HARNESS = AgentHarness(
     report=report,
     binary="claude",
     plan_mode="--permission-mode plan",
+    headless=HEADLESS,
+    sign_in=SignIn(probe=signed_in, command="claude auth login"),
+    home=config_dir,
 )

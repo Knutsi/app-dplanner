@@ -17,7 +17,7 @@ disagree.
 it computes. The module id, the activity kind and the action ids are the on-disk and
 in-registry contract and are untouched by the renaming.
 
-Five seams, all established elsewhere in this application:
+Six seams, all established elsewhere in this application:
 
 - **Statuses arrive as a function** (``status_for``), wired by the composition root from
   the status aspect's Qt-free reader — this module never learns what one is stored as. It
@@ -35,14 +35,20 @@ Five seams, all established elsewhere in this application:
   It picks that row alone first, because the verbs about one step read the first picked.
 - **Activating a row opens its details**, by running ``steps.details`` against a context
   naming exactly that row's step.
+- **The Control Centre hosts the question cards on top** (``question_cards``, a
+  :class:`QuestionLane` built by the questions module): an open question is a card there,
+  above the board, and counted in the tab's title with the rows.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from typing import Protocol
 
 from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import QWidget
 
 from dplanner.core.clock import Clock
+from dplanner.core.signals import Signal
 from dplanner.domain.model import Library, NodeId, Step, StepId
 from dplanner.framework.action_registry import (
     DISABLED,
@@ -94,6 +100,35 @@ class StripVerb:
     face: str = ""
 
 
+class QuestionLane(Protocol):
+    """What the Control Centre hosts on top of its board: the open questions, as cards. It
+    only places the lane, narrows it with the Projects filter and counts it in its title —
+    what a card is and does is the questions module's."""
+
+    @property
+    def widget(self) -> QWidget: ...
+
+    @property
+    def count(self) -> int: ...
+
+    def set_changed(self, changed: Callable[[], None]) -> None: ...
+
+    def show_projects(self, project_ids: Sequence[NodeId]) -> None: ...
+
+    def refresh(self) -> None: ...
+
+    def close(self) -> None: ...
+
+
+class Holders(Protocol):
+    """Who holds which step — the squad claims' reading, as the boards name it: the board
+    only shows the words, and re-reads when ``changed`` names a project."""
+
+    changed: Signal[str]
+
+    def held_by(self, step: Step) -> str: ...
+
+
 @dataclass(frozen=True)
 class ProgressionDeps:
     library: Library
@@ -110,15 +145,9 @@ class ProgressionDeps:
     clock: Clock = field(default_factory=Clock)
     # Whether a step is work at all: a wait is not, and is on no row and in no count.
     counts_as_work: Callable[[Step], bool] = field(default=lambda _step: True)
-    # Whether a waiter may start once a source it requires is ready for review — an
-    # auto-progress link, read through the owning aspect by the composition root.
-    auto_progresses: Callable[[Step, Step], bool] = field(default=lambda _waiter, _source: False)
     # Whether a running step's agent waits on a person — a plan to approve, a question to
     # answer: the agent-run aspect's reading, which puts the row under *Waits for you*.
     asks_person: Callable[[Step], bool] = field(default=lambda _step: False)
-    # Whether an agent works a step: a step under review that an agent takes on from there
-    # is that agent's turn, not a person's, and leaves *Ready for review*.
-    is_agent: Callable[[Step], bool] = field(default=lambda _step: False)
     # The verbs a person runs over the ticked rows, named by the composition root: which
     # they are is a fact about other modules. None seated is a build without them.
     verbs: tuple[StripVerb, ...] = ()
@@ -129,6 +158,12 @@ class ProgressionDeps:
     # The step's key, under its title, and the canvas medallion naming what it is.
     key_of: Callable[[Step], str] = field(default=lambda _step: "")
     glyph_of: Callable[[Step], str] = field(default=lambda _step: "step")
+    # Who holds each step — a column shown while any row is held. Read from files beside
+    # the plan, so the board also re-reads when ``changed`` names a project. None: no column.
+    holders: Holders | None = None
+    # The question cards the Control Centre puts on top of its board, built for its page;
+    # None is a build without them.
+    question_cards: Callable[[QWidget], QuestionLane] | None = None
 
 
 class ProgressionModule:

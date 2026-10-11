@@ -8,8 +8,10 @@ from pathlib import Path
 import pytest
 from PySide6.QtWidgets import QSpinBox
 from tests.facts import code_row
+from tests.launching import checkout_of, committed
 from tests.platforms import POSIX_MODE_BITS, SH, SYMLINKS
 
+from dplanner.domain.agents import scrubbed_environment
 from dplanner.modules import agent_harnesses, default_location_roles
 from dplanner.modules.agent_briefing.prompt import PromptPart, assemble
 from dplanner.modules.agent_briefing.protocol import epilogue, preamble
@@ -345,264 +347,14 @@ def test_the_windows_script_reports_the_same_two_files(tmp_path):
     assert "pause" in script
 
 
-def test_a_run_name_isolates_the_run_beside_the_pointer_file(tmp_path):
-    """The worktree lives in .dplanner-worktrees/, never .dplanner/: the latter is the
-    pointer *file* a project kept in a subfolder leaves at the repository root, and the
-    first version's `git worktree add` under it failed on every such project."""
-    script = prepare("p", tmp_path, worktree="s7-build-it", platform="linux").script.read_text()
+@pytest.mark.parametrize("platform", ["linux", "win32"])
+def test_the_script_runs_no_git_and_starts_the_agent_where_it_is_told(tmp_path, platform):
+    """The worktree is prepared before the script exists (``worktree.prepare``), so the
+    script only moves into the directory it is handed — the same for every kind of run."""
     tree = tmp_path / ".dplanner-worktrees" / "s7-build-it"
-    assert f'git worktree add --no-track -b "agent/s7-build-it" "{tree}" "$start"' in script
-    assert f'git worktree add "{tree}" "agent/s7-build-it"' in script  # Reused on the next run.
-    assert "info/exclude" in script  # The worktree dir never pollutes git status.
-    assert f'cd "{tree}"' in script
-    assert "git worktree prune" in script
-
-
-def test_no_run_name_means_no_git_lines(tmp_path):
-    assert "git worktree add" not in prepare("p", tmp_path, platform="linux").script.read_text()
-
-
-@pytest.mark.parametrize("platform", ["linux", "win32"])
-def test_a_new_branch_starts_from_the_remote_never_the_checkout(tmp_path, platform):
-    """The script fetches and starts the branch from the remote's default — looked up, since
-    nothing here knows it — so a checkout left on another branch is nobody's base."""
-    script = prepare("p", tmp_path, worktree="s7-x", platform=platform).script.read_text()
-    assert "git fetch --quiet origin" in script
-    assert "symbolic-ref --quiet --short refs/remotes/origin/HEAD" in script
-    assert "gh-merge-base" not in script  # No base named: gh's default is the right one.
-
-
-@pytest.mark.parametrize("platform", ["linux", "win32"])
-def test_a_plan_names_the_start_the_base_and_the_branch_to_cut(tmp_path, platform):
-    """A member of a stretch: its own branch, started from the stretch's with no upstream,
-    its PR held to the stretch's branch, and the branch cut on the remote when missing."""
-    plan = BranchPlan(
-        start="origin/feature/stacks",
-        create="feature/stacks",
-        create_from="origin/main",
-        pr_base="feature/stacks",
-    )
-    files = prepare("p", tmp_path, worktree="s7-x", platform=platform, branches=plan)
-    script = files.script.read_text()
-    assert "start=origin/feature/stacks" in script.replace('start="', "start=")
-    assert 'origin "origin/main:refs/heads/feature/stacks"' in script
-    assert "--no-track" in script and "--track" not in script.replace("--no-track", "")
-    assert 'git config "branch.agent/s7-x.gh-merge-base" "feature/stacks"' in script
-    assert "symbolic-ref" not in script  # The plan named the start; nothing is looked up.
-
-
-def test_a_landing_works_on_the_feature_branch_and_tracks_it(tmp_path):
-    plan = BranchPlan(work_branch="feature/stacks", start="origin/feature/stacks", pr_base="main")
-    script = prepare("p", tmp_path, worktree="s9-land", platform="linux", branches=plan)
-    text = script.script.read_text()
-    tree = tmp_path / ".dplanner-worktrees" / "s9-land"
-    assert f'git worktree add --track -b "feature/stacks" "{tree}" "$start"' in text
-    assert "agent/s9-land" not in text
-
-
-def test_a_branch_git_would_refuse_never_reaches_a_script(tmp_path):
-    with pytest.raises(ValueError, match="not a branch"):
-        prepare("p", tmp_path, worktree="s7-x", branches=BranchPlan(pr_base='x"; rm -rf ~'))
-
-
-def _git(repo, *args):
-    import subprocess
-
-    return subprocess.run(
-        ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
-    ).stdout.strip()
-
-
-@pytest.fixture
-def cloned_repo(tmp_path):
-    """A checkout of a bare remote with one commit on main — origin/HEAD set, as a clone
-    has it — left on a branch of its own that the remote has never seen."""
-    import subprocess
-
-    remote = tmp_path / "origin.git"
-    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(remote)], check=True)
-    seed = tmp_path / "seed"
-    subprocess.run(["git", "init", "-q", "-b", "main", str(seed)], check=True)
-    _git(seed, "config", "user.email", "t@example.com")
-    _git(seed, "config", "user.name", "t")
-    _git(seed, "commit", "-q", "--allow-empty", "-m", "on main")
-    _git(seed, "push", "-q", str(remote), "main")
-    repo = tmp_path / "repo"
-    subprocess.run(["git", "clone", "-q", str(remote), str(repo)], check=True)
-    _git(repo, "config", "user.email", "t@example.com")
-    _git(repo, "config", "user.name", "t")
-    _git(repo, "checkout", "-q", "-b", "elsewhere")
-    _git(repo, "commit", "-q", "--allow-empty", "-m", "on elsewhere")
-    return repo
-
-
-# What the agent reports: the commit it started from and the branch it tracks, if any.
-WHERE = (
-    "sh -c 'git log -1 --format=%s; git rev-parse --abbrev-ref @{u} || echo untracked' # {prompt}"
-)
-
-
-def _prepared(repo, run_dir, name, plan=DEFAULT_BRANCHES):
-    run_dir.mkdir()
-    return prepare(
-        "p",
-        repo,
-        agent_command=WHERE,
-        worktree=name,
-        platform="linux",
-        directory=run_dir,
-        branches=plan,
-    )
-
-
-@SH
-def test_a_fresh_worktree_starts_at_the_remotes_default_branch(cloned_repo, tmp_path):
-    done = _run_script(_prepared(cloned_repo, tmp_path / "run", "s1-x"))
-    assert done.returncode == 0, done.stdout + done.stderr
-    assert "on main" in done.stdout and "on elsewhere" not in done.stdout
-    assert "untracked" in done.stdout
-
-
-@SH
-def test_the_first_run_in_a_stretch_cuts_its_branch_and_starts_from_it(cloned_repo, tmp_path):
-    plan = BranchPlan(
-        start="origin/feature/x",
-        create="feature/x",
-        create_from="origin/main",
-        pr_base="feature/x",
-    )
-    done = _run_script(_prepared(cloned_repo, tmp_path / "run", "s2-x", plan))
-    assert done.returncode == 0, done.stdout + done.stderr
-    assert "on main" in done.stdout and "untracked" in done.stdout
-    assert _git(tmp_path / "origin.git", "branch", "--list", "feature/x")
-    assert _git(cloned_repo, "config", "branch.agent/s2-x.gh-merge-base") == "feature/x"
-    assert _git(cloned_repo, "branch", "--show-current") == "elsewhere"  # Never switched.
-
-
-@SH
-def test_a_cut_from_the_remotes_default_finds_it_on_a_checkout_that_was_never_told(
-    cloned_repo, tmp_path
-):
-    """A checkout made by init and remote-add has no origin/HEAD: the script asks the
-    remote which branch is its default before it pushes from it."""
-    from dplanner.planning.branches import DEFAULT_START
-
-    _git(cloned_repo, "remote", "set-head", "origin", "-d")
-    plan = BranchPlan(
-        start="origin/feature/y",
-        create="feature/y",
-        create_from=DEFAULT_START,
-        pr_base="feature/y",
-    )
-    done = _run_script(_prepared(cloned_repo, tmp_path / "run", "s5-x", plan))
-    assert done.returncode == 0, done.stdout + done.stderr
-    assert "on main" in done.stdout
-    assert _git(tmp_path / "origin.git", "branch", "--list", "feature/y")
-
-
-@SH
-def test_a_landing_checks_out_the_feature_branch_tracking_it(cloned_repo, tmp_path):
-    _git(cloned_repo, "push", "-q", "origin", "origin/main:refs/heads/feature/x")
-    plan = BranchPlan(work_branch="feature/x", start="origin/feature/x", pr_base="main")
-    done = _run_script(_prepared(cloned_repo, tmp_path / "run", "s3-land", plan))
-    assert done.returncode == 0, done.stdout + done.stderr
-    assert "origin/feature/x" in done.stdout
-
-
-@SH
-def test_a_branch_gone_from_the_remote_is_never_cut_again(cloned_repo, tmp_path):
-    """No ``create``: the stretch has already run, so a missing branch was deleted — landed,
-    most likely — and starting it afresh from main would put members' work nowhere."""
-    plan = BranchPlan(start="origin/feature/gone", pr_base="feature/gone")
-    files = _prepared(cloned_repo, tmp_path / "run", "s4-x", plan)
-    done = _run_script(files)
-    assert done.returncode == 1
-    assert "There is no origin/feature/gone" in done.stdout
-    assert files.exit_file.read_text().strip() == "1"
-
-
-@pytest.fixture
-def pointed_repo(tmp_path):
-    """A repository whose plan sits in a subfolder — so the root carries the `.dplanner`
-    pointer *file* the old worktree path collided with."""
-    import subprocess
-
-    from dplanner.core.storage.locations import init_repo
-    from dplanner.domain.seed import seed_project
-
-    repo = init_repo(tmp_path / "repo")
-    seed_project(repo / "planning", "Discovery")
-    assert (repo / ".dplanner").is_file()
-    git = ["git", "-C", str(repo)]
-    subprocess.run([*git, "config", "user.email", "t@example.com"], check=True)
-    subprocess.run([*git, "config", "user.name", "t"], check=True)
-    subprocess.run([*git, "add", "-A"], check=True)
-    subprocess.run([*git, "commit", "-qm", "init"], check=True)
-    return repo
-
-
-def _run_script(files):
-    import subprocess
-
-    return subprocess.run(
-        ["sh", str(files.script)], capture_output=True, text=True, stdin=subprocess.DEVNULL
-    )
-
-
-@SH
-def test_the_script_puts_the_agent_in_its_worktree_on_its_branch(pointed_repo, tmp_path):
-    """End to end, in a real repository with the pointer file: the worktree is created on
-    the first run, reused on the second, and the agent starts inside it on its branch."""
-    run_dir = tmp_path / "run"
-    run_dir.mkdir()
-    files = prepare(
-        "p",
-        pointed_repo,
-        agent_command="sh -c 'pwd; git branch --show-current' # {prompt}",
-        worktree="s1-discovery",
-        platform="linux",
-        directory=run_dir,
-    )
-    for _ in range(2):
-        done = _run_script(files)
-        assert done.returncode == 0, done.stdout + done.stderr
-        assert f"{pointed_repo}/.dplanner-worktrees/s1-discovery\nagent/s1-discovery" in done.stdout
-        assert files.exit_file.read_text().strip() == "0"
-    assert (pointed_repo / ".dplanner-worktrees" / "s1-discovery" / ".git").is_file()
-    assert "/.dplanner-worktrees/" in (pointed_repo / ".git" / "info" / "exclude").read_text()
-
-
-@SH
-def test_a_worktree_that_cannot_be_prepared_stops_the_run(pointed_repo, tmp_path):
-    """Never the main checkout by accident: git's refusal ends the run with a failed
-    exit, which the window reports, instead of carrying on where the plan is."""
-    (pointed_repo / ".dplanner-worktrees").mkdir()
-    (pointed_repo / ".dplanner-worktrees" / "s2-stale").write_text("in the way")
-    (tmp_path / "run").mkdir()
-    files = prepare(
-        "p",
-        pointed_repo,
-        agent_command="sh -c 'echo RAN' # {prompt}",
-        worktree="s2-stale",
-        platform="linux",
-        directory=tmp_path / "run",
-    )
-    done = _run_script(files)
-    assert done.returncode == 1
-    assert "RAN" not in done.stdout
-    assert "Could not prepare the worktree" in done.stdout
-    assert files.exit_file.read_text().strip() == "1"
-
-
-def test_a_run_name_is_the_key_the_ticket_and_the_slug_made_ref_safe():
-    from dplanner.modules.agent_briefing.worktree import ref_safe, run_name
-
-    assert run_name("F7", "PROJ-12", "Build the modal") == "f7-PROJ-12-build-the-modal"
-    assert run_name("S3", "", "Wire it (v2)!") == "s3-wire-it-v2"
-    assert run_name("", "", "") == "step"
-    assert ref_safe("a..b//c ~^:?*[\\") == "a-b-c"
-    assert ref_safe("-.lead and trail.-") == "lead-and-trail"
-    assert len(run_name("S1", "", "x" * 200)) <= 60
+    script = prepare("p", tree, platform=platform).script.read_text()
+    assert "git " not in script
+    assert str(tree) in script
 
 
 def test_a_command_without_the_placeholder_still_gets_the_prompt(tmp_path):
@@ -759,7 +511,7 @@ def test_the_spawned_environment_carries_no_session_markers(monkeypatch, tmp_pat
         "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "8000",
         "ANTHROPIC_API_KEY": "k",
     }
-    assert launcher.scrubbed_environment(env, HARNESSES) == {
+    assert scrubbed_environment(env, HARNESSES) == {
         "PATH": "/usr/bin",
         "CLAUDE_CONFIG_DIR": "/home/me/.claude",
         "CLAUDE_CODE_USE_BEDROCK": "1",
@@ -776,6 +528,28 @@ def test_the_spawned_environment_carries_no_session_markers(monkeypatch, tmp_pat
     assert "CLAUDECODE" not in options["env"] and "PATH" in options["env"]
 
 
+@pytest.mark.parametrize("command", [["term", "-e", "run.sh"], ["tmux", "new", "&&", "tmux", "x"]])
+def test_a_terminal_a_turn_opens_does_not_carry_the_turns_run(monkeypatch, tmp_path, command):
+    """A turn that launches another step's terminal must not hand it its run: stopping that
+    run ends every process carrying it."""
+    import subprocess
+
+    from dplanner.cli.discovery import RUN_ENV
+    from dplanner.modules.agent_launch import launcher
+
+    envs = []
+
+    def stage(*args, **kwargs):
+        envs.append(kwargs["env"])
+        return subprocess.CompletedProcess(args, 0, "%1", "")
+
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: envs.append(kw["env"]))
+    monkeypatch.setattr(subprocess, "run", stage)
+    monkeypatch.setenv(RUN_ENV, "the-turns-run")
+    assert launcher.spawn(command, tmp_path, HARNESSES) == ""
+    assert envs and all(RUN_ENV not in env and "PATH" in env for env in envs)
+
+
 def test_the_harnesses_cover_the_known_agents():
     """One provider module per agent CLI, and the capabilities are read off each record:
     Claude names its session up front, Codex and OpenCode are found afterwards, all
@@ -787,9 +561,14 @@ def test_the_harnesses_cover_the_known_agents():
         if "{run_dir}" in tokens:
             # `--add-dir` takes a list: what follows the directory is an option, not the prompt.
             assert tokens[tokens.index("{run_dir}") + 1].startswith("--")
-    assert HARNESSES[0].capabilities() == ("names its session", "resumes", "counts tokens")
-    assert HARNESSES[1].capabilities() == ("resumes", "counts tokens")
-    assert HARNESSES[2].capabilities() == ("resumes", "counts tokens")
+    assert HARNESSES[0].capabilities() == (
+        "names its session",
+        "resumes",
+        "counts tokens",
+        "runs headless",
+    )
+    assert HARNESSES[1].capabilities() == ("resumes", "counts tokens", "runs headless")
+    assert HARNESSES[2].capabilities() == ("resumes", "counts tokens", "runs headless")
     assert all(h.shell_markers for h in HARNESSES)
 
 
@@ -798,7 +577,8 @@ def test_picking_a_terminal_prefills_its_command(app):
     terminals, marked when not installed, and Automatic is the empty template."""
     from PySide6.QtWidgets import QComboBox, QLineEdit
 
-    from dplanner.modules.agent_launch.settings_page import build_page, launch_command
+    from dplanner.modules.agent_launch.profiles import launch_command
+    from dplanner.modules.agent_launch.settings_page import build_page
 
     page = build_page(None, platform="darwin")
     combo = page.findChild(QComboBox, "AgentTerminalCombo")
@@ -818,14 +598,15 @@ def test_picking_a_terminal_prefills_its_command(app):
 def test_picking_a_preset_prefills_the_command(app):
     from PySide6.QtWidgets import QComboBox, QLineEdit
 
-    from dplanner.modules.agent_launch.settings_page import agent_command, build_page
+    from dplanner.modules.agent_launch.profiles import agent_command
+    from dplanner.modules.agent_launch.settings_page import build_page
 
     page = build_page(None, harnesses=HARNESSES)
     combo = page.findChild(QComboBox, "AgentPresetCombo")
     edit = page.findChild(QLineEdit, "AgentCommandEdit")
     assert combo is not None and edit is not None
     codex = next(i for i in range(combo.count()) if combo.itemText(i).startswith("Codex"))
-    assert combo.itemText(codex) == "Codex — resumes, counts tokens"
+    assert combo.itemText(codex) == "Codex — resumes, counts tokens, runs headless"
     combo.setCurrentIndex(codex)
     combo.activated.emit(codex)
     assert edit.text() == HARNESSES[1].command
@@ -838,11 +619,9 @@ def test_a_preset_text_an_earlier_version_shipped_is_still_that_preset(app, tmp_
     the session id and the directory, never resumable. It is the preset."""
     from PySide6.QtWidgets import QComboBox
 
-    from dplanner.framework.user_config import set_global
     from dplanner.modules.agent_launch.launcher import current_command, resume_command
-    from dplanner.modules.agent_launch.profiles import AGENT_COMMAND_KEY
-    from dplanner.modules.agent_launch.settings_page import agent_command, build_page
-    from dplanner.planning.agent import MODULE_ID
+    from dplanner.modules.agent_launch.profiles import Profile, agent_command, write_profiles
+    from dplanner.modules.agent_launch.settings_page import build_page
 
     claude = HARNESSES[0]
     assert claude.superseded
@@ -854,8 +633,7 @@ def test_a_preset_text_an_earlier_version_shipped_is_still_that_preset(app, tmp_
     old = "claude --permission-mode plan {prompt}"
     script = prepare("p", tmp_path, agent_command=old, platform="linux").script.read_text()
     assert "--add-dir" in script and "--session-id" in script
-    # The single setting profiles replaced is read as the default profile.
-    set_global(MODULE_ID, AGENT_COMMAND_KEY, old)
+    write_profiles([Profile("Mine", old)])
     assert agent_command(HARNESSES) == claude.command
     page = build_page(None, harnesses=HARNESSES)
     combo = page.findChild(QComboBox, "AgentPresetCombo")
@@ -1134,7 +912,7 @@ def test_each_projects_own_repository_root_is_the_workdir(
     from dplanner.domain.model import Step
     from dplanner.domain.seed import seed_project
 
-    second_repo = init_repo(tmp_path / "second")
+    second_repo = committed(init_repo(tmp_path / "second"))
     directory = seed_project(second_repo, "Satellite")
     satellite = services.repo.attach(directory)
     services.document.add_child(services.document.id, satellite)
@@ -1148,7 +926,7 @@ def test_each_projects_own_repository_root_is_the_workdir(
     monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
     services.actions.run("agent.run", services.context.current())
     ((_command, cwd),) = calls
-    assert cwd == second_repo
+    assert checkout_of(cwd) == second_repo
 
 
 def test_a_separated_plans_agent_runs_in_the_code_checkout(services, step, tmp_path, monkeypatch):
@@ -1157,7 +935,7 @@ def test_a_separated_plans_agent_runs_in_the_code_checkout(services, step, tmp_p
     from dplanner.core.storage.locations import init_repo
     from dplanner.domain.commands import SetFieldCommand
 
-    code = init_repo(tmp_path / "widget")
+    code = committed(init_repo(tmp_path / "widget"))
     project = services.document.project_of(step.id)
     services.undo.push(
         SetFieldCommand(project.id, "locations", code_row("https://github.com/acme/widget"))
@@ -1171,7 +949,7 @@ def test_a_separated_plans_agent_runs_in_the_code_checkout(services, step, tmp_p
     monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
     services.actions.run("agent.run", services.context.current())
     ((_command, cwd),) = calls
-    assert cwd == code
+    assert checkout_of(cwd) == code
 
 
 def test_a_code_repository_not_checked_out_here_is_cloned_before_the_agent(
@@ -1198,7 +976,7 @@ def test_a_code_repository_not_checked_out_here_is_cloned_before_the_agent(
     assert state.label == "Run &Agent… — clones acme/widget first"
 
     asked: list[list[str]] = []
-    kept = init_repo(tmp_path / "config" / "checkouts" / "widget-0123")
+    kept = committed(init_repo(tmp_path / "config" / "checkouts" / "widget-0123"))
 
     def ensure(repositories, done):
         asked.append(list(repositories))
@@ -1215,7 +993,7 @@ def test_a_code_repository_not_checked_out_here_is_cloned_before_the_agent(
     services.actions.run("agent.run", services.context.current())
     assert asked == [["https://github.com/acme/widget"]]
     ((_command, cwd),) = calls
-    assert cwd == kept and refreshed
+    assert checkout_of(cwd) == kept and refreshed
     assert services.actions.spec("agent.run").state(services.context.current()).label is None
 
     # A clone that fails launches nothing and says so.
@@ -1418,30 +1196,6 @@ def test_a_prerequisite_under_review_still_asks(services, step, prerequisite, mo
         assert f"Prepare — {said}" in detail
 
 
-def test_a_source_under_review_across_an_auto_progress_link_launches_without_asking(
-    services, step, prerequisite, monkeypatch
-):
-    """The gate reads the frontier's own answer: a step that collects its source's work may
-    start once the source is ready for review, so Run Agent has nothing to ask."""
-    from dplanner.domain.commands import SetModuleDataCommand
-    from dplanner.modules.auto_progress.aspect import MODULE_ID as AUTO_PROGRESS_ID
-    from dplanner.modules.auto_progress.aspect import write as write_flags
-    from dplanner.planning.status import MODULE_ID as STATUS_ID
-    from dplanner.planning.status import write as write_status
-
-    library = services.document
-    SetModuleDataCommand(step.id, AUTO_PROGRESS_ID, write_flags([prerequisite.id])).redo(library)
-    SetModuleDataCommand(
-        prerequisite.id, STATUS_ID, write_status(Status.READY_FOR_REVIEW, today=date(2026, 9, 21))
-    ).redo(library)
-    calls = _fake_terminal(monkeypatch)
-    boxes = _record_boxes(monkeypatch, click=None)
-    select(services, step)
-    services.actions.run("agent.run", services.context.current())
-    assert boxes == []
-    assert calls == [["fake-term"]]
-
-
 def test_running_spawns_a_terminal_in_the_projects_repo_root(
     services, step, library_repo, monkeypatch
 ):
@@ -1454,7 +1208,7 @@ def test_running_spawns_a_terminal_in_the_projects_repo_root(
     services.actions.run("agent.run", services.context.current())
     ((command, cwd),) = calls
     assert command[0] == "fake-term"
-    assert cwd == library_repo
+    assert cwd == library_repo / ".dplanner-worktrees" / "s1-deploy"
 
 
 def test_a_successful_launch_stamps_the_run_state(services, step, monkeypatch):
@@ -1758,7 +1512,7 @@ def test_a_selection_spanning_two_projects_opens_each_shell_in_its_own_repositor
     from dplanner.domain.seed import seed_project
 
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
-    second_repo = init_repo(tmp_path / "second")
+    second_repo = committed(init_repo(tmp_path / "second"))
     satellite = services.repo.attach(seed_project(second_repo, "Satellite"))
     services.document.add_child(services.document.id, satellite)
     select_all(services, step, briefed(services, satellite, "Wire the antenna"))
@@ -1768,7 +1522,7 @@ def test_a_selection_spanning_two_projects_opens_each_shell_in_its_own_repositor
     monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: calls.append(cwd))
     monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
     services.actions.run("agent.run", services.context.current())
-    assert calls == [library_repo, second_repo]
+    assert [checkout_of(cwd) for cwd in calls] == [library_repo, second_repo]
 
 
 def test_one_box_asks_about_every_chosen_step_that_waits(services, step, monkeypatch):
@@ -1830,8 +1584,11 @@ def test_step_add_no_worktree_marks_the_step_and_opts_it_out(cli):
     assert shown["agent"] is True and shown["worktree"] is False
 
 
-def test_the_run_uses_a_worktree_only_when_the_step_says_so(services, step, monkeypatch):
-    """The launcher is handed the run name — key, ticket, slug — or nothing at all."""
+def test_the_run_uses_a_worktree_only_when_the_step_says_so(
+    services, step, library_repo, monkeypatch
+):
+    """The agent works in the worktree named for the run — key, ticket, slug — or in the
+    checkout itself."""
     from dplanner.domain.commands import SetModuleDataCommand
     from dplanner.modules.step_ticket.aspect import MODULE_ID as TICKET_ID
     from dplanner.modules.step_ticket.aspect import Ticket
@@ -1843,20 +1600,21 @@ def test_the_run_uses_a_worktree_only_when_the_step_says_so(services, step, monk
     select(services, step)
     monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: None)
     monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
-    seen: list[str] = []
+    seen: list[Path] = []
     real_prepare = launcher.prepare
 
-    def capture(*args, **kwargs):
-        seen.append(kwargs["worktree"])
-        return real_prepare(*args, **kwargs)
+    def capture(text, workdir, **kwargs):
+        seen.append(workdir)
+        return real_prepare(text, workdir, **kwargs)
 
     monkeypatch.setattr(launcher, "prepare", capture)
     services.actions.run("agent.run", services.context.current())
-    assert seen == ["s1-PROJ-9-deploy"]
+    tree = library_repo / ".dplanner-worktrees" / "s1-PROJ-9-deploy"
+    assert seen == [tree] and (tree / ".git").is_file()
 
     services.undo.push(SetModuleDataCommand(step.id, MODULE_ID, write_state(True, worktree=False)))
     services.actions.run("agent.run", services.context.current())
-    assert seen == ["s1-PROJ-9-deploy", ""]
+    assert seen == [tree, library_repo]
 
 
 def test_the_agent_tab_switches_the_worktree_through_the_undo_stack(services, step):
@@ -1873,52 +1631,6 @@ def test_the_agent_tab_switches_the_worktree_through_the_undo_stack(services, st
     services.undo.undo()
     assert uses_worktree(step)
     assert section.worktree_box.isChecked()  # The model's echo reaches the box.
-    section.dispose()
-
-
-def _make_review(services, step):
-    from dplanner.domain.commands import SetModuleDataCommand
-    from dplanner.planning.review import MODULE_ID as REVIEW_ID
-    from dplanner.planning.review import ReviewSettings
-    from dplanner.planning.review import write as review_write
-
-    services.undo.push(SetModuleDataCommand(step.id, REVIEW_ID, review_write(ReviewSettings())))
-
-
-def test_a_review_runs_in_the_checkout_whatever_its_worktree_says(services, step, monkeypatch):
-    """A review reads the work it reviews where that work is: the launcher is handed no
-    worktree to prepare, though the step's own aspect still says one."""
-    from dplanner.planning.agent import uses_worktree
-
-    services.document.set_text(step.id, "step_agent_instruction", "Look hard.")
-    _make_review(services, step)
-    select(services, step)
-    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: None)
-    monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
-    seen: list[str] = []
-    real_prepare = launcher.prepare
-
-    def capture(*args, **kwargs):
-        seen.append(kwargs["worktree"])
-        return real_prepare(*args, **kwargs)
-
-    monkeypatch.setattr(launcher, "prepare", capture)
-    services.actions.run("agent.run", services.context.current())
-    assert uses_worktree(step) and seen == [""]
-
-
-def test_the_agent_tab_greys_the_worktree_box_on_a_review_and_says_why(services, step):
-    from dplanner.planning.review import NO_WORKTREE_FOR_A_REVIEW
-
-    services.document.set_text(step.id, "step_agent_instruction", "Look hard.")
-    _make_review(services, step)
-    select(services, step)
-    section = _agent_section(services)
-    section.show_target(step.id)
-    box = section.worktree_box
-    # Shown as the run will be — and not a switch, since ticking it would change nothing.
-    assert not box.isChecked() and not box.isEnabled()
-    assert NO_WORKTREE_FOR_A_REVIEW in box.toolTip()
     section.dispose()
 
 
@@ -2091,38 +1803,6 @@ def test_agent_prompt_says_where_the_plan_lives(cli_stdin, workspace):
     # The table is told too, with where each row stands on this machine.
     assert "Code: acme/widget — not checked out on this machine" in shown["prompt"]
     assert "`dplanner location list`" in shown["prompt"]
-
-
-def test_a_collector_is_briefed_with_the_work_it_collects(cli_stdin, workspace):
-    """Each source where it stands — status, branch, PR, and its worktree when it is on
-    this machine — then the duty to land it and the right to set it done."""
-    cli_stdin("project", "create", "Discovery", "--dir", str(workspace))
-    cli_stdin("step", "add", "Discovery", "Import", "--agent")
-    cli_stdin("step", "add", "Discovery", "Export", "--agent")
-    cli_stdin(
-        "step", "add", "Discovery", "Merge the round", "--agent",
-        "--after", "Import", "--after", "Export", "--auto-progress",
-    )  # fmt: skip
-    cli_stdin("describe", "set", "Merge the round", "--file", "-", stdin="Land them.")
-    cli_stdin("status", "set", "Import", "ready-for-review")
-    cli_stdin("github", "set", "Import", "--branch", "agent/s1-import", "--pr", "12")
-    worktree = workspace / ".dplanner-worktrees" / "s1-import"
-    worktree.mkdir(parents=True)
-
-    prompt = json.loads(cli_stdin("agent", "prompt", "Merge the round", "--json"))["prompt"]
-    collected = prompt.split("## Work you collect", 1)[1].split("\n## ", 1)[0]
-    assert "**S1** Import — ready for review · branch `agent/s1-import` · PR #12" in collected
-    assert f"worktree `{worktree}`" in collected
-    assert "**S2** Export — pending · no branch recorded" in collected
-    assert "no worktree of it on this machine" in collected
-    assert "`dplanner status set S1 done`, `dplanner status set S2 done`." in collected
-    assert prompt.index("## Work you collect") < prompt.index("## Instructions")
-
-    # And each source is told who takes its work, and to leave its done to them.
-    cli_stdin("describe", "set", "Import", "--file", "-", stdin="Import things.")
-    source = json.loads(cli_stdin("agent", "prompt", "Import", "--json"))["prompt"]
-    assert "- S3 collects this step's work" in source
-    assert "## Work you collect" not in source
 
 
 def test_agent_prompt_never_takes_an_unset_plans_repository_for_the_code(cli_stdin):
@@ -2419,7 +2099,7 @@ def test_a_step_works_in_the_code_location_it_names_else_the_primary(
     from dplanner.domain.locations import Location
     from dplanner.planning.agent import MODULE_ID, with_workplace
 
-    widget, ui = init_repo(tmp_path / "widget"), init_repo(tmp_path / "ui")
+    widget, ui = (committed(init_repo(tmp_path / name)) for name in ("widget", "ui"))
     project = services.document.project_of(step.id)
     rows = (
         Location("l1", "code", "https://github.com/acme/widget"),
@@ -2434,7 +2114,7 @@ def test_a_step_works_in_the_code_location_it_names_else_the_primary(
 
     select(services, step)
     services.actions.run("agent.run", services.context.current())
-    assert calls[-1][1] == widget  # The primary.
+    assert checkout_of(calls[-1][1]) == widget  # The primary.
 
     services.undo.push(SetModuleDataCommand(step.id, MODULE_ID, with_workplace(step, "l2")))
     select(services, step)
@@ -2443,12 +2123,12 @@ def test_a_step_works_in_the_code_location_it_names_else_the_primary(
     services.repo.set_checkout("https://github.com/acme/ui", ui)
     select(services, step)
     services.actions.run("agent.run", services.context.current())
-    assert calls[-1][1] == ui
+    assert checkout_of(calls[-1][1]) == ui
 
     services.undo.push(SetFieldCommand(project.id, "locations", rows[:1]))
     select(services, step)
     services.actions.run("agent.run", services.context.current())
-    assert calls[-1][1] == widget  # The named row is gone: the primary again.
+    assert checkout_of(calls[-1][1]) == widget  # The named row is gone: the primary again.
 
 
 def test_agent_workplace_names_a_code_location_from_the_terminal(cli_stdin):
@@ -2473,3 +2153,143 @@ def test_agent_workplace_names_a_code_location_from_the_terminal(cli_stdin):
     assert "primary" in cli_stdin("agent", "workplace", "Deploy", "primary")
     assert json.loads(cli_stdin("agent", "show", "Deploy", "--json"))["workplace"] == ""
     assert "no location" in cli_stdin("agent", "workplace", "Deploy", "l9", expect=1)
+
+
+# -- Run Playbook: a pass started through `dplanner agent run --playbook` ----------------------
+
+
+def _playbook_launch(services, monkeypatch, *, said=(0, "execute (attempt 1) launched"), **deps):
+    """The launch module with its `dplanner` run recorded instead of run, inline."""
+    from dataclasses import replace
+
+    module = next(m for m in services.modules if m.id == "agent_launch")
+    ran: list[list[str]] = []
+
+    def run_cli(argv, cwd):
+        # From the project it names, never from wherever the window was started.
+        assert cwd == services.repo.project_dir(argv[argv.index("--project") + 1])
+        ran.append(list(argv))
+        return said
+
+    monkeypatch.setattr(module, "_deps", replace(module._deps, run_cli=run_cli, tasks=None, **deps))
+    return module, ran
+
+
+def test_stop_playbook_runs_on_a_task_of_its_own_beside_a_start_and_another_stop(
+    services, step, monkeypatch, qtbot
+):
+    """The production path, real tasks: a start still running refuses no stop, nor does a
+    stop; stops of one step wait for each other on its launch lock, in the verb."""
+    import threading
+    from dataclasses import replace
+
+    starting, ran = threading.Event(), []
+
+    def run_cli(argv, _cwd):
+        ran.append(list(argv))
+        if "agent" in argv:  # The start holds on until both stops have run.
+            starting.wait(10)
+        return 0, "done"
+
+    module = next(m for m in services.modules if m.id == "agent_launch")
+    monkeypatch.setattr(
+        module, "_deps", replace(module._deps, run_cli=run_cli, tasks=services.tasks)
+    )
+    # Every message, not the bar's last: under load a stop's report can land after the start's.
+    said: list[str] = []
+    services.window.statusBar().messageChanged.connect(said.append)
+    module.start_playbook(step, "execute")
+    module.stop_playbook(step)
+    module.stop_playbook(step)
+    qtbot.waitUntil(lambda: sum("stop" in argv for argv in ran) == 2, timeout=10_000)
+    starting.set()
+    qtbot.waitUntil(lambda: any("Playbook started" in words for words in said), timeout=10_000)
+
+
+def test_run_playbook_runs_agent_run_with_the_playbook_and_says_how_it_went(
+    services, step, monkeypatch
+):
+    from dplanner.cli.command import CliRegistry
+    from dplanner.cli.gate import ReadRecord
+    from dplanner.cli.main import build_tree
+    from dplanner.modules import default_cli_commands
+    from dplanner.modules.agent_launch.launch import start_pass_words
+    from dplanner.modules.agent_supervisor.supervisor import dplanner_argv
+
+    moved: list[bool] = []
+    module, ran = _playbook_launch(services, monkeypatch, records_moved=lambda: moved.append(True))
+    module.start_playbook(step, "plan-execute-review-other")
+    assert moved == [True]  # The card's strip reads what the verb wrote, not the next poll.
+    library, project = services.repo.library_path, services.document.project_of(step.id).id
+    words = start_pass_words(step.id, "plan-execute-review-other", anyway=False)
+    assert ran == [dplanner_argv(library, project, *words)]
+    message = services.window.statusBar().currentMessage()
+    assert message == "Playbook started on “Deploy” — execute (attempt 1) launched"
+
+    # What the window runs is what the verb accepts: the two cannot drift apart.
+    registry = CliRegistry()
+    registry.register_all(default_cli_commands(reads=ReadRecord(None)))
+    words = ran[0][ran[0].index("dplanner") + 1 :]
+    args = build_tree(registry)[0].parse_args(words)
+    assert (args.step, args.playbook, args.anyway) == (step.id, "plan-execute-review-other", False)
+    assert Path(args.library) == library.expanduser().resolve()
+    assert args.project_scope == project
+
+
+def test_a_refused_playbook_verb_stands_as_a_notice_until_the_steps_next_verb(
+    services, step, monkeypatch
+):
+    """A refusal is never only a fleeting status-bar line: it names the step and the reason
+    across the window until it is dismissed or the step's next start or stop runs."""
+    bar = services.window.notices
+    module, _ran = _playbook_launch(services, monkeypatch, said=(1, "a pass is under way"))
+    module.start_playbook(step, "execute")
+    (notice,) = bar.notices()
+    assert notice.words == "No playbook started on “Deploy” — a pass is under way"
+    assert notice.tone == "error"
+    assert notice.act is not None
+    notice.act()
+    assert bar.notices() == []
+
+    module.start_playbook(step, "execute")
+    assert len(bar.notices()) == 1
+    module, _ran = _playbook_launch(services, monkeypatch, said=(0, "stopped pass P"))
+    module.stop_playbook(step)
+    assert bar.notices() == []
+    assert services.window.statusBar().currentMessage().startswith("Playbook stopped")
+
+
+def test_run_playbook_asks_the_graph_gate_and_passes_its_answer_on(
+    services, step, prerequisite, monkeypatch
+):
+    module, ran = _playbook_launch(services, monkeypatch)
+    boxes = _record_boxes(monkeypatch, click=None)
+    module.start_playbook(step, "execute")
+    assert ran == [] and [title for title, _lead, _words in boxes] == ["Run Playbook"]
+
+    boxes = _record_boxes(monkeypatch, click=True)
+    module.start_playbook(step, "execute")
+    ((*_words, last),) = ran
+    assert last == "--anyway"
+
+
+def test_run_playbook_starts_nothing_over_a_plan_it_could_not_save(services, step, monkeypatch):
+    module, ran = _playbook_launch(services, monkeypatch, flush=lambda: False)
+    module.start_playbook(step, "execute")
+    assert ran == []
+    assert "could not be saved" in services.window.statusBar().currentMessage()
+
+
+def test_stop_playbook_runs_playbook_stop_and_says_how_it_went(services, step, monkeypatch):
+    from dplanner.modules.agent_supervisor.supervisor import dplanner_argv
+
+    module, ran = _playbook_launch(services, monkeypatch, said=(0, "stopped pass P"))
+    module.stop_playbook(step)
+    project = services.document.project_of(step.id).id
+    assert ran == [dplanner_argv(services.repo.library_path, project, "playbook", "stop", step.id)]
+    message = services.window.statusBar().currentMessage()
+    assert message == "Playbook stopped on “Deploy” — stopped pass P"
+
+    module, ran = _playbook_launch(services, monkeypatch, flush=lambda: False)
+    module.stop_playbook(step)
+    assert ran == [] and "could not be saved" in services.window.statusBar().currentMessage()

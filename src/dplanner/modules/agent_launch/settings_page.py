@@ -37,13 +37,6 @@ to be found before it can help is one that helps nobody — and a switch rather 
 because a plan whose statuses somebody else keeps by hand should not have the window
 writing into it.
 
-The fourth is *When a step becomes due*: whether this window launches, on its own, the
-agent on a step the plan made due — a collector whose sources, or a review whose subject,
-reached review, or a side of a review whose agent has gone (``auto_launch.py``). **Off by
-default**: it spends terminals and tokens nobody clicked for, and every machine that opens
-the plan with it on is one more launcher, so the person turns it on where agents should run.
-Only one window per library on this machine launches; the other one's page says so.
-
 Per user, per machine — a colleague's terminal is not the workspace's business, which is
 why this is a GLOBAL-scope section and never a file in the plan. Whether a step's agent
 gets a fresh worktree is *not* here: that is a fact about the step, kept on its agent
@@ -69,7 +62,7 @@ from dplanner.framework.settings_registry import settings_page
 from dplanner.framework.table import Cell, Column, Table
 from dplanner.framework.toolbar import Toolbar
 from dplanner.framework.user_config import get_global, set_global
-from dplanner.framework.widgets import block, caption, captioned, note
+from dplanner.framework.widgets import block, caption, captioned
 from dplanner.modules.agent_launch.detect_dialog import DetectedProfilesDialog
 from dplanner.modules.agent_launch.launcher import (
     TerminalPreset,
@@ -80,20 +73,22 @@ from dplanner.modules.agent_launch.launcher import (
 from dplanner.modules.agent_launch.profiles import (
     Profile,
     add_profiles,
-    default_profile,
+    agent_command,
+    launch_command,
+    problem,
     read_profiles,
     suggested_name,
     unique_name,
     update_profile,
     write_profiles,
 )
+from dplanner.modules.agent_supervisor import limits
 from dplanner.planning.agent import MODULE_ID
 from dplanner.theme.icons import find_icon, plus_icon, star_icon, trash_icon
 from dplanner.theme.tokens import FIELD_GAP, SECTION_GAP
 
 MAX_AGENTS_KEY = "max_agents"
 START_IN_PROGRESS_KEY = "start_in_progress"
-AUTO_LAUNCH_KEY = "auto_launch"
 
 CUSTOM_LABEL = "Custom"
 # What a preset dropdown asks room for: a harness row reads long, and a dropdown sized to its
@@ -105,18 +100,6 @@ DEFAULT_MAX_AGENTS = 4
 # The ceiling the field offers. Not a judgement about hardware — a spin box needs a range,
 # and a number typed past this one is far likelier a slip than an intention.
 MAX_AGENTS_CEILING = 20
-
-
-def agent_command(harnesses: tuple[AgentHarness, ...], profile: Profile | None = None) -> str:
-    """The profile's agent command, read through the harnesses: a text an earlier version
-    shipped for a harness is that harness, so the dropdown shows it and the wrapper runs
-    its current command. The default profile's when none is given."""
-    return current_command((profile or default_profile()).agent_command, harnesses)
-
-
-def launch_command(profile: Profile | None = None) -> str:
-    """The profile's terminal template; "" means Automatic — the first installed preset."""
-    return (profile or default_profile()).launch_command
 
 
 def max_agents() -> int:
@@ -134,12 +117,6 @@ def start_in_progress() -> bool:
     step somebody is working on that still reads *pending* is the plan telling a lie
     nobody asked it to tell. Switching it off is the deliberate act."""
     return bool(get_global(MODULE_ID, START_IN_PROGRESS_KEY, True))
-
-
-def auto_launch() -> bool:
-    """Whether this machine's window launches what becomes due. Off unless the person turned
-    it on: nothing spends a terminal and tokens that nobody asked for."""
-    return bool(get_global(MODULE_ID, AUTO_LAUNCH_KEY, False))
 
 
 def terminal_label(preset: TerminalPreset, installed: bool) -> str:
@@ -176,8 +153,13 @@ TERMINAL_HINT = (
 LIMIT_HINT = (
     "How many agents Run Agent may launch from one selection. Each is a terminal, a worktree"
     " and a session of its own; select more than this and the verb says so instead of"
-    " filling the desk. What this window launches on its own never takes the agents it is"
-    " running past it: a due step waits for one to end."
+    " filling the desk."
+)
+HOLD_HINT = (
+    "A headless launch waits while its agent's account has used this much of a usage window,"
+    " until that window resets, so new work does not start straight into the limit. A run"
+    " already going carries on; one that runs out parks and resumes by itself after the"
+    " reset. 100 % holds only an account that has run out."
 )
 LAUNCH_HINT = (
     "Run Agent sets the step's status to in progress as the terminal opens, so the plan"
@@ -185,15 +167,10 @@ LAUNCH_HINT = (
     " when the agent stops: the agent says it is ready for review, and done is yours, from"
     " Step ▸ Status."
 )
-DUE_HINT = (
-    "A step is due when an agent should start it and nobody has to decide: a collector whose"
-    " last source, or a review whose subject, reached Ready for review — or a review's side"
-    " whose turn it is and whose agent has gone. Launched through the review's agent or the"
-    " default profile, claimed in progress, and within Max agents; turned on, it also starts"
-    " whatever became due while no window was open. One window per library launches. Claude"
-    " starts in plan mode and waits for you to approve its plan: a profile that does not ask"
-    " is yours to make."
-)
+
+
+def _percent(share: float) -> str:
+    return str(round(share * 100))
 
 
 class PresetField:
@@ -363,12 +340,7 @@ def build_page(
     parent: QWidget | None,
     platform: str = sys.platform,
     harnesses: tuple[AgentHarness, ...] = (),
-    launching: Callable[[], str] = lambda: "",
-    changed: Callable[[], None] = lambda: None,
 ) -> QWidget:
-    """``launching`` says why this window does not launch although the switch is on — another
-    window holds the library's lock — or ""; ``changed`` is told when the switch or a profile
-    changes, so what the launcher refused is tried again."""
     page, layout = settings_page(parent)
     page.setObjectName("AgentSettingsPage")
     current = {"row": 0}
@@ -378,7 +350,6 @@ def build_page(
         followed the change, and the row is what shows it."""
         update_profile(current["row"], harnesses=harnesses, platform=platform, **changes)
         profiles.reload(current["row"])
-        changed()
 
     name_edit = QLineEdit(page)
     name_edit.setObjectName("AgentProfileName")
@@ -439,29 +410,34 @@ def build_page(
     limit.setKeyboardTracking(False)
     limit.valueChanged.connect(lambda value: set_global(MODULE_ID, MAX_AGENTS_KEY, value))
 
+    hold_combo, hold_edit = QComboBox(page), QLineEdit(page)
+    hold_combo.setObjectName("AgentHoldAtCombo")
+    hold_edit.setObjectName("AgentHoldAtEdit")
+    hold_edit.setMaxLength(3)
+    hold_edit.setPlaceholderText("%")
+    hold_edit.setMaximumWidth(hold_edit.fontMetrics().horizontalAdvance("0000") * 2)
+
+    def commit_hold(text: str) -> None:
+        if text.isdigit() and 1 <= int(text) <= 100:
+            limits.set_hold_at(int(text) / 100)
+        hold_field.show(_percent(limits.hold_at()))  # A slip shows the stored value again.
+
+    hold_field = PresetField(
+        hold_combo,
+        hold_edit,
+        [
+            (f"{share:.0%}" + (" (default)" if share == limits.HOLD_AT else ""), _percent(share))
+            for share in limits.HOLD_PRESETS
+        ],
+        CUSTOM_LABEL,
+        on_commit=commit_hold,
+    )
+    hold_field.show(_percent(limits.hold_at()))
+
     started_box = QCheckBox("Mark the step in progress when a run starts", page)
     started_box.setObjectName("AgentStartInProgressBox")
     started_box.setChecked(start_in_progress())
     started_box.toggled.connect(lambda on: set_global(MODULE_ID, START_IN_PROGRESS_KEY, bool(on)))
-
-    due_box = QCheckBox("Launch its agent from this window", page)
-    due_box.setObjectName("AgentAutoLaunchBox")
-    due_box.setChecked(auto_launch())
-    holder = note("", page)
-    holder.setObjectName("AgentAutoLaunchNote")
-
-    def say_holder() -> None:
-        words = launching()
-        holder.setText(words[:1].upper() + words[1:] + "." if words else "")
-        holder.setVisible(bool(words))
-
-    def switch(on: bool) -> None:
-        set_global(MODULE_ID, AUTO_LAUNCH_KEY, bool(on))
-        changed()
-        say_holder()  # Now, while the dialog stands: the pass itself waits behind it.
-
-    due_box.toggled.connect(switch)
-    say_holder()
 
     # The profiles beside the editor for the picked one, as one block under one caption.
     columns_host = QWidget(page)
@@ -483,7 +459,11 @@ def build_page(
         terminal_edit,
     )
     editor.addStretch(1)
-    block(layout, captioned("Profiles", page, PROFILES_HINT), columns_host)
+    # A profiles file that cannot be read is never written over: the list is shown read-only
+    # with the reason where its hint would be, until somebody fixes or removes the file.
+    unreadable = problem()
+    columns_host.setEnabled(not unreadable)
+    block(layout, captioned("Profiles", page, unreadable or PROFILES_HINT), columns_host)
 
     limit_row = QWidget(page)
     limit_layout = QHBoxLayout(limit_row)
@@ -491,7 +471,13 @@ def build_page(
     limit_layout.addWidget(limit)
     limit_layout.addStretch(1)
     block(layout, captioned("Max agents launched at once", page, LIMIT_HINT), limit_row)
+    hold_row = QWidget(page)
+    hold_layout = QHBoxLayout(hold_row)
+    hold_layout.setContentsMargins(0, 0, 0, 0)
+    hold_layout.addWidget(hold_combo)
+    hold_layout.addWidget(hold_edit)
+    hold_layout.addStretch(1)
+    block(layout, captioned("Hold new headless launches at", page, HOLD_HINT), hold_row)
     block(layout, captioned("On launch", page, LAUNCH_HINT), started_box)
-    block(layout, captioned("When a step becomes due", page, DUE_HINT), due_box, holder)
     layout.addStretch(1)
     return page

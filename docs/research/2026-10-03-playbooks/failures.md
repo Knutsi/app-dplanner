@@ -26,7 +26,7 @@
 
 Each row is one run against `fake_api.py`. The class comes from `spike/classify.py`, which is checked against every fixture.
 
-*(The full fixtures are in `spike/probes/out/*.json`; the report renders this table from them.)*
+*(The full fixtures are in `tests/fixtures/agent_turns/probes/*.json` (moved there from `spike/probes/out/` at S8); the report renders this table from them.)*
 
 | Failure | claude | codex | opencode |
 |---|---|---|---|

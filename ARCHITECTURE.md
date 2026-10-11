@@ -30,11 +30,10 @@ exists, so a renamed section is caught where it is cited.
 - Pressure points, named before they hurt
 - Where this is going
 
-## [Graph model — edges, auto-progress links, step numbers and isolation](docs/architecture/graph-model.md)
+## [Graph model — edges, step numbers and isolation](docs/architecture/graph-model.md)
 
 - The graph, and what it stores
 - A step has a number, and the letter in front of it is derived
-- An auto-progress link is an aspect on the step that waits
 - A branch stretch is bracketed by a cut and a landing
 
 ## [Canvas — the graph editor's modes, gestures, cards and marks](docs/architecture/canvas.md)
@@ -54,7 +53,6 @@ exists, so a renamed section is caught where it is cited.
 - The canvas is a plane, and why that is one decision rather than three
 - Marks are a way of looking
 - A card pulses where a person moves next
-- An arrow into a review wears its talk bubble
 - A problem is a squiggle, and the reading is shared
 - The spotlight is one derivation, and a held key lends the look
 - The palette a painter is handed is a snapshot
@@ -62,6 +60,7 @@ exists, so a renamed section is caught where it is cited.
 - A picked node is lifted, not recoloured
 - A card's size is the step's, and a layout never says how big
 - A card on a branch names it
+- A card running a playbook says where its pass stands
 - The ground is a preference; snapping belongs to the gesture
 - A step placed by pointing at a spot earns a stored position
 
@@ -111,13 +110,28 @@ exists, so a renamed section is caught where it is cited.
 - A project names its locations
 - Save spans repositories; the exit dialog says what it records
 
-## [Agents — Run Agent, worktrees, run directories, usage, harnesses, profiles and reviews](docs/architecture/agents.md)
+## [Agents — Run Agent, supervisors, questions, claims, the coordinator, worktrees, usage, harnesses and profiles](docs/architecture/agents.md)
 
 - The description is the instructions
 - An agent finishes at Ready for review
-- A review is a conversation kept on the step that asks
-- Auto-progress is launched by the window
+- One launch under both surfaces
 - Running an agent launches a peer, not a task
+- Runs, questions and claims are three records in the plan
+
+## [Playbooks — stages, gates, loop-back, presets, the step's playbook and headless invocations](docs/architecture/playbooks.md)
+
+- A playbook is a list of stages around one step
+- A gate gets two rounds, then somebody decides
+- A loop-back resumes the session that did the work
+- Who acts: roles, profiles and the four actors
+- The presets
+- A step names its playbook; a project names its default
+- The mark on the one card
+- A failure is never a verdict
+- The run record is the ledger
+- How the engine drives a pass
+- Each stage is one headless turn per harness
+- Decided at S4 (coordinator) — for Knut to confirm at the final review
 
 ## [Specs — the spec editor and its document sources](docs/architecture/specs.md)
 

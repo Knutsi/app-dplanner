@@ -382,6 +382,16 @@ class CanvasVerbs:
                 state=self._snap_state,
                 run=self._snap_toggle,
             ),
+            ActionSpec(
+                id="canvas.reduce_motion",
+                label="Re&duce Motion",
+                menu="Graph",
+                group="look",
+                order=52,
+                tip="Show a card's playbook strip at once rather than growing the card to it",
+                state=self._reduce_motion_state,
+                run=self._reduce_motion_toggle,
+            ),
             *[
                 ActionSpec(
                     id=f"canvas.ground_{name}",
@@ -505,6 +515,12 @@ class CanvasVerbs:
 
     def _snap_toggle(self, _context: Context) -> None:
         self.set_look(self.look().with_snap(not self.look().snap))
+
+    def _reduce_motion_state(self, _context: Context) -> ActionState:
+        return ActionState(checked=self.look().reduce_motion)
+
+    def _reduce_motion_toggle(self, _context: Context) -> None:
+        self.set_look(self.look().with_reduce_motion(not self.look().reduce_motion))
 
     def _ground_state(self, name: str) -> Callable[[Context], ActionState]:
         """One choice of several, so exactly one entry is checked — the theme menu's shape."""

@@ -16,7 +16,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-OUT = Path(__file__).resolve().parent / "probes" / "out"
+# The fixtures moved into the test suite (S8, 2026-10-07): tests/fixtures/agent_turns/probes/.
+OUT = Path(__file__).resolve().parents[4] / "tests" / "fixtures" / "agent_turns" / "probes"
 RUNAWAY_EVENTS = 200  # this many events with no token progress is a loop, not work
 
 

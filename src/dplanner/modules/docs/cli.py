@@ -242,10 +242,6 @@ def _configure_fragment_set(parser: ArgumentParser) -> None:
     parser.add_argument("--file", required=True, help="a markdown file, or - for stdin")
 
 
-def _step(context: CliContext, needle: str) -> Step:
-    return find_step(context.library, needle)
-
-
 def _target(context: CliContext, args: Namespace) -> Node:
     """The step or the project the verb addresses — exactly one of the two."""
     if (args.step is None) == (args.for_project is None):
@@ -285,7 +281,7 @@ def _set(context: CliContext, args: Namespace) -> int:
 
 def _clear(context: CliContext, args: Namespace) -> int:
     """The CLI half of the GUI's Type ▸ Docs toggle: the fragment goes to the shelf."""
-    step = _step(context, args.step)
+    step = find_step(context.library, args.step, context.current)
     message = f"{step.title}: documents nothing"
     if not enabled(step):
         # Already clear is success, and writes nothing.
@@ -306,7 +302,7 @@ def _show(context: CliContext, args: Namespace) -> int:
 
 def _collect(context: CliContext, args: Namespace, kinds: Sequence[ScopeKind]) -> int:
     """What this step would compile from — the agent's input, and the tab's Fragments pane."""
-    step = _step(context, args.step)
+    step = find_step(context.library, args.step, context.current)
     # The step names its project, so this reads the same with or without a current one.
     project = context.library.project_of(step.id)
     found = sources_for(kinds, context.library, project, step.id)
@@ -366,7 +362,7 @@ def _compiled_set(context: CliContext, args: Namespace, kinds: Sequence[ScopeKin
     a document somebody just wrote out of date.
     """
     body = body_from(args.file)
-    step = _step(context, args.step)
+    step = find_step(context.library, args.step, context.current)
     project = context.library.project_of(step.id)
     found = sources_for(kinds, context.library, project, step.id)
     context.apply(
@@ -394,14 +390,14 @@ def _compiled_set(context: CliContext, args: Namespace, kinds: Sequence[ScopeKin
 
 
 def _compiled_show(context: CliContext, args: Namespace) -> int:
-    step = _step(context, args.step)
+    step = find_step(context.library, args.step, context.current)
     body = read_compiled(step)
     context.report({"step": step.id, "markdown": body}, body or "(nothing compiled yet)")
     return 0
 
 
 def _compiled_clear(context: CliContext, args: Namespace) -> int:
-    step = _step(context, args.step)
+    step = find_step(context.library, args.step, context.current)
     message = f"{step.title}: nothing compiled"
     if not read_compiled(step) and not step.module_data.get(COMPILED_ID):
         context.report({"step": step.id}, message)

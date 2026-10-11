@@ -29,7 +29,7 @@ paths:
   by `show_step`, so it stays on the step it was opened about; a test reaches it through the
   `step_editor` fixture, which is the application's own path. `docs/architecture/step-panel.md`'s
   *The step editor is a modal* has the reasoning.
-- **A toggleable aspect's tab follows the aspect.** Milestone, Feature, Agent, Review,
+- **A toggleable aspect's tab follows the aspect.** Milestone, Feature, Agent,
   Ticket, Test, Check and Start are Step ▸ Type toggles (independent, never a radio group),
   and each that has a tab registers its `InspectorSection` with a `shown_for` predicate so
   the tab exists only on a step that carries the aspect — Check and Start are bare markers with none. **The description is an agent step's instructions** — the briefing's
@@ -65,10 +65,10 @@ paths:
   `ActionRegistry.run`, so a toggle keeps its own undo command. **What no longer fits folds
   into that strip's `…` menu as glyph *and* words** — never Qt's `»`, which pops the hidden
   buttons up as glyphs again. The strip is **dense**: these glyphs are read as one set
-  rather than aimed at one at a time, and at the verb strip's metrics only five of the thirteen
+  rather than aimed at one at a time, and at the verb strip's metrics only five of the twelve
   toggles fit the width the panel can actually be. **On the right is one dropdown named
   *Template*** — `StepPropertiesDeps.templates`, named by the composition root: a label and
-  the *set* of toggles that are on (Step, Milestone, Feature, Agent, Review, Check,
+  the *set* of toggles that are on (Step, Milestone, Feature, Agent, Check,
   Wait). The face says what it offers and never changes; **which template the step amounts to is the ticked
   entry**, so the bar reads as the toggles plus a way to set them all at once rather than as
   two claims about the step. Picking one runs every toggle that differs inside

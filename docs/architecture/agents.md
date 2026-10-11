@@ -1,4 +1,4 @@
-# Agents — Run Agent, worktrees, run directories, usage, harnesses, profiles and reviews
+# Agents — Run Agent, supervisors, questions, claims, the coordinator, worktrees, usage, harnesses and profiles
 
 The reasoning behind `.claude/rules/agents.md`: the rules there are the short, imperative form,
 and this file is why. `ARCHITECTURE.md` is the index of every area.
@@ -33,18 +33,13 @@ tab's Prompt page and `dplanner agent prompt` all assemble through it, so no sur
 brief a step differently. A described, uninstructed step renders its text as
 `## Instructions` — the heading the executing agent actually obeys.
 
-**A review is the one step whose instructions are generated.** What a review must do is
-the same for every review — read its subject through its lenses, post findings, wait,
-approve or escalate within its cap — and what differs is data its aspect already holds
-(the lenses, the cap) and its subject, which the graph holds. Asking somebody to write that
-protocol into every review's description would be asking for it to drift from the verbs,
-so `instruction` hands a review to `_review_instruction`, which writes it from
-the aspect and the subject. The step's own prose is not dropped: it rides inside the block
-as *what to look for*, the one thing a person adds to a review, and is still said once. A
-lens this build names carries its question (`Lens.asks`, beside the checkbox that picks
-it); one it does not name is a skill of the person's own, so the agent is told to use that
-skill rather than guess what the word means. `A review is a conversation kept on the step
-that asks` has the rest of how both sides are briefed.
+**A landing is the one step whose instructions are generated.** What a landing must do is
+the same for every landing — check its stretch has merged, merge the mainline in, open the
+branch's PR — and what differs is data the graph already holds: the branch, its base and the
+steps on it. Asking somebody to write that protocol into every landing's description would be
+asking for it to drift from the branch model, so `instruction` hands a landing to
+`_landing_instruction`, which writes it from the stretch it closes. The step's own prose is
+not dropped: it rides inside the block as *what else to see to*, and is still said once.
 
 ## An agent finishes at Ready for review
 
@@ -61,11 +56,12 @@ it, and one holds it:
   step not already under review or waiting on its merge, exits 1, naming
   `ready-for-review`. A reviewing agent is not stopped: from review or merge it may finish
   the step. It is a guard on *who is reporting*, not on the word, so it reads the same fact
-  the window word refuses on — an agent CLI's marker in the environment, read by the
-  composition root's `agent_shell_marker` over `domain/agents.py`'s `shell_marker`, which
-  the entry point imports (the root, which wires the verb, may not import the entry
-  point, so the reading lives there rather than in `entry.py`). **A person's own terminal and
-  the window are never asked**: the developer marking a step done is the acceptance.
+  the window word refuses on — an agent CLI's marker in the environment, read by
+  `domain/agents.py`'s `shell_marker` over the composition root's `agent_harnesses()`,
+  which the entry point and the root's `status set` wiring each read directly (`shell_marker`
+  defaults its `env` to this process's own, so neither caller passes it). **A person's own
+  terminal and the window are never asked**: the developer marking a step done is the
+  acceptance.
 - **The way out is a reason, and the reason is kept.** Some steps have nothing to review — a
   docs-only change, a step that only reports. `--because '<reason>'` sets done and writes a
   `decision` note on the step in the same run (*Done without review*, the reason as its
@@ -81,276 +77,113 @@ The same `status set` also takes the agent's banner down: a status that says nob
 working the step ends the at-work claim on it — *An agent at work says so, and the window
 says it back* has why.
 
-## A review is a conversation kept on the step that asks
+## One launch under both surfaces
 
-The spec asked for a step whose agent reviews another's work before it lands. The person
-picks the agent and the lenses and sets a cap on the rounds, and the two agents talk back
-and forth through `dplanner`. Four questions shaped the answer.
+`dplanner agent run <step>` is the launch a director or a daemon makes, and the window's
+Run Agent is the same launch with a person's questions put in front of it. The 10-04 run
+showed what two launches cost: the director rebuilt Run Agent by hand for every step, and
+"forgot to set in-progress" and "a landing on a new branch instead of the feature branch"
+were both a hand-built launch drifting from the real one. So there is one
+(`agent_launch/launch.py`), and both surfaces run it in one order:
 
-**What a review is.** A review is a step, as *Status is an aspect, and step types are
-emergent* rules. It is an agent step carrying `step_review`, keyed `R`. Its entry holds only
-how the review is run: the agent (a harness id, absent for the default profile), the lenses
-(absent for architecture and security) and the cap (absent for three). Absence encodes each
-default, so a later change of default reaches every review that never chose.
+1. **The step's launch lock**, taken first and held until the run started or nothing was
+   written — an OS lock, `supervisor.launching`, so a dead launcher's is free at once. Two
+   `agent run`s of one step, or a window and a terminal, both passed the "no run yet" check
+   before either wrote a record, and two agents ran; under the lock the second is refused.
+2. **The gate**: the step's own facts, the branch plan's refusal (two stretches that do not
+   nest leave a plan with nothing *but* a refusal, which would otherwise launch from the
+   default branch), where it works, and a headless run not over — resumed through `agent
+   supervise`, never launched a second time.
+3. **Where it works** (`worktree_of`, `place`). The worktree is prepared by git *in Python*
+   — `agent_briefing/worktree.py`'s `prepare` — not by the terminal's wrapper script: a
+   headless run has no script. It is the slow part, a fetch, so the window runs it on a task
+   from plain values, and **re-checks them when it returns**: a step renamed meanwhile would
+   be briefed to stop unless it stands in the new worktree while it stands in the old one,
+   so it is refused with the reason. The checkout gets the checkout timeout, and a worktree
+   git left half made — still under the `initializing` lock `worktree add` holds until its
+   checkout finished, or with no commit checked out — is removed and made again, never
+   reused.
+4. **Its files and its record** (`prepare_run`): `prompt.md` and its assets —
+   `config_dir()/runs/<run>/` for a headless run — and the run's ledger record, format 2 for
+   headless (`stage`, `attempt`, a session minted for a harness that names one), format 1 for
+   a terminal. The record is the launch's intent.
+5. **The claim, saved** (`workflows.py`'s `run_agent`), and **then the start**
+   (`start_run`) as its follow-up — `core.md`'s *A workflow is one function under both
+   surfaces*: the change is persisted, then the effect is performed. Starting first lost
+   the claim whenever another writer made the flush refuse, with the agent already running.
+   A save that is refused starts nothing and takes the record back (the CLI's
+   `CliContext.unwritten`, the window's `flush` answer). A start that fails takes the record
+   back and **withdraws the claim** — a second change (`workflows.withdraw`), which restores
+   the entry the step had unless somebody has changed it since — and says what happened.
+   The window applies both off the undo stack, since what they record cannot be undone.
 
-**What it reviews is read off the graph.** Its *subject* is the step it `requires`, never an
-id stored in the entry. Relinking a review re-aims it, and no verb that rewrites edges
-learns that reviews exist. The price is that a review can be linked to nothing or to
-several steps, and lint's `review.subject` says so rather than a verb refusing, because a
-plan reshaped in several calls passes through both.
+**A launch interrupted between its record and its start is settled by `revive`.** Its record
+has no turn and no supervisor holds it; once nobody holds the step's launch lock either, the
+run is started when its step still reads in progress, and its record deleted when it does
+not. The window does that at its start, and `agent run` before it takes its own lock.
+**Everything is read again inside the lock, from disk**: a caller that loaded the step as
+pending before another launch saved its claim would otherwise delete that launch's record in
+the moment between its start and its supervisor taking the run's lock — so the status comes
+from the plan on disk (`claimed_on_disk`), and a record is deleted only past a two-minute
+grace, with no supervisor holding it. The same reasoning keeps a failed start's rollback
+under the lock until the withdrawal is written, and has the window save before every start:
+a step that already read in progress may hold a claim nobody saved.
 
-**Every link into a review auto-progresses, by rule rather than by flag.** A review must
-start while its subject reads ready for review, and its subject becomes done only when the
-review approves it — the collector's deadlock again. The rule is ORed into the one
-`auto_progress.aspect.auto_progresses`, so the frontier, Run Agent's gate, the doubled edge on the canvas and
-`project graph` agree without a word each. Nothing is written onto the review. The Edge
-menu's *Auto-progress* shows such a link checked and greyed, with its reason (*Hidden
-means absent; disabled means not now*).
+**The plan's half is the workflow, and the rest is not.** A `workflows.py` returns a
+`Change` and never persists anything; a launch writes files, runs git and spawns processes,
+so those live in the Qt-free `launch.py`, and the workflow is the claim and its withdrawal.
 
-**The conversation lives on the step that asks.** Three homes were weighed:
+**It replaced the intent file.** `launch_unattended` wrote an intent (`intents.py`) before
+its shell and forgot it once its claim was on disk; nothing ever called it. The run record
+written before the start carries the same fact where every reader already looks
+(`decisions.md`, 2026-10-07).
 
-| Where | Cost |
-|---|---|
-| **On the reviewed step** | One step can be answering two askers at once, a review and a collector. Each would need its own list keyed by asker, and the cap would sit on the step that does not own it. |
-| **In the notes log** | Notes are the project's record, indexed into every later briefing. A round is a turn in a protocol with a state; a log full of them would bury every decision. |
-| **On the asker** (`review_rounds`, chosen) | The asker owns the questions and the cap. Each round names its party. A collector's conversations with three sources are three rounds lists in one entry. |
+**What the window asks, the CLI refuses.** The window keeps a person's questions: the graph
+gate, the clone, the limit on a selection, and the prompt fallback when no terminal opens.
+`agent run` has nobody to ask, so each is a sentence and an exit 1 — prerequisites not done
+until `--anyway`, a repository not checked out here naming Run Agent, which clones. It is
+headless by default, and `--profile` picks the profile whose agent command names the harness.
 
-Both sides write that one entry, through verbs in separate runs, and the stale-workspace
-check serialises them. **A round holds only texts and stamps**: opened, posted, taken,
-replied, then approved or escalated. Its state and whose turn it is are **derived from
-which stamps are there**, never stored. A stored state could disagree with its stamps, and
-the verbs, `review wait` and the Review tab would each need to keep it true.
+**A supervisor is the build and the library that launched its run.** `start_detached` runs
+`sys.executable -m dplanner --library <path>`, never whatever `dplanner` is on PATH, and every
+turn's environment carries `DPLANNER_LIBRARY`, `DPLANNER_PROJECT` and `DPLANNER_RUN`: with two
+projects planning one repository, an agent's `dplanner` calls are otherwise ambiguous — or
+reach whatever project the caller's shell named — and a launch from `--library` elsewhere
+loses its library altogether.
 
-**Each verb moves the statuses the way the person would.**
-- `post` puts the subject back in progress.
-- `reply` makes it ready for review again.
-- `approve` sets the subject done and the review ready to merge. It also copies the
-  subject's branch and PR onto the review, so the review carries the PR into the merge.
-- `escalate` blocks the review. What the person must decide becomes a handoff note, which
-  is where the house already says why a step is blocked.
+**Every `dplanner` a process of ours starts names its project.** `supervisor.dplanner_argv` is
+the one builder, and it takes the project's id as well as the library: the supervisor, an
+advance, a wake, Follow, Open Session and the window's own Run and Stop Playbook all pass
+`--project <id>`, and a detached or waited-on child runs from its project's directory. Every
+library verb resolves a current project before it runs, from the working directory when
+nothing names one — and a window started in a checkout of a code repository that several
+library projects plan has a working directory that names none. Run Playbook from there was
+refused with *pass --project* and did nothing a person could see. A refusal of a verb the
+window ran therefore stands as an error notice naming the step until it is dismissed or the
+step's next verb runs, and `run_dplanner` journals each verb's exit code and its line (a
+`child` span), so a gesture that did nothing leaves its answer behind.
 
-Every one of these goes through `status_command`, the writer `status set` uses. So a
-stopped status ends an at-work claim the same way whichever verb stopped the work.
-
-**A collector talks the same way.** Who a step may talk to is whoever it takes work from
-review on — `auto_progresses` again: a review's subject, or a collector's flagged sources.
-So `start`, `post`, `take`, `reply` and `wait` serve a collector sending work back upstream,
-with `--to` naming the source. `approve` and `escalate` are a review's verdicts: a collector
-refuses them and names its own way out, `status set`.
-
-**`review wait` polls, and holds nothing while it does.** The other side is another
-process, often in another terminal, possibly on another machine once the plan syncs. The
-CLI has no process to be told anything, so the waiting side reads.
-- Each poll opens a fresh `LibraryStore` and closes it. The run's own library would be
-  stale by the second poll, and there is no lock to hold: the stale-workspace check is the
-  whole of the coordination.
-- A whole library loads in tens of milliseconds, so it polls every two seconds.
-- The default timeout is nine minutes, under the ten minutes an agent CLI allows one tool
-  call.
-- On a timeout it exits **3**, which is neither a refusal (1) nor an arrival (0). An
-  agent's loop can tell *nothing yet* from *wrong*.
-
-The loop is one pure function, `await_turn(load, ready, timeout, sleep, clock)`. A test
-drives it with a sleep that writes the other side's turn between polls, and no thread.
-
-The window has no verb that posts a finding, because only an agent writes one. The Review
-tab shows the conversation read-only, following the ledger as the verbs write it. The rule
-is in `.claude/rules/agents.md`, and the edge rule in `.claude/rules/graph-model.md`.
-
-**A conversation is read in a dialog of its own, and the ledger is what opens it.** The
-Review tab lists each message as a heading and its first line, which says where a review
-stands but not what it said, and a finding is prose. *Step ▸ Review Conversation…* — and
-the tab's *Open Conversation…*, and a double-click on one of its rows — opens
-`step_review/conversation_dialog.py`:
-- the messages on the left, each wearing who said it: the review's glyph for the step that
-  asks, the agent's for the step that answers;
-- the picked message rendered in full on the right;
-- where the conversation stands, in the footer's status slot.
-
-Three choices shaped it:
-
-- **It is enabled by the ledger, not by the aspect.** A collector sending work back upstream
-  keeps the same `review_rounds` entry and talks with the same verbs (*A collector talks the
-  same way*). Gating on `is_review` would have hidden the one conversation that has no other
-  place in the window. The state asks `rounds(step)`, one entry's rows, because an action
-  state runs on every announce. It greys with *no rounds yet* on a review and *not a review*
-  anywhere else.
-- **It follows the ledger while it is open.** An agent's `review reply` arrives from another
-  process. The watcher adopts it on a timer of its own rather than a settle, so nothing holds
-  the adoption back behind the modal: *A settle behind a modal waits for it* is about the
-  views behind one. The dialog hears `module_data_changed` directly, as the tab does. It keeps
-  the reader's pick by the message's identity (party, round, kind), not its row, because a
-  collector's ledger can gain a stamp on an earlier round.
-- **One builder names each message**, for the tab and the dialog alike (`message_rows`,
-  `where_it_stands`), so the two cannot word a message differently. The tab's full-text
-  tooltip went: the dialog is where a message is read.
-
-**Both agents are briefed with the protocol, because the verbs alone do not say when to
-use them.** A review and its subject are two peers in two terminals that never talk except
-through the plan, so each briefing has to carry its half of the conversation in full:
-- **The review** is told whom it reviews and where that work is (*Work you review*, the
-  same line *Work you collect* prints, so a collector and a review are never told where
-  work is two ways), through which lenses, the round protocol and the cap (its generated
-  `## Instructions`, *The description is the instructions*), and that its verdict is its
-  status — its epilogue asks for no PR and no `status set`, because `approve` and
-  `escalate` move both steps and carry the subject's PR.
-- **The reviewed step** is told not to stop at *ready for review*: set `pending-approval`,
-  `review wait`, take each round, fix, push and reply. And it is told when to stop — the
-  review approves (it is done), escalates (a person decides), or an hour passes with
-  nothing new. That last one is what makes waiting safe to abandon: a relaunched step is
-  briefed with any round that arrived meanwhile.
-- **A conversation still going is a section of the briefing on both sides** (*Review
-  rounds with …*: where it stands, then what each side said). Nothing stores that a step
-  is mid-review; the ledger is read when the briefing is assembled, so relaunching either
-  agent resumes the conversation instead of starting a second one. An ended conversation
-  is left to the Review tab — it asks nothing of the next worker.
-
-**A review runs in no worktree of its own.** An agent step gets a fresh worktree by
-default, and a review in one would be reading a new branch off `main` — not the work it
-reviews. What it reads is the subject's worktree when that is on this machine, and its
-PR or branch otherwise, without checking anything out; it commits nothing, so it needs no
-branch. That is a fact about what a review *is*, not a choice somebody should have to
-untick, so `agent_briefing.worktree.no_worktree` rules a worktree out whatever the agent
-aspect says, and every surface asks its `worktree(step)`: the launch, the preflight
-(which tells a review to leave the checkout as it found it — no commits, branch switches or
-stashes), the Agent tab's box, greyed with the reason, and `agent worktree … on`, refused.
-Both surfaces import that one function, so neither can declare its own.
-
-## Auto-progress is launched by the window
-
-An auto-progress link says a step may start once its sources reach review; a review may
-start once its subject does. Until this, *may* meant a person noticing and clicking Run
-Agent, which is the one thing the round of three agents and a collector was meant not to
-need. The spec's question was who starts it — *likely an issue for race conditions* — and
-whether it could just happen when a step's dependencies are fulfilled. It happens now, and
-five decisions say how.
-
-**Only a window launches.** The terminal cannot: which agent CLI, which terminal and how
-many at once are this desk's settings, kept per user in QSettings, which the CLI has no
-business reading — and an agent that launched its collector from its own shell would start
-a child of itself, the nested session *The peer is a top-level session* exists to prevent.
-So the terminal's half is to *say* it: `status set` and the `review` verbs print a line for
-every step the change made due (`_status_written`, the wrapper already on the status-moving
-verbs, generalised rather than joined by a second one), and `progression show` marks due
-rows. `--json` keeps its one document — the line is text for whoever reads the terminal,
-and `progression show --json` carries `due` for a caller that parses.
-
-**What is due is one derivation, read by every surface.** `agent_launch/due.py`'s
-`due_now` joins two owners' halves and never stores the answer — headless, so that a process
-with no window can one day launch by the same rule; the root only widens *running* with the
-runs the window watches, and `due.claim` is the claim either would write:
-- `progression.due` — an agent step, pending, with no run recorded, nothing it waits on
-  unfinished, and at least one prerequisite fulfilled *through* an auto-progress link (it
-  reads review or merge across one). The last clause is the difference from Ready to
-  start: a collector whose sources a person set done by hand is ready for a person to
-  launch; one whose sources just reached review was made ready by the flag, and the flag's
-  promise is that it starts on its own.
-- `step_review.aspect.due_turns` — a side of a conversation whose turn it is (`step_review.aspect.turn`), whose
-  agent has gone, and that nobody launched *for this turn*. That last needs memory the
-  graph does not have, so the round keeps it: `party_turn_launched` / `asker_turn_launched`
-  hold the stamp that began the turn launched for, and equal means launched. A stamp that
-  names the turn rather than the moment is immune to another machine's clock, and it lives
-  in the ledger so the terminal, a second window and a second machine all read the same
-  answer. It covers a collector's upstream conversations too, since the ledger is shared.
-
-**Level-triggered, never edge-triggered.** The launcher (`agent_launch/
-auto_launch.py`) does not react to "A3 moved to review": the window may have been closed
-when it happened, or adopt three such moves in one tick, and an edge missed is a collector
-never started. It re-derives what is due after every change of any origin — adopted
-outside changes included — when a run ends, when the day turns (a dated wait can make a
-step due overnight) and once at start, which also launches what became due while no window
-was open. What makes a level trigger launch once is **the claim, written the moment the
-shell opens**: the run stamp, and in progress for what auto-progress made due or the
-round's stamp for a turn — both off the undo stack like the launch stamp, and flushed at
-once rather than after autosave's pause. The next pass reads the step as no longer due. In
-the window, *running* is also a run the tracker is watching, so a claim still on its way to
-disk can never make a live shell's step due again. The claim is made whatever *On launch*
-says, because without it the step is due again the moment its run ends; a turn's claim is
-the stamp alone, since `post` and `reply` already moved its side's status.
-
-**A launch is an external effect: its intent is written before the shell.** The claim
-reaches the plan file at the pass's flush, so spawning, claiming in memory and flushing
-afterwards leaves no trace when the window dies in between, and the next one launches the
-step again. So `launch_due` writes an intent (`intents.py`: step, run id,
-actor, run directory) under the lock's own directory before it spawns, drops it when no
-shell opened, and the pass forgets it only once autosave says everything is on disk *and*
-its step no longer reads due — a successful flush says nothing about an intent whose launch
-was never claimed. A
-pass that finds one left over reconciles it before launching anything: a shell that
-started (its wrapper wrote the `shell` file into the run directory) is a run, so its step
-is claimed; one that never started is refused with a sentence for a person — **never
-retried blind**, since a shell slow to start would otherwise be a second one. The refused
-intent stays on disk, because the refusal in memory dies with the window and the next one
-would find the step due with nothing to stop it; it goes when a person edits that step, which
-is the answer the refusal waited for, or when a later pass finds the shell file after all and
-claims it — and that claim, made by the pass itself, is not taken for the person's answer, so
-the intent stays until the claim is saved. The intent is
-this machine's fact, beside the lock, never the plan's: a run directory and a pid mean
-nothing on another machine. Only the unattended launch records one; a person's Run Agent is
-watched by the person who clicked it.
-
-**It never launches on a plan it has not seen.** A pass stands down while the plan changed
-underneath and is not taken in yet (`changed_underneath`, asked only when something is due
-and a slot is free — the walk is the tracker's 300–500 ms on a large library), and it must
-run *after* the adoption that woke it: the store mutes dirty forwarding while it adopts, so
-a claim written inside an adoption would never reach disk. A **0 ms** settle guarantees the
-order — once per event-loop turn, so a burst adopted in one tick is one pass — which is why
-the launcher's tests run with coalescing on. And unlike a view's settle it never waits
-behind a modal (*A settle behind a modal waits for it* is about rebuilding what a person is
-not looking at): the first run found a first-start checklist left open holding every
-launch, and a dialog left open is exactly the desk nobody is at. A pass is cheap enough to
-run that often — 0.75 ms over an 820-step library — and a title or prose, which never make
-a step due, do not wake it at all. A stand-down is woken by the
-library watcher's `settled` hook as well as by model signals, because some settles change
-nothing the model announces — *Keep Mine*, an identical rewrite, a project still unreadable.
-Each step is re-read from the live model just before its shell opens. Past *Max agents*
-live runs — this window's tracker's count — the rest wait, the status bar says who, and the
-tracker's `ended` hook retries: a run that ends frees a slot even when the agent had
-already cleared its state and the plan did not change.
-
-**An unattended launch asks nobody.** `launch_due` is Run Agent for one step with the
-person's questions taken out: no prerequisite confirmation (a due step waits on nothing),
-no clone (a repository not checked out here is a refusal naming Run Agent, which clones),
-no prompt fallback. A refusal is a sentence in the status bar and is remembered for the
-step until the step, the switch or a profile changes — a refusal repeated every settle
-would be a retry nobody asked for. The profile is the step's: a review that names an agent
-runs through the first profile running it, and a named agent no profile runs is refused
-rather than swapped for the default, which may be the very agent whose work is reviewed.
+**A machine's start picks up its lost turns.** A reboot or a killed supervisor leaves a run
+whose last turn never ended; `revive` starts a supervisor for each such run of this machine
+that no supervisor holds, which ends the turn `failed`/`lost` and retries it. A parked run —
+its last turn ended — waits for a person and is never touched, unless it is waiting for its
+reset, or holds an answer — the clock's, a person's on another machine — that no supervisor
+delivered before it died: each of those has a supervisor's work to do, so `revive` starts one.
+**Two things call it, and nothing else does**: a window's start, over every project it shows,
+and `agent run`, over its own project only, before its lock. So a run whose supervisor was
+killed stays invisible — its card says it runs, and nothing moves — until one of the two
+happens on that machine; the dogfood run (N182) met exactly that. A revived supervisor runs
+in the environment of whoever revived it, not the one the run was launched from.
 
 **Plan mode is waiting on a person, and says so.** The Claude preset starts in plan mode, so
-an auto-launched Claude writes a plan and waits for somebody to approve it — and a session
-in plan mode runs nothing that writes, so it never reports `plan-for-review` itself. The
-launch stamp carries it instead (`plans_first`, read off the command through the harness's
+a launched Claude writes a plan and waits for somebody to approve it — and a session in plan
+mode runs nothing that writes, so it never reports `plan-for-review` itself. The launch
+stamp carries it instead (`plans_first`, read off the command through the harness's
 `plan_mode` words, so a profile edited out of plan mode launches an agent that does not
-wait), and `asks_person` reads it with the states that ask: such a step is *Waits for
-you* on the boards and in `progression show` (*Progression is the status-aware frontier*),
-and while one this window launched unattended waits, a notice names it with *Show
-Terminal*. That notice's memory is the session's; after a reload the boards still list it.
-A profile that does not ask first is the person's to make — nothing ships one.
+wait), and `asks_person` reads it with the states that ask: such a step is *Waits for you*
+on the boards and in `progression show` (*Progression is the status-aware frontier*).
 
-**Who may launch.** The switch is *Agent profiles ▸ When a step becomes due*, per user and
-per machine, **off by default**: it spends terminals and tokens nobody clicked for, and
-every machine that opens the plan with it on is one more launcher. Among windows on one
-library on one machine, only the holder of a `QLockFile` under `config_dir()/auto-launch/`
-launches, and the other window's page says so. The lock is stale only once its process is
-gone (`setStaleLockTime(0)`), so a crash never locks the next window out, and it belongs to
-the *session* — `new_session` builds the holder once and hands it to every build — because
-a reload builds the new window before it discards the old, and the new one must not find
-itself locked out by its predecessor.
-
-**The race, across machines.** On one machine the lock makes one window the launcher, and a
-claim written at the spawn and flushed at once makes the launch happen once: the next pass,
-in that window or after its reload, reads the step as launched. Across machines nothing is
-shared but the plan, and the plan travels by commits: the claim reaches another machine
-only when one saves and the other pulls. Two machines with the switch on can therefore both
-see a collector due, and both launch it, within one sync interval — each claim is true on
-its own machine, and the second to land meets the first as an ordinary conflict on that
-step's status. No lock can close that gap without a server, which DPlanner does not have;
-what closes it is that the switch is per machine and off until a person turns it on, so the
-honest setup is one machine that runs the agents.
-
-The rules are in `.claude/rules/agents.md` (the launcher) and `.claude/rules/schedule.md`
-(what is due, *Waits for you*).
+The rules are in `.claude/rules/agents.md`.
 
 ## Running an agent launches a peer, not a task
 
@@ -365,7 +198,11 @@ The briefing opens with the **project's standing instruction** — the same modu
 the project node, edited in *Project ▸ Settings…*'s Agent tab and in the step Agent tab's
 Project part (two bindings over one field, one undo stack) — ahead of the step's `## Instructions`
 (its description, unless a separate instruction exists — see *The description is the
-instructions*) and, after it, the notes index.
+instructions*) and, after it, the notes index. **A landing's briefing leaves it out**: the
+standing instruction is written for the work on a stretch — in the 10-04 run it said "work in
+your worktree, open a PR into the branch", which a landing, working on the branch itself and
+opening the branch's own PR, must not do — and a landing's instructions are generated from
+the stretch it closes, so they already say all that applies.
 
 The briefing is deliberately **self-contained**: between the standing instruction and the
 step's own sit the step's facts — its description as a section of its own only when a
@@ -440,9 +277,9 @@ in the act.
 
 The graph gates launching by *reading* status (`status_for`, the Step statuses tab's
 seam); a launch also *writes* one. When a shell opens, the step is claimed `in-progress`
-through `mark_started` — the writer half of the same seam, wired by the composition root
-to `planning/status.py`'s own `record_started`, so the agent module never learns the vocabulary
-and the status module keeps the only place its words are spelled.
+through the launch's workflow — `agent_launch/workflows.py`'s `run_agent`, a `Change` built
+from `planning/status.py`'s own `status_command`, so the status module keeps the only place
+its words are spelled.
 
 Three decisions sit in that one line.
 
@@ -450,7 +287,7 @@ Three decisions sit in that one line.
 beside it (*The peer reports back through its run directory* has that reasoning). The
 claim rides on something Ctrl+Z cannot take back — a detached shell now exists — and an
 undo entry would let the next Ctrl+Z file the step as pending while an agent is still
-working in it. `record_started` answers False and writes nothing when the step already
+working in it. The claim is no command at all when the step already
 claims to be in progress, so a second launch dirties no file; it *does* override `done`,
 because launching an agent on a finished step means the work resumed and there is no
 other honest reading.
@@ -472,8 +309,9 @@ claiming where the shells stop, so three steps of which the third found no termi
 two marked and one not; and an agent handed two writers' versions of a plan file is never
 marked as doing the step's work — it is merging, and marking that step in progress would
 be the same lie in the other direction. The verb decides; the mechanism obeys. The one
-other maker is its unattended twin, `launch_due`, which claims whatever *On launch* says
-(*Auto-progress is launched by the window*).
+other maker is `dplanner agent run`, which always claims: *On launch* is a switch for a
+person at a window, and a launch nobody watches must say the step was taken (*One launch
+under both surfaces*).
 
 Nothing un-claims it. Finishing is the agent's own `dplanner status set … done`, or the
 person's from Step ▸ Status — the run ending clears the agent *chip* (that state is about
@@ -491,7 +329,7 @@ rule.
 every agent's argv was its whole briefing — and every briefing in that project mentioned
 `Web.Host` in an inherited handoff. An agent restarting its own .NET host by pattern
 matched every other agent on the machine. The opening prompt is now one line
-(`launcher.opening_prompt`): *read your briefing in `<file>` in full, then follow it*. The
+(`agent_briefing.protocol.opening_prompt`): *read your briefing in `<file>` in full, then follow it*. The
 line carries a path and nothing the project is about, so no pattern drawn from the work can
 match it; it also stays under the platform's argument limit, which a briefing with a long
 handoff would not, and `ps` stays readable. The agent pays one file read.
@@ -536,17 +374,17 @@ wrapper writes it into the shell facts beside `dir` (where the agent works, reco
 it is in place — a worktree, usually) and `resume` (`cd "<dir>" && claude --resume <id>`,
 composed from the preset's `resume` template, only for a preset's own command since a
 custom command's resume syntax is unknown), and prints the same command above *Press
-Enter* when a run ends badly. The Agents browser shows it under an ended row. A *Resume
-Agent* verb that opens a terminal on it is the obvious next step and is deliberately not
-built yet: the hint is what the recovery needed, and a second launch path is a feature to
-ask for.
+Enter* when a run ends badly. The Agents browser shows it under an ended row. A terminal
+run's way back stays that hint; a *headless* run's is *Open Session*, which opens the same
+resume in a terminal for you — see *A headless run is watched from the Agents browser, and
+taken over by a fence*.
 
 **A preset that changes carries the texts it replaced.** The settings page stores the
 picked preset's *text* — the dropdown reflects the field, which is what lets a preset be
 edited into a custom command — so a machine that picked Claude Code before `--session-id`
 was added held `claude --permission-mode plan {prompt}` from then on: read as Custom,
 launched without a session id, never resumable, and no later change to the preset
-reached it. `AgentPreset.superseded` lists every command text the preset has shipped, and
+reached it. `AgentHarness.superseded` lists every command text the preset has shipped, and
 `launcher.current_command` maps a stored one to the current — the settings page reads
 through it, so the dropdown shows the preset again, and so do the wrapper and the resume
 hint. The same idea as a `Takeover` for module data: the old spelling is the contract,
@@ -566,7 +404,9 @@ terminal table and for an agent CLI nobody has heard of yet.
 The other half is the window's, in `modules/step_agent_run/`. It remembers every run it
 launched in the **user's store** (`user_config`) — a temp directory and a pid are facts
 about this machine, and a per-user file is what a rebuilt window re-adopts from — and
-polls them every two seconds *while one is live*. `runs.settle` reads the two files:
+polls them every two seconds. The tick once ran only while a shell was live; it runs for
+the window's life now, because the same tick reads the headless runs other processes start
+(the section after the inbox's), and settling a shell or comparing a fingerprint is a stat. `runs.settle` reads the two files:
 exit 0 is *finished*, anything else *failed*, the trap's word or a dead pid *closed*, a
 vanished directory *lost*. An ended run clears the step's state the way the launch stamped
 it — directly, off the undo stack, with the launch origin — because a chip on a step
@@ -625,16 +465,18 @@ beside Run Agent, `dplanner agent worktree <step> off` and `step add --no-worktr
 CLI's word, and the skill tells an agent to leave it on unless the step genuinely must
 share the working tree.
 
-**The worktree is prepared by the wrapper script, and a worktree it cannot prepare stops
-the run.** A project kept in a subfolder of its repository leaves a `.dplanner` pointer
+**The worktree is prepared before the run, and a worktree that cannot be prepared stops
+it.** A project kept in a subfolder of its repository leaves a `.dplanner` pointer
 *file* at the root (FORMAT.md's pointer), so a worktree under `.dplanner/` fails with *Not a
-directory*; and a script that hides such a failure carries on in the main checkout — so two
-agents launched "into fresh worktrees" edit one checkout on one branch, which is the bug
-this section exists for. So the worktrees live in `.dplanner-worktrees/`, and the script
-prunes stale registrations, reuses the branch when it exists, verifies the tree is a
-linked worktree (a `.git` *file*), and otherwise prints git's reason, waits for Enter and
-writes `1` to the exit file — the window reports *failed (exit 1)*, the same way it reports
-any agent that died. Never the main checkout by accident.
+directory*; and a script that hid such a failure carried on in the main checkout — so two
+agents launched "into fresh worktrees" edited one checkout on one branch, which is the bug
+this section exists for. So the worktrees live in `.dplanner-worktrees/`, and
+`agent_briefing/worktree.py`'s `prepare` prunes stale registrations, reuses the branch when
+it exists, verifies the tree is a linked worktree (a `.git` *file*), and otherwise refuses
+with git's reason — a sentence in the window's status bar, an exit 1 from `agent run` — and
+nothing starts. Never the main checkout by accident. It was the wrapper script's job until
+a headless run, which has no script, needed the same worktree (*One launch under both
+surfaces*).
 
 **The run is named after the step, once.** `agent_briefing.worktree.run_name(key, ticket, title)` —
 `f7-PROJ-12-build-the-modal`, made ref-safe — is the worktree's directory, the branch's
@@ -646,7 +488,7 @@ briefing call it, because the **briefing names the worktree**: its preamble tell
 agent to confirm `git rev-parse --show-toplevel` ends in that directory and the branch is
 `agent/<name>`, and to stop if either differs. The check costs the agent two commands and
 closes the gap the silent script left — a run that somehow lands in the main checkout is
-refused by the agent, not just by the script. A step whose worktree is off is told so
+refused by the agent, not just by `prepare`. A step whose worktree is off is told so
 instead, and warned that it shares the developer's tree.
 
 **Inside the worktree the plan of record is still the library's.** The plan is usually
@@ -766,6 +608,52 @@ every point — and they need an OTLP collector listening on this machine, which
 feature to build when a transcript reader has failed, not before. Its console exporter
 writes to the agent's own stdout, so it cannot serve an interactive session.
 
+**A harness has a headless half, and it is a second record.** `AgentHarness.headless` is a
+`domain/headless.py` `Headless`: the argv for one unattended turn of a playbook stage, a reader
+for the CLI's JSON events and how the turn ended. It is not more templates beside `command`
+because nothing about it is a terminal's: the supervisor spawns the argv itself, with no shell
+to quote for and no person to wait on, and reads the stream as it comes. Classification is one
+function over what the readers normalise, so each CLI's quirks live in its own reader and the
+order of the rules is written once; `playbooks.md`'s *Each stage is one headless turn per
+harness* has the table and the reasons. **A schema-valid final message always wins**: no prose
+heuristic — a refusal, a question, a wait — is applied to a turn that produced one. The prose
+heuristics are the fallback for untyped text (opencode, a plan), and when unsure they park
+rather than say done, because a false park costs a card or one cheap "continue" turn and a
+false done loses work without a word. Two misreadings are accepted as that fallback's known
+limits rather than chased: a question quoted at the very end reads as asked, and "waiting on
+the build was the bug" reads as an abandoned wait.
+
+### Installed is not usable
+
+A CLI on PATH can still be unable to run a turn: signed out, or broken. Headless, that is
+worse than missing — a signed-out Claude retries for minutes before it fails — so each harness
+says how to ask (`AgentHarness.sign_in`) and `agent_launch/availability.py` asks in three
+levels, stopping at the first that fails: on PATH, a version, signed in. The sign-in probes are
+the research's (`docs/research/2026-10-07-headless-agents/` §9): `claude auth status`'s JSON,
+`codex login status` (which answers on stderr, so a shell gives both streams together), and
+for OpenCode a credential **or** a built-in model — it ran on its own `opencode/*` models with
+no login at all, so "0 credentials" alone would have called a working agent dead. Which of
+those built-in models are free is not told apart: any model the `opencode` provider lists
+counts, and the row says it is running on them.
+
+**Everything goes through a shell bound to the found path.** The harness's probe gets a
+`Shell` that runs *its* CLI with arguments; it never names a binary, so a Windows `.cmd` shim
+runs as `which` found it, and a probe of another machine — a worker — is another `which` and
+another shell, with nothing in a harness to change. OpenCode's credentials are asked of the
+CLI rather than read from `auth.json` for the same reason.
+
+**Asking is fresh, reading is cached.** The Setup Checklist's rows always probe — a person who
+has just signed in and pressed *Re-check* must see it — and every probe lands in the cache;
+`cached` and `why_not` read it and never run a CLI, so a state callback on the UI thread may
+ask whether a playbook's agents can run. A reading lives a minute, which is long enough for a
+menu opened twice and short enough that a sign-in elsewhere is noticed. There is one cache per
+process, the composition root's (`_Root.availability`), read by the checklist and Run Playbook
+alike.
+
+**A CLI that is not installed is not a problem.** Nobody needs all three, so its row is well
+and says it is optional; *An agent CLI* is the row that fails when none can run. Only a CLI
+that is there and cannot run asks for something, with its own sign-in command as the remedy.
+
 ### A launch profile is a name over the two choices
 
 Run Agent has always asked two questions — which agent, which terminal — and the settings
@@ -801,7 +689,14 @@ than refused, since a settings field is no place for a modal.
 The two single settings the profiles replaced are read as the default profile when no
 list has been stored, so a machine configured before profiles existed keeps its choices
 without anybody retyping them — the same idea as a harness carrying the command texts it
-shipped earlier. Profiles are per user, per machine (`user_config`), never the plan.
+shipped earlier. Profiles are per user, per machine, never the plan — and kept in
+`config_dir()/agent-profiles.json`, not QSettings, because `dplanner agent run --profile`
+reads them from a terminal that loads no Qt. The window adopts what QSettings held before
+the move once (`profiles.adopt`), the list and the seed flag with it, so nothing is seeded
+twice. **A file that is there and cannot be read is three states apart from one that is
+missing**: read leniently it looked empty, and the next seed wrote the defaults over a
+person's list. So `profiles.problem()` names it, the default profile stands in, nothing
+writes the file, the window shows a notice and a read-only page, and `agent run` refuses.
 
 **The verb has one seat, and it is the child menu.** A flat *Run Agent…* beside a *Run Agent
 With ▸* is two entries for one act, and the flat one hides the choice the other offers. So
@@ -967,10 +862,10 @@ live run say one without lying about the other.
 
 **No format bump, and the precedent that looks like it applies does not.** `progress_history`
 went to format 2 for its `saved` key so an older build would refuse to rewrite the entry
-rather than drop what somebody had authored. Here `usage.with_row` copies every kept row
-**verbatim** and `rows()` filters without rebuilding, so an older build cannot lose
-`prompt_chars` — and it re-stamps the entry to its own version on the next write anyway, so
-the guard would not even guard. `ModuleDataFormat` requires one migration function per
+rather than drop what somebody had authored. The step's usage rows this was first kept in
+(read now only as the ledger's legacy records) were copied **verbatim** and filtered without
+rebuilding, so an older build could not lose `prompt_chars` — and it re-stamped the entry to
+its own version on the next write anyway, so the guard would not even have guarded. `ModuleDataFormat` requires one migration function per
 version, so the bump would have put an identity function in the tree for no reader. The rule
 worth keeping from this: **bump when an older writer would destroy the new key, not when one
 merely would not write it.**
@@ -1003,3 +898,579 @@ briefing too big?" is now a question with a standing answer: one segment per blo
 carrying its own heading, and `segments` (origin, heading, chars) plus `chars` on the JSON.
 The join invariant is untouched — the segment texts still concatenate to exactly the text
 that is sent, which is what lets the Agent tab colour it without ever showing something else.
+
+## Runs, questions and claims are three records in the plan
+
+*The run record and its supervisor are built (S10, below), the question record and its
+door (S13), and the claim record, its verbs and its heartbeat (S18); the inbox cards and the
+coordinator are built to these records, and FORMAT.md's* The `ledger` directory *(format
+2),* The `questions` directory *and* The `claims` directory *are the formats.* Every one of them
+rests on the finding of `docs/research/2026-10-07-headless-agents/`: **DPlanner never
+waits on a process for a person.** A headless run is one turn of a process that exits;
+whatever needs somebody is recorded and the process ends; the answer resumes the same
+session. A closed window, a reboot or an exhausted quota then costs time and nothing else —
+but only if what the run was waiting for is written down somewhere that outlives every
+process, and readable by whoever is to answer it. That is these three records.
+
+### A run is the ledger record, and the playbook ledger is its runs
+
+The ledger already had the shape a run needs: one file per launch, one writer — the
+launching machine, the only one that can read the vendor's records — committed with the
+plan, outside `PLAN_ENTRIES`. A second record for "the run" beside it would have meant two
+files per launch that must agree, written by the same process at the same moments. So the
+record grows to format 2 instead: who ran it (`callsign`, `claim`), which stage of which
+playbook it was (`playbook`, `stage`, `attempt` — `playbooks.md`'s words), and its
+**turns**. And for the same reason there is no separate playbook ledger: a step's stage
+history is its runs read in order, so the two cannot disagree.
+
+**A run is one stage attempt; a resume is a turn.** What resumes is a *session*, and a
+session is what the vendor keeps: `claude -p --resume`, `codex exec resume`, `opencode run
+-s` all continue the one that parked. Making every resume a run would have split one
+conversation's cost and story over several records that each had to name the others. A
+fresh session, on the other hand, really is a new attempt and gets a new run — and so does
+a **loop-back**, when a gate sends the work back, even when it resumes the same session:
+the attempt it fixes is over, its verdict judged that attempt and no later one, and the
+next review must be able to say which attempt it read. So a session may span several runs,
+and a run is never found by its session. **Which is why usage moves onto the turns**: the
+format-1 harvest rewrote a session's cumulative total into the record, and three runs on one
+session would have summed it three times. A turn's usage is the slice of the session's
+records — subagents included — between the cursors at its start and its end, so every count
+is somebody's once, and re-harvesting one turn cannot change another stage's cost. And
+**a pass is named, not inferred**: every run and gate question carries `pass`, and the
+pass's resolved `settings` — preset, revision, rounds, roles, overrides — are stored once,
+on its first run or, when it begins at a gate, its first gate question, so a pass parked for a day resumes
+with the cap and reviewer it began with, whatever the step's overrides say now. **The run carries the playbook's results, not
+just its cost**: a review run's `verdict` (pass or changes, and typed findings) and a fix
+run's `declined` findings with their reasons, so a gate's history is read from runs as a
+review's used to be read from its stamps, and `playbooks.md` has why.
+
+**How a turn ended is the record's centre, and it has six words.** The research's five —
+`done`, `asked`, `denied`, `limit`, `failed` — exist because exit codes lie: Claude asks in
+prose and exits 0, opencode auto-rejects a permission and exits 0 having done nothing. The
+supervisor classifies the stream and the result, and writes the class. The sixth,
+`stopped`, is for a run a person or the coordinator fenced, or whose step went away:
+filing it under `failed` would have the supervisor retry exactly what somebody just stopped.
+The retry-or-abandon split of the 10-03 failure classes is the supervisor's count of
+`failed` turns, not another word. Running, parked and over are read from the turns, never
+stored, so nothing can say a run is parked while its last turn says done.
+
+**A lost turn is found by the machine that ran it, and a takeover fences it.** A turn records
+its `pid`, the machine's boot id and the process's start time, because "no `end`" alone
+cannot tell a running turn from one a reboot killed, and a pid alone may since belong to
+another process. Only that machine can look, so it does, when it starts: a turn whose three
+no longer match a live process ends `failed` as `lost`, and the
+supervisor's retry takes it from there. A machine that never comes back cannot do even that,
+so a takeover writes a `fence` on its runs — the one write to a run from anywhere but its
+launcher — and the launcher, fetching before every turn, ends a fenced run rather than
+resuming it.
+
+**The run directory leaves `/tmp`.** A parked run must survive a reboot with its stream,
+its briefing and DPlanner's copy of the plan it wrote (Claude otherwise leaves only the one
+in `~/.claude/plans/`), and `/tmp` is a RAM disk on the machines this runs on — 76 % full in
+the 10-04 run. It moves to `config_dir()/runs/<run id>/`, derived from the id and never
+stored, because only the launching machine can use it.
+
+### A headless run is driven by its supervisor, and nobody waits on the supervisor
+
+A run needs something to start each turn, read it while it runs and decide what follows —
+and that something must outlive the window that asked for it, or closing the window would
+kill the work. So it is a process of its own per run, `dplanner agent supervise <run>`
+(`modules/agent_supervisor/`), started detached and holding nothing but the run: no library
+open, since a process that lives for hours must not hold the store, and its record is
+outside the plan's files anyway. It parks rather than waits — the process simply exits on
+anything that needs a person — so a parked run costs no process at all, and whoever answers
+starts a supervisor again with `--prompt answer|continue|reset|retry`.
+
+**Three guards, because none of the CLIs has them.** The 10-03 probes left all three CLIs
+silent on a hung API for over five minutes, and opencode looping forever on a malformed
+reply while still emitting events. Silence alone cannot be the test: a twenty-minute test
+suite is silent and working. So the **stall** clock runs only while no tool call is open —
+each reader keeps the open calls in `TurnLog.tools`, and opencode, which reports a tool only
+once it has finished, gets twice the threshold instead — the **runaway** count is events in a
+row with nothing produced (`TurnLog.idle`), and the stage's **wall clock** catches a tool that
+never returns. Each ends the turn's whole process group, since a CLI's own children (a test
+run, a subagent) must die with it — and *the group*, not the CLI: a test worker that ignores
+SIGTERM outlives an agent that obeys it, so the group is asked until it is empty and killed
+when the grace runs out (Windows has no group to ask, and `taskkill /T /F` reaches the tree
+only while its root lives, so it is killed at once). Each records its own `why`; the
+classifier would only have said *killed*. Ending the group is also what every way out of a
+turn does — a disk that fills mid-tee, a ledger that will not write — so no turn is ever left
+running with nobody watching it; such a turn ends `failed` as `supervisor-error`. And the
+stream closing is not the turn ending: a CLI can close its output and hang on the way out,
+so the guards run until the process has exited, and what it said while it was being killed
+— a SIGTERM handler's last totals — is read before the turn is written.
+
+**Retry what time mends, park what it does not.** A crash, a hang, an overrun or a lost turn
+retries after 30 s, 2 min and 10 min — failures.md's backoff — resuming the session if its
+stream ever named one and starting fresh if not, and a fourth failure in a row parks for a
+person: four in a row is a pattern, not luck. A runaway parks at once, because what loops
+once loops again; so do a dead login, an empty balance and a retired model, which no wait
+mends. A turn that ended waiting on its own background work is told to continue straight
+away. A fence read between turns ends the run `stopped`, and a SIGTERM does too, so a run a
+person stopped never reads as lost and is never retried.
+
+**Usage is counted from the turn's own stream.** FORMAT.md's design had cursors into each
+vendor's session records, so that two runs sharing a session would each count only their
+turns. The stream the supervisor already tees *is* exactly one turn's window, so its counts
+need no cursor and no new reader per harness; the supervisor writes them as the turn ends,
+and the next supervisor counts a lost turn from the stream it left. That makes the
+supervisor the record's one writer, so a harvest leaves a headless record alone — beside a
+live supervisor it would be a second writer, and the vendor's whole-session total would
+count a shared session twice. What it costs is subagents the stream does not report.
+
+**One supervisor per run, one writer at a time, and the turn says which process it was.** A
+lock *file* that a supervisor creates and a stale one deletes cannot be made safe: two can
+each find the other's file half-written and both go on. So both locks are the operating
+system's (`flock`, `msvcrt.locking`) on files nobody deletes, and the system drops them when
+their holder dies — there is no staleness to judge. `supervisor.lock` is held for the
+supervisor's life. `record.lock` is held across one read-modify-write of the record, by the
+supervisor and by `fence()` alike, each re-reading inside it: an atomic replace stops a torn
+file but not a lost update, and the update lost would be the fence. **A run's end is written
+in the same write as the turn that ended it**, so no crash leaves a finished turn on a run
+that reads as parked — which `--prompt retry` would have run again; a supervisor that finds
+one anyway ends the run. Each turn records its process's `ProcessStamp` (`core/process.py`:
+pid, boot id, start time — a pid alone is reused) the moment it starts, so a supervisor
+started after a reboot tells a turn still running from one the machine lost. **A turn still
+running when its supervisor is gone is ended, not waited on**: nothing else would ever finish
+its turn or hand its pass on, so the new supervisor — holding the run's lock, which proves the
+old one dead — ends it by identity (`end_orphaned_turn`: the processes carrying the run, the
+recorded process group) and retries it as a lost turn. Refusing it, as the first build did,
+left a worker that outlived a killed supervisor to end into nothing.
+
+### A usage limit waits in its supervisor, and Retry now is an answer
+
+A run that runs out of usage is parked on a `limit` question, and something has to resume
+it after the reset. **Its own supervisor waits for the reset**, holding the run's lock and
+looking at the question every few seconds, then answers it for the clock and resumes the
+session with "your limit has reset". A timer in the window would leave a headless run
+stranded whenever no window is open — the coordinator's whole case — and a sweep started by
+`agent run` would resume nothing on a machine that launches nothing more. A clock is not a
+person, so this is not waiting on one: *Retry now* needs no process at all — it answers the
+same question as a person, and the waiting supervisor finds the answer as it finds every
+other. **The resume runs inside that supervisor, in the environment it was started with**:
+a person who switched `CLAUDE_CONFIG_DIR` to reach another login before pressing *Retry now*
+resumes on the old one (N184). Only when no supervisor is waiting does the answer start one,
+in the answerer's environment. A supervisor lost to a reboot is picked up the same way: `revive` starts it bare on a
+run parked on a limit with a known reset, it waits, and a reset already past resumes it at once.
+**So a SIGTERM during the wait is not a stop**: a reboot sends one to every process, and
+ending the run then would cancel every limit wait on the machine. The supervisor exits and
+leaves the run parked on its open question; only a fence ends a waiting run.
+
+**The reset is the turn's, else the account's.** A real Claude limit carries it in the
+stream (`rate_limit_event` rejected, with `resetsAt` — 2026-10-07's run hit it mid-step), but
+a 429 the CLI stops on before any event carries none (E8), so every turn's telemetry is kept
+per account (`config_dir()/usage-limits.json`) and a limit with no reset of its own takes the
+fullest window's. A reset the turn reported that has already passed — its cleanup crossed
+it, or this clock runs ahead — is still the deadline: the run resumes once after the grace,
+and the turn says `past-reset`. A second such turn in a row has no reset, so stale telemetry
+never loops a run against the wall; with no reset at all the run parks for a person, rather
+than probing the account on a timer.
+
+**An account is a harness and the home its login is in.** The ledger record names no
+account for a headless run, and a CLI's login lives in its config home — `$CLAUDE_CONFIG_DIR`,
+`$CODEX_HOME` — so two homes are two accounts, and switching homes is how a person reaches
+another login. The launch and the supervisor it starts resolve the key alike, from the same
+environment. **Each observation is stamped with its turn's end**: supervisors of overlapping
+turns write in any order, so a turn that ended earlier never replaces newer windows, and an
+exhaustion is lifted only by a turn the model answered after it — never by a failure, and
+never by older tokens. Two holds read the file. A **new headless launch waits** while a window is at or above the
+threshold (95 % by default: the real limits struck at 98 and 99 %, and a launch past 95 %
+would start hours of work into the wall), with the reason shown. And **nothing else starts on
+an account that ran out**: a turn carrying no answer is written `limit`/`held` without a
+process and parks on the same question as any limit. A turn carrying an answer always starts,
+since the answer was consumed for it; a hold's only other way out is a later answered turn,
+which says the account is back. Terminal runs are not held — the person at the
+terminal sees the limit and may mean another login.
+
+### A question is a file, and the inbox is the directory
+
+A question needs answering from anywhere — the window on another machine, a person who
+pulled the plan, the coordinator — so it is project data in git, never this machine's. **One
+file per question**, for the ledger's reason: two agents asking at once add two files, and
+nothing conflicts. Its body is Claude's `AskUserQuestion` shape, because that shape is
+already what a Control Centre card needs (a question, a header, options with descriptions)
+and because the warm path — a Claude process DPlanner hosts over stream-json — hands over
+exactly that and takes back exactly `answers`; any other shape would be a translation in
+both directions. `dplanner question ask`, the door every harness can use because every
+harness can run a shell command, writes the same record with one question in it.
+
+**The door is a noun's verb, `question ask`, not a word of its own.** The research named it
+`dplanner ask`; every other verb is `<noun> <verb>`, the registry and the generated skill
+index are built on that, and one bare word would have been the first exception to both. An
+agent runs `question ask` as readily as `ask`, and `question list|answer|escalate` sit
+beside it where an agent looking for the answer verb will find it.
+
+**Every park stands on a question, whoever wrote it.** The agent's own question is the one
+it recorded through the door, which the supervisor finds on the run when the turn ends and
+hands to the classifier, so the turn says *asked* even though its last words were "ending my
+turn". Any other park — a question found in prose, a denied permission, an exhausted
+account, a run that cannot go on alone — gets its question written by the supervisor as it
+parks, named on the turn. Otherwise the inbox would show some parked runs and not others,
+and whoever reads it would have to know which endings make a card.
+
+**Answering records; the supervisor delivers.** `question answer` writes the answer and
+nothing else that counts; it nudges the run's supervisor when this machine launched the run,
+but the nudge is not the delivery. Delivery is the supervisor's: whenever it starts, and once
+more *after* it has let go of a parked run, it looks for an answered question on its own run
+and resumes with it. That last look is what makes an answer given at any moment arrive — a
+nudge refused because the old supervisor still held the run is made up for by the old
+supervisor's own look, taken after the lock was free; an answer given while the asking turn
+was still ending parks the turn on that very question and resumes it at once. An answer given
+on another machine waits in the file for the run's own machine.
+
+**The resume is claimed under the run's lock and the question's**, both re-read: the run still
+this machine's, not fenced, not over, its last turn parked on this question, the question
+answered. One ledger write then records the next turn — `prompt: answer`, the answer it
+consumes, no process yet — and only then is the question marked consumed. Just before the
+process starts, the turn is marked `spawning`. A supervisor that dies before the mark leaves a
+turn the next one starts, after the same locked check, without consuming anything again; one
+that dies after it leaves a turn whose agent may already have acted on the answer — the pid is
+written only once the process exists — so that turn ends `lost-at-spawn` and parks for a
+person rather than apply an answer twice. Checking under an earlier snapshot would let a fence
+written meanwhile be overtaken by a resume.
+
+**Cards are written before what they explain, and mended on start.** A parked ending is
+committed with its card already on disk, so a crash leaves at worst a card on a lost turn,
+which the retry withdraws — never a parked run nobody is asked about. A run that goes on by
+itself (a retry, a nudge to continue) or parks again withdraws every earlier card not
+consumed — an answer nobody acted on included, since no turn will consume it now —
+and a run's end withdraws everything it had standing; a supervisor starting on a parked run
+with no card writes one, and on an ended run with cards standing withdraws them.
+
+**Who answers is read from where the call comes from.** Inside a run or an agent's shell the
+caller is the coordinator — there is no flag to say otherwise — and a run may not answer its
+own question; a person's own shell answers as a person. A flag would let the agent a gate is
+meant to check say it was the person.
+
+**A terminal run asks the person in front of it.** In a terminal the developer is right there
+and the agent's process is still waiting for its next message, so `question ask` outside a
+headless run records nothing: it sets the step's `needs-input`, as the briefing used to say
+outright, and tells the agent to put the question in the terminal. Recording it as well would
+need a rule for when such a question closes — the agent simply carries on in its terminal —
+and nothing tells DPlanner that. Every briefing can therefore name one door.
+
+**The warm path is not built.** A Claude process hosted over stream-json offers its own
+`AskUserQuestion` and `ExitPlanMode`, and the record takes them unchanged. It needs a live
+process held open briefly and an unverified mix of `--permission-mode auto` with the stdio
+permission tool, and the cold door already lifts every question into DPlanner, so it waits for
+a step of its own.
+
+**A usage hold is a question too.** It could have been only a fact on the run (`end:
+limit`, `resets`), with the cards reading parked runs beside questions. Then the inbox
+would have had two sources with two ways to be answered and two ways to go stale. As a
+`limit` question it is one more card, answered by *Retry now* or by the clock when the reset
+passes — and the run still carries `resets`, which is when the clock answers it.
+
+**A playbook's gate is a question too.** A `person` gate and a `coordinator` gate have no
+run — nobody launches anything — so the question carries the gate's `stage` and `attempt`,
+and the playbook's history is still runs and questions read in order. The two gates differ
+only in who may answer: the coordinator may answer a `coordinator` gate's question, and
+must escalate a `person` gate's, because that gate is the playbook's promise that a person
+looked.
+
+**An answer counts once it is consumed, and only the launching machine consumes.** Two
+people may answer one question on two machines, and an agent may already be acting on the
+first when the second arrives — with an earlier timestamp, on a skewed clock. So no
+timestamp decides: the launching machine fetches, checks the run can still resume, pushes
+the question marked `consumed` and only then starts the turn, which names the answer it
+consumed. A playbook's question has no run to resume, so the pass's owner — the
+engine on the machine that launched the pass — consumes it the same way, targeting the
+pass, stage and attempt, and only then completes the step or advances the pass. From then
+on that answer is the record's truth, and any competing one is kept as
+a *late answer* and never applied. A withdrawal is terminal too, and beats any answer not
+yet consumed: a run that was stopped must not be resumed by somebody who had not heard.
+Gate, round-cap and escalation questions say which they are in `purpose`, and carry `pass`,
+for the reason runs do. An open question never times out into an approval; it is the one
+thing in this design that waits, and it waits in a file.
+
+### The inbox is cards on top of the Control Centre
+
+The rule is `.claude/rules/agents.md`'s *One question door* (its last sentences).
+
+A person looks at the Control Centre to see what needs them, so that is where a question
+goes: **a card per open or escalated question, above the board**, counted with the board's
+rows in the tab's title. A headless run parked on a question sets no agent state, so its step
+is not under *Waits for you* — the card is the only place it shows, and a plain sum of cards
+and rows double-counts almost nothing. A card says who asks (callsign and harness), about
+which step, the kind, the question, and the ways to answer: a button per choice, a person's
+own words on the same line, *Retry Now* where a retry is an answer (`supervisor.RETRYABLE`:
+a usage hold or a block), and *Go to Step*. A usage hold's words are the card's own, worded
+from `resets` as it is read: the time the supervisor wrote is stale by the next morning.
+
+**The questions module owns the card; the board only hosts it.** `agent_questions/` gained a
+`module.py` that registers nothing and hands out `create_cards`, the Control Centre takes it
+as a factory typed by a protocol it owns (`QuestionLane`), and the root wires the answer as
+`inbox.answer` with the person as `by` — so the card and `question answer` are one function
+and `status_board` learns nothing about questions. Putting the cards in `status_board` was
+fewer files, but then the board would know kinds, resets, harnesses and the inbox.
+
+**It polls, and reconciles.** Nothing watches `questions/`; supervisors, agents and git pulls
+write it. The lane compares each project's `questions.fingerprint` every two seconds and
+re-reads only what changed, then keeps every card whose facts are the same and builds only
+the new ones: a rebuild per poll would take a half-typed answer with it.
+
+**Oldest first, and gone when settled.** The question that has waited longest leads. An
+answered one leaves the lane at once — it waits in its file for its run's machine, and the
+status bar says so in `inbox.answer`'s own words. With no card the lane is hidden rather
+than saying *no questions*, since the board under it already says what needs nobody. The lane
+is as tall as its cards up to about two, then scrolls: the board keeps the rest of the page.
+A splitter between them was tried and dropped — two framed wells either side of a seam drew
+three lines where one belongs, and a lane that fits its cards needs no dragging.
+
+### A headless run is watched from the Agents browser, and taken over by a fence
+
+A playbook works for hours with no window of its own, and the first thing a person asked of
+it was to see what it is doing (#249). Three surfaces answer, each over the run's own records.
+
+**The Agents browser lists headless runs beside the shells** (`step_agent_run/headless.py`).
+A terminal run is the window's to watch, but a headless run is its supervisor's. So the
+browser does not track a headless run; it reads every project's ledger and questions again
+whenever their fingerprints move, on the tick it already had. A row says where its run
+stands in the very words the card's playbook strip uses. The pass's latest run leads with
+the strip's own phrase (`passes.standing`, handed in as `pass_phrase`), and every other
+row with `headless.state_of`, which takes its question-kind words from
+`questions.waits_for` and its reset from `limits.clock`, as the strip does. Two surfaces
+that drew their words from two places would one day say a run two ways. After the phrase
+come the member, the harness, how long ago the run last spoke (the mtime of its stream)
+and its tokens so far. An ended run stays a day, under *Show ended*, and *Clear ended*
+is a per-user stamp: the records are the plan's, so clearing them is never a deletion.
+
+**Follow is a verb, and the button opens a terminal on it.** `dplanner agent follow <run>`
+(`agent_supervisor/follow.py`) reads the record and then the stream to its end. Each event
+is said by its harness (`Headless.say`, one hook beside the reader, so a fourth harness is
+a fourth module): what the agent wrote, each tool it called with its argument shortened,
+the first line of what came back. A turn's end says how it ended and, for a park, the
+question it waits on. The next turn is followed as soon as it is recorded, because an
+answer resumes the run. Reading the record *before* the stream is what makes "the turn
+has ended" mean "the stream has nothing left": the supervisor writes the end only after
+it has drained the stream. Follow takes no lock and writes nothing — not even this
+machine's id: whose run it is, is read with `ledger.known_machine_id`, which never mints
+one into a config directory nothing has used. The browser's row, *Step ▸ Follow Agent
+Run*, *Tools ▸ Agent List* and the Control Centre's question card all open the default
+profile's terminal on that verb (`launcher.shell_script(command=)`). So the window and a
+person's own terminal run one command, and there is no second printer. The terminal is
+started on a `TaskRunner` (`AgentLaunchModule.open_in_terminal`) and its outcome said on the
+status bar: a staged terminal such as herdr runs each stage to its end, up to twenty seconds
+apiece, and that wait must never be the GUI thread's.
+
+**Open Session takes the session, and it takes all of it.** A parked run is still its
+supervisor's: an answer, a reset or *Retry now* resumes it. And a run is not the session's
+only writer: a pass's plan, execute and fix runs share one session, so the plan's ended row
+can name a session the execute run after it is still writing, and a gate waiting between
+them launches the next stage into it the moment it is answered. A person typing into the
+session meanwhile would leave two processes writing one conversation. So `dplanner agent
+open-session <run>` (`agent_supervisor/takeover.py`'s `take_over`) first makes the session
+nobody else's, **under the step's launch lock** — which every advance and launch of the
+step waits for, so an answer landing during the takeover starts nothing until it is done.
+It halts the run's pass with *Stop Playbook*'s own machinery (`engine.halt_pass`, handed in
+as `takeover.HaltPass`, since a module reaches another's effects only through a callback):
+its unfinished runs fenced `taken over by a person` (`ledger.TAKEN_OVER`) and its gates and
+questions withdrawn, an answered one included, so the advance waiting on the lock finds the
+pass halted. Then every other run on the session is stopped through the one stopper,
+`supervisor.stop_and_wait`. A supervisor waiting out a limit is signalled, and a parked run
+nobody drives is ended here. Only once every one of them is over does the step leave the
+claim of the squad whose run it was, through `ownership`'s person's override (the `Release`
+handed in), since a coordinator must not relaunch a step a person took over. It does not
+take the plan follow-ups of *Stop Playbook*, because the work is not stopped: a person has
+it. The pass reads *Taken over* — a branch of `passes._words`, quiet rather than the bad
+news *Stopped* is — whether its latest run was fenced or the gate it waited on withdrawn,
+and so does a round cap answered *Take over*. Only then does the harness's own resume
+(`AgentHarness.resume`: `claude --resume`, `codex resume`, `opencode -s`) run in the
+directory the run worked in, as a child of the verb rather than an `exec`, which Windows
+does not have.
+
+**Every step of the takeover is idempotent, and the release is decided by the claim, not by
+what the run looked like.** A run whose supervisor does not end within the wait is refused
+with "still stopping — try again", having released nothing. By the second attempt the run
+is over, so a release decided by "was the run still going?" would never happen; it is
+decided by whether the claim holding the step is the run's own, which asking again still
+finds.
+
+While a turn on the session runs, Open Session is refused: "running — Follow it, or Stop
+Playbook first". Interrupting a turn is what *Stop Playbook* is for, and it says what it
+stops. A run whose session and pass have nothing left going is opened without a fence, and
+without asking. Otherwise the window asks first (`HeadlessRun.takes`), an ended row
+included, because what it ends will not come back to its playbook. The greyed reason and the
+verb's refusal are one function (`open_session_refusal`), and a run of another machine is
+refused by both: its streams and its session are there.
+
+### A claim is a lease in git, and at-work stays beside it
+
+Knut's brief: what work is taken by which agent is project-level data, in git, with when and
+the last sign of life, pushed as the agent goes. The 4 October multiplayer note asked for
+the same thing as a lease — expiring unless renewed, so a crashed worker frees its area by
+itself — and the claim is that record: a squad's callsign, the worker's machine, the step
+ids, a heartbeat and a lease. **One claim per squad**: which callsign works which step is
+already on the run, and a second copy of it here would be a second thing to keep true.
+
+**It does not absorb `domain/at_work.py`, and at-work does not absorb it.** They look
+alike — a file per claim, a last sign of life — and answer different questions on different
+clocks. At-work is *a process on this machine is editing this plan right now*: renewed by
+every CLI call, lapsed after three minutes, and kept out of the plan because a heartbeat
+every few seconds in git would land in everybody's history and have every window adopting
+an edit. A claim is *this work is taken*: it must be seen from other machines, so it is in
+git, so its clock has to be slow. Merging them would either commit the fast clock or slow
+the banner that stops a developer editing what an agent is rewriting. Each points at the
+other, and the band can name the squad by matching its step to a run.
+
+**Acquiring a claim is a push, not a write.** Two machines that pulled the same unclaimed
+step would each add a claim file, and git would merge the two additions without a conflict
+— so a file's existence proves nothing until it is on the remote. A claim is fetched against,
+committed and pushed before anything is spawned, a rejected push is checked again, and if a
+merge still brings two onto one step, the one pushed first holds it. Version one runs on one
+machine, but the protocol is written now so the second machine is not a redesign.
+
+**The cadence keeps git quiet.** The heartbeat is written only when it is ten minutes old —
+by the coordinator's own `dplanner` runs, as at-work is renewed by them, and by the
+supervisor of any of the squad's live runs, because a coordinator waiting out a two-hour
+stage makes no calls and live work must not read as abandoned. The claim is pushed when something happened anyway (claimed, merged, released), and a
+commit that carries nothing but a heartbeat goes at most every thirty minutes — pushed by
+the supervisor while the coordinator is silent, and retried at the next beat if it fails,
+since a renewal nobody else sees renews nothing. The lease is
+ninety minutes, three pushes, so one rejected push or a little clock skew between machines
+does not read as death; the reader's clock judges it, which is good enough at that length
+and needs no service.
+
+**A stale lease is abandoned, and nothing is deleted** — unless the squad is parked. Work
+waiting on a person is still owned, and nothing is live to renew it, so a parked squad keeps
+its claim while its questions are open, escalated, or answered and not yet consumed — an
+answer nobody has acted on is still waiting — until the work resumes, is cancelled, or
+`max_park_hours` passes. The window says so; another
+squad may take the steps with a claim that names the old one in `supersedes` and fences its
+unfinished runs; the old coordinator, if it was only asleep, finds the newer claim at its
+next check and stands down. **The director wins, one step at a time**: a person who sets one
+of the claim's steps done or blocked moves that step into `released` and stops its worker,
+and the squad keeps the rest — ending the whole claim would hand its other steps to another
+squad while their workers still ran. *Clear* ends all of it. That is the one deliberate
+second writer; the coordinator re-reads before every write, and in a merge the person's act
+wins.
+
+**As built — one machine, simpler than the protocol above.** Version one decides ownership
+**locally, from the files, per step**, and leaves the arbitration between machines for
+multiplayer. Ranking claims by which file reached the remote first was the first version,
+and Kettle Watch found two ways it handed a step to two squads: a squad *growing* an old
+claim outranked one that had taken the step before it, because the file's age is not the
+step's; and a superseded squad that woke and renewed got its steps back, because the
+takeover was not part of the ranking. So each step a claim holds carries its own
+**`acquired`** stamp and the earliest wins, a tie by claim id; a takeover names in
+**`supersedes`**, step by step, the claim it took from, and that is final; and a claim
+**stands down before it renews** from any step it no longer holds. `claim take` checks under
+the project's taking lock, writes and publishes. **A publish never rewrites the person's
+checkout**: it commits `claims/` by pathspec under the repository's sync lock — the one the
+window's own Save and sync take — and pushes; a refused push is left for the window's next
+sync, never fetched, rebased or stashed under the person's unsaved plan, which is what a
+heartbeat racing autosave and the window's rebase did. Unpublished, a claim still holds
+here, since this machine decides. **The heartbeat needs no verb**: every `dplanner` run from
+an agent's shell renews the claims this machine holds in the project — a coordinator renews
+by working — and a live turn's supervisor renews its run's claim; a backoff wait or a park
+renews nothing. Renewing what *this machine* holds would cost one thing — two squads on one
+machine keeping each other alive — so a shell that names its member in `DPLANNER_CALLSIGN`
+renews that squad's claims alone: the coordinator sets its own once it has chosen its word,
+and the supervisor sets each turn's to its run's member, never inheriting the coordinator's
+from the shell that started it.
+
+**Ownership is checked inside the one launch, twice.** `launch.claim_for` refuses a step
+another squad holds on both surfaces — a person's Run Agent too, which the first version let
+straight through — and `start_run` asks again under the step's launch lock, just before
+anything starts: a worktree takes seconds to prepare, and a release or a takeover in that
+time must start nothing. **Every way a step leaves a squad stops its worker, through one
+function** (`agent_claims/ownership.py`): a takeover, `claim release`, `claim end`, *End
+Squad Claim* and a person's stopped status each fence the squad's unfinished runs on the step
+and signal their supervisor here, and a live turn reads its fence on every poll — so the
+first version's release and Clear, which changed the claim and left the worker running, are
+the same act as the override. The step's playbook pass under the claim is halted with them,
+by the engine's own stop (`engine.halt_claimed`, handed to `ownership` as a callback): a pass
+between stages or waiting at a gate has no unfinished run to fence, and the gate answered
+afterwards would launch the next stage under no claim at all — `start_run`'s re-read compares
+the claim the run was prepared under with the claim now, and both are none. A release takes the step's launch lock when it is free; when a
+launch holds it — the window's own, possibly, on its GUI thread — waiting would deadlock, and
+the launch's own re-read covers the gap, since its record already exists to be fenced. A
+fenced run counts as over for the next launch only once nothing of it runs here — and a
+supervisor can be killed while its turn's detached process group survives it, which a
+supervisor lock alone cannot see. So the launch, and the supervisor `revive` hands a fenced
+run, end any such turn by its recorded process stamp first (TERM, grace, KILL), and a turn
+that will not end refuses the launch with the reason. Ending a claim fences exactly the steps
+it held when its locked write ended it, and `claims.grown` refuses an ended claim, so a take
+racing an end can neither escape the fence nor grow a closed claim. A playbook stage's run
+launches under whichever claim holds its step at the time.
+**Only a person's status releases a step** (the status workflow's `Release` follow-up): a
+worker setting its own ready-for-review must not hand the step back before its coordinator
+has verified and merged; the release is written, and Save carries it. The window polls
+`claims/` and `questions/` (the questions say whether a quiet squad is parked), re-reads once
+a minute for the clock alone, wears the squad as a still chip on the card's other bottom
+corner — the run chip marches, a claim is ownership — and names it in the Control Centre's
+*Squad* column. Not built — the second machine: which squad pushed first, a fence reaching
+the machine that runs the turn, and a claim file conflicting in a merge.
+
+### A coordinator is briefed, never built in
+
+The rule is `.claude/rules/agents.md`'s *A coordinator is a briefing over the verbs*.
+
+The 4 October run's director rebuilt Run Agent by hand for every step and still forgot what
+the window would have done for it. Everything it lacked is a verb now — `claim take`, `agent
+run --playbook --callsign`, `question answer|escalate`, `agent limits`, `playbook advance` —
+so a coordinator is **an agent with a briefing**, not a daemon: `agent_briefing/coordinator.py`
+composes it, `dplanner agent coordinate <keys> [--callsign <word>]` prints it, and Autonomous
+work ▸ Local launches a coordinator with the same text. A daemon would be a second engine
+deciding what an agent decides better — which plans collide, what a question means, whether a
+person is needed — and the verbs already refuse what it must never do: `may_answer` keeps it
+off a person or progress gate, `claim_for` off another squad's step, the hold off a spent
+account.
+
+**A lasso is a squad, whatever else it caught.** A selection on the canvas catches the
+milestone between two steps and the cut in front of them; refusing it for that would make the
+person pick around the graph's own furniture. So only agent steps get members, and the rest
+ride in the briefing's selection as what they are — a person's step *waits on a person* — which
+is also what the coordinator needs to know to read what is ready.
+
+**Callsigns are Knut's radio net, and the coordinator names its own squad.** A person clicking
+*Autonomous Work* has no word to give, and a fixed list picked from by the window would make
+every squad Kettle; Knut asked for the agents to choose. So the window launches the briefing
+with no word: it opens with *Choose your squad word* — one concrete, friendly, slightly
+whimsical word, easy to say and spell, professional enough for a net people read — and the
+words running now, and its first order is `claim take` under the word chosen. That makes
+`claim take` the arbiter, so it **refuses a word a live or parked claim anywhere in the library
+answers to** unless the caller's `DPLANNER_CALLSIGN` says it is that squad: before, a take
+under a running word grew that squad's claim, and two coordinators that chose one word would
+quietly have shared one. `agent coordinate --callsign` refuses a running word for the same
+reason. The window claims nothing itself — the chip arrives with the coordinator's take,
+seconds later, which the status bar says — because a claim taken for a coordinator that never
+came up would hold the steps against everyone with nobody renewing it.
+The coordinator is *Actual*, the workers *Two, Three…* in the selection's order, a worker's
+own sub-agent *Two-One*, the verifier *Watch* (`claims.member`, `claims.spoken`):
+lowercase-kebab where a machine reads it, capitalised in prose, and in every message, note
+title and commit trailer. **A member keeps its callsign through every stage of its pass**:
+`agent run --playbook --callsign kettle-two` hands it to the engine, the pass's first run
+records it, and each later stage reads it back from there (`_latest_pass`) — a stage's run
+used to carry only the squad word. The worker hears it in its preamble. **Workers' branches
+stay `agent/<run name>`**: the preamble's worktree check, `run_name_of` and the branch plan all
+key on it, so only the branches and worktrees a coordinator makes itself carry its callsign.
+
+**It paces itself under the hold.** A coordinator shares the account with its workers, and on
+7 October one ran out of usage while its workers ran, leaving nobody to resume them. So the
+briefing launches nothing at or above 90 % of any window — under the supervisor's 95 % hold,
+leaving the coordinator room — and leaves every reset to the supervisor. *Max agents launched
+at once* is a QSettings value no CLI can read, so `--at-once` carries it (three by default),
+and the window's own launch passes the setting.
+The loop carries the rest of what the first runs taught, one sentence each: keep the machine
+awake, poll GitHub's `mergeable` past UNKNOWN, run the ratchet tests on the integrated branch,
+cap a cross-vendor review at two rounds, and brief a small fix fresh rather than resume a long
+session.
+
+**Headless, a coordinator needs a waker and a merge permission.** The briefing tells it to
+wait between checks with its harness's scheduled wake-up, and a `claude -p` turn has none: its
+process ends with its turn, and nothing resumes it until a person — or a timer they set up —
+does. And Claude's auto mode refuses the `gh pr merge` the loop orders, so a coordinator that
+is to merge on its own is started with `--allowedTools "Bash(gh pr merge:*)"`; refused, it asks
+a person. Both are sentences in the loop rather than machinery: the dogfood run (N185) is the
+only headless coordinator so far, and *Autonomous Work ▸ Local* opens a terminal, where a
+person is the waker and answers the permission prompt.
+
+### What the window reads, and the one-writer rule across all three
+
+The window polls each directory's fingerprint, as Expenditure polls the ledger's; nothing
+here is a plan entry, so none of it is adopted as an outside change or trips the stale check,
+and Save commits all three with the project. Across machines everything meets at git, and
+each record is written so that the meeting is boring: a run has one writer and a fence, a question has
+writers in sequence and counts only the answer its run consumed, a claim is held by whoever
+pushed it first and released by a director.

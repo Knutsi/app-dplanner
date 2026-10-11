@@ -15,19 +15,27 @@ and none of the modes a briefed run picks — the harness's own ``open_command``
 what the planning *before* the plan needs: a spec has been imported, there are no steps
 to brief yet, and the agent's first instruction is the one the person types.
 
+**And a selection may be handed to a coordinator.** *Step ▸ Autonomous Work ▸ Local ▸
+<profile>* opens one terminal on the coordinator's briefing over the chosen steps
+(``agent_briefing.coordinator``, what ``dplanner agent coordinate`` prints with no word): the
+coordinator chooses its squad word, takes the claim and launches the squad's runs itself, so
+the window claims nothing and its chip arrives with the coordinator's ``claim take``. A
+*Remote ▸* beside *Local* waits for workers to exist.
+
 **It runs one agent per chosen step, up to a limit.** The verb reads the selection the way
 Delete does, so lassoing three agent steps is *Run 3 Agents…* and one gesture; past
 *Settings ▸ Agent profiles*'s limit (four by default) the count itself is the refusal, greyed with
 its reason like any other precondition. Each step whose shell opened is also claimed
-*in progress* — ``planning.status.record_started``, off the undo stack, unless the person
+*in progress* — the workflow's claim, applied off the undo stack, unless the person
 switched that off on the settings page — since the agent's own first report may be
 minutes away.
 
-**And the window launches what the plan made due, with nobody clicking** — when the person
-turned that on (``auto_launch.py``). :meth:`launch_due` is Run Agent for one step with every
-question a person answers taken out: no graph gate to confirm (a due step waits on nothing),
-no clone, no prompt fallback — a refusal is a sentence for the status bar — and the claim
-always made, whatever *On launch* says.
+**A step's launch is the one ``dplanner agent run`` runs too** (``launch.py``, and
+``workflows.py``'s claim): under the step's launch lock, the briefing and the run's record,
+then the claim saved, then the terminal — so the two cannot drift. What is the window's own
+is what it asks a person: the graph gate, the clone, the limit, the prompt fallback. A
+step's worktree is prepared by git on a task, since it fetches, and the terminals open once
+it is there.
 
 The launch settings and profiles are kept under the agent aspect's id
 (``planning.agent.MODULE_ID``), where they were stored before this package existed.
@@ -35,6 +43,7 @@ The launch settings and profiles are kept under the agent aspect's id
 
 import json
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import ExitStack
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -43,13 +52,12 @@ from PySide6.QtWidgets import QDialog, QMenu, QWidget
 from dplanner.core.clock import Clock
 from dplanner.core.storage.locations import remote_label
 from dplanner.core.telemetry import current
+from dplanner.domain import claims
 from dplanner.domain.agents import AgentHarness
-from dplanner.domain.ledger import new_run_id
 from dplanner.domain.locations import LocationRole
 from dplanner.domain.model import Library, Node, NodeId, Step, StepId, now_stamp
-from dplanner.domain.repositories import UNSET, RepositoryFacts
+from dplanner.domain.repositories import RepositoryFacts
 from dplanner.domain.store import Conflict, FilesFor
-from dplanner.domain.workflow import Daemon
 from dplanner.framework.action_menu import append_action
 from dplanner.framework.action_registry import (
     DISABLED,
@@ -60,18 +68,19 @@ from dplanner.framework.action_registry import (
     DataMenuSpec,
 )
 from dplanner.framework.context import Context, ContextService
-from dplanner.framework.debounce import DebounceService
+from dplanner.framework.notices import Notice
 from dplanner.framework.settings_registry import (
     SettingsSection,
     SettingsSectionRegistry,
 )
 from dplanner.framework.step_selection import chosen_steps, focused_step
+from dplanner.framework.task_runner import TaskRunner
+from dplanner.framework.tasks import TaskService
+from dplanner.framework.user_config import get_global
 from dplanner.framework.widgets import notice
 from dplanner.framework.window import NoticeHost, StatusHost
-from dplanner.framework.window_watch import WatchableRepository
 from dplanner.modules.agent_briefing import worktree as where
-from dplanner.modules.agent_briefing.compose import brief
-from dplanner.modules.agent_briefing.instructions import instruction
+from dplanner.modules.agent_briefing.coordinator import MOST_MEMBERS, coordinate, feature_branch
 from dplanner.modules.agent_briefing.prompt import (
     AssembledPrompt,
     conflict_prompt,
@@ -80,33 +89,31 @@ from dplanner.modules.agent_briefing.prompt import (
     reconcile_prompt,
 )
 from dplanner.modules.agent_briefing.protocol import preamble
-from dplanner.modules.agent_launch import launcher
-from dplanner.modules.agent_launch.auto_launch import AutoLauncher, LaunchLock
-from dplanner.modules.agent_launch.due import Due, claim
-from dplanner.modules.agent_launch.intents import LaunchIntent
+from dplanner.modules.agent_launch import launch, launcher, workflows
 from dplanner.modules.agent_launch.profiles import (
     Profile,
+    adopt,
+    agent_command,
     default_profile,
+    launch_command,
+    problem,
     profile_named,
     read_profiles,
     seed_profiles,
 )
 from dplanner.modules.agent_launch.run_dialog import PromptFallbackDialog, RunAnywayDialog
 from dplanner.modules.agent_launch.settings_page import (
-    agent_command,
     build_page,
-    launch_command,
     max_agents,
     start_in_progress,
 )
-from dplanner.modules.auto_progress.aspect import auto_progresses
-from dplanner.planning.agent import MODULE_ID, enabled, no_agent, read_project, workplace
+from dplanner.modules.agent_supervisor import supervisor
+from dplanner.planning.agent import MODULE_ID, enabled, uses_worktree
 from dplanner.planning.branches import DEFAULT_BRANCHES, BranchPlan
-from dplanner.planning.kinds import key_of, works_nobody
-from dplanner.planning.progression import outstanding
-from dplanner.planning.review import is_review, settings
+from dplanner.planning.kinds import key_of
 from dplanner.planning.schedule import status_on
-from dplanner.planning.status import Reading, Unknown, phrase, readiness_of, record_started
+from dplanner.planning.status import MODULE_ID as STATUS_MODULE_ID
+from dplanner.planning.status import Reading, Status, phrase, readiness_of, stored
 from dplanner.theme.icons import spark_icon
 
 # The Step menu's Run Agent child: the profiles, then the way to Settings. The data menu
@@ -118,7 +125,12 @@ RUN_MENU_TITLE = "Run Agent"
 # planning before the steps needs — there is no step to be about yet.
 OPEN_MENU_ID = "agent.open_with"
 OPEN_MENU_TITLE = "Open Agent in Code"
+# The Step menu's Autonomous Work child: a coordinator over the selection, run here (Local)
+# in one of the profiles' terminals.
+AUTONOMOUS_MENU_ID = "agent.autonomous"
+AUTONOMOUS_MENU_TITLE = "Autonomous Work"
 SETTINGS_SECTION = f"{MODULE_ID}.launch"
+PROFILES_NOTICE = f"{MODULE_ID}.profiles"
 
 PREVIEW_NOTE = (
     "This is the exact briefing Run Agent will launch with. File paths are relative to"
@@ -134,41 +146,6 @@ def _no_record(_step_id: StepId, _files: launcher.LaunchFiles, _harness: str) ->
 def _no_clone(_repositories: Sequence[str], done: Callable[[dict[str, Path], str], None]) -> None:
     """A build with nothing to clone with: the verb is refused where it would have cloned."""
     done({}, "nothing here can clone a repository")
-
-
-def _unplaced(facts: RepositoryFacts, step: Step | None = None) -> str:
-    """The code repository this agent would work in that this machine has no checkout of
-    — what Run Agent clones first — or "" when it is placed or there is none."""
-    placement = where.code_placement(facts, step)
-    if placement is not None and placement.root is None:
-        return placement.location.repository
-    return ""
-
-
-def _workdir_refusal(facts: RepositoryFacts, step: Step | None = None) -> str:
-    """Why no shell can open where this project's agent would work; "" when one can. A
-    repository not checked out here is a refusal only for a verb that cannot clone — Run
-    Agent asks :func:`_unplaced` first and clones."""
-    placement = where.code_placement(facts, step)
-    if placement is not None:
-        label = placement.location.repository_label
-        if not placement.here:
-            return f"{label} is not checked out on this machine — Project ▸ Settings…"
-        assert placement.root is not None
-        if not placement.root.expanduser().is_dir():
-            return f"the checkout of {label} is gone from {placement.root} — Project ▸ Settings…"
-        return ""
-    if facts.plan_root is None:
-        return "the project's folder is not in a git repository"
-    if facts.state == UNSET:
-        return "no code repository is recorded — Project ▸ Settings…"
-    return ""
-
-
-def _preferred_agent(step: Step) -> str:
-    """The agent a step asks to be run by — a review's own choice, a harness id — or "" for
-    the default profile; which profile runs it is this module's."""
-    return settings(step).agent if is_review(step) else ""
 
 
 def _profiles_refused(shared: str) -> list[tuple[str, str]]:
@@ -189,9 +166,43 @@ def _window_title(subject: str, note: str) -> str:
     return f"{subject} ({note})" if note else subject
 
 
+def _seen(pass_id: str, run: str, question: str) -> list[str]:
+    """A verdict's flags naming the pass as the person saw it — "" for no run or no gate."""
+    return [f"--pass={pass_id}", f"--run={run}", f"--question={question}"]
+
+
 def _titled(step: Step) -> str:
     """A step's title as a person reads it — the placeholder when it has none."""
     return step.title or "Untitled step"
+
+
+# What a person is told when no terminal opened on their gesture.
+NO_TERMINAL = "check the default profile's terminal in Settings ▸ Agent profiles."
+
+
+@dataclass(frozen=True)
+class _Job:
+    """One step of a launch, read on the GUI thread before its worktree is prepared."""
+
+    step: StepId
+    facts: RepositoryFacts
+    branches: BranchPlan
+    checkout: Path
+    name: str
+
+    def changed(
+        self,
+        facts: RepositoryFacts,
+        branch_plan: Callable[[Library, Step, RepositoryFacts | None], BranchPlan],
+        library: Library,
+        step: Step,
+    ) -> bool:
+        """Whether the step now names another worktree or branch than was prepared — a
+        rename, a ticket, a stretch — so the briefing would send the agent elsewhere."""
+        now = launch.worktree_of(step, facts)
+        return (
+            now != (self.checkout, self.name) or branch_plan(library, step, facts) != self.branches
+        )
 
 
 def _run_words(
@@ -236,7 +247,6 @@ class AgentLaunchDeps:
     library: Library
     actions: ActionRegistry
     context: ContextService
-    debounce: DebounceService
     settings_sections: SettingsSectionRegistry
     status: StatusHost
     parent: QWidget
@@ -276,21 +286,25 @@ class AgentLaunchDeps:
     # of the Run Agent child menu lands on this module's own page. The settings module
     # owns the dialog; the root closes over it.
     open_settings: Callable[[str], None] = field(default=lambda _section_id: None)
-    # -- launching what becomes due (``auto_launch.py``) --------------------------------------
-    # What the plan made due, across the library, each with the claim its launch makes —
-    # the composition root's one derivation, read with the runs this window is watching.
-    due: Callable[[], Sequence[Due]] = field(default=lambda: ())
-    # How many agent runs this window is watching live — the cap is on those.
-    live_runs: Callable[[], int] = field(default=lambda: 0)
-    # Whether the plan changed underneath: nothing is launched on a plan not taken in yet.
-    repo: WatchableRepository | None = None
-    notices: NoticeHost | None = None
     clock: Clock = field(default_factory=Clock)
-    # Autosave's flush now — a launch's claim is on disk at once, not a second and a half
-    # on — and whether everything is on disk: a launch's intent is forgotten only then.
+    # Where each step's project keeps its ledger — the store's to know — so a launch writes
+    # the run's record before it spawns anything.
+    project_dir: Callable[[StepId], Path | None] = field(default=lambda _step_id: None)
+    # Prepares the steps' worktrees off the GUI thread (a fetch); None prepares them inline.
+    tasks: TaskService | None = None
+    # Where a profiles file that cannot be read is said, until it is fixed.
+    notices: NoticeHost | None = None
+    # Autosave's flush now, and whether everything is on disk: a launch's claim is saved
+    # before its terminal is started.
     flush: Callable[[], bool] = field(default=lambda: True)
-    # This library's launch lock on this machine; None is a build that never launches.
-    launch_lock: LaunchLock | None = None
+    # The library a pass's `dplanner agent run --playbook` acts on, and how that verb is run
+    # to its end from a directory — its exit code and its one line. A task's body, never
+    # the GUI thread.
+    library_path: Path | None = None
+    run_cli: Callable[[Sequence[str], Path], tuple[int, str]] = launch.run_dplanner
+    # Reads what such a verb wrote at once — the playbook's standings, handed over by the
+    # root — so the card's strip answers the gesture rather than the next poll.
+    records_moved: Callable[[], None] = field(default=lambda: None)
 
 
 class AgentLaunchModule:
@@ -298,7 +312,8 @@ class AgentLaunchModule:
 
     def __init__(self, deps: AgentLaunchDeps) -> None:
         self._deps = deps
-        self._auto: AutoLauncher | None = None
+        self._preparing: TaskRunner | None = None
+        self._starting: TaskRunner | None = None
 
     def register(self) -> None:
         deps = self._deps
@@ -370,6 +385,33 @@ class AgentLaunchModule:
                 fill=self._fill_open_profiles,
             )
         )
+        # A coordinator over the selection: the palette's verb on the default profile, seated
+        # in its own child menu whose Local child lists every profile.
+        deps.actions.register(
+            ActionSpec(
+                id="agent.coordinate",
+                label="Autonomous &Work…",
+                menu="Step",
+                group="agent",
+                submenu=f"{AUTONOMOUS_MENU_TITLE} ▸ Local",
+                order=17,
+                in_menus=False,
+                tip="Open a terminal with a coordinator briefed on the selection: it names its"
+                " squad, claims the agent steps and runs them through their playbooks",
+                state=self._can_coordinate,
+                run=self._coordinate,
+            )
+        )
+        deps.actions.register_data_menu(
+            DataMenuSpec(
+                id=AUTONOMOUS_MENU_ID,
+                menu="Step",
+                group="agent",
+                title=AUTONOMOUS_MENU_TITLE,
+                order=17,
+                fill=self._fill_autonomous,
+            )
+        )
         deps.actions.register(
             ActionSpec(
                 id="agent.preview",
@@ -386,12 +428,7 @@ class AgentLaunchModule:
             SettingsSection(
                 id=SETTINGS_SECTION,
                 category=("Agent profiles",),
-                factory=lambda parent: build_page(
-                    parent,
-                    harnesses=deps.harnesses,
-                    launching=lambda: self._auto.holder_words() if self._auto else "",
-                    changed=lambda: self._auto.reconsider() if self._auto else None,
-                ),
+                factory=lambda parent: build_page(parent, harnesses=deps.harnesses),
             )
         )
         deps.actions.register(
@@ -407,17 +444,20 @@ class AgentLaunchModule:
                 run=self._open_shell,
             )
         )
-        # Once per user and machine: every harness in every terminal worth naming, so the
-        # child menu offers the combinations before anybody builds one by hand.
+        # What QSettings kept before the profiles moved to the config directory, taken over
+        # once; then, once per user and machine, every harness in every terminal worth
+        # naming, so the child menu offers the combinations before anybody builds one.
+        adopt(
+            get_global(MODULE_ID, "profiles"),
+            bool(get_global(MODULE_ID, "profiles_seeded")),
+            str(get_global(MODULE_ID, "agent_command", "")),
+            str(get_global(MODULE_ID, "launch_command", "")),
+        )
         seed_profiles(deps.harnesses)
-        self._auto = AutoLauncher(deps, self.launch_due)
-        self._auto.start()
-
-    def settle_launches(self) -> None:
-        """Look again at what is due — a run ended, or the plan was taken in from outside
-        without a model change this window heard."""
-        if self._auto is not None:
-            self._auto.settle()
+        if (unreadable := problem()) and deps.notices is not None:
+            deps.notices.show_notice(
+                Notice(PROFILES_NOTICE, f"Agent profiles: {unreadable}", tone="warn")
+            )
 
     # -- running -------------------------------------------------------------------------------
 
@@ -425,24 +465,6 @@ class AgentLaunchModule:
         """The steps Run Agent is about — what Delete acts on, read the same way."""
         library = self._deps.library
         return [library.step(step_id) for step_id in chosen_steps(context, library)]
-
-    def _step_refusal(self, step: Step) -> str:
-        """Why this step has no agent run in it; "" when it has. The step's own facts."""
-        deps = self._deps
-        if kind := works_nobody(step):
-            return no_agent(kind)
-        if not enabled(step):
-            return "mark the step as an agent step first (Agent, in Step Details)"
-        if isinstance(status := self._status_of(step), Unknown):
-            return f"its status ({status.word}) was written by a newer DPlanner — update to run it"
-        briefed = instruction(deps.library, step, deps.files)
-        if (
-            not briefed.body
-            and not briefed.files
-            and not read_project(deps.library.project_of(step.id))
-        ):
-            return "describe the step, or write an agent instruction first"
-        return ""
 
     def _can_run(self, context: Context, profile: Profile | None = None) -> ActionState:
         """Present whenever a step is; greyed with the reason when a precondition is not.
@@ -482,11 +504,10 @@ class AgentLaunchModule:
             facts = deps.facts_for(step.id)
             # A code repository nobody checked out here is cloned first, not refused: the
             # policy decides where it lands, never whether the verb runs.
-            unplaced = _unplaced(facts, step)
+            unplaced = launch.unplaced(facts, step)
             if unplaced and unplaced not in clones:
                 clones.append(unplaced)
-            reason = self._refusal_on(step, facts, by_project)
-            if reason:
+            if reason := self._refusal(step, facts, by_project):
                 named = reason if count == 1 else f"“{_titled(step)}”: {reason}"
                 return ActionState(enabled=False, label=f"{verb} — {named}")
         if clones:
@@ -495,21 +516,15 @@ class AgentLaunchModule:
             return ActionState(label=f"{amp} — clones {named} first")
         return ENABLED if count == 1 else ActionState(label=f"Run {count} &Agents…")
 
-    def _refusal_on(
+    def _refusal(
         self, step: Step, facts: RepositoryFacts, by_project: dict[str, str] | None = None
     ) -> str:
-        """Why no agent can run on ``step`` here, "" when one can: the step's own facts, then
-        where its shell would open. A repository not checked out here is no refusal — Run
-        Agent clones it; ``by_project`` caches the answer per project, which costs git."""
-        if reason := self._step_refusal(step):
-            return reason
-        if _unplaced(facts, step):
-            return ""
-        # A step naming a workplace of its own is asked about on its own.
-        if workplace(step) or by_project is None:
-            return _workdir_refusal(facts, step)
-        project_id = self._deps.library.project_of(step.id).id
-        return by_project.setdefault(project_id, _workdir_refusal(facts))
+        """Why no agent runs on ``step`` here — ``launch.refusal`` over the window's reading."""
+        deps = self._deps
+        branches = deps.branch_plan(deps.library, step, facts)
+        return launch.refusal(
+            deps.library, step, deps.files, facts, branches, deps.clock.today(), by_project
+        )
 
     def _can_preview(self, context: Context) -> ActionState:
         """A preview needs an agent step: with the aspect off there is no briefing to see."""
@@ -523,22 +538,19 @@ class AgentLaunchModule:
             )
         return ENABLED
 
-    def assembled(self, step: Step, staged: Mapping[str, str] | None = None) -> AssembledPrompt:
-        """The briefing, with every referenced file path mapped through ``staged``, opening
-        with the preflight for the run the step gets — a worktree unless it opted out or is
-        a step that takes none."""
+    def assembled(self, step: Step) -> AssembledPrompt:
+        """The step's briefing, opening with the preflight for the run the step gets — a
+        worktree unless it opted out or is a step that takes none."""
         deps = self._deps
-        remap: Mapping[str, str] = staged or {}
         facts = deps.facts_for(step.id)
-        return brief(
-            deps.library,
-            step,
-            deps.files,
-            facts,
-            deps.branch_plan(deps.library, step, facts),
-            deps.location_roles,
-            place=lambda path: remap.get(path, path),
+        return launch.briefing(
+            deps.library, step, self._briefed, facts, deps.branch_plan(deps.library, step, facts)
         )
+
+    @property
+    def _briefed(self) -> launch.Briefed:
+        deps = self._deps
+        return launch.Briefed(deps.files, deps.read_asset, deps.location_roles)
 
     def _run(self, context: Context, profile: Profile | None = None) -> None:
         """One agent per chosen step, asked about once and launched in order — through
@@ -558,7 +570,7 @@ class AgentLaunchModule:
         if waiting and not self._confirm_unfinished(waiting, count=len(chosen)):
             return
         profile = profile or default_profile()
-        clones = list(dict.fromkeys(_unplaced(deps.facts_for(s.id), s) for s in chosen))
+        clones = list(dict.fromkeys(launch.unplaced(deps.facts_for(s.id), s) for s in chosen))
         clones = [url for url in clones if url]
         if clones:
             # Cloned first, on a task; the launches follow on the GUI thread once every
@@ -578,127 +590,193 @@ class AgentLaunchModule:
         self._launch_all(chosen, profile)
 
     def _launch_all(self, chosen: Sequence[Step], profile: Profile) -> None:
-        """One agent per step, in order, stopping at the first no terminal opened for — the
-        fallback dialog then holds that step's prompt.
+        """One agent per step, in order, in the order ``launch.py`` gives both surfaces.
 
-        Each step whose shell opened is claimed in progress here, per step and only once its
-        shell exists, rather than in ``_launch``: the conflict hand-over shares ``_launch``
-        and must claim nothing — that agent is merging two writers' plan files, not doing
-        the step's work."""
+        Each step's launch lock is taken first and held until its run started, and a step
+        whose headless run is not over is refused — both as ``agent run`` does. The
+        worktrees are then prepared — on a task, since git fetches — from plain values read
+        here, and each step is launched on the GUI thread, stopping at the first that did
+        not start: a worktree git refused, or a step that changed while it was prepared,
+        says why in the status bar; a terminal that did not open hands the prompt over in
+        the fallback dialog."""
+        deps = self._deps
+        held = ExitStack()
+        jobs: list[_Job] = []
+        for step in chosen:
+            project_id = deps.library.project_of(step.id).id
+            refused = ""
+            try:
+                held.enter_context(supervisor.launching(project_id, step.id))
+            except BlockingIOError:
+                refused = "it is being launched right now"
+            project_dir = deps.project_dir(step.id)
+            if not refused:
+                refused = self._unowned(project_dir, step) or launch.stop_fenced(
+                    project_dir, step.id
+                )
+            if not refused and (live := launch.unfinished_run(project_dir, step.id)):
+                refused = f"its headless run {live} is not over — resume it instead"
+            if refused:
+                held.close()
+                deps.status.show_status(f"No agent launched — “{_titled(step)}”: {refused}", 8000)
+                return
+            facts = deps.facts_for(step.id)
+            branches = deps.branch_plan(deps.library, step, facts)
+            jobs.append(_Job(step.id, facts, branches, *launch.worktree_of(step, facts)))
+        placed: dict[StepId, Path | str] = {}
+
+        def body() -> None:  # Worker thread: paths and branch names, never the model.
+            for job in jobs:
+                try:
+                    placed[job.step] = launch.place(job.checkout, job.name, job.branches)
+                except where.WorktreeError as error:
+                    placed[job.step] = str(error)
+
+        def go() -> None:
+            with held:
+                self._launch_placed(jobs, placed, profile)
+
+        if deps.tasks is None or not any(job.name for job in jobs):
+            body()
+            go()
+            return
+        runner = self._preparing = self._preparing or TaskRunner(deps.tasks, deps.parent)
+
+        def done(busy: bool) -> None:
+            if not busy:
+                runner.busy_changed.disconnect(done)
+                go()
+
+        runner.busy_changed.connect(done)
+        count = len(chosen)
+        label = "Preparing the worktree" if count == 1 else f"Preparing {count} worktrees"
+        if not runner.run(label, body, key="agent.worktrees"):
+            runner.busy_changed.disconnect(done)
+            held.close()
+            deps.status.show_status("No agent launched — still preparing the last one", 6000)
+            return
+        deps.status.show_status(f"{label}…", 0)
+
+    @staticmethod
+    def _unowned(project_dir: Path | None, step: Step) -> str:
+        """Why a person may not launch the step: another squad's claim holds it — or ""."""
+        try:
+            launch.claim_for(project_dir, step.id)
+        except ValueError as error:
+            return str(error)
+        return ""
+
+    def _launch_placed(
+        self, jobs: Sequence["_Job"], placed: Mapping[StepId, Path | str], profile: Profile
+    ) -> None:
         deps = self._deps
         claim = start_in_progress()
         launched = claimed = 0
-        for step in chosen:
-            spawned, text, prepared = self._run_on(step, profile)
-            if not spawned:
-                # No shell was started, so nothing is stamped and nothing is claimed: the
-                # fallback hands over the prompt.
-                PromptFallbackDialog(text, str(prepared.prompt_file), deps.parent).exec()
+        first = ""
+        for job in jobs:
+            if not deps.library.has(job.step):
+                continue  # Deleted while its worktree was being prepared.
+            step = deps.library.step(job.step)
+            workdir = placed.get(job.step, "its worktree was not prepared")
+            if isinstance(workdir, str):
+                deps.status.show_status(f"No agent launched on “{_titled(step)}” — {workdir}", 8000)
+                break
+            if job.changed(deps.facts_for(step.id), deps.branch_plan, deps.library, step):
+                deps.status.show_status(
+                    f"No agent launched on “{_titled(step)}” — it was renamed or moved to"
+                    " another branch while its worktree was prepared; run it again",
+                    8000,
+                )
+                break
+            started, why = self._run_on(step, workdir, job.facts, job.branches, profile, claim)
+            if started is None:
+                deps.status.show_status(f"No agent launched on “{_titled(step)}” — {why}", 8000)
+                break
+            if why:
+                # Nothing started, the record and the claim are taken back: the fallback
+                # hands over the prompt.
+                PromptFallbackDialog(started.text, str(started.prompt_file), deps.parent).exec()
                 break
             launched += 1
-            claimed += claim and record_started(deps.library, step.id, deps.clock.today())
+            first = first or _titled(step)
+            claimed += claim and stored(step) is Status.IN_PROGRESS
         if launched == 1:
             note = " — marked in progress" if claimed else ""
-            deps.status.show_status(f"Agent launched on “{_titled(chosen[0])}”{note}", 4000)
+            deps.status.show_status(f"Agent launched on “{first}”{note}", 4000)
         elif launched > 1:
             note = f", {claimed} marked in progress" if claimed else ""
             deps.status.show_status(f"{launched} agents launched{note}", 4000)
 
     def _unfinished(self, step: Step) -> list[Step]:
         """The step's prerequisites it still waits on — what the graph gate asks about."""
-        deps = self._deps
-        return outstanding(deps.library, step, readiness_of(self._status_of), auto_progresses)
+        return launch.waiting_on(self._deps.library, step, self._deps.clock.today())
 
     def _status_of(self, step: Step) -> Reading:
         """What a step's status claims today — a wait reads done once it is over."""
         return status_on(self._deps.library, self._deps.clock.today())(step)
 
     def _run_on(
-        self, step: Step, profile: Profile, run_dir: Path | None = None, run: str = ""
-    ) -> tuple[bool, str, launcher.LaunchFiles]:
-        """Launch the agent on one step: whether a shell opened, the briefing it was handed
-        and where it was written. Nothing is asked and nothing is claimed — what to do when
-        no shell opened, and what a launch claims, is the caller's: a person's Run Agent
-        shows the prompt, an unattended launch says why in the status bar. ``run_dir`` and
-        ``run`` are minted here unless the caller recorded them first."""
+        self,
+        step: Step,
+        workdir: Path,
+        facts: RepositoryFacts,
+        branches: BranchPlan,
+        profile: Profile,
+        claim: bool,
+    ) -> tuple[launch.Prepared | None, str]:
+        """Launch the agent on one step in a terminal: its record, then its claim — off the
+        undo stack, since the agent it records cannot be undone — saved, then the start as
+        the follow-up. What was prepared and why nothing started ("" when it did); nothing
+        prepared when the claim could not be saved. A start that fails takes the record and
+        the claim back. The stamp and the watch are the run tracker's once a shell exists."""
         deps = self._deps
-        run_dir = run_dir or launcher.new_run_dir()
-        staged = launcher.stage_assets(run_dir, self.assembled(step).files, deps.read_asset)
-        assembled = self.assembled(step, staged)
-        worktree = where.run_name_of(step) if where.worktree(step) else ""
-        facts = deps.facts_for(step.id)
-        spawned, prepared = self._launch(
-            assembled.text,
-            run_dir,
-            worktree,
-            where.workdir(facts, step),
-            profile,
-            project_id=deps.library.project_of(step.id).id,
-            subject=f"{key_of(step)} {step.title}".strip(),
-            key=key_of(step),
-            step_id=step.id,
-            branches=deps.branch_plan(deps.library, step, facts),
-            run=run,
-        )
-        return spawned, assembled.text, prepared
+        with current().span("action", "agent.launch", step=key_of(step)) as span:
+            prepared = launch.prepare_run(
+                deps.library,
+                step,
+                self._briefed,
+                workdir=workdir,
+                facts=facts,
+                branches=branches,
+                project_dir=deps.project_dir(step.id),
+                profile=profile,
+                harnesses=deps.harnesses,
+                mode=launch.TERMINAL,
+            )
+            span.detail["prompt_chars"] = len(prepared.text)
+            # Ownership again, under the launch lock: a squad may have taken the step while
+            # its worktree was prepared. Said as a refusal, never as a terminal that failed.
+            if moved := launch.claim_moved(prepared):
+                prepared.discard()
+                span.detail["refused"] = "claimed"
+                return None, moved
+            before = step.module_data.get(STATUS_MODULE_ID)
+            change = workflows.run_agent(step, today=deps.clock.today())
+            command = change.command if claim else None
+            if command is not None:
+                command.redo(deps.library)
+            # Saved every time, not only when this launch made the claim: a step that already
+            # read in progress may hold a claim nobody has saved yet.
+            if not deps.flush():
+                if command is not None:
+                    self._withdraw(step, before)
+                prepared.discard()
+                span.detail["refused"] = "unsaved"
+                return None, "its claim could not be saved — save the plan, then run it again"
+            if why := launch.start_run(prepared, deps.harnesses):
+                span.detail["refused"] = why
+                if command is not None:
+                    self._withdraw(step, before)
+                    deps.flush()
+                return prepared, why
+            if prepared.files is not None:
+                deps.record_launch(step.id, prepared.files, prepared.record.harness)
+        return prepared, ""
 
-    def launch_due(self, due: Due) -> str:
-        """Launch the agent on a step the plan made due, with nobody at the window: "" when a
-        shell opened and the claim was made, else why not — a sentence, never a dialog.
-
-        The questions are Run Agent's, in its order: the profile's terminal, the step's own
-        facts, where the shell opens. A repository nobody checked out here is a refusal
-        rather than a clone, which is a person's Run Agent to start. The claim is always
-        made, whatever *On launch* says, or the step would be due again when its run ends.
-
-        **The intent is recorded before the spawn** (``intents.py``) and dropped again when no
-        shell opened; the auto-launcher forgets it once the claim is on disk.
-        """
-        deps = self._deps
-        if not deps.library.has(due.step_id):
-            return "the step is gone"
-        step = deps.library.step(due.step_id)
-        profile, refusal = self._profile_for(step)
-        if profile is None:
-            return refusal
-        if refusal := launcher.template_refusal(launch_command(profile)):
-            return refusal
-        facts = deps.facts_for(step.id)
-        if refusal := self._refusal_on(step, facts):
-            return refusal
-        if unplaced := _unplaced(facts, step):
-            return f"{remote_label(unplaced)} is not checked out here — Run Agent clones it"
-        intent = LaunchIntent(step.id, new_run_id(), launcher.new_run_dir(), Daemon(), now_stamp())
-        intents = deps.launch_lock.intents if deps.launch_lock is not None else None
-        if intents is not None:
-            try:
-                intents.record(intent)
-            except OSError as error:
-                return f"cannot record the launch — {error.strerror}"
-        spawned, _text, _prepared = self._run_on(step, profile, intent.run_dir, intent.run)
-        if not spawned:
-            if intents is not None:
-                intents.drop(intent.run)
-            return f"no terminal opened — check {profile.name} in Settings ▸ Agent profiles"
-        claim(deps.library, due, deps.clock.today())
-        return ""
-
-    def _profile_for(self, step: Step) -> tuple[Profile | None, str]:
-        """The profile an unattended launch runs ``step`` through, and why none can: the
-        agent the step asks for — a review's own — through the first profile running it,
-        else the default. A named agent no profile runs is refused rather than swapped for
-        the default, which may be the very agent whose work the review is about."""
-        deps = self._deps
-        wanted = _preferred_agent(step)
-        profiles = read_profiles()
-        if not wanted:
-            return profiles[0], ""
-        for profile in profiles:
-            harness = launcher.harness_of(agent_command(deps.harnesses, profile), deps.harnesses)
-            if harness is not None and harness.id == wanted:
-                return profile, ""
-        label = next((each.label for each in deps.harnesses if each.id == wanted), wanted)
-        return None, f"no launch profile runs {label} — Settings ▸ Agent profiles"
+    def _withdraw(self, step: Step, before: object) -> None:
+        back = workflows.withdraw(step, before if isinstance(before, dict) else None)
+        if back.command is not None:
+            back.command.redo(self._deps.library)
 
     def _fill_profiles(self, menu: QMenu) -> None:
         """Step ▸ Run Agent: the profiles over the step the context names — the same child
@@ -739,6 +817,11 @@ class AgentLaunchModule:
         menu.addSeparator()
         append_action(menu, deps.actions, deps.context, "agent.profiles")
 
+    def _fill_autonomous(self, menu: QMenu) -> None:
+        """Step ▸ Autonomous Work: *Local*, the profiles a coordinator runs in here. A
+        *Remote* child beside it is where a coordinator on a worker will go."""
+        self._fill_with(menu.addMenu("&Local"), self._can_coordinate, self._coordinate)
+
     # -- a shell of one's own ------------------------------------------------------------------
 
     def _shell_place(self, step: Step) -> tuple[Path | None, str]:
@@ -752,12 +835,12 @@ class AgentLaunchModule:
         if refusal := launcher.template_refusal(launch_command()):
             return None, refusal
         facts = deps.facts_for(step.id)
-        if refusal := _workdir_refusal(facts, step):
+        if refusal := launch.workdir_refusal(facts, step):
             return None, refusal
         workdir = where.workdir(facts, step)
         if workdir is None:
             return None, "the project's code is not on this machine — Project ▸ Settings…"
-        if not where.worktree(step):
+        if not uses_worktree(step):
             return workdir.expanduser(), ""
         tree = where.worktree_path(workdir.expanduser(), where.run_name_of(step))
         return (tree, "") if tree.is_dir() else (None, NO_WORKTREE)
@@ -766,7 +849,7 @@ class AgentLaunchModule:
         step = focused_step(context, self._deps.library)
         if step is None:
             return DISABLED
-        label = SHELL_IN_WORKTREE if where.worktree(step) else SHELL_IN_CHECKOUT
+        label = SHELL_IN_WORKTREE if uses_worktree(step) else SHELL_IN_CHECKOUT
         _directory, refusal = self._shell_place(step)
         plain = label.replace("&", "")
         if refusal:
@@ -785,24 +868,64 @@ class AgentLaunchModule:
         if directory is None:
             return  # The state gate already says why.
         subject = f"{key_of(step)} {step.title}".strip()
-        files = launcher.shell_script(
-            directory,
-            _window_title(subject, "shell"),
-            project_id=deps.library.project_of(step.id).id,
-        )
-        command = launcher.resolve_command(launch_command(), files, directory)
-        if command is None or launcher.spawn(command, directory, harnesses=deps.harnesses):
-            notice(
-                deps.parent,
-                "Open Terminal",
-                f"No terminal opened in {directory} — check the default profile's terminal"
-                " in Settings ▸ Agent profiles.",
-            )
+
+        def opened(why: str) -> None:
+            if why:
+                notice(
+                    deps.parent,
+                    "Open Terminal",
+                    f"No terminal opened in {directory} — {NO_TERMINAL}",
+                )
+            else:
+                deps.status.show_status(f"Terminal opened in {directory}", 4000)
+
+        project_id = deps.library.project_of(step.id).id
+        self.open_in_terminal(directory, _window_title(subject, "shell"), (), project_id, opened)
+
+    def open_in_terminal(
+        self,
+        directory: Path,
+        title: str,
+        command: Sequence[str],
+        project_id: str,
+        opened: Callable[[str], None],
+    ) -> None:
+        """Open the default profile's terminal in ``directory`` on ``command`` — a person's own
+        shell when there is none — on a task, since a staged terminal (herdr) waits out each of
+        its stages; ``opened`` is told on the GUI thread why it did not open, "" when it did.
+        Nothing is tracked: it is not a run."""
+        deps = self._deps
+        template = launch_command()
+        result: list[str] = []
+
+        def body() -> None:  # Worker thread: the script written, the terminal started.
+            files = launcher.shell_script(directory, title, project_id=project_id, command=command)
+            argv = launcher.resolve_command(template, files, directory)
+            if argv is None:
+                result.append("no terminal is set or installed")
+            else:
+                result.append(launcher.spawn(argv, directory, harnesses=deps.harnesses))
+
+        def done() -> None:
+            opened(result[0] if result else "the terminal could not be started")
+
+        if deps.tasks is None:
+            body()
+            done()
             return
-        deps.status.show_status(f"Terminal opened in {directory}", 4000)
+        runner = TaskRunner(deps.tasks, deps.parent)
+
+        def finished(busy: bool) -> None:
+            if not busy:
+                runner.busy_changed.disconnect(finished)
+                done()
+                runner.deleteLater()
+
+        runner.busy_changed.connect(finished)
+        runner.run(f"Opening a terminal for {title}", body)
 
     def _confirm_unfinished(
-        self, waiting: Sequence[tuple[Step, Sequence[Step]]], *, count: int
+        self, waiting: Sequence[tuple[Step, Sequence[Step]]], *, count: int, title: str = ""
     ) -> bool:
         """The graph gates launching: an agent briefed on a step whose prerequisites are
         not done works without what they were to produce. Say which, and ask — the
@@ -828,10 +951,307 @@ class AgentLaunchModule:
                 (f"{_titled(step)} waits on", listed(unfinished)) for step, unfinished in waiting
             ]
             closing = "The agents would start without what those steps produce. Run them anyway?"
-        dialog = RunAnywayDialog(count, lead, groups, closing, deps.parent)
+        dialog = RunAnywayDialog(count, lead, groups, closing, deps.parent, title)
         accepted = dialog.exec() == QDialog.DialogCode.Accepted
         dialog.deleteLater()
         return accepted
+
+    # -- a playbook's pass ---------------------------------------------------------------------
+
+    def playbook_refusal(self, step: Step) -> str:
+        """Why no playbook's pass can start on ``step`` here, "" when one can: Run Agent's
+        own questions of the step, then the default profile's agent — the implementer —
+        running headless. What each playbook's roles need is the playbook's to ask."""
+        deps = self._deps
+        if why := self._refusal(step, deps.facts_for(step.id)):
+            return why
+        if unreadable := problem():
+            return f"the agent profiles cannot be read: {unreadable}"
+        return launch.headless_refusal(default_profile(), deps.harnesses)
+
+    def runnable(self) -> tuple[str, ...]:
+        """The harnesses some launch profile runs headless: who a playbook's role may name."""
+        return launch.headless_harnesses(self._deps.harnesses)
+
+    def implementer(self) -> str:
+        """The harness a pass's work stages run: the default profile's, as `agent run`'s."""
+        deps = self._deps
+        harness = launcher.harness_of(
+            agent_command(deps.harnesses, default_profile()), deps.harnesses
+        )
+        return harness.id if harness is not None else ""
+
+    def start_playbook(self, step: Step, playbook_id: str) -> None:
+        """Start a pass of ``playbook_id`` on ``step`` — by running ``dplanner agent run
+        --playbook``, the one way a pass starts, so its gates, its lock and its claim are
+        never written twice. What is the window's own comes first, as for Run Agent: the
+        graph gate asked (and answered ``--anyway``), the code cloned, the plan saved. The
+        claim and the run arrive through the library watcher, as an agent's own calls do."""
+        deps = self._deps
+        waiting = self._unfinished(step)
+        if waiting and not self._confirm_unfinished(
+            [(step, waiting)], count=1, title="Run Playbook"
+        ):
+            return
+        if unplaced := launch.unplaced(deps.facts_for(step.id), step):
+            deps.status.show_status(f"Cloning {remote_label(unplaced)} before the playbook…", 0)
+
+            def cloned(_landed: dict[str, Path], error: str) -> None:
+                if error:
+                    deps.status.show_status(f"No playbook started — could not clone {error}", 8000)
+                    return
+                self._start_pass(step, playbook_id, anyway=bool(waiting))
+
+            deps.ensure_checkouts([unplaced], cloned)
+            return
+        self._start_pass(step, playbook_id, anyway=bool(waiting))
+
+    def _start_pass(self, step: Step, playbook_id: str, *, anyway: bool) -> None:
+        self._run_pass_verb(
+            step,
+            launch.start_pass_words(step.id, playbook_id, anyway=anyway),
+            doing="Starting a playbook on",
+            ok="Playbook started on",
+            refused="No playbook started on",
+        )
+
+    def stop_playbook(self, step: Step) -> None:
+        """Stop the step's pass by running ``dplanner playbook stop`` — the one stop, on both
+        surfaces; the status it writes and the claim it releases arrive through the library
+        watcher. The person confirmed it already."""
+        self._run_pass_verb(
+            step,
+            ["playbook", "stop", step.id],
+            doing="Stopping the playbook on",
+            ok="Playbook stopped on",
+            refused="The playbook was not stopped on",
+            own_task=True,
+        )
+
+    def accept_playbook(self, step: Step, pass_id: str, run: str, question: str) -> None:
+        """Accept the step's pass as the person saw it, by ``dplanner playbook accept``: the
+        gate it waits on answered *Pass*, or a pass that is through, the step done."""
+        self._run_pass_verb(
+            step,
+            ["playbook", "accept", step.id, *_seen(pass_id, run, question)],
+            doing="Accepting the playbook pass on",
+            ok="Pass accepted on",
+            refused="The pass was not accepted on",
+            own_task=True,
+        )
+
+    def send_back(self, step: Step, note: str, pass_id: str, run: str, question: str) -> None:
+        """Send the step's pass, as the person saw it, back with ``note``, by ``dplanner
+        playbook send-back`` — the gate's answer or a person's look, which the engine loops
+        back."""
+        self._run_pass_verb(
+            step,
+            ["playbook", "send-back", step.id, "--note", note, *_seen(pass_id, run, question)],
+            doing="Sending the work back on",
+            ok="Work sent back on",
+            refused="The work was not sent back on",
+            own_task=True,
+        )
+
+    def _run_pass_verb(
+        self,
+        step: Step,
+        words: Sequence[str],
+        *,
+        doing: str,
+        ok: str,
+        refused: str,
+        own_task: bool = False,
+    ) -> None:
+        """Save, then run a pass's ``dplanner`` verb to its end on a task — in the step's
+        project, named, from its directory, so it never reads its project from wherever the
+        window was started — and say its one line in the status bar, or a refusal as a notice
+        that stands until it is dismissed or the step's next verb runs. Saving first means
+        the process writes over no unsaved edit. Starts go one at a time; a stop has a task
+        of its own (``own_task``), so a start or another stop running never refuses it —
+        stops of one step wait for each other on its launch lock, in the verb."""
+        deps = self._deps
+        title = _titled(step)
+        notice_id = f"{MODULE_ID}.playbook.{step.id}"
+        if deps.notices is not None:
+            deps.notices.clear_notice(notice_id)
+        if not deps.flush():
+            deps.status.show_status(
+                f"{refused} “{title}” — the plan could not be saved; save it, then try again",
+                8000,
+            )
+            return
+        project = deps.library.project_of(step.id).id
+        argv = supervisor.dplanner_argv(deps.library_path, project, *words)
+        cwd = deps.project_dir(step.id) or Path.home()
+        result: list[tuple[int, str]] = []
+
+        def body() -> None:  # Worker thread: the verb runs to its end, the model untouched.
+            result.append(deps.run_cli(argv, cwd))
+
+        def done() -> None:
+            code, said = result[0] if result else (1, "the verb did not finish")
+            deps.records_moved()
+            if code == 0:
+                deps.status.show_status(f"{ok} “{title}” — {said}", 6000)
+            elif deps.notices is None:
+                deps.status.show_status(f"{refused} “{title}” — {said}", 10000)
+            else:
+                notices = deps.notices
+                notices.show_notice(
+                    Notice(
+                        notice_id,
+                        f"{refused} “{title}” — {said}",
+                        tone="error",
+                        action="Dismiss",
+                        act=lambda: notices.clear_notice(notice_id),
+                    )
+                )
+
+        if deps.tasks is None:
+            body()
+            done()
+            return
+        if own_task:
+            runner = TaskRunner(deps.tasks, deps.parent)
+        else:
+            runner = self._starting = self._starting or TaskRunner(deps.tasks, deps.parent)
+
+        def finished(busy: bool) -> None:
+            if not busy:
+                runner.busy_changed.disconnect(finished)
+                done()
+                if own_task:
+                    runner.deleteLater()
+
+        runner.busy_changed.connect(finished)
+        label = f"{doing} “{title}”"
+        if not runner.run(label, body, key="agent.playbook"):
+            runner.busy_changed.disconnect(finished)
+            deps.status.show_status(f"{refused} “{title}” — a playbook verb is still running", 6000)
+            return
+        deps.status.show_status(f"{label}…", 0)
+
+    # -- a coordinator over the selection -------------------------------------------------------
+
+    def _can_coordinate(self, context: Context, profile: Profile | None = None) -> ActionState:
+        """Whether a coordinator can take the selection, greyed with the reason.
+
+        A lasso catches milestones, cuts and a person's steps; they ride in the briefing as
+        context, so only a selection with **no** agent step refuses. One terminal opens, so
+        neither the agent limit nor the graph gate is asked: the coordinator reads readiness
+        itself and runs at most the limit at once."""
+        chosen = self._chosen(context)
+        if not chosen:
+            return DISABLED
+        deps = self._deps
+        verb = AUTONOMOUS_MENU_TITLE
+        projects = {deps.library.project_of(step.id).id for step in chosen}
+        if len(projects) > 1:
+            return ActionState(enabled=False, label=f"{verb} — one project at a time")
+        workers = sum(1 for step in chosen if enabled(step))
+        if not workers:
+            return ActionState(enabled=False, label=f"{verb} — the selection holds no agent step")
+        if workers > MOST_MEMBERS:
+            return ActionState(
+                enabled=False, label=f"{verb} — at most {MOST_MEMBERS} agent steps a squad"
+            )
+        if refusal := launcher.template_refusal(launch_command(profile)):
+            return ActionState(enabled=False, label=f"{verb} — {refusal}")
+        facts = deps.facts_for(chosen[0].id)
+        if unplaced := launch.unplaced(facts):
+            return ActionState(label=f"Autonomous &Work… — clones {remote_label(unplaced)} first")
+        if refusal := launch.workdir_refusal(facts):
+            return ActionState(enabled=False, label=f"{verb} — {refusal}")
+        return ENABLED
+
+    def _coordinate(self, context: Context, profile: Profile | None = None) -> None:
+        """Open the profile's terminal in the project's code on the coordinator's briefing
+        over the selection — no worktree, nothing claimed: the coordinator chooses its squad
+        word and takes the claim itself."""
+        deps = self._deps
+        if not self._can_coordinate(context, profile).enabled:
+            return  # The state gate already prevents this; stay honest.
+        chosen = [step.id for step in self._chosen(context)]
+        profile = profile or default_profile()
+        if unplaced := launch.unplaced(deps.facts_for(chosen[0])):
+            deps.status.show_status(f"Cloning {remote_label(unplaced)} before the coordinator…", 0)
+
+            def cloned(_landed: dict[str, Path], error: str) -> None:
+                if error:
+                    deps.status.show_status(
+                        f"No coordinator launched — could not clone {error}", 8000
+                    )
+                    return
+                self._coordinate_on(chosen, profile)
+
+            deps.ensure_checkouts([unplaced], cloned)
+            return
+        self._coordinate_on(chosen, profile)
+
+    def _coordinate_on(self, chosen: Sequence[StepId], profile: Profile) -> None:
+        deps = self._deps
+        library = deps.library
+        steps = [library.step(step_id) for step_id in chosen if library.has(step_id)]
+        if not any(enabled(step) for step in steps):
+            return  # Deleted or unmarked while the code was cloned.
+        project = library.project_of(steps[0].id)
+        title = project.title or "Untitled project"
+        # The coordinator reads the plan through the CLI: what it is briefed on must be on disk.
+        if not deps.flush():
+            deps.status.show_status(
+                "No coordinator launched — the plan could not be saved; save it, then run it again",
+                8000,
+            )
+            return
+        facts = deps.facts_for(project.id)
+        text = coordinate(
+            library,
+            steps,
+            squad=None,
+            files=deps.files,
+            facts=facts,
+            roles=deps.location_roles,
+            merges_into=lambda step: feature_branch(
+                deps.branch_plan(library, step, facts), facts, step
+            ),
+            status_for=readiness_of(status_on(library, deps.clock.today())),
+            at_once=max_agents(),
+            taken=self._squads_running(),
+        ).text
+        spawned, prepared = self._launch(
+            text,
+            launcher.new_run_dir(),
+            where.workdir(facts),
+            profile,
+            project_id=project.id,
+            subject=title,
+            note="coordinator",
+        )
+        if not spawned:
+            PromptFallbackDialog(
+                text, str(prepared.prompt_file), deps.parent, title=AUTONOMOUS_MENU_TITLE
+            ).exec()
+            return
+        workers = sum(1 for step in steps if enabled(step))
+        deps.status.show_status(
+            f"A coordinator is choosing its squad word for {workers} agent"
+            f" step{'s' if workers != 1 else ''} in “{title}” — its claim shows once it takes"
+            " them",
+            8000,
+        )
+
+    def _squads_running(self) -> dict[str, claims.Claim]:
+        """Every squad word a live or parked claim in the library answers to: the words a new
+        coordinator may not choose. A project is reached through one of its steps — a claim
+        holds nothing else, so a project with none holds no claim."""
+        deps = self._deps
+        dirs = [
+            directory
+            for project in deps.library.projects
+            if project.steps and (directory := deps.project_dir(project.steps[0].id))
+        ]
+        return claims.squads_holding(dirs, now_stamp())
 
     # -- opening an agent with nothing to do ---------------------------------------------------
 
@@ -857,9 +1277,9 @@ class AgentLaunchModule:
                 " and nothing here knows how to open it with no briefing",
             )
         facts = deps.facts_for(project_id)
-        if unplaced := _unplaced(facts):
+        if unplaced := launch.unplaced(facts):
             return ActionState(label=f"{OPEN_MENU_TITLE} — clones {remote_label(unplaced)} first")
-        if refusal := _workdir_refusal(facts):
+        if refusal := launch.workdir_refusal(facts):
             return ActionState(enabled=False, label=f"{OPEN_MENU_TITLE} — {refusal}")
         return ENABLED
 
@@ -878,7 +1298,7 @@ class AgentLaunchModule:
         if not self._open_command(profile):
             return  # The state gate already prevents this; stay honest.
         title = deps.library.project(project_id).title or "Untitled project"
-        if unplaced := _unplaced(deps.facts_for(project_id)):
+        if unplaced := launch.unplaced(deps.facts_for(project_id)):
             deps.status.show_status(f"Cloning {remote_label(unplaced)} before the agent…", 0)
 
             def cloned(_landed: dict[str, Path], error: str) -> None:
@@ -896,7 +1316,6 @@ class AgentLaunchModule:
         spawned, _files = self._launch(
             "",
             launcher.new_run_dir(),
-            "",
             where.workdir(deps.facts_for(project_id)),
             profile,
             project_id=project_id,
@@ -921,7 +1340,6 @@ class AgentLaunchModule:
         self,
         text: str,
         run_dir: Path,
-        worktree: str,
         workdir: Path | None,
         profile: Profile,
         *,
@@ -930,8 +1348,6 @@ class AgentLaunchModule:
         key: str = "",
         note: str = "",
         step_id: StepId | None = None,
-        branches: BranchPlan = DEFAULT_BRANCHES,
-        run: str = "",
     ) -> tuple[bool, launcher.LaunchFiles]:
         """Open the profile's terminal on ``text`` in ``workdir``; the run is recorded only
         when a shell was actually spawned, and only when it is *a step's*.
@@ -971,13 +1387,10 @@ class AgentLaunchModule:
                 text,
                 workdir,
                 agent_command=command_text,
-                worktree=worktree,
                 directory=run_dir,
                 step_title=_window_title(subject, note),
                 project_id=project_id or "",
                 harnesses=deps.harnesses,
-                branches=branches,
-                run=run,
             )
             span.detail["prompt_chars"] = prepared.prompt_chars
             command = None
@@ -1025,7 +1438,6 @@ class AgentLaunchModule:
         spawned, prepared = self._launch(
             text,
             launcher.new_run_dir(),
-            "",
             facts.plan_root,
             profile,
             project_id=project_id,
@@ -1052,7 +1464,6 @@ class AgentLaunchModule:
         spawned, prepared = self._launch(
             text,
             launcher.new_run_dir(),
-            "",
             repo_root,
             profile,
             project_id=None,
@@ -1109,7 +1520,6 @@ class AgentLaunchModule:
         spawned, prepared = self._launch(
             text,
             run_dir,
-            "",
             facts.plan_root,
             default_profile(),
             project_id=library.project_of(step_id).id,
@@ -1152,7 +1562,7 @@ class AgentLaunchModule:
                     break
                 project_id = deps.library.project_of(step_id).id
                 if project_id not in by_project:
-                    by_project[project_id] = _workdir_refusal(deps.facts_for(step_id))
+                    by_project[project_id] = launch.workdir_refusal(deps.facts_for(step_id))
                 if by_project[project_id]:
                     shared = by_project[project_id]
                     break
@@ -1198,7 +1608,6 @@ class AgentLaunchModule:
             spawned, prepared = self._launch(
                 text,
                 run_dir,
-                "",
                 where.workdir(deps.facts_for(step_id)),
                 profile,
                 project_id=project.id,

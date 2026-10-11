@@ -1,0 +1,237 @@
+<title>Headless Agents Reality Check</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root{
+  --ground:#F1F3F6; --surface:#FFFFFF; --sunken:#E6EAF0; --ink:#17212C; --muted:#56616E; --line:#D3D9E1;
+  --accent:#2F5D8A; --accent-soft:#DCE6F1;
+  --ok:#2C7A4B; --ok-soft:#DDEFE3; --warn:#9A5A08; --warn-soft:#F5E8D2; --bad:#AE3A30; --bad-soft:#F6DEDB;
+  --code-bg:#E9EDF2;
+  --display:"Bricolage Grotesque","Arial Narrow",system-ui,sans-serif;
+  --body:"Source Sans 3",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --ground:#0F141A; --surface:#161D25; --sunken:#1C242E; --ink:#E2E8EE; --muted:#9AA6B3; --line:#2A3440;
+    --accent:#7FA8D4; --accent-soft:#1B2B3D;
+    --ok:#6CC28F; --ok-soft:#15291E; --warn:#E0A54F; --warn-soft:#2E2312; --bad:#EE8579; --bad-soft:#331916;
+    --code-bg:#1A222B;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --ground:#0F141A; --surface:#161D25; --sunken:#1C242E; --ink:#E2E8EE; --muted:#9AA6B3; --line:#2A3440;
+  --accent:#7FA8D4; --accent-soft:#1B2B3D;
+  --ok:#6CC28F; --ok-soft:#15291E; --warn:#E0A54F; --warn-soft:#2E2312; --bad:#EE8579; --bad-soft:#331916;
+  --code-bg:#1A222B;
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--body);font-size:17px;line-height:1.6;padding-inline:16px;padding-block:0 64px}
+.shell{max-width:1160px;margin:0 auto;display:grid;grid-template-columns:1fr;gap:36px}
+@media (min-width:1000px){.shell{grid-template-columns:220px minmax(0,1fr)}}
+nav.toc{font-size:14.5px;padding-top:32px}
+@media (min-width:1000px){nav.toc{position:sticky;top:env(safe-area-inset-top,0px);align-self:start;max-height:100vh;overflow-y:auto}}
+nav.toc h2{font-family:var(--mono);font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:0 0 10px;font-weight:600}
+nav.toc ul{list-style:none;margin:0;padding:0;display:grid;gap:2px}
+nav.toc a{display:block;color:var(--ink);text-decoration:none;padding:5px 8px;border-radius:4px}
+nav.toc a:hover,nav.toc a:focus-visible{background:var(--sunken)}
+main{min-width:0;max-width:840px}
+header.mast{padding:40px 0 20px;border-bottom:1px solid var(--line)}
+.eyebrow{font-family:var(--mono);font-size:12.5px;color:var(--muted)}
+h1{font-family:var(--display);font-weight:800;font-size:clamp(34px,6vw,52px);line-height:1.04;margin:10px 0 14px;letter-spacing:-.015em;text-wrap:balance}
+.lede{font-size:19px;max-width:62ch;margin:0}
+section{padding-top:44px}
+h2{font-family:var(--display);font-weight:800;font-size:28px;line-height:1.15;margin:0 0 14px;text-wrap:balance}
+h3{font-family:var(--display);font-weight:600;font-size:19px;margin:26px 0 8px}
+p,li{max-width:68ch}
+p{margin:0 0 14px}
+ul{padding-left:1.2em;margin:0 0 14px}
+li{margin-bottom:6px}
+a{color:var(--accent)}
+code{font-family:var(--mono);font-size:.84em;background:var(--code-bg);padding:1px 5px;border-radius:3px}
+.inshort{border-left:3px solid var(--accent);background:var(--surface);padding:12px 16px 2px;margin:0 0 20px;border-radius:0 6px 6px 0}
+.inshort b.k{font-family:var(--mono);font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:2px}
+.scroll{overflow-x:auto;margin:12px 0 22px;background:var(--surface);border:1px solid var(--line);border-radius:6px}
+table{border-collapse:collapse;width:100%;min-width:640px;font-size:15px}
+th,td{text-align:left;vertical-align:top;padding:9px 12px;border-bottom:1px solid var(--line)}
+tr:last-child td{border-bottom:0}
+th{font-family:var(--mono);font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+td:first-child{font-weight:600;width:24%}
+.chip{display:inline-block;font-family:var(--mono);font-size:11.5px;font-weight:600;padding:1px 7px;border-radius:999px;margin-right:6px;white-space:nowrap}
+.ok{background:var(--ok-soft);color:var(--ok)} .warn{background:var(--warn-soft);color:var(--warn)} .bad{background:var(--bad-soft);color:var(--bad)} .na{background:var(--sunken);color:var(--muted)}
+.code{background:var(--code-bg);border-radius:6px;margin:12px 0 20px;overflow-x:auto}
+.code pre{margin:0;padding:12px 14px;font-family:var(--mono);font-size:13px;line-height:1.55}
+.code .src{font-family:var(--mono);font-size:11.5px;color:var(--muted);padding:7px 14px 0}
+.flow{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:12px;overflow-x:auto;margin:12px 0 18px}
+.verdict{display:grid;grid-template-columns:1fr;gap:12px;margin:16px 0 8px}
+@media (min-width:700px){.verdict{grid-template-columns:repeat(3,1fr)}}
+.verdict div{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:12px 14px}
+.verdict b{font-family:var(--display);font-size:17px;display:block;margin-bottom:4px}
+.verdict p{font-size:15px;margin:0}
+footer{margin-top:56px;padding-top:16px;border-top:1px solid var(--line);font-size:14px;color:var(--muted)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+<div class="shell">
+<nav class="toc" aria-label="Contents">
+  <h2>Contents</h2>
+  <ul>
+    <li><a href="#answer">The answer</a></li>
+    <li><a href="#matrix">What each CLI did</a></li>
+    <li><a href="#questions">Questions</a></li>
+    <li><a href="#plan">Plan mode</a></li>
+    <li><a href="#stuck">Never stuck</a></li>
+    <li><a href="#limits">Limits and retry</a></li>
+    <li><a href="#checks">Status checks</a></li>
+    <li><a href="#design">The design it implies</a></li>
+    <li><a href="#untested">Not tested</a></li>
+  </ul>
+</nav>
+<main>
+<header class="mast">
+  <div class="eyebrow">2026-10-07 · Claude Code 2.1.280 · Codex CLI 0.160.0 · opencode 1.18.34 · throwaway repo</div>
+  <h1>Can a playbook run headless without ever getting stuck?</h1>
+  <p class="lede">Yes, as long as DPlanner never waits on a process. A question, a plan approval or a usage limit <em>parks</em> the run and records why. An answer, a reset or <strong>Retry now</strong> resumes the same session. Each claim below was observed in eleven small experiments.</p>
+</header>
+
+<section id="answer">
+  <h2>The answer</h2>
+  <div class="inshort"><b class="k">In short</b><p>All three CLIs can be asked through one door, a <code>dplanner ask</code> command. Each stops cleanly when it asks and finishes the task once resumed with the answer. None of them hangs on a permission. Instead, each fails <em>quietly</em> and still exits 0. So the hard part is reading how a run ended, not keeping it alive.</p></div>
+  <div class="verdict">
+    <div><b>Questions</b><p>Viable through <code>dplanner ask</code> and resume, for Claude, Codex and opencode. Claude's own question tool is only available when DPlanner hosts the process.</p></div>
+    <div><b>Plan mode</b><p>Viable as plan, park, then resume in an executing mode. Claude returns the plan as text; Codex uses a read-only stage.</p></div>
+    <div><b>Token exhaustion</b><p>Viable. The session survives a 429, both vendors publish their reset times, and a resume continues the same session.</p></div>
+  </div>
+</section>
+
+<section id="matrix">
+  <h2>What each CLI did</h2>
+  <div class="inshort"><b class="k">In short</b><p>Same task, same toy repo, run headless. Green means it works as needed. Amber means it works, but only if DPlanner reads it correctly. Red means it must not be used unattended.</p></div>
+  <div class="scroll"><table>
+    <thead><tr><th>Behaviour</th><th>Claude Code <code>-p</code></th><th>Codex <code>exec</code></th><th>opencode <code>run</code></th></tr></thead>
+    <tbody>
+      <tr><td>Asks through <code>dplanner ask</code>, then stops</td><td><span class="chip ok">yes</span>7 s</td><td><span class="chip ok">yes</span>10 s</td><td><span class="chip ok">yes</span>18 s, free model</td></tr>
+      <tr><td>Resumed with the answer, finishes</td><td><span class="chip ok">yes</span><code>--resume &lt;id&gt;</code></td><td><span class="chip ok">yes</span><code>exec resume &lt;id&gt;</code>, and verified</td><td><span class="chip ok">yes</span><code>-s &lt;ses_id&gt;</code></td></tr>
+      <tr><td>Native question tool</td><td><span class="chip warn">host only</span>removed in <code>-p</code>, even when named in <code>--tools</code></td><td><span class="chip na">none</span>not in <code>exec</code></td><td><span class="chip na">untested</span></td></tr>
+      <tr><td>Plan mode</td><td><span class="chip warn">text</span>ExitPlanMode is disabled, so the plan is the final text</td><td><span class="chip warn">read-only stage</span>returns the plan or diff as text</td><td><span class="chip na">untested</span><code>--agent plan</code></td></tr>
+      <tr><td>A permission it may not take</td><td><span class="chip warn">quiet</span><code>permission_denials</code>, still "success"</td><td><span class="chip ok">explains</span>never blocks in <code>exec</code></td><td><span class="chip warn">quiet</span>"auto-rejecting", exit 0, no text</td></tr>
+      <tr><td>Unattended execute mode</td><td><span class="chip ok">auto</span>on Sonnet; Haiku denied the edit</td><td><span class="chip ok">--approve-for-me</span>edited, verified, committed</td><td><span class="chip na">untested</span><code>--auto</code></td></tr>
+      <tr><td>Limit telemetry</td><td><span class="chip ok">in stream</span><code>rate_limit_event</code></td><td><span class="chip warn">rollout file</span>not in <code>--json</code></td><td><span class="chip na">none seen</span></td></tr>
+      <tr><td>Background mode</td><td><span class="chip bad">blocks</span><code>--bg</code> sat at an approval prompt</td><td><span class="chip na">—</span></td><td><span class="chip na">—</span></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="questions">
+  <h2>Questions</h2>
+  <div class="inshort"><b class="k">In short</b><p>Headless Claude cannot use its own question tool. Asked to, it writes the question in prose and the run ends as a success. So DPlanner gives every agent a command to ask with. When DPlanner hosts Claude itself, the native question arrives fully structured, ready for a card.</p></div>
+  <h3>The universal door</h3>
+  <p>The briefing says: to ask a person, run the command and follow what it prints. The stub recorded the question and printed "Recorded as Q2. … End your turn now". The Claude, Codex and opencode agents each recorded a question and stopped without editing anything. Each was then resumed with "Raise ZeroDivisionError", and each implemented that answer.</p>
+  <div class="code"><div class="src">what Codex ran, verbatim</div><pre>dplanner-ask "How should divide(a, b) behave when b is zero?" \
+  --choice "Raise ZeroDivisionError" --choice "Return None"</pre></div>
+  <h3>The warm path: DPlanner hosts Claude</h3>
+  <p>Driven over <code>--input-format stream-json</code> with <code>--permission-prompt-tool stdio</code>, Claude offers <code>AskUserQuestion</code> again. The question reaches the host as a control request:</p>
+  <div class="code"><div class="src">control_request · can_use_tool · AskUserQuestion</div><pre>{"questions":[{"question":"Should the add() function also accept strings?",
+  "header":"add() string support",
+  "options":[{"label":"Yes","description":"add() should be able to concatenate strings…"},
+             {"label":"No","description":"add() should only work with numbers"}],
+  "multiSelect":false}]}</pre></div>
+  <p>The host allows it with <code>updatedInput.answers</code>, and the agent carries on in the same turn. This is the best experience while someone is at the window, but it keeps a process alive. So a host waits only briefly. Then it parks the run, and the answer arrives later as a resume.</p>
+</section>
+
+<section id="plan">
+  <h2>Plan mode</h2>
+  <div class="inshort"><b class="k">In short</b><p>Plan, park, approve, resume. Claude's plan comes back as the final text. A resume in <code>acceptEdits</code> or <code>auto</code> with "Plan approved" carries it out. Codex has no plan mode in <code>exec</code>, so its plan stage is a read-only sandbox.</p></div>
+  <ul>
+    <li><code>claude -p --permission-mode plan</code>: the agent explored, wrote a plan file, and tried <code>ExitPlanMode</code>. That failed with "disabled for this session". It then returned the plan as its result, exit 0.</li>
+    <li>The plan file went into <strong><code>~/.claude/plans/</code></strong>, the user's global folder, even headless. DPlanner should keep its own copy in the run directory and leave that folder alone.</li>
+    <li>The resume implemented exactly the plan. With only <code>acceptEdits</code>, it reported "Waiting for approval to run the verification test", a denied Bash call. An approved plan needs an executing mode that can run the tests.</li>
+  </ul>
+</section>
+
+<section id="stuck">
+  <h2>Never stuck</h2>
+  <div class="inshort"><b class="k">In short</b><p>In headless modes nothing waits for input. Every risk is a <em>quiet ending</em>: a denial or an auto-reject, reported as success. The one mode that does block is <code>claude --bg</code>, an interactive session in the background. From the earlier probes: no CLI times out a hung API, so a stall detector is still needed.</p></div>
+  <div class="scroll"><table>
+    <thead><tr><th>Ending</th><th>How DPlanner reads it</th><th>What happens</th></tr></thead>
+    <tbody>
+      <tr><td>asked</td><td>a question record, or prose ending in a question with none</td><td>park → card → resume with the answer</td></tr>
+      <tr><td>denied</td><td><code>permission_denials</code>; opencode's "auto-rejecting" on stderr; Codex explaining it is read-only</td><td>park as a <em>permission</em> card: allow it for this playbook, or answer differently</td></tr>
+      <tr><td>limit</td><td>Claude <code>error:"rate_limit"</code>/429; Codex <code>usage_limit_exceeded</code></td><td>hold until the reset, then resume automatically; <strong>Retry now</strong> on the card</td></tr>
+      <tr><td>hang / loop</td><td>stall and runaway detectors (10-03 probes)</td><td>kill, then retry with backoff; after three failures, ask a person</td></tr>
+      <tr><td>done</td><td>a typed final message (<code>--json-schema</code> / <code>--output-schema</code>)</td><td>next stage</td></tr>
+    </tbody>
+  </table></div>
+  <p><code>claude --bg</code> made its own worktree, then waited at "This command requires approval · Do you want to proceed?" until it was stopped. It suits a person who attaches to watch a run, not unattended work.</p>
+</section>
+
+<section id="limits">
+  <h2>Limits and retry</h2>
+  <div class="inshort"><b class="k">In short</b><p>Both vendors say how full the account is and when it resets, so DPlanner can stop launching <em>before</em> a run dies. When a run does hit the wall, its session is already saved and can be resumed after the reset. The 10-04 run did exactly that by hand.</p></div>
+  <div class="code"><div class="src">Claude · every stream-json run</div><pre>{"type":"rate_limit_event","rate_limit_info":{"status":"allowed","rateLimitType":"five_hour",
+ "unifiedWindows":{"five_hour":{"utilization":0.05,"resetsAt":1791353400},
+                   "seven_day":{"utilization":0.26,"resetsAt":1791450000}}}}</pre></div>
+  <div class="code"><div class="src">Codex · rollout file, token_count event</div><pre>"rate_limits":{"primary":{"used_percent":0.0,"window_minutes":300,"resets_at":1791365304},
+ "secondary":{"used_percent":0.0,"window_minutes":10080,"resets_at":1791952104},
+ "plan_type":"plus","rate_limit_reached_type":null}</pre></div>
+  <div class="code"><div class="src">Codex · the real limit, 2026-10-04 (later resumed in the same session)</div><pre>"error":{"message":"You’ve hit your usage limit. … try again at Oct 5th, 2026 2:22 AM.",
+         "codex_error_info":"usage_limit_exceeded"}</pre></div>
+  <p>Forced through a fake API with the unified headers and <code>x-should-retry: false</code>, Claude ended in 1 s with <code>is_error:true</code> and <code>api_error_status:429</code>. Its session transcript was already on disk. Without that header, the earlier probes saw Claude retry a 429 for about 4½ minutes.</p>
+</section>
+
+<section id="checks">
+  <h2>Status checks</h2>
+  <div class="inshort"><b class="k">In short</b><p>"Installed" is not "usable". On this machine, two of the five agent CLIs on PATH could not have run a stage. A playbook's check therefore asks three questions of every role's agent: is it on PATH, which version is it, and is it signed in?</p></div>
+  <div class="scroll"><table>
+    <thead><tr><th>Agent</th><th>Probe</th><th>Here</th></tr></thead>
+    <tbody>
+      <tr><td>Claude Code</td><td><code>claude auth status</code> (JSON)</td><td><span class="chip ok">signed in</span></td></tr>
+      <tr><td>Codex</td><td><code>codex login status</code></td><td><span class="chip ok">signed in</span>ChatGPT</td></tr>
+      <tr><td>opencode</td><td><code>opencode auth list</code> · <code>opencode models</code></td><td><span class="chip warn">0 credentials</span>yet it runs on built-in free models</td></tr>
+      <tr><td>cursor-agent</td><td><code>cursor-agent status</code></td><td><span class="chip bad">not logged in</span></td></tr>
+      <tr><td>gemini</td><td><code>gemini --version</code></td><td><span class="chip warn">shim</span>a mise shim that installs when first called</td></tr>
+    </tbody>
+  </table></div>
+  <p>One more finding for the launch flags: headless Claude loaded the user's claude.ai connectors (Gmail send, Calendar, Docs) into a step agent's tools. A step agent should run with <code>--strict-mcp-config</code>.</p>
+</section>
+
+<section id="design">
+  <h2>The design it implies</h2>
+  <div class="inshort"><b class="k">In short</b><p>A run is a session id plus a ledger of turns. The supervisor runs one turn, reads how it ended, and then advances the playbook, parks the run or retries it. People and coordinators act on parked runs from the Control Centre or the CLI.</p></div>
+  <div class="flow"><pre class="mermaid">
+flowchart LR
+  L["launch stage&lt;br/&gt;(headless turn)"] --> E{"how did it end?"}
+  E -- done --> N["next stage"]
+  E -- asked / plan --> Q["question card"]
+  E -- denied --> P["permission card"]
+  E -- limit --> H["hold until reset"]
+  E -- hang / crash --> R["retry with backoff"]
+  Q -- "answer (person or coordinator)" --> RS["resume same session"]
+  P -- allow / redirect --> RS
+  H -- "reset or Retry now" --> RS
+  R --> L
+  RS --> E
+  </pre></div>
+  <ul>
+    <li><strong><code>dplanner ask</code></strong> is the one door. Native asks feed the same record through adapters: the host's <code>can_use_tool</code> calls, Claude's plan text, and denials.</li>
+    <li><strong>A coordinator answers or escalates</strong> through the same verbs (<code>questions</code>, <code>answer</code>, <code>escalate</code>), so a human card and an agent decision share one record.</li>
+    <li><strong>Execute flags per harness:</strong> Claude <code>-p --permission-mode auto --strict-mcp-config</code>; Codex <code>exec --approve-for-me --add-dir &lt;plan repo&gt;</code>; opencode <code>run --auto</code>.</li>
+    <li><strong>Before each launch:</strong> check that the agent is signed in, and check the account's last known use against a threshold.</li>
+  </ul>
+</section>
+
+<section id="untested">
+  <h2>Not tested</h2>
+  <div class="inshort"><b class="k">In short</b><p>These four go into the project as explicit checks, not assumptions.</p></div>
+  <ul>
+    <li>The wording of a real Claude subscription limit (only faked here; <code>resetsAt</code> is real).</li>
+    <li>Codex <code>app-server</code> approvals, the warm path for Codex.</li>
+    <li>Claude hooks mirroring a question from an interactive terminal run into the inbox.</li>
+    <li>Hours-long runs: compaction, resuming a cold session, stall thresholds on real test suites.</li>
+  </ul>
+</section>
+
+<footer>Source and scripts: <code>docs/research/2026-10-07-headless-agents/</code> on <code>feature/playbooks</code>. It builds on the 2026-10-03 playbook research and the 2026-10-04 autonomous run.</footer>
+</main>
+</div>

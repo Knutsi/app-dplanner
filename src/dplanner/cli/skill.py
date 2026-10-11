@@ -99,6 +99,10 @@ def _skill(registry: CliRegistry, aspects: Sequence[AspectSpec]) -> str:
         "a checkout records where the code is on this machine. The library of projects is",
         "per user; another one can be named with `--library PATH` or `$DPLANNER_LIBRARY`.",
         "",
+        "With a current project, a step's key, folder name or title is looked up in that",
+        "project alone, and one it does not have is refused; only a step's id (eight",
+        "characters or more) names a step in another project.",
+        "",
         "## Commands",
         "",
     ]

@@ -274,7 +274,7 @@ MODE_LABEL = {
 
 def probes_html() -> str:
     cells: dict[tuple[str, str], str] = {}
-    for path in sorted((HERE / "probes" / "out").glob("*.json")):
+    for path in sorted((HERE.parents[3] / "tests" / "fixtures" / "agent_turns" / "probes").glob("*.json")):
         record, ending = classify.classify_fixture(path)
         secs = float(record["seconds"])  # type: ignore[arg-type]
         timed = record["timed_out_after_s"] is not None

@@ -58,6 +58,7 @@ dev = [
     "pyinstaller>=6.11",
     "pytest>=8.4",
     "pytest-qt>=4.5",
+    "pytest-timeout>=2.3",
     "pytest-xdist>=3.6",
     "ruff>=0.16",
 ]
@@ -70,6 +71,12 @@ testpaths = ["tests"]
 # QApplication needs anyway (only one may exist per process, and it cannot be recreated).
 # Add `-n0` for a single-threaded run when a failure needs readable output or a debugger.
 addopts = "-ra --strict-markers --strict-config -n auto"
+# A hung test fails instead of holding the run: once a hung xdist run cost an unattended night.
+# The slowest test takes about 3 s. "thread" because a worker stuck inside Qt's C++ never
+# returns to Python for a SIGALRM handler; the thread fails the test even then, with every
+# thread's stack. `--timeout 0` turns it off under a debugger.
+timeout = 120
+timeout_method = "thread"
 markers = [
     "raises_in_a_slot: the test raises inside a signal slot on purpose (see conftest.py)",
 ]

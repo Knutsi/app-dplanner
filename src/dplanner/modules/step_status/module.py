@@ -25,7 +25,7 @@ from PySide6.QtGui import QColor, QIcon
 from dplanner.core.clock import Clock
 from dplanner.domain.commands import CompositeCommand
 from dplanner.domain.model import Library, Step
-from dplanner.domain.workflow import EndClaim, Person
+from dplanner.domain.workflow import EndClaim, FollowUp, Person, Release
 from dplanner.framework.action_registry import (
     DISABLED,
     ActionRegistry,
@@ -67,6 +67,7 @@ class StepStatusDeps:
     clock: Clock  # The day a status change is stamped with.
     workflow: StatusWorkflow
     end_claim: Callable[[EndClaim], bool]  # The at-work board's; answers whether one stood.
+    release: Callable[[Release], bool]  # Out of its squad's claim; answers whether one held it.
     notices: NoticeHost  # Where a claim that could not be ended stands, with a retry.
     flush: Callable[[], bool]  # Autosave's flush now: whether everything is on disk after it.
 
@@ -133,40 +134,41 @@ class StepStatusModule:
             commands = [change.command for change in changes if change.command is not None]
             if commands:
                 self._deps.undo.push(CompositeCommand(LABEL, commands))
-            self._release([claim for change in changes for claim in change.follow_ups])
+            self._release([each for change in changes for each in change.follow_ups])
 
         return run
 
-    def _release(self, claims: list[EndClaim]) -> None:
+    def _release(self, follow_ups: list[FollowUp]) -> None:
         """End the claims a stopped status owes, each on its own, once the statuses are on
         disk. Any that could not be ended — or all of them, while the save is held back or
         refused — stand on a notice with a retry: the statuses are true, and are not undone
         for an effect."""
-        if not claims:
+        if not follow_ups:
             return
         if not self._deps.flush():
             self._owed(
-                claims, f"the plan is not saved yet, so {len(claims)} agent claim(s) still stand"
+                follow_ups,
+                f"the plan is not saved yet, so {len(follow_ups)} agent claim(s) still stand",
             )
             return
-        claims = [claim for claim in claims if self._still_stopped(claim)]
-        failed = perform(claims, self._deps.end_claim).failed
+        follow_ups = [each for each in follow_ups if self._still_stopped(each)]
+        failed = perform(follow_ups, self._deps.end_claim, self._deps.release).failed
         if not failed:
             self._deps.notices.clear_notice(NOTICE_ID)
             return
         self._owed(
-            [claim for claim, _why in failed],
+            [each for each, _why in failed],
             f"{len(failed)} agent claim(s) could not be ended: {failed[0][1]}",
         )
 
-    def _still_stopped(self, claim: EndClaim) -> bool:
-        """Whether the saved plan still says the work on ``claim``'s step stopped. A retry
-        comes later than the status that owed it — an undo or another writer may have taken
-        that status back, and then the claim is no longer owed."""
+    def _still_stopped(self, follow_up: FollowUp) -> bool:
+        """Whether the saved plan still says the work on the follow-up's step stopped. A
+        retry comes later than the status that owed it — an undo or another writer may have
+        taken that status back, and then the claim is no longer owed."""
         library = self._deps.library
-        return library.has(claim.step) and stored(library.step(claim.step)) in STOPPED
+        return library.has(follow_up.step) and stored(library.step(follow_up.step)) in STOPPED
 
-    def _owed(self, claims: list[EndClaim], why: str) -> None:
+    def _owed(self, follow_ups: list[FollowUp], why: str) -> None:
         self._deps.notices.show_notice(
             Notice(
                 id=NOTICE_ID,
@@ -174,6 +176,6 @@ class StepStatusModule:
                 tone="error",
                 action="Retry",
                 tip="Save the plan and end the claims again",
-                act=lambda: self._release(claims),
+                act=lambda: self._release(follow_ups),
             )
         )

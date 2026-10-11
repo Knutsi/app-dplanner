@@ -42,6 +42,21 @@ driving the CLI *is* a model, so the loop is `docs status` → `docs collect` �
 window's part is to *launch* that loop rather than to reimplement it. Same reasoning as
 *Running an agent launches a peer, not a task*, which is where that argument ended up.
 
+## No task runs for ever
+
+The task centre lists what the window is waiting on, so a task that cannot end is a lie that
+stays on screen. Two ways led there. **A runner whose owner was deleted mid-run**: the setup
+checklist owns its `TaskRunner` and deletes itself on close, and closed while the agent CLIs
+were still answering (about five seconds on a machine with three), its completion found no
+runner and was dropped — the task read "Checking this machine · 9m 23s · about 0s left" until
+the window closed. `TaskRunner.run` now ties the task to the runner's `destroyed`, so the two
+end together. **A child process nobody could end**: `subprocess.run(timeout=…)` kills the
+direct child only, and without a timeout it waits on whatever holds the output pipe, which a
+CLI's helper process can do for ever. `core.process.run_bounded` runs the CLI in a process
+group of its own and kills the group when the time runs out — a group rather than a session,
+because the process is waited on and the suite's spawn guard rightly reads a new session as
+detaching.
+
 ## Dictation is a provider, and capture is a peer process
 
 Descriptions, notes, tests, fragments, instructions and specs are prose, and most people

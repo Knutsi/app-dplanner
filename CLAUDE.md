@@ -106,6 +106,12 @@ worker walking that tree; and a fixture that patched a module global raced the *
 does not help with the first and a careful assertion does not help with the second: build over
 a throwaway tree, and stop what is running before you patch under it.
 
+**And it never opens a real terminal or agent CLI**: once a stub that stopped matching opened
+real windows running `claude` against the suite's temp repositories. `tests/conftest.py`'s
+`_no_real_spawns` fails a test that starts one, or anything detached; a test that runs a
+*fake* agent CLI hands its path to `allow_spawn`. A test that hangs fails after 120 s
+(`pytest-timeout`) with every thread's stack, so a hung worker cannot cost a night.
+
 **Qt objects: what the crashes taught, as rules.** Each line is one the suite has died of.
 The diagnoses, the recipes and the shiboken detail are the **`suite-crash` skill**
 (`.claude/skills/suite-crash/SKILL.md`) — load it before debugging the test a crash named, because
@@ -299,14 +305,15 @@ the reasoning.
 | `canvas.md` | the graph editor's modes, gestures, cards and marks |
 | `shell-ui.md` | seams, panes, primitives, menus, toolbars, glyphs and themes |
 | `step-panel.md` | aspect toggles, the shelf, Details blocks, prose editors and assets |
-| `agents.md` | Run Agent, worktrees, run directories, usage, harnesses, profiles and reviews |
+| `agents.md` | Run Agent, supervisors, questions, claims, the coordinator, worktrees, usage, harnesses and profiles |
 | `specs.md` | the spec editor and its document sources |
 | `schedule.md` | order, progression, time estimates, progress and milestone colour |
 | `collectors.md` | scopes, features, citations, tests, documentation and notes |
 | `persistence.md` | save, two writers, outside changes, reload and repositories |
 | `cli.md` | the entry word, install, the checklist, the topology gate, the skill and reports |
 | `runtime.md` | telemetry, diagnostics, discarding a build, LLM calls and dictation |
-| `graph-model.md` | edges, auto-progress links, step numbers and isolation |
+| `graph-model.md` | edges, step numbers and isolation |
+| `playbooks.md` | stages, gates, loop-back, presets, the step's playbook and headless invocations |
 
 ## The one chain every change follows
 

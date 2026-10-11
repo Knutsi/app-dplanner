@@ -3,8 +3,8 @@ links, never stored.
 
 A **stretch** is bracketed by two steps: a **cut**, which names the branch and says where it
 starts, and a **landing**, which merges it back as a pull request of its own. The landing
-names its cut, and the pairing counts only while the cut is upstream of it — the
-auto-progress rule, a stored id read through the graph — because a pairing worked out from
+names its cut, and the pairing counts only while the cut is upstream of it — a stored id
+read through the graph — because a pairing worked out from
 the links alone re-paired two stretches side by side whenever one link moved.
 
 **What is on the branch is everything after the cut, until the landing.** A member is a step

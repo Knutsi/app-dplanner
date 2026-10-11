@@ -8,16 +8,18 @@ nothing here hand-wires a view the window would build differently: the Tests tab
 roll call of every project's tests, the Coverage tab, the Assets tab over pictures attached
 to steps, the Implementation notes tab, the bulk Estimates tab, the Time tab, the task
 browser over tasks in each state, the Agents browser over a live, a finished and a failed
-run (with *Show ended* ticked, which is what lists the last two), and the command palette
-open, filtered and with nothing to show. A tab is rendered at its own size — lifted off the
-tab host for the grab — and again with a row picked, which is where a table's edge over the
-quiet ground is read.
+terminal run and three headless ones — a pass's review running, a run waiting on a plan
+approval, one done (with *Show ended* ticked, which is what lists those that ended), and
+the command palette open, filtered and with nothing to show. A tab is rendered at its own
+size — lifted off the tab host for the grab — and again with a row picked, which is where a
+table's edge over the quiet ground is read.
 """
 
 import argparse
 import os
 import sys
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 
 # A shell that presets the platform would put every render on the desktop.
@@ -32,7 +34,11 @@ from PySide6.QtWidgets import QAbstractItemView, QApplication, QWidget
 from scripts.synthetic_library import build_library
 
 from dplanner.app import configure_application, new_session, set_early_attributes
+from dplanner.domain import ledger, questions
+from dplanner.domain.agents import AgentUsage, Tokens
 from dplanner.domain.assets import attach
+from dplanner.domain.ledger import LedgerRecord, Turn
+from dplanner.domain.model import now_stamp
 from dplanner.framework.palette import CommandPalette
 from dplanner.framework.services import AppServices
 from dplanner.modules.coverage.activity import COVERAGE_KIND
@@ -158,13 +164,14 @@ def render_agents(
     services: AppServices, steps: list, root: Path, out: Path, prefix: str, theme: Theme, app
 ) -> None:
     runs = next(m for m in services.modules if isinstance(m, StepAgentRunModule))
-    for index, (step, ending) in enumerate(zip(steps, ("", "0\n", "3\n"), strict=True)):
+    for index, (step, ending) in enumerate(zip(steps[:3], ("", "0\n", "3\n"), strict=True)):
         directory = root / f"run-{theme.name}-{index}"
         directory.mkdir(parents=True, exist_ok=True)
         (directory / "shell").write_text("tty=/dev/pts/4\n")
         runs.track(step.id, str(directory / "shell"), str(directory / "exit"))
         if ending:
             (directory / "exit").write_text(ending)
+    headless_runs(runs, steps[3:6])
     runs.check()
     runs._open_browser()
     browser = runs._browser
@@ -175,6 +182,48 @@ def render_agents(
     browser.resize(*BROWSER_SIZE)
     save(browser, out, f"{prefix}agents", theme, app)
     browser.hide()
+
+
+def headless_runs(runs: StepAgentRunModule, steps: list) -> None:
+    """Three headless runs in the steps' ledger: a review at work, a plan waiting for its
+    approval, an execute done — each as a supervisor would have written it."""
+    stamp = now_stamp()
+    worked = Tokens(input=12_300, cached=410_000, output=1_200)
+    spent = (AgentUsage(id="main", models={"claude-opus-5-5": worked}),)
+    for step, stage, end in zip(
+        steps, ("review", "plan", "execute"), ("", "asked", "done"), strict=True
+    ):
+        project_dir = runs._deps.project_dir(step.id)
+        assert project_dir is not None
+        asked = questions.asked(
+            "p", step.id, stamp, [questions.one("Approve the plan?")], kind=questions.PLAN_APPROVAL
+        )
+        turn = Turn(
+            n=1,
+            prompt="launch",
+            started=stamp,
+            ended=stamp if end else "",
+            end=end,
+            agents=spent if end else (),
+        )
+        record = LedgerRecord(
+            run=ledger.new_run_id(),
+            project="p",
+            step=step.id,
+            harness="claude",
+            launched=stamp,
+            machine=ledger.machine_id(),
+            session="S",
+            mode=ledger.HEADLESS,
+            stage=stage,
+            attempt=1,
+            callsign="kettle-two",
+            ended=stamp if end == "done" else "",
+        )
+        if end == "asked":
+            questions.write(project_dir, replace(asked, run=record.run))
+            turn = replace(turn, question=asked.id)
+        ledger.write(project_dir, record.with_turns([turn]))
 
 
 def render_palette(services: AppServices, out: Path, prefix: str, theme: Theme, app) -> None:
@@ -221,7 +270,7 @@ def render(app: QApplication, theme: Theme, out: Path, root: Path, prefix: str) 
         render_tab(activity, out, f"{prefix}{name}", theme, app)
 
     render_tasks(services, out, prefix, theme, app)
-    render_agents(services, steps[10:13], root, out, prefix, theme, app)
+    render_agents(services, steps[10:16], root, out, prefix, theme, app)
     render_palette(services, out, prefix, theme, app)
     session.close()
 
@@ -238,6 +287,8 @@ def main(argv: list[str]) -> int:
     app = QApplication.instance() or QApplication(sys.argv[:1])
     assert isinstance(app, QApplication)
     with tempfile.TemporaryDirectory(prefix="dplanner-s15-") as tmp:
+        # The machine's config too: the headless runs' directories are under it.
+        os.environ["DPLANNER_CONFIG_DIR"] = f"{tmp}/config"
         # Per-user settings into the throwaway directory, before anything reads them: the
         # Agents browser lists the runs this machine remembers, and tracking a pretend run
         # writes one — neither the developer's runs nor these renders' belong in the other.

@@ -6,6 +6,7 @@ recorded or claimed.
 """
 
 import shlex
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -81,6 +82,23 @@ def test_the_windows_script_opens_a_shell_of_its_own_in_the_directory(tmp_path):
     assert raw.endswith('"%ComSpec%" /k\r\n')
 
 
+def test_a_script_given_a_command_runs_it_in_place_of_a_shell(tmp_path):
+    """Follow and Open Session: a `dplanner` verb a person watches, whose end closes the
+    terminal — quoted as each platform's interpreter reads it."""
+    directory = tmp_path / "tree"
+    command = ["/usr/bin/python3", "-m", "dplanner", "agent", "follow", "run 1"]
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    posix = launcher.shell_script(directory, "Follow", run_dir=tmp_path / "a", command=command)
+    assert posix.script.read_text().rstrip().endswith(f"exec {shlex.join(command)}")
+    windows = launcher.shell_script(
+        directory, "Follow", run_dir=tmp_path / "b", platform="win32", command=command
+    )
+    raw = windows.script.read_bytes().decode()
+    assert raw.endswith(subprocess.list2cmdline(command) + "\r\n")
+    assert "%ComSpec%" not in raw
+
+
 # -- the verb -----------------------------------------------------------------------------------
 
 
@@ -118,16 +136,3 @@ def test_a_worktree_step_is_greyed_until_its_worktree_is_here_then_opens_in_it(
     assert state(services).enabled
     services.actions.run("agent.open_shell", services.context.current())
     assert [cwd for cwd, _script in spawned] == [tree]
-
-
-def test_a_review_opens_its_shell_in_the_checkout_it_runs_in(services, step, library_repo, spawned):
-    """A review's run gets no worktree whatever its aspect says, so a shell of one's own
-    opens where that run does."""
-    from dplanner.domain.commands import SetModuleDataCommand
-    from dplanner.planning.review import MODULE_ID, ReviewSettings, write
-
-    SetModuleDataCommand(step.id, MODULE_ID, write(ReviewSettings())).redo(services.document)
-    select(services, step)
-    assert state(services).label == "&Open Terminal in Checkout"
-    services.actions.run("agent.open_shell", services.context.current())
-    assert [cwd for cwd, _script in spawned] == [library_repo]

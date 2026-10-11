@@ -261,22 +261,6 @@ def status_command(
     return SetModuleDataCommand(step.id, MODULE_ID, entry, view_origin=view_origin, label=label)
 
 
-def record_started(library: Library, step_id: StepId, today: date) -> bool:
-    """Work on the step just began: claim ``in-progress`` — directly, off the undo stack.
-
-    The claim rides on something nobody can undo — a detached agent shell now exists — so
-    it is applied the way that launch is stamped (``step_agent_run``'s ``record_launch``
-    has the reasoning): an undo entry here would let Ctrl+Z file the step as pending while
-    an agent is still working in it. False, and no write, when the step is gone or already
-    claims to be in progress.
-    """
-    if not library.has(step_id) or stored(library.step(step_id)) is Status.IN_PROGRESS:
-        return False
-    step = library.step(step_id)
-    status_command(step, Status.IN_PROGRESS, today=today, view_origin=STARTED_ORIGIN).redo(library)
-    return True
-
-
 def record_merged(
     library: Library, step_id: StepId, today: date, *, accepted_by_merge: bool = False
 ) -> bool:

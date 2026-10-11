@@ -23,6 +23,7 @@ from dplanner.core.storage.locations import repo_storage
 from dplanner.core.storage.provider import (
     DivergedError,
     RemoteStorage,
+    StorageError,
     StorageProvider,
     VersionedStorage,
 )
@@ -477,3 +478,43 @@ def test_origin_url_asks_git_once_until_the_remote_changes(tmp_path, monkeypatch
     assert origin_url(repo) == first and len(asked) == 1
     _git("remote", "set-url", "origin", str(tmp_path / "elsewhere.git"), cwd=repo)
     assert origin_url(repo).endswith("elsewhere.git") and len(asked) == 2
+
+
+# -- the sync lock ----------------------------------------------------------------------------
+
+
+def test_the_sync_lock_refuses_a_directory_that_is_no_repository_and_creates_nothing(tmp_path):
+    """A lock taken by making its directory would plant a ``.git`` that turns everything
+    beneath it into a repository — once, every test under ``/tmp``."""
+    from dplanner.core.storage.git import sync_lock
+
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    with pytest.raises(StorageError, match="not a git repository") as refused, sync_lock(plain):
+        pass
+    assert str(plain) in str(refused.value)
+    assert list(plain.iterdir()) == []
+
+
+def test_a_worktree_takes_the_sync_lock_its_main_checkout_does(tmp_path):
+    from dplanner.core.storage.git import SYNC_LOCK, sync_lock
+
+    main = tmp_path / "main"
+    _init_repo(main)
+    _git("worktree", "add", "-q", "-b", "side", str(tmp_path / "side"), cwd=main)
+    with sync_lock(tmp_path / "side"):
+        assert (main / ".git" / SYNC_LOCK).is_file()
+
+
+def test_a_save_after_the_repository_vanished_refuses_rather_than_making_it_again(tmp_path):
+    """A provider holds its repository root for its lifetime; the root can go from under it."""
+    import shutil
+
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    storage = repo_storage(repo)
+    assert isinstance(storage, VersionedStorage)
+    shutil.rmtree(repo / ".git")
+    with pytest.raises(StorageError):
+        storage.commit("Save")
+    assert not (repo / ".git").exists()
