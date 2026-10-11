@@ -71,7 +71,15 @@ def brief(
             if stage is StageKind.EXECUTE
             else stage_epilogue(step, stage)
         ),
-        preamble=preamble(step, uses_worktree(step), facts, branches, roles, callsign),
+        preamble=preamble(
+            step,
+            uses_worktree(step),
+            facts,
+            branches,
+            roles,
+            callsign,
+            announces=stage is StageKind.EXECUTE,
+        ),
         project_instruction=standing,
         project_files=standing_files,
         instruction_files=tuple(place(path) for path in own.files),

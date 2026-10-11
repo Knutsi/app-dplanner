@@ -875,3 +875,14 @@ first plan also had an automatic `--on-limit` policy and rerouting a review park
 Codex's review of it cut both from this change (delivery and crash recovery for an answer
 nobody gave, and a race with the parked run's supervisor). Now: `playbooks.md`'s *How the
 engine drives a pass*.
+
+## 2026-10-11 — A plan or a review does not announce itself
+
+Every briefing opened with `dplanner agent-work start`, the plan and review stages included. In
+the playbook test run a Claude plan stage said it could not: it runs in plan mode. A probe then
+showed Claude's plan mode declines a write even when `--allowedTools` allows it. A plan or a
+review edits nothing in the plan, so it has no collision to warn of: the read stages are no
+longer told to announce, and the review is told to end its summary with what it could not run
+(`Not run: …`), since every Codex review in that run passed work its sandbox kept it from
+running. Left open: a Claude plan or review cannot `dplanner question ask` either. Now:
+`playbooks.md`'s *Each stage is one headless turn per harness*.

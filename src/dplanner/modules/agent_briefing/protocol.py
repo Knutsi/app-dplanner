@@ -28,6 +28,8 @@ def preamble(
     branches: BranchPlan,
     roles: Sequence[LocationRole],
     callsign: str = "",
+    *,
+    announces: bool = True,
 ) -> str:
     """The briefing's preflight: the agent proves it can report back, that it is where
     this run said it would be, and knows where the plan lives, before it starts.
@@ -55,16 +57,19 @@ def preamble(
     ]
     key = key_of(step) or step.title or "this step"
     ref = quoted(key)
-    lines.append(
-        "Then say you are working, before you touch anything: `dplanner agent-work start"
-        f" '<what you are about to do>' --step {ref}`. A developer may have a DPlanner"
-        " window open on this plan, and that is what tells them somebody else is editing"
-        " it — without it they will edit the same steps you are rewriting and be asked to"
-        " settle collisions they did not cause. Keep it current as you go"
-        f" (`dplanner agent-work set '<what now>' --done N --of M`); setting the step's"
-        " status when you finish ends it, and if you stop without one, end it yourself"
-        f" (`dplanner agent-work end --step {ref}`)."
-    )
+    # A plan or a review only reads, so it has no edit to announce — and Claude's plan mode,
+    # which runs them, declines the write even under an allow rule (2026-10-11).
+    if announces:
+        lines.append(
+            "Then say you are working, before you touch anything: `dplanner agent-work start"
+            f" '<what you are about to do>' --step {ref}`. A developer may have a DPlanner"
+            " window open on this plan, and that is what tells them somebody else is editing"
+            " it — without it they will edit the same steps you are rewriting and be asked to"
+            " settle collisions they did not cause. Keep it current as you go"
+            f" (`dplanner agent-work set '<what now>' --done N --of M`); setting the step's"
+            " status when you finish ends it, and if you stop without one, end it yourself"
+            f" (`dplanner agent-work end --step {ref}`)."
+        )
     if in_worktree:
         name = run_name_of(step)
         lines.append(

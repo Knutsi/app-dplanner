@@ -135,6 +135,8 @@ def test_a_pass_plans_executes_and_loops_back_to_its_session_until_review_passes
     pinned = Settings.from_json(plan.settings)
     assert pinned is not None and pinned.preset == "plan-execute-review-self"
     assert "This is the plan stage" in drive.prompt(plan)
+    # A plan only reads: it has no edit to announce, and Claude's plan mode refuses the write.
+    assert "agent-work" not in drive.prompt(plan)
     assert "ready-for-review" not in drive.prompt(plan)  # The work's ending, not a plan's.
     assert drive.supervise().over and drive.advanced == [plan.step]
     assert (ledger.run_dir(plan.run) / supervisor.PLAN_FILE).read_text().startswith("## Plan")
@@ -146,6 +148,7 @@ def test_a_pass_plans_executes_and_loops_back_to_its_session_until_review_passes
     assert "The plan is approved" in drive.prompt(execute) and "Add the lock." in drive.prompt(
         execute
     )
+    assert "dplanner agent-work start" in drive.prompt(execute)  # The work announces itself.
     drive.supervise()
     assert drive.specs[-1].resume and drive.specs[-1].session == "plan-s"
 
@@ -153,6 +156,7 @@ def test_a_pass_plans_executes_and_loops_back_to_its_session_until_review_passes
     review = drive.latest()
     assert (review.stage, review.attempt) == ("review", 1)
     assert "This is a review stage" in drive.prompt(review)
+    assert "agent-work" not in drive.prompt(review) and "Not run:" in drive.prompt(review)
     assert drive.supervise().verdict == CHANGES
     assert not drive.specs[-1].resume  # A review is always a fresh session.
 

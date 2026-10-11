@@ -25,10 +25,6 @@ _HELD = (
 def stage_epilogue(step: Step, stage: StageKind) -> str:
     """The closing words of a plan or a review, in place of the work's epilogue."""
     ref = quoted(key_of(step) or step.title or "Untitled step")
-    end = (
-        "Before your final message, end your at-work claim:"
-        f" `dplanner agent-work end --step {ref}`."
-    )
     ask = (
         f"If you must ask before you can go on, `dplanner question ask '<question>' --choice"
         f" '<answer>' … --step {ref}`, then end your turn: the answer resumes you."
@@ -37,7 +33,7 @@ def stage_epilogue(step: Step, stage: StageKind) -> str:
         return (
             f"This is the plan stage of {ref}'s playbook, run unattended. Read the step and the"
             " code it touches, then end with your plan as your final message — the plan"
-            f" itself, in markdown, with nothing after it. {_HELD} {ask} {end}"
+            f" itself, in markdown, with nothing after it. {_HELD} {ask}"
         )
     return (
         f"This is a review stage of {ref}'s playbook, run unattended. {_HELD} End with your"
@@ -45,7 +41,10 @@ def stage_epilogue(step: Step, stage: StageKind) -> str:
         " `changes`, a one-line `summary`, and `findings`, each with `severity`, `file`,"
         " `line`, `text` and `evidence`. A finding is something that must change for the work"
         " to pass, shown by its evidence; a matter of taste is not one. `pass` with no findings"
-        f" when nothing must change. {ask} {end}"
+        " when nothing must change. End the `summary` with what you could not run that the"
+        " work's own checks name — `Not run: <what, and why>` — or `Ran everything it names`,"
+        " so a pass that read the code is never taken for one that ran it."
+        f" {ask}"
     )
 
 

@@ -749,9 +749,13 @@ harness's `harness.py` spells it as an argv (`domain/headless.py`'s `Headless.co
 began in — a read-only thread resumed bare came back `workspace-write`. Read off the rollout's
 `turn_context` against the fake API, `--approve-for-me --add-dir <d>` is exactly the four
 overrides in the table, and they hold on `exec resume`; so a fresh turn uses them too, and the
-two spellings cannot drift. **A Codex plan or review never runs read-only**, because its
-briefing opens with `dplanner agent-work start` and asks through `dplanner question ask`, and
-both write — read-only, a reviewer could not even say it had begun. Codex has no read-only
+two spellings cannot drift. **A Codex plan or review never runs read-only**, because it
+asks through `dplanner question ask`, which writes. (Its briefing no longer opens with
+`dplanner agent-work start`: a plan or a review edits nothing in the plan, so it has no edit to
+announce, and **Claude's plan mode declines that write even under an `--allowedTools` allow
+rule** — the model refuses it itself, with no permission denial in the result, which a probe
+showed on 2026-10-11. The same holds for `question ask`, so a Claude plan or review cannot ask
+the developer today; how Claude's read stages run is an open question, not settled here.) Codex has no read-only
 sandbox with writable exceptions, so the turn's working root is its run directory (`-C`, which
 with `--skip-git-repo-check` goes on `codex exec` before `resume`, the subcommand taking
 neither), its other writable roots only what its `dplanner` verbs write — the project's

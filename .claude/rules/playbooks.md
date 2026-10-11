@@ -169,7 +169,7 @@ paths:
   (`AgentHarness.headless`, `domain/headless.py`), and **Codex states its stage's mode as `-c`
   overrides on every turn**, fresh and resumed alike — `exec resume` takes no `-s`,
   `--approve-for-me` or `--add-dir`, and does not keep the mode its thread began in. **A Codex
-  plan or review is never `read-only`** — its `dplanner agent-work` and `question ask` write:
+  plan or review is never `read-only`** — its `dplanner question ask` writes:
   it works from the run directory (`-C`, before `resume`), the project's `questions/` and
   `claims/` and the config directory its only other writable roots
   (`supervisor.control_dirs`) — never the project directory, and never a root that is or holds
