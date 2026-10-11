@@ -1,0 +1,73 @@
+B6 cuts feature/a before 2 steps; S7 lands it
+B8 cuts feature/b before 2 steps; S9 lands it
+
+### Probe 1: Test linked straight to A2 and B2 (before either landing)
+feature/a (open, from the default branch): B6 → S2 S3 S10 → S7
+feature/b (open, from the default branch): B8 → S4 S5 S10 → S9
+Probes
+  Test straight: is on feature/a but waits on 'B2', which is not — the branch was cut before that work, so this step's worktree will not have it; `dplanner step link 'feature/a' 'B2'` to cut after it
+  Test straight: is on feature/a, but 'Land feature/a' does not wait for it — its work may never land; link it into the landing, or take it off the branch
+  Test straight: is on feature/b but waits on 'A2', which is not — the branch was cut before that work, so this step's worktree will not have it; `dplanner step link 'feature/b' 'A2'` to cut after it
+  Test straight: is on feature/b, but 'Land feature/b' does not wait for it — its work may never land; link it into the landing, or take it off the branch
+  Test straight: is on feature/a and feature/b, and neither is inside the other — it cannot tell which branch its work goes on; `dplanner branch remove` one of them
+  Probes: estimates but no start date — `dplanner schedule start 'Probes' --date YYYY-MM-DD`
+6 findings
+dplanner: 'Test straight': it is on feature/a and feature/b, and neither is inside the other
+exit 1
+11:Second, confirm you are in this step's own git worktree: `git rev-parse --show-toplevel` must end in `.dplanner-worktrees/s10-test-straight` and `git branch --show-current` must print `agent/s10-test-straight`. If either differs, STOP — do not touch the main checkout — and tell the developer the worktree was not prepared. Commit on that branch; every `dplanner` command still reaches the plan the window shows.
+29:This step is S10. Its branch and worktree carry that key; open the PR title with it (`S10: …`) and record the branch and the PR on the step as they exist: `dplanner github set S10 --branch $(git branch --show-current)`, then `dplanner github set S10 --pr <number>`. Once the PR is open, set the status (below) straight away: it takes the window's banner down with it.
+35:As you go, leave notes — the project's record, indexed into the briefing of every step that comes after the one you made them on. That is the reach: add `--reach project` when what you settled belongs to the whole plan rather than this branch. `dplanner note add --help` lists the labels:
+
+### Probe 1b: the same, but via step link after the fact (is the link refused?)
+'Test linked later' now requires 'B2'
+exit 0
+
+### Probe 2: partial join — Test requires Land feature/a and B2
+feature/a (open, from the default branch): B6 → S2 S3 S10 → S7
+feature/b (open, from the default branch): B8 → S4 S5 S10 S11 S12 → S9
+Probes
+  Test straight: is on feature/a but waits on 'B2', which is not — the branch was cut before that work, so this step's worktree will not have it; `dplanner step link 'feature/a' 'B2'` to cut after it
+  Test straight: is on feature/a, but 'Land feature/a' does not wait for it — its work may never land; link it into the landing, or take it off the branch
+  Test straight: is on feature/b but waits on 'A2', which is not — the branch was cut before that work, so this step's worktree will not have it; `dplanner step link 'feature/b' 'A2'` to cut after it
+  Test linked later: is on feature/b but waits on 'Land feature/a', which is not — the branch was cut before that work, so this step's worktree will not have it; `dplanner step link 'feature/b' 'Land feature/a'` to cut after it
+  Test partial: is on feature/b but waits on 'Land feature/a', which is not — the branch was cut before that work, so this step's worktree will not have it; `dplanner step link 'feature/b' 'Land feature/a'` to cut after it
+  Test straight: is on feature/b, but 'Land feature/b' does not wait for it — its work may never land; link it into the landing, or take it off the branch
+  Test linked later: is on feature/b, but 'Land feature/b' does not wait for it — its work may never land; link it into the landing, or take it off the branch
+  Test partial: is on feature/b, but 'Land feature/b' does not wait for it — its work may never land; link it into the landing, or take it off the branch
+  Test straight: is on feature/a and feature/b, and neither is inside the other — it cannot tell which branch its work goes on; `dplanner branch remove` one of them
+  Probes: estimates but no start date — `dplanner schedule start 'Probes' --date YYYY-MM-DD`
+10 findings
+11:Second, confirm you are in this step's own git worktree: `git rev-parse --show-toplevel` must end in `.dplanner-worktrees/s12-test-partial` and `git branch --show-current` must print `agent/s12-test-partial`. If either differs, STOP — do not touch the main checkout — and tell the developer the worktree was not prepared. Commit on that branch; every `dplanner` command still reaches the plan the window shows.
+29:This step is S12. Its branch and worktree carry that key; open the PR title with it (`S12: …`) and record the branch and the PR on the step as they exist: `dplanner github set S12 --branch $(git branch --show-current)`, then `dplanner github set S12 --pr <number>`. Open it against `feature/b`: `gh pr create --base feature/b`. This step is on the feature branch `feature/b`, which B8 cuts and S9 lands: its PR merges into that branch, never into the mainline, and merged there it is accepted — the branch's own review comes when it lands. Once the PR is open, set the status (below) straight away: it takes the window's banner down with it.
+35:As you go, leave notes — the project's record, indexed into the briefing of every step that comes after the one you made them on. That is the reach: add `--reach project` when what you settled belongs to the whole plan rather than this branch. `dplanner note add --help` lists the labels:
+
+### Probe 4: a second stretch with a branch name already in use
+dplanner: another branch in this project is already called feature/a
+exit 1
+feature/a (open, from the default branch): B6 → S2 S3 S10 → S7
+feature/b (open, from the default branch): B8 → S4 S5 S10 S11 S12 → S9
+Probes
+  Test straight: is on feature/a but waits on 'B2', which is not — the branch was cut before that work, so this step's worktree will not have it; `dplanner step link 'feature/a' 'B2'` to cut after it
+  Test straight: is on feature/a, but 'Land feature/a' does not wait for it — its work may never land; link it into the landing, or take it off the branch
+  Test straight: is on feature/b but waits on 'A2', which is not — the branch was cut before that work, so this step's worktree will not have it; `dplanner step link 'feature/b' 'A2'` to cut after it
+  Test linked later: is on feature/b but waits on 'Land feature/a', which is not — the branch was cut before that work, so this step's worktree will not have it; `dplanner step link 'feature/b' 'Land feature/a'` to cut after it
+  Test partial: is on feature/b but waits on 'Land feature/a', which is not — the branch was cut before that work, so this step's worktree will not have it; `dplanner step link 'feature/b' 'Land feature/a'` to cut after it
+  Test straight: is on feature/b, but 'Land feature/b' does not wait for it — its work may never land; link it into the landing, or take it off the branch
+  Test linked later: is on feature/b, but 'Land feature/b' does not wait for it — its work may never land; link it into the landing, or take it off the branch
+  Test partial: is on feature/b, but 'Land feature/b' does not wait for it — its work may never land; link it into the landing, or take it off the branch
+  Test straight: is on feature/a and feature/b, and neither is inside the other — it cannot tell which branch its work goes on; `dplanner branch remove` one of them
+  Probes: estimates but no start date — `dplanner schedule start 'Probes' --date YYYY-MM-DD`
+10 findings
+
+### Probe 5: one stretch whose members are in two repositories
+M2 in app: works in l2 (Knutsi/temp-dplanner-test-app)
+B4 cuts feature/mix before 2 steps; S5 lands it
+ProbesTwo
+  ProbesTwo: estimates but no start date — `dplanner schedule start 'ProbesTwo' --date YYYY-MM-DD`
+1 findings
+M1 in lib: agent/m1
+dplanner: there is no origin/feature/mix to start agent/s3-m2-in-app from — a branch deleted after it landed can be restored from its pull request
+exit 1
+22a4673512d370246d8ac9a3a85606854b6acf81	refs/heads/agent/s4-p1-mul-command
+b17b0e9544f792f150704540fb143fd8337fb32a	refs/heads/feature/b
+b17b0e9544f792f150704540fb143fd8337fb32a	refs/heads/main
