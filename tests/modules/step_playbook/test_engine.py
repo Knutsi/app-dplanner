@@ -619,7 +619,7 @@ def _landing_at_its_person_gate(drive, code, tmp_path, monkeypatch) -> questions
     drive.advance("S3")
     assert drive.supervise().stage == "review"
     drive.advance("S3")
-    gate = drive.asked()
+    gate: questions.Question = drive.asked()
     assert (gate.stage, gate.purpose) == ("person", "gate")
     return gate
 
