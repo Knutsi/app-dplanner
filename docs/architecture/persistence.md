@@ -673,9 +673,20 @@ repository for the legacy shape and nowhere for an unset one, greyed with the re
 is recorded — Project ▸ Settings…") until the fact is there — and
 `store.checkout_changed` refreshes the context, since nothing in the context graph
 changed. A conflict handed to an agent is about plan files and opens in the plan
-repository whatever the code is. The github module's `repository_for`, `dplanner github`
-and the report's refs all read `code_remote`: the primary code repository, the plan's
-origin only for the legacy shape. `dplanner project show`, `location list`, `agent prompt --json` and
+repository whatever the code is. **A step's PR is read where the step works**: the github
+module's `repository_for`, every `dplanner github` verb that names a step (and the
+playbook's `progress`, which merges through one) and the report's refs all read
+`planning.agent.code_remote_of(facts, step)` — the repository of the code row the step's
+workplace names, else the primary, the plan's origin only for the legacy shape. They read
+`code_remote`, the primary for every step, until a two-repository run (2026-10-11) showed
+why that cannot stand: each repository numbers its PRs from one, so a step's PR #3 looked up
+in the other repository is somebody else's — it wrote another repository's PR onto a step,
+nearly merged one, missed a merge, and read a landing done whose own PR was still open.
+`github set --pr <url>` refuses a URL of another repository for the same reason. The list
+verbs, `github prs|branches`, ask the primary: they have no step. The briefing names the
+step's own repository as the code it works in, and a coordinator over a project with two
+tells `gh` whose PR it means (`-R`). A workplace naming a row that is gone or no longer code
+falls back to the primary, and lint's `agent.workplace-gone` says so. `dplanner project show`, `location list`, `agent prompt --json` and
 the Project dialog's Locations table print the same facts, and the briefing tells the agent the table
 in words — which repositories the project is about and where each stands here, so an
 agent never guesses a path. Discovery (`cli/discovery.py`) gained one rule: a `dplanner`

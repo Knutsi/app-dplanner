@@ -36,11 +36,10 @@ from dplanner.core.storage.sparse import (
     run_git,
     valid_ref,
 )
-from dplanner.domain.locations import Placement
 from dplanner.domain.model import Step
 from dplanner.domain.repositories import RepositoryFacts
 from dplanner.modules.step_ticket.aspect import read as ticket_read
-from dplanner.planning.agent import workplace
+from dplanner.planning.agent import code_placement
 from dplanner.planning.branches import DEFAULT_BRANCHES, DEFAULT_START, BranchPlan
 from dplanner.planning.kinds import key_of
 
@@ -80,13 +79,6 @@ def workdir(facts: RepositoryFacts, step: Step | None = None) -> Path | None:
     if placement is not None:
         return placement.root if placement.here else None
     return facts.code_root
-
-
-def code_placement(facts: RepositoryFacts, step: Step | None) -> Placement | None:
-    """The code location a step works in, placed: the row its workplace names, else the
-    primary. A named row that is gone falls back to the primary — lint says so."""
-    named = facts.placement(workplace(step)) if step is not None else None
-    return named if named is not None else facts.code
 
 
 def worktree_path(workdir: Path, name: str) -> Path:

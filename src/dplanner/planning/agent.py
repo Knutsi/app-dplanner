@@ -25,7 +25,7 @@ prefix — renaming a module is a Takeover that churns every workspace, and the 
 names where the aspect began.
 """
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from typing import Any
 
 from dplanner.core.module_data import ModuleDataFormat, stamped
@@ -37,7 +37,9 @@ from dplanner.domain.assets import (
     area_assets,
     assets,
 )
+from dplanner.domain.locations import CODE, Location, Placement, of_role
 from dplanner.domain.model import Library, NodeId, Project, Step
+from dplanner.domain.repositories import RepositoryFacts
 from dplanner.domain.store import FilesFor
 
 MODULE_ID = "step_agent_instruction"
@@ -81,6 +83,30 @@ def workplace(step: Step) -> str:
     entry = step.module_data.get(MODULE_ID) or {}
     found = entry.get("workplace", "")
     return found if isinstance(found, str) else ""
+
+
+def code_location(locations: Iterable[Location], step: Step | None) -> Location | None:
+    """The code row a step works in: the one its workplace names, else the project's first.
+    A named row that is gone, or is no longer a code row, falls back to the primary —
+    ``agent.workplace-gone`` in lint says so."""
+    rows = of_role(locations, CODE.id)
+    named = workplace(step) if step is not None else ""
+    return next((row for row in rows if row.id == named), rows[0] if rows else None)
+
+
+def code_placement(facts: RepositoryFacts, step: Step | None) -> Placement | None:
+    """The step's code row, placed on this machine; None while the project names no code."""
+    location = code_location((found.location for found in facts.placements), step)
+    return facts.placement(location.id) if location is not None else None
+
+
+def code_remote_of(facts: RepositoryFacts, step: Step | None) -> str:
+    """The remote a step's work — its branch, its PR — belongs to: its code row's, else the
+    project's fallback (the plan's own origin for the legacy shape, "" while unset). Every
+    reader of a step's PR asks this, never the primary: two code repositories number their
+    PRs from one apiece, so a step's PR #3 read in the other one is somebody else's."""
+    placement = code_placement(facts, step)
+    return placement.location.repository if placement is not None else facts.code_remote
 
 
 def write_state(

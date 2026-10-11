@@ -6,9 +6,12 @@ URL, and refuse with one line when either is missing. ``show`` prints a step's r
 recorded and, with ``gh``, where they stand now: the PR's state and title, and whether
 the branch is still on the remote — the GitHub tab's standing line, for the terminal.
 
-Which repository a step belongs to is **the code repository its project records** — the
-one fact a plan stores about the code it plans — and, for a project that records none
-(the older shape, a plan kept beside its code), its own directory's ``origin`` remote.
+Which repository a step's refs belong to is **the code repository the step works in** —
+the code location its workplace names, else the project's primary — and, for a project
+that records none (the older shape, a plan kept beside its code), its own directory's
+``origin`` remote. Never the primary for every step: two code repositories each number
+their PRs from one, so a step's PR #3 looked up in the other is somebody else's. The list
+verbs, ``prs`` and ``branches``, ask the project's primary code repository.
 
 A verb that learns a PR is merged — ``refresh``, ``show`` — finishes a step waiting on
 that merge, through the status writer the composition root hands ``commands()``.
@@ -51,6 +54,7 @@ from dplanner.modules.github.gh import (
     view_pr,
     which_gh,
 )
+from dplanner.planning.agent import code_remote_of
 from dplanner.planning.status import Status, Unknown, stored
 
 FinishMerged = Callable[[CliContext, Step], bool]
@@ -102,14 +106,14 @@ def commands(*, finish_merged: FinishMerged) -> list[CliCommand]:
         ),
         CliCommand(
             path=("github", "prs"),
-            summary="List the repository's pull requests (needs gh; first 100).",
+            summary="List the primary code repository's pull requests (needs gh; first 100).",
             configure=_configure_prs,
             run=_prs,
             examples=("dplanner github prs --all",),
         ),
         CliCommand(
             path=("github", "branches"),
-            summary="List the repository's branches (needs gh).",
+            summary="List the primary code repository's branches (needs gh).",
             configure=_configure_branches,
             run=_branches,
             examples=("dplanner github branches",),
@@ -152,13 +156,20 @@ def _set(context: CliContext, args: Namespace) -> int:
         number = pr_number_from(args.pr)
         if number is None:
             raise CliError(f"{args.pr!r} names no PR — pass a number, #number, or its URL")
+        repo = _step_repo(context, step)
+        named = parse_repo(args.pr.split("/pull/", 1)[0]) if "/pull/" in args.pr else None
+        if repo is not None and named is not None and named.lower() != repo.lower():
+            raise CliError(
+                f"{args.pr} is a PR of {named}, but {step.title!r} works in {repo}"
+                " — `dplanner agent workplace` names the step's repository"
+            )
         refs = GithubRefs(
             branch=refs.branch,
             pr_number=number,
             pr_url=args.pr if "/pull/" in args.pr else "",
         )
         # Best effort; recording never fails on gh.
-        info = _fetch_pr(_step_repo(context, step), number)
+        info = _fetch_pr(repo, number)
         if info is not None:
             refs = refreshed(refs, info)
 
@@ -381,17 +392,18 @@ def _need_gh() -> None:
         raise CliError(refusal)
 
 
-def _repo_url(context: CliContext, project: Project) -> str:
-    """The remote URL a project's work belongs to: the code repository it records, else —
-    the older shape — its own directory's origin, from git; none while its code is not
-    set. The same reading the GitHub tab's ``repository_for`` makes."""
-    return repository_facts(project, context.store.project_dir(project.id), {}).code_remote
+def _repo_url(context: CliContext, project: Project, step: Step | None = None) -> str:
+    """The remote URL a step's work belongs to — the code location it works in — or, with
+    no step, the project's primary code repository; for the older shape, the project
+    directory's origin; none while its code is not set. The same reading the GitHub tab's
+    ``repository_for`` makes."""
+    facts = repository_facts(project, context.store.project_dir(project.id), {})
+    return code_remote_of(facts, step)
 
 
 def _step_repo(context: CliContext, step: Step) -> str | None:
-    """The ``owner/repo`` a step's refs belong to: its project directory's repository."""
-    project = context.library.project_of(step.id)
-    return parse_repo(_repo_url(context, project))
+    """The ``owner/repo`` a step's refs belong to: the code repository it works in."""
+    return parse_repo(_repo_url(context, context.library.project_of(step.id), step))
 
 
 def _scope_repo(context: CliContext) -> str:

@@ -19,7 +19,7 @@ from collections.abc import Callable, Collection, Sequence
 
 from dplanner.cli.discovery import CALLSIGN_ENV
 from dplanner.domain.claims import WATCH, member, spoken
-from dplanner.domain.locations import LocationRole
+from dplanner.domain.locations import CODE, LocationRole
 from dplanner.domain.model import Library, Step
 from dplanner.domain.repositories import RepositoryFacts
 from dplanner.domain.store import FilesFor
@@ -38,7 +38,7 @@ from dplanner.modules.agent_briefing.protocol import (
 )
 from dplanner.modules.agent_briefing.worktree import mainline
 from dplanner.modules.notes.aspect import project_ref
-from dplanner.planning.agent import enabled, read_project
+from dplanner.planning.agent import code_placement, enabled, read_project
 from dplanner.planning.branches import BranchPlan
 from dplanner.planning.kinds import key_of, kind_word, works_nobody
 from dplanner.planning.progression import outstanding
@@ -90,18 +90,19 @@ def coordinate(
     called = members(word, steps)
     keys = [key_of(step) or step.title for step in steps if step.id in called]
     standing = read_project(project)
+    repository_of = _repositories(facts)
     parts: list[tuple[str, PromptPart]] = [
         *([] if squad else [("protocol", _choose(keys, taken))]),
         ("protocol", _before(word, keys, facts, roles, chosen=bool(squad))),
         ("context", _squad(word, steps, called, chosen=bool(squad))),
-        ("context", _selection(library, steps, called, merges_into, status_for)),
+        ("context", _selection(library, steps, called, merges_into, status_for, repository_of)),
         *(
             [("project", PromptPart("What every worker is told", standing))]
             if standing.strip()
             else []
         ),
         *(("project", part) for part in project_sections(library, steps[0], files)),
-        ("instruction", _loop(ref, actual, at_once)),
+        ("instruction", _loop(ref, actual, at_once, several=repository_of is not None)),
         ("protocol", _done(ref, actual)),
     ]
     blocks = [
@@ -215,12 +216,30 @@ def _squad(
     return PromptPart("Your squad", body)
 
 
+def _repositories(facts: RepositoryFacts | None) -> Callable[[Step], str] | None:
+    """Each step's code repository as a person knows it (``acme/ui``) — only for a project
+    working in more than one, where a bare ``gh pr merge 3`` would find another
+    repository's PR #3; None when there is one, and nothing needs saying."""
+    if facts is None:
+        return None
+    code = [found.location for found in facts.placements if found.location.role == CODE.id]
+    if len({row.canonical for row in code}) < 2:
+        return None
+
+    def of(step: Step) -> str:
+        placement = code_placement(facts, step)
+        return placement.location.repository_label if placement is not None else ""
+
+    return of
+
+
 def _selection(
     library: Library,
     steps: Sequence[Step],
     called: dict[str, str],
     merges_into: Callable[[Step], str],
     status_for: Callable[[Step], Status],
+    repository_of: Callable[[Step], str] | None,
 ) -> PromptPart:
     lines = []
     for step in steps:
@@ -232,7 +251,8 @@ def _selection(
                 moves = "waits on " + ", ".join(waits)
             base = merges_into(step)
             lands = f"PR into `{base}`" if base else "PR into the mainline, which a person merges"
-            facts = [status.value, moves, f"`{called[step.id]}`", lands]
+            where = f"in `{repository_of(step)}`" if repository_of is not None else ""
+            facts = [status.value, moves, f"`{called[step.id]}`", where, lands]
         else:
             facts = [status.value, _unworked(step), "context only, no member"]
         lines.append(
@@ -256,8 +276,11 @@ def _unworked(step: Step) -> str:
     return "a person's step, which waits on a person"
 
 
-def _loop(project: str, actual: str, at_once: int) -> PromptPart:
+def _loop(project: str, actual: str, at_once: int, *, several: bool) -> PromptPart:
     said = spoken(actual)
+    # Each code repository numbers its PRs from one: gh, run from wherever, must be told whose.
+    whose = " -R <its repository, as listed>" if several else ""
+    verify = f"`{actual}/verify`" + (", one in each repository's checkout" if several else "")
     body = "\n".join(
         [
             "Work the selection until every step is done, blocked, or waiting on a person."
@@ -302,12 +325,12 @@ def _loop(project: str, actual: str, at_once: int) -> PromptPart:
             " merged it: read the diff, and check its PR goes from the step's branch into the"
             " base listed above — never the mainline, which a person merges. GitHub reads"
             " `mergeable` as UNKNOWN for a few seconds after any push or merge: poll `gh pr view"
-            " <n> --json mergeable` until it settles, since UNKNOWN is not a conflict; then `gh"
-            " pr merge <n> --merge`. Claude's auto mode refuses that merge unless the session"
-            ' was started with `--allowedTools "Bash(gh pr merge:*)"`: when it is refused, ask'
-            " a person to merge rather than working round the refusal. Run the project's checks"
-            " on the integrated branch in your"
-            f" own worktree (`{actual}/verify`), in the foreground under a timeout — the ratchet"
+            f" <n>{whose} --json mergeable` until it settles, since UNKNOWN is not a conflict;"
+            f" then `gh pr merge <n>{whose} --merge`. Claude's auto mode refuses that merge"
+            ' unless the session was started with `--allowedTools "Bash(gh pr merge:*)"`: when'
+            " it is refused, ask a person to merge rather than working round the refusal. Run"
+            " the project's checks on the integrated branch in your own worktree"
+            f" ({verify}), in the foreground under a timeout — the ratchet"
             " tests first (an architecture or rule-size ceiling): two PRs that each fit a"
             " ceiling can exceed it together. Rerun a lone failure alone before you believe it.",
             "8. **Release.** `dplanner github refresh <key>` lets the merge accept the step;"

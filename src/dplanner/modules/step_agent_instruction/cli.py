@@ -138,7 +138,24 @@ def lint_checks(*, described: Callable[[Step], bool]) -> list[LintCheck]:
             if enabled(step) and not read(step) and not described(step)
         ]
 
-    return [missing_briefing]
+    def workplace_gone(_product: Library, project: Project, _files: FilesFor) -> list[LintFinding]:
+        # A workplace naming a row that is gone — or is no longer code — falls back to the
+        # primary, so the step's work and its PRs would quietly go to another repository.
+        code = {row.id for row in of_role(project.locations, CODE.id)}
+        return [
+            LintFinding(
+                check="agent.workplace-gone",
+                subject_id=step.id,
+                subject=step.title,
+                message=f"works in {named!r}, which is no longer a code location — so the"
+                " primary's: `dplanner agent workplace"
+                f" '{step.title}' <location>`, or `primary`",
+            )
+            for step in project.steps
+            if (named := workplace(step)) and named not in code
+        ]
+
+    return [missing_briefing, workplace_gone]
 
 
 def commands(

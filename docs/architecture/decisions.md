@@ -886,3 +886,16 @@ longer told to announce, and the review is told to end its summary with what it 
 (`Not run: …`), since every Codex review in that run passed work its sandbox kept it from
 running. Left open: a Claude plan or review cannot `dplanner question ask` either. Now:
 `playbooks.md`'s *Each stage is one headless turn per harness*.
+
+## 2026-10-11 — A step's PR is read where the step works
+
+Every GitHub reader — the window's refresher, `dplanner github`, the playbook's `progress` and
+the report — looked a step's PR up in the project's primary code repository, though a step
+already named the repository it works in and its worktree was made there. A run over two
+repositories (`docs/research/2026-10-11-parallel-branches/`) showed what that costs: both
+numbered their PRs from one, so the second repository's PR #3 was read as the first's —
+another repository's PR written onto a step, a merge of the wrong PR stopped only by its head
+branch, a merged PR never noticed, and a landing read done while its own PR was open. Now one
+reading, `planning.agent.code_remote_of`, answers for every step, and the briefing and the
+coordinator name that repository too. Now: `persistence.md`'s *A project names its locations*
+and `agents.md`'s *A step names the code location it works in*.

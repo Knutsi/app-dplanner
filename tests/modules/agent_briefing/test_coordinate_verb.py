@@ -86,3 +86,26 @@ def test_a_step_nobody_s_agent_works_is_context_without_a_member(cli, project):
     assert "`dplanner claim take S2 --callsign anvil`" in prompt
     assert "anvil-three" not in prompt
     assert "holds none" in cli("agent", "coordinate", "S3", expect=1)
+
+
+def test_over_two_code_repositories_each_step_names_its_own_and_gh_is_told_whose(
+    cli, project, tmp_path
+):
+    """Each repository numbers its PRs from one: a bare `gh pr merge 3` would find another's."""
+    for url, label in (
+        ("https://github.com/acme/widget", ""),
+        ("https://github.com/acme/ui", "UI"),
+    ):
+        cli("location", "add", "Discovery", "--role", "code", "--repository", url,
+            *(("--label", label) if label else ()))  # fmt: skip
+    cli("agent", "workplace", "S2", "code:UI")
+    prompt = json.loads(cli("agent", "coordinate", "S1", "S2", "--callsign", "anvil", "--json"))[
+        "prompt"
+    ]
+    assert "**S1** Read the spec — pending · ready · `anvil-two` · in `acme/widget`" in prompt
+    assert "`anvil-three` · in `acme/ui`" in prompt
+    assert "`gh pr merge <n> -R <its repository, as listed> --merge`" in prompt
+    # And the step's own briefing names the repository it works in, not the primary.
+    (brief := tmp_path / "brief.md").write_text("Cut it.\n", encoding="utf-8")
+    cli("describe", "set", "S2", "--file", str(brief))
+    assert "apart from the code you are working in (acme/ui)" in cli("agent", "prompt", "S2")

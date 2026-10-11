@@ -135,8 +135,12 @@ paths:
   `with_workplace`; `dplanner agent workplace <step> code:UI|primary`), absent meaning
   the primary — the project's first code row — because which repository a step's change
   lands in is a fact about the step, exactly as its worktree choice is.
-  `agent_briefing.worktree.workdir(facts, step)` places that row (Qt-free, so the briefing can place a
-  source's worktree); a named row that is gone falls back to the primary. A run
+  `planning.agent.code_placement(facts, step)` is the one reading — a named *code* row, else
+  the primary, which a row gone or no longer code falls back to (`agent.workplace-gone` in
+  lint) — and `agent_briefing.worktree.workdir` places it (Qt-free, so the briefing can place a
+  source's worktree). **Everything about a step's work reads that row, never the primary**:
+  its worktree, its mainline, its PR (`code_remote_of`, `persistence.md`), the briefing's
+  *code you are working in*, and the coordinator's `gh … -R` over a project with two. A run
   across two repositories at once is two steps.
 - **An agent may be opened with nothing to do, and that is a second invocation.**
   *Project ▸ Open Agent in Code* is the same profiles in the same child menu, opening a
