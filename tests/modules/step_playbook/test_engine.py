@@ -253,6 +253,33 @@ def test_a_fix_whose_reopening_is_not_saved_never_starts(drive, monkeypatch):
     assert len(drive.started) == runs + 1 and _status(drive.cli, "Build it") == "in-progress"
 
 
+def test_a_fix_whose_start_fails_after_its_save_asks_on_a_blocked_card(drive, monkeypatch):
+    """The reopening is on disk, then the fix's run cannot start: the pass asks on a card,
+    as a start refused before the save does, rather than stopping with nobody told."""
+    drive.cli("playbook", "set", "Build it", "plan-execute-review-self")
+    drive.play(
+        {"lines": [INIT, result("## Plan", session="plan-s")]},
+        {"lines": [INIT, result(typed=done(), session="plan-s")]},
+        {"lines": [INIT, result(typed=CHANGES, session="review-1")]},
+    )
+    drive.cli("agent", "run", "Build it", "--playbook")
+    for stage in ("plan", "execute", "review"):
+        drive.supervise()
+        if stage == "execute":
+            drive.cli("status", "set", "Build it", "ready-for-review")
+        if stage != "review":
+            drive.advance()
+
+    def refused(_project_dir, _run, **_kw):
+        raise OSError("no supervisor could start")
+
+    monkeypatch.setattr(supervisor, "start_detached", refused)
+    said = drive.cli("playbook", "advance", "Build it", expect=1)
+    card = drive.asked()
+    assert (card.kind, card.stage) == ("blocked", "execute") and card.short in said
+    assert _status(drive.cli, "Build it") == "in-progress"  # The reopening was saved.
+
+
 def test_the_round_cap_asks_and_one_more_round_sends_a_fix_then_a_person_decides(drive):
     drive.cli("playbook", "set", "Build it", "review-only", "--rounds", "1")
     drive.play(

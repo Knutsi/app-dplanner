@@ -247,8 +247,14 @@ class Engine:
             context.unwritten.append(begun.discard)
 
             def start() -> None:
+                # A start refused after the save asks on a card, as one refused before it
+                # does — so the pass waits for *Retry now* rather than stopping unseen.
                 with lock:
-                    begun.start()
+                    try:
+                        begun.start()
+                    except CliError as error:
+                        asked = _refused(context, step, pass_, stage, attempt, str(error), None)
+                        raise CliError(asked) from error
 
             context.after_flush.append(start)
             return begun.said, True
