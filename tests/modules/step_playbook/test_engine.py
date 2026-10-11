@@ -24,6 +24,7 @@ from dplanner.domain.ledger import LedgerRecord
 from dplanner.modules.agent_claude import harness as claude
 from dplanner.modules.agent_supervisor import supervisor
 from dplanner.modules.github import cli as github_cli
+from dplanner.modules.github.gh import PrInfo
 from dplanner.modules.step_playbook.passes import Settings
 from dplanner.planning.status import Status, stored
 
@@ -134,6 +135,8 @@ def test_a_pass_plans_executes_and_loops_back_to_its_session_until_review_passes
     pinned = Settings.from_json(plan.settings)
     assert pinned is not None and pinned.preset == "plan-execute-review-self"
     assert "This is the plan stage" in drive.prompt(plan)
+    # A plan only reads: it has no edit to announce, and Claude's plan mode refuses the write.
+    assert "agent-work" not in drive.prompt(plan)
     assert "ready-for-review" not in drive.prompt(plan)  # The work's ending, not a plan's.
     assert drive.supervise().over and drive.advanced == [plan.step]
     assert (ledger.run_dir(plan.run) / supervisor.PLAN_FILE).read_text().startswith("## Plan")
@@ -145,6 +148,7 @@ def test_a_pass_plans_executes_and_loops_back_to_its_session_until_review_passes
     assert "The plan is approved" in drive.prompt(execute) and "Add the lock." in drive.prompt(
         execute
     )
+    assert "dplanner agent-work start" in drive.prompt(execute)  # The work announces itself.
     drive.supervise()
     assert drive.specs[-1].resume and drive.specs[-1].session == "plan-s"
 
@@ -152,6 +156,7 @@ def test_a_pass_plans_executes_and_loops_back_to_its_session_until_review_passes
     review = drive.latest()
     assert (review.stage, review.attempt) == ("review", 1)
     assert "This is a review stage" in drive.prompt(review)
+    assert "agent-work" not in drive.prompt(review) and "Not run:" in drive.prompt(review)
     assert drive.supervise().verdict == CHANGES
     assert not drive.specs[-1].resume  # A review is always a fresh session.
 
@@ -175,6 +180,104 @@ def test_a_pass_plans_executes_and_loops_back_to_its_session_until_review_passes
     assert "is through" in drive.advance()
     assert "is through" in drive.advance()  # Advancing again does nothing more.
     assert len(drive.started) == runs
+
+    # What every stage said, without opening a run record: the plan, each verdict and its
+    # findings, the reason a finding was declined.
+    told = str(drive.cli("playbook", "show", "Build it", "--history"))
+    assert "Add the lock." in told and "plan#1" in told and "review#1" in told
+    assert "- [high] a.py:3 A race (declined: It cannot race)" in told
+    (latest,) = json.loads(drive.cli("playbook", "show", "Build it", "--history", "--json"))[
+        "history"
+    ]
+    assert [(e["stage"], e["outcome"]) for e in latest["events"] if e["kind"] == "review"] == [
+        ("review", "changes"),
+        ("review", "pass"),
+    ]
+    assert "history" not in json.loads(drive.cli("playbook", "show", "Build it", "--json"))
+
+
+def test_work_sent_back_is_in_progress_again_until_its_fix_says_otherwise(drive):
+    """What the agent called finished no longer is once a gate sends it back — and a step
+    accepted as ready to merge must not be finished by its merge while it is being fixed."""
+    drive.cli("playbook", "set", "Build it", "plan-execute-review-self")
+    drive.play(
+        {"lines": [INIT, result("## Plan", session="plan-s")]},
+        {"lines": [INIT, result(typed=done(), session="plan-s")]},
+        {"lines": [INIT, result(typed=CHANGES, session="review-1")]},
+        {"lines": [INIT, result(typed=done(), session="plan-s")]},
+    )
+    drive.cli("agent", "run", "Build it", "--playbook")
+    for _stage in ("plan", "execute", "review"):
+        drive.supervise()
+        if _stage == "execute":
+            drive.cli("status", "set", "Build it", "ready-for-review")
+        drive.advance()
+    assert drive.latest().stage == "execute" and drive.latest().attempt == 2
+    assert _status(drive.cli, "Build it") == "in-progress"
+
+
+def test_a_fix_whose_reopening_is_not_saved_never_starts(drive, monkeypatch):
+    """The fix's run starts only once the step's in-progress status is on disk: a refused
+    save takes the run back, so no fix works on a step a merge could still finish."""
+    from dplanner.domain.store import LibraryStore, StaleWorkspaceError
+
+    drive.cli("playbook", "set", "Build it", "plan-execute-review-self")
+    drive.play(
+        {"lines": [INIT, result("## Plan", session="plan-s")]},
+        {"lines": [INIT, result(typed=done(), session="plan-s")]},
+        {"lines": [INIT, result(typed=CHANGES, session="review-1")]},
+    )
+    drive.cli("agent", "run", "Build it", "--playbook")
+    for stage in ("plan", "execute", "review"):
+        drive.supervise()
+        if stage == "execute":
+            drive.cli("status", "set", "Build it", "ready-for-review")
+        if stage != "review":
+            drive.advance()
+    runs = len(drive.started)
+    records = len(ledger.records(drive.plan))
+
+    flush, refusing = LibraryStore.flush, [True]
+
+    def stale(self, marks):
+        if refusing:
+            raise StaleWorkspaceError("the plan changed underneath")
+        return flush(self, marks)
+
+    monkeypatch.setattr(LibraryStore, "flush", stale)
+    assert "nothing was written" in drive.cli("playbook", "advance", "Build it", expect=1)
+    assert len(drive.started) == runs and len(ledger.records(drive.plan)) == records
+    refusing.clear()
+    assert _status(drive.cli, "Build it") == "ready-for-review"
+    drive.advance()  # Saved this time: the fix starts, and the step is in progress.
+    assert len(drive.started) == runs + 1 and _status(drive.cli, "Build it") == "in-progress"
+
+
+def test_a_fix_whose_start_fails_after_its_save_asks_on_a_blocked_card(drive, monkeypatch):
+    """The reopening is on disk, then the fix's run cannot start: the pass asks on a card,
+    as a start refused before the save does, rather than stopping with nobody told."""
+    drive.cli("playbook", "set", "Build it", "plan-execute-review-self")
+    drive.play(
+        {"lines": [INIT, result("## Plan", session="plan-s")]},
+        {"lines": [INIT, result(typed=done(), session="plan-s")]},
+        {"lines": [INIT, result(typed=CHANGES, session="review-1")]},
+    )
+    drive.cli("agent", "run", "Build it", "--playbook")
+    for stage in ("plan", "execute", "review"):
+        drive.supervise()
+        if stage == "execute":
+            drive.cli("status", "set", "Build it", "ready-for-review")
+        if stage != "review":
+            drive.advance()
+
+    def refused(_project_dir, _run, **_kw):
+        raise OSError("no supervisor could start")
+
+    monkeypatch.setattr(supervisor, "start_detached", refused)
+    said = drive.cli("playbook", "advance", "Build it", expect=1)
+    card = drive.asked()
+    assert (card.kind, card.stage) == ("blocked", "execute") and card.short in said
+    assert _status(drive.cli, "Build it") == "in-progress"  # The reopening was saved.
 
 
 def test_the_round_cap_asks_and_one_more_round_sends_a_fix_then_a_person_decides(drive):
@@ -297,6 +400,8 @@ def test_a_held_account_parks_the_pass_on_a_limit_card_the_clock_answers(drive, 
     assert "could not go on" in drive.advance()
     card = drive.asked()
     assert (card.kind, card.purpose, card.stage) == ("limit", "escalation", "execute")
+    labels = [option["label"] for option in card.questions[0]["options"]]
+    assert labels == ["Retry now", "Stop"]  # Only a review may be rerouted or skipped.
     assert card.resets == reset.isoformat() and len(drive.started) == 1
     assert drive.advanced == [str(drive.plan)]  # `playbook wake` waits for the reset.
     # The reset comes: the clock answers the card, and the pass advances on it.
@@ -309,6 +414,32 @@ def test_a_held_account_parks_the_pass_on_a_limit_card_the_clock_answers(drive, 
     assert answered is not None and answered.answer["by"]["kind"] == "clock"
     drive.advance()
     assert (drive.latest().stage, drive.latest().attempt) == ("execute", 1)
+
+
+def test_a_held_review_offers_another_agent_or_a_skip_and_a_skip_goes_on(drive, monkeypatch):
+    """Only a review held for its agent's usage offers more than *Try again now*: another agent
+    with usage left — none here, the only one is held too — or skipping the review, which the
+    card records and the pass goes on from."""
+    from dplanner.modules.agent_supervisor import limits
+
+    drive.cli("playbook", "set", "Build it", "plan-execute-review-self")
+    drive.play(
+        {"lines": [INIT, result("A plan", session="s")]}, {"lines": [INIT, result(typed=done())]}
+    )
+    drive.cli("agent", "run", "Build it", "--playbook")
+    drive.supervise()
+    drive.advance()
+    drive.supervise()
+    monkeypatch.setattr(limits, "hold", lambda *_a, **_k: "Claude Code is at 97 %")
+    monkeypatch.setattr(limits, "held_until", lambda *_a, **_k: datetime.now(UTC))
+    assert "could not go on" in drive.advance()
+    card = drive.asked()
+    assert (card.kind, card.stage) == ("limit", "review")
+    labels = [option["label"] for option in card.questions[0]["options"]]
+    assert labels == ["Retry now", "Skip this review", "Stop"]
+    drive.answer(card, "Skip this review")
+    assert "is through" in drive.advance()
+    assert drive.latest().stage == "execute"  # No review ran.
 
 
 def test_a_role_no_profile_runs_any_more_blocks_until_retry_now(drive, monkeypatch):
@@ -526,12 +657,9 @@ def test_every_stage_of_a_pass_runs_as_the_member_that_started_it(drive):
     assert "You are Kettle Two, of the squad Kettle Actual coordinates" in drive.prompt(execute)
 
 
-def test_a_landing_that_never_chose_lands_is_reviewed_and_waits_for_a_person_to_merge(
-    drive, code, tmp_path, monkeypatch
-):
-    """A landing runs *Land* by default: its execute is briefed with the landing's own work,
-    the other agent's review passes, and the person's pass ends the pass with nothing merged —
-    the mainline is a person's to merge, so gh is never asked."""
+def _landing_at_its_person_gate(drive, code, tmp_path, monkeypatch) -> questions.Question:
+    """S3 lands feature/x under *Land*: executed, passed by the other agent's review, and
+    waiting at its person gate. gh is never asked and nothing is merged by DPlanner."""
     drive.cli("branch", "put", "Build it", "--branch", "feature/x")  # B2 cuts it, S3 lands it.
     origin = tmp_path / "origin.git"  # The landing's worktree is cut from a remote.
     for argv in (
@@ -555,12 +683,55 @@ def test_a_landing_that_never_chose_lands_is_reviewed_and_waits_for_a_person_to_
     drive.advance("S3")
     assert drive.supervise().stage == "review"
     drive.advance("S3")
-    gate = drive.asked()
+    gate: questions.Question = drive.asked()
     assert (gate.stage, gate.purpose) == ("person", "gate")
+    return gate
+
+
+def _record_pr(drive, monkeypatch, state: str) -> None:
+    info = PrInfo(number=4, title="Land feature/x", state=state, url="u4", head_ref="feature/x")
+    monkeypatch.setattr(github_cli, "_fetch_pr", lambda *_a: info)
+    drive.cli("github", "set", "S3", "--pr", "4")
+
+
+def test_a_landing_that_never_chose_lands_is_reviewed_and_waits_for_a_person_to_merge(
+    drive, code, tmp_path, monkeypatch
+):
+    """A landing runs *Land* by default: its execute is briefed with the landing's own work,
+    the other agent's review passes, and the person's pass ends the pass with nothing merged —
+    the mainline is a person's to merge, so gh is never asked. With no PR recorded there is
+    nothing for a merge to finish, so the step waits for a person's look."""
+    gate = _landing_at_its_person_gate(drive, code, tmp_path, monkeypatch)
     drive.answer(gate, "Pass")
     said = drive.advance("S3")
     assert "is through" in said and "the step is done" not in said
     assert _status(drive.cli, "S3") != "done"
+
+
+def test_a_landing_passed_with_its_pr_open_is_ready_to_merge_and_its_merge_finishes_it(
+    drive, code, tmp_path, monkeypatch
+):
+    """The person's *Pass* accepts the work: ready to merge — so the person's merge of the PR
+    into the mainline finishes the step, rather than asking for a third look."""
+    gate = _landing_at_its_person_gate(drive, code, tmp_path, monkeypatch)
+    _record_pr(drive, monkeypatch, "open")
+    drive.answer(gate, "Pass")
+    assert "ready to merge" in drive.advance("S3")
+    assert _status(drive.cli, "S3") == "ready-to-merge"
+    assert "ready to merge" not in drive.advance("S3")  # Advancing again writes nothing.
+    _record_pr(drive, monkeypatch, "merged")
+    assert "the step is done" in drive.advance("S3")
+    assert _status(drive.cli, "S3") == "done"
+
+
+def test_a_landing_whose_pr_merged_before_its_pass_was_read_is_done(
+    drive, code, tmp_path, monkeypatch
+):
+    gate = _landing_at_its_person_gate(drive, code, tmp_path, monkeypatch)
+    _record_pr(drive, monkeypatch, "merged")
+    drive.answer(gate, "Pass")
+    assert "the step is done" in drive.advance("S3")
+    assert _status(drive.cli, "S3") == "done"
 
 
 def test_a_claim_ended_while_an_advance_prepares_its_next_stage_launches_nothing(

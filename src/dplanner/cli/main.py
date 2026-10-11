@@ -27,12 +27,13 @@ from dplanner.cli.discovery import (
     find_library,
     open_library,
 )
+from dplanner.cli.lookup import find_project
 from dplanner.core.clock import Clock
 from dplanner.core.module_data import ModuleDataFormat
 from dplanner.core.telemetry import current
 from dplanner.domain.at_work import AtWorkBoard
 from dplanner.domain.library_file import LIBRARY_ENV
-from dplanner.domain.model import LinkRule
+from dplanner.domain.model import LinkRule, Project
 from dplanner.identity import APP_NAME, APP_VERSION
 
 PROG = "dplanner"
@@ -144,6 +145,35 @@ def _examples(command: CliCommand) -> str:
     return "examples:\n" + "\n".join(f"  {line}" for line in command.examples)
 
 
+def _current_project(context: CliContext, command: CliCommand, args: Namespace) -> Project | None:
+    """The project the invocation is about. One it names — a project verb's positional, or
+    the only one of several a verb may name — is the project it acts on, so it is also the
+    one whose keys and titles it looks steps up in and whose claim its run renews. Otherwise
+    ``--project``, the environment, or where it runs (``find_current_project``) — unless the
+    verb never acts on a current project (``finds_project``): then a plan repository of
+    several projects cannot refuse it, and an argument that is not a library project — an
+    archived path for ``library remove`` — is the verb's own to resolve or refuse."""
+    named = _named_project(args)
+    if named:
+        try:
+            return find_project(context.library, named)
+        except CliError:
+            if command.finds_project:
+                raise
+            return None
+    if not command.finds_project:
+        return None
+    return find_current_project(context.library, context.store, args.project_scope)
+
+
+def _named_project(args: Namespace) -> str:
+    named = getattr(args, "project", None)
+    if isinstance(named, str):
+        return named
+    several = getattr(args, "projects", None)
+    return several[0] if isinstance(several, list) and len(several) == 1 else ""
+
+
 def run(
     registry: CliRegistry,
     formats: Sequence[ModuleDataFormat],
@@ -216,9 +246,7 @@ def run(
                 clock=clock or Clock(),
                 link_rules=link_rules,
             ) as context:
-                context.current = find_current_project(
-                    context.library, context.store, args.project_scope
-                )
+                context.current = _current_project(context, command, args)
                 if board is not None and context.current is not None:
                     board.touch(context.current.id)
                     from dplanner.domain.claim_sync import renew

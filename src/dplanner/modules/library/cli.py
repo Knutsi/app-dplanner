@@ -34,12 +34,14 @@ def commands() -> list[CliCommand]:
     return [
         CliCommand(
             path=("library", "list"),
+            finds_project=False,
             summary="Every project in the library — path, title, and whether it opened.",
             run=_list,
             examples=("dplanner library list --json",),
         ),
         CliCommand(
             path=("library", "add"),
+            finds_project=False,
             summary="Add a project directory to the library — or every project a plan "
             "repository lists, given its root.",
             configure=_configure_add,
@@ -51,6 +53,7 @@ def commands() -> list[CliCommand]:
         ),
         CliCommand(
             path=("library", "browse"),
+            finds_project=False,
             summary="The projects a plan repository holds, with who worked on each and "
             "when, and which are in this library already.",
             configure=_configure_browse,
@@ -59,6 +62,7 @@ def commands() -> list[CliCommand]:
         ),
         CliCommand(
             path=("library", "remove"),
+            finds_project=False,
             summary="Remove a project from the library, or from its archive. Its files stay "
             "on disk.",
             configure=project_arg,
@@ -66,6 +70,7 @@ def commands() -> list[CliCommand]:
         ),
         CliCommand(
             path=("library", "archive"),
+            finds_project=False,
             summary="Take a project out of the library and keep it in the archive — not "
             "loaded, until `library restore` brings it back.",
             configure=project_arg,
@@ -74,6 +79,7 @@ def commands() -> list[CliCommand]:
         ),
         CliCommand(
             path=("library", "restore"),
+            finds_project=False,
             summary="Bring an archived project back into the library.",
             configure=_configure_restore,
             run=_restore,
@@ -81,6 +87,7 @@ def commands() -> list[CliCommand]:
         ),
         CliCommand(
             path=("library", "path"),
+            finds_project=False,
             summary="Print the library file this invocation is using.",
             run=_path,
         ),

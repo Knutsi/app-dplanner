@@ -149,7 +149,7 @@ def commands(
         project = find_project(library, args.project)
         step = Step(title=args.title)
         context.apply(AddNodeCommand(project.id, step))
-        waiting = [find_step(library, needle).id for needle in args.after]
+        waiting = [find_step(library, needle, project).id for needle in args.after]
         if waiting:
             context.apply(SetEdgesCommand(step.id, "requires", waiting))
         # Composition-root order is report order. No rollback: an author that raises

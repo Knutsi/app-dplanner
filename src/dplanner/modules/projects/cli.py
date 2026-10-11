@@ -111,6 +111,7 @@ def commands(
     return [
         CliCommand(
             path=("project", "list"),
+            finds_project=False,
             summary="Every project in this library, with its step count.",
             run=partial(_project_list, locating=locating),
             examples=("dplanner project list", "dplanner project list --json"),
@@ -125,6 +126,7 @@ def commands(
         ),
         CliCommand(
             path=("project", "create"),
+            finds_project=False,
             summary="Create a project directory inside a git repository and add it to the library.",
             configure=_configure_create,
             run=partial(_project_create, locating=locating),
@@ -166,6 +168,7 @@ def commands(
         ),
         CliCommand(
             path=("location", "roles"),
+            finds_project=False,
             summary="The kinds of place a project can name, and what each is for.",
             run=partial(_location_roles, locating=locating),
             examples=("dplanner location roles",),
@@ -234,6 +237,7 @@ def commands(
         ),
         CliCommand(
             path=("project", "open"),
+            finds_project=False,
             summary="Add the project a link names, from a clone of its plan repository "
             "this machine already has.",
             configure=_configure_open,
@@ -283,6 +287,7 @@ def commands(
         ),
         CliCommand(
             path=("project", "import"),
+            finds_project=False,
             summary="Create a project from JSON on stdin, in export's shape.",
             configure=_configure_import,
             run=partial(_project_import, locating=locating),

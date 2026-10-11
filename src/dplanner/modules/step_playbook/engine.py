@@ -16,6 +16,7 @@ effects only that way.
 
 import time
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import ExitStack
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -27,6 +28,7 @@ from dplanner.domain.headless import StageKind, TurnEnd
 from dplanner.domain.ledger import LedgerRecord
 from dplanner.domain.model import Step, now_stamp
 from dplanner.domain.questions import Question
+from dplanner.domain.workflow import Change
 from dplanner.modules.agent_briefing.prompt import PromptPart
 from dplanner.modules.agent_briefing.stages import approved_part, findings_part, review_part
 from dplanner.modules.agent_supervisor import limits, supervisor
@@ -50,9 +52,10 @@ from dplanner.modules.step_playbook.passes import (
     Settings,
     Standing,
     Wait,
+    held_review_options,
 )
 from dplanner.modules.step_playbook.presets import Playbook, preset
-from dplanner.modules.step_playbook.workflows import approved
+from dplanner.modules.step_playbook.workflows import approved, awaiting_merge, reopened
 from dplanner.planning.status import Status, stored
 
 
@@ -74,6 +77,10 @@ class StageLauncher(Protocol):
 
     def runnable(self) -> tuple[str, ...]:
         """The harnesses some launch profile runs headless: what a role may name."""
+        ...
+
+    def unheld(self, among: Sequence[str]) -> tuple[str, ...]:
+        """Those of ``among`` whose account no usage limit holds now."""
         ...
 
     def merge_target(self, context: CliContext, step: Step) -> tuple[str, str]:
@@ -126,6 +133,8 @@ class Begun:
     said: str
     staged: Staged | None = None
     question: Path | None = None  # A question it wrote, which discard takes back.
+    # The launch changed the step's status too: the run starts only once that is on disk.
+    after_save: bool = False
 
     def start(self) -> None:
         if self.staged is not None:
@@ -194,7 +203,10 @@ class Engine:
         """Do what the step's latest pass needs next, once; what was done, in a sentence."""
         project = context.library.project_of(step.id)
         project_dir = context.store.project_dir(project.id)
-        with supervisor.launching(project.id, step.id, wait=True):
+        lock = ExitStack()
+        lock.enter_context(supervisor.launching(project.id, step.id, wait=True))
+        with ExitStack() as unless_handed:
+            unless_handed.callback(lock.close)
             pass_ = _latest_pass(project_dir, step.id)
             if isinstance(pass_, str):
                 return f"{step.title}: {pass_}"
@@ -205,39 +217,72 @@ class Engine:
                 pass_ = _latest_pass(project_dir, step.id)
                 assert not isinstance(pass_, str)
             next_ = passes.due(pass_.playbook, pass_.settings, pass_.entries, facts_of(step))
-            said = self._act(context, step, pass_, next_)
+            said, handed = self._act(context, step, pass_, next_, lock)
+            if handed:
+                unless_handed.pop_all()
             if not isinstance(next_, Wait):
                 _settle_answers(project_dir, pass_)
             return f"{step.title}: {said}"
 
     # -- acting -----------------------------------------------------------------------------
 
-    def _act(self, context: CliContext, step: Step, pass_: "Pass", next_: Next) -> str:
+    def _act(
+        self, context: CliContext, step: Step, pass_: "Pass", next_: Next, lock: ExitStack
+    ) -> tuple[str, bool]:
         """Do it, and start what it wrote — or, when the pass could not, ask about it on a
         card the pass waits on: a held account until its reset, anything else until a
-        person's *Retry now*."""
+        person's *Retry now*. True beside what it said when ``lock``, the step's launch lock,
+        was handed on: a run whose launch changed the step's status starts only once that
+        status is on disk, still under the lock, as a first launch does — so a refused save
+        takes the run back rather than leaving it at work on a step whose merge could finish
+        it."""
         stage = next_.stage if isinstance(next_, Launch | Progress) else ""
         attempt = next_.attempt if isinstance(next_, Launch) else 1
         try:
             begun = self._do(context, step, pass_, next_)
-            begun.start()
-            return begun.said
+            if not begun.after_save:
+                begun.start()
+                return begun.said, False
+            context.unwritten.append(lock.close)
+            context.unwritten.append(begun.discard)
+
+            def start() -> None:
+                # A start refused after the save asks on a card, as one refused before it
+                # does — so the pass waits for *Retry now* rather than stopping unseen.
+                with lock:
+                    try:
+                        begun.start()
+                    except CliError as error:
+                        asked = _refused(context, step, pass_, stage, attempt, str(error), None)
+                        raise CliError(asked) from error
+
+            context.after_flush.append(start)
+            return begun.said, True
         except limits.HeldError as held:
-            return _refused(context, step, pass_, stage, attempt, str(held), held.until)
+            options = (
+                self._held_review_options(next_.harness)
+                if isinstance(next_, Launch) and next_.kind is StageKind.REVIEW
+                else REFUSED_OPTIONS
+            )
+            said = _refused(
+                context, step, pass_, stage, attempt, str(held), held.until, options=options
+            )
+            return said, False
         except CliError as error:
-            return _refused(context, step, pass_, stage, attempt, str(error), None)
+            return _refused(context, step, pass_, stage, attempt, str(error), None), False
+
+    def _held_review_options(self, held: str) -> tuple[tuple[str, str], ...]:
+        """A review held for its agent's account may run on another agent this round, or be
+        skipped. Only for a usage hold — any other refusal is not the reviewer's quota."""
+        others = [harness for harness in self.launch.runnable() if harness != held]
+        return held_review_options(self.launch.unheld(others))
 
     def _do(self, context: CliContext, step: Step, pass_: "Pass", next_: Next) -> Begun:
         match next_:
             case Wait(why) | Halted(why):
                 return Begun(why)
-            case Complete(why, set_done):
-                if set_done:
-                    change = approved(step, today=context.clock.today())
-                    if change.command is not None:
-                        context.apply(change.command)
-                        return Begun(f"{why} — the step is done")
-                return Begun(why)
+            case Complete(why, set_done, reviewed):
+                return Begun(_completed(context, step, why, set_done=set_done, reviewed=reviewed))
             case Launch():
                 staged = self.launch(
                     context,
@@ -251,8 +296,11 @@ class Engine:
                     member=pass_.member,
                     claim=pass_.claim,
                 )
+                reopens = next_.kind is not StageKind.REVIEW and _apply(
+                    context, reopened(step, today=context.clock.today())
+                )
                 said = f"{next_.stage} (attempt {next_.attempt}) launched as run {staged.run}"
-                return Begun(said, staged=staged)
+                return Begun(said, staged=staged, after_save=reopens)
             case Ask():
                 return _asked(context, step, pass_, next_)
             case Progress(stage):
@@ -326,11 +374,37 @@ def precise_stamp() -> str:
 def facts_of(step: Step) -> Facts:
     status = stored(step)
     refs = github.read(step)
+    pr = refs is not None and refs.has_pr()
+    merged = pr and refs is not None and refs.pr_state == github.PR_MERGED
     return Facts(
         done=status is Status.DONE,
         at_review=status is Status.READY_FOR_REVIEW,
-        unmerged_pr=refs is not None and refs.has_pr() and refs.pr_state != github.PR_MERGED,
+        unmerged_pr=pr and not merged,
+        merged_pr=merged,
     )
+
+
+def _completed(context: CliContext, step: Step, why: str, *, set_done: bool, reviewed: bool) -> str:
+    """What a pass that is through does to its step. Nothing to merge: done. Accepted work:
+    done if its PR has merged already — the merge may have been read before this advance —
+    else ready to merge, which the merge finishes. Work nobody looked at is left at Ready for
+    review, for a person."""
+    today = context.clock.today()
+    facts = facts_of(step)
+    if set_done or (reviewed and facts.merged_pr):
+        if _apply(context, approved(step, today=today)):
+            return f"{why} — the step is done"
+    elif reviewed and facts.unmerged_pr and _apply(context, awaiting_merge(step, today=today)):
+        return f"{why} — the step is ready to merge"
+    return why
+
+
+def _apply(context: CliContext, change: Change) -> bool:
+    """Apply a pass's own change to its step; whether it changed anything."""
+    if change.command is None:
+        return False
+    context.apply(change.command)
+    return True
 
 
 def _parts(launch: Launch) -> tuple[PromptPart, ...]:
@@ -383,10 +457,13 @@ def _refused(
     attempt: int,
     why: str,
     until: datetime | None,
+    *,
+    options: tuple[tuple[str, str], ...] = REFUSED_OPTIONS,
 ) -> str:
     """The card a pass waits on when it could not act: ``limit`` with the reset for a held
     account — the clock answers it then (:func:`wake`) — else ``blocked``; *Retry now*
-    answers either, and the pass does again what it could not."""
+    answers either, and the pass does again what it could not. A held review's card offers
+    more (:meth:`PlaybookEngine._held_review_options`)."""
     asked = _ask(
         context,
         step,
@@ -397,7 +474,7 @@ def _refused(
             ESCALATION,
             questions.LIMIT if until is not None else questions.BLOCKED,
             f"The pass could not go on: {why}",
-            REFUSED_OPTIONS,
+            options,
             resets=until.isoformat() if until is not None else "",
         ),
     )

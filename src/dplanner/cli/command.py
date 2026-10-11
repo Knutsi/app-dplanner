@@ -129,6 +129,10 @@ class CliCommand:
     configure: Callable[[ArgumentParser], None] = lambda _parser: None
     # False for verbs that make no sense against a library — `skill show`, for instance.
     needs_library: bool = True
+    # False for library verbs that never act on a current project — `project create`,
+    # `project list`, `library add`: run inside a plan repository of several projects,
+    # they must not be refused for not knowing which one is meant.
+    finds_project: bool = True
     examples: tuple[str, ...] = ()
     # Set on a verb that reshapes a project's graph — adds or removes steps, links them,
     # places a feature: how to find that project from the parsed arguments. The

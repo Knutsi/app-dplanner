@@ -1,6 +1,7 @@
 """``dplanner agent supervise``: it refuses what it cannot drive before anything starts, and
 finds a run's project from the library when it is not told."""
 
+import json
 import subprocess
 from argparse import Namespace
 from dataclasses import replace
@@ -57,15 +58,35 @@ def test_a_parked_run_waits_for_its_prompt_and_an_over_one_is_refused(cli, tmp_p
 def test_agent_limits_shows_each_accounts_windows_and_its_hold(cli, tmp_path, monkeypatch):
     set_home(monkeypatch, tmp_path / "home")
     assert "Claude Code: nothing reported yet" in cli("agent", "limits")
-    soon = datetime.now(UTC) + timedelta(hours=2)
+    now = datetime.now(UTC)
+    soon = now + timedelta(hours=2)
     windows = [LimitWindow("five_hour", 0.97, soon)]
-    limits.record_turn(
-        limits.account_of(claude.HARNESS), RUN, windows, TurnEnd.DONE, None, datetime.now(UTC)
-    )
+    limits.record_turn(limits.account_of(claude.HARNESS), RUN, windows, TurnEnd.DONE, None, now)
     said = cli("agent", "limits")
     assert "new headless launches wait at 95% of a window" in said
-    assert f"Claude Code: five-hour 97% until {limits.clock(soon)}" in said
+    assert (
+        f"Claude Code (as of {limits.clock(now)}): five-hour 97% until {limits.clock(soon)}" in said
+    )
     assert "held — Claude Code is at 97%" in said
+
+
+def test_agent_limits_says_how_old_its_numbers_are_and_which_windows_reset_since(
+    cli, tmp_path, monkeypatch
+):
+    """The numbers are the last turn's: two days on, they say so, and a window whose reset
+    has passed reads so rather than naming a time already gone."""
+    set_home(monkeypatch, tmp_path / "home")
+    then = datetime.now(UTC) - timedelta(days=2)
+    windows = [LimitWindow("five_hour", 0.33, then + timedelta(hours=3))]
+    limits.record_turn(limits.account_of(claude.HARNESS), RUN, windows, TurnEnd.DONE, None, then)
+    said = cli("agent", "limits")
+    assert f"Claude Code (as of {limits.clock(then)}): five-hour 33% (reset since)" in said
+    (row,) = [
+        r
+        for r in json.loads(cli("agent", "limits", "--json"))["accounts"]
+        if r["harness"] == "claude"
+    ]
+    assert row["seen"] == then.isoformat() and row["run"] == RUN
 
 
 def test_open_session_fences_a_parked_run_releases_its_step_and_resumes_it(

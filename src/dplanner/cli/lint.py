@@ -173,6 +173,7 @@ def commands(checks: Sequence[LintCheck], *, roles: Mapping[str, LocationRole]) 
     return [
         CliCommand(
             path=("project", "lint"),
+            finds_project=False,
             summary="Report what a plan is missing before handover — undescribed, "
             "uninstructed or unestimated steps, unimplemented requirements, dangling "
             "links. Exits 1 when there are findings.",

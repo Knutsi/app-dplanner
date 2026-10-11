@@ -76,7 +76,10 @@ paths:
   the words the finding. A fix declines findings by their number, recorded through
   `findings.json`. **A pass that cannot act writes a card on itself** — `limit` with the reset
   for a held account (`playbook wake` answers it for the clock), else `blocked` — and *Retry
-  now* re-runs what was due; never an advance that exits with nothing written. **`progress`
+  now* re-runs what was due; never an advance that exits with nothing written. A **review**
+  held for usage also offers *Review with <agent>* (another agent whose account no limit holds,
+  this round only) and *Skip this review* (the gate passes, no round spent) —
+  `passes.held_review_options`; never for a work stage or another refusal. **`progress`
   checks before it merges** — the plan's feature branch now (`merge_target`), the PR's base
   and head, the step under review — merges (`--merge`) only into a non-default branch, makes
   the mainline a person-only gate (`questions.PERSON_ONLY`) and anything else a `blocked`
@@ -133,11 +136,17 @@ paths:
   round cap answered *Take over* — never *Stopped*.
   **A pass through its stages reads *Done* only once its step does**; until then a pass that
   produced work reads *Waits for merge* when the step's GitHub aspect records a PR not merged,
-  and *Waits for you · ready for review* when it records none — and has not ended. `docs/architecture/playbooks.md`'s
+  and *Waits for you · ready for review* when it records none — and has not ended.
+  **A pass through a gate that passed after its last work has accepted it**
+  (`Complete.reviewed`): the engine sets the step ready to merge while its PR is open — so the
+  merge finishes it, mainline or feature branch alike — and done when it has merged. A work
+  stage the pass launches again sets a step that read Ready for review or ready to merge back
+  in progress (`workflows.reopened`). Work no gate looked at changes no status. `docs/architecture/playbooks.md`'s
   *The presets*, *A step names its playbook; a project names its default* and *The mark on the
   one card*.
 - **A pass is reviewed in Step Details' Playbook tab** (`pass_section.py`), opened by a click
-  on the card's strip: what it did is `history.py` — the one builder of a pass's messages —
+  on the card's strip: what it did is `history.py` — the one builder of a pass's messages,
+  which `dplanner playbook show <step> --history` prints for an agent —
   and what it changed `changes.py`, both Qt-free and read on a task. A work run's `summary`
   is on its record (the supervisor writes it, a plan's too); an older run's is read back from
   its stream.
@@ -160,7 +169,7 @@ paths:
   (`AgentHarness.headless`, `domain/headless.py`), and **Codex states its stage's mode as `-c`
   overrides on every turn**, fresh and resumed alike — `exec resume` takes no `-s`,
   `--approve-for-me` or `--add-dir`, and does not keep the mode its thread began in. **A Codex
-  plan or review is never `read-only`** — its `dplanner agent-work` and `question ask` write:
+  plan or review is never `read-only`** — its `dplanner question ask` writes:
   it works from the run directory (`-C`, before `resume`), the project's `questions/` and
   `claims/` and the config directory its only other writable roots
   (`supervisor.control_dirs`) — never the project directory, and never a root that is or holds

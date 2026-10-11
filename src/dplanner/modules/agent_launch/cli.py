@@ -166,6 +166,14 @@ class StageLauncher:
     def runnable(self) -> tuple[str, ...]:
         return headless_harnesses(self.harnesses)
 
+    def unheld(self, among: Sequence[str]) -> tuple[str, ...]:
+        return tuple(
+            harness_id
+            for harness_id in among
+            if (known := harness_by_id(self.harnesses, harness_id)) is not None
+            and not limits.hold(limits.account_of(known), known.label)
+        )
+
     def merge_target(self, context: CliContext, step: Step) -> tuple[str, str]:
         """Where the step's PR must go and come from as the plan stands now — its feature
         branch, "" when its work goes to the mainline, and the step's own branch, "" when it

@@ -24,6 +24,7 @@ from dplanner.modules.step_playbook.passes import (
     PASS,
     RETRY,
     ROUND_CAP,
+    SKIP_REVIEW,
     STOP,
     Ask,
     Complete,
@@ -77,9 +78,18 @@ def run(
     )
 
 
-def gate(stage: str, answer: str = "", purpose: str = GATE, state: str = "") -> Question:
+def gate(
+    stage: str, answer: str = "", purpose: str = GATE, state: str = "", kind: str = ""
+) -> Question:
     asked = questions.asked(
-        "p1", "s1", _at(), [questions.one("?")], pass_="P", stage=stage, purpose=purpose
+        "p1",
+        "s1",
+        _at(),
+        [questions.one("?")],
+        kind=kind or questions.DECISION,
+        pass_="P",
+        stage=stage,
+        purpose=purpose,
     )
     if answer:
         asked = questions.answered(asked, {"?": answer}, {"kind": "person"}, _at())
@@ -189,9 +199,86 @@ def test_a_landing_executes_is_reviewed_by_the_other_agent_and_ends_at_a_person_
     passed = [execute, run("review", verdict=PASSED, harness="codex")]
     person = next_of("land", *passed)
     assert isinstance(person, Ask) and (person.stage, person.purpose) == ("person", GATE)
-    # The mainline is a person's to merge: the pass ends without a merge or a status of its own.
+    # The mainline is a person's to merge: the pass ends without a merge, its work accepted —
+    # which the engine writes as ready to merge, for the person's merge to finish.
     through = next_of("land", *passed, gate("person", PASS))
-    assert through == Complete("Land: execute ⇄ review (other agent) → human review is through")
+    assert through == Complete(
+        "Land: execute ⇄ review (other agent) → human review is through", reviewed=True
+    )
+
+
+def test_a_pass_is_reviewed_only_through_a_gate_passed_after_the_last_work():
+    """Only a gate that passed after the last work makes the work accepted — so its merge
+    can finish the step. Execute, and a plan approved before the work, accept nothing."""
+    passed = next_of(
+        "plan-execute-review-other", run("plan"), run("execute"), run("review", verdict=PASSED)
+    )
+    assert isinstance(passed, Complete) and passed.reviewed
+    capped = next_of(
+        "plan-execute-review-other",
+        run("plan"),
+        run("execute"),
+        run("review", verdict=CHANGED),
+        run("execute"),
+        run("review", verdict=CHANGED),
+        gate("review", ACCEPT, purpose=ROUND_CAP),
+    )
+    assert isinstance(capped, Complete) and capped.reviewed
+    alone = next_of("execute", run("execute"))
+    assert isinstance(alone, Complete) and not alone.reviewed
+    approved_first = next_of(
+        "plan-person-execute", run("plan"), gate("person", PASS), run("execute")
+    )
+    assert isinstance(approved_first, Complete) and not approved_first.reviewed
+
+
+def held(stage: str, answer: str) -> Question:
+    """A pass's card for a stage its agent's account held, answered."""
+    return gate(stage, answer, purpose=ESCALATION, kind=questions.LIMIT)
+
+
+def test_a_held_review_can_run_on_another_agent_this_round_or_be_skipped():
+    """A review whose agent ran out of usage: the card may send this round to another agent —
+    a fresh session, the pinned reviewer kept for the next — or skip it, which passes the
+    gate without spending a round, so a person gate after it still asks."""
+    work = [run("plan"), run("execute")]
+    rerouted = next_of("plan-execute-review-other", *work, held("review", "Review with Claude"))
+    assert isinstance(rerouted, Launch) and (rerouted.stage, rerouted.harness) == (
+        "review",
+        "claude",
+    )
+    assert rerouted.resume is None
+    skipped = next_of("plan-execute-review-other", *work, held("review", SKIP_REVIEW))
+    assert isinstance(skipped, Complete) and skipped.reviewed
+    landing = next_of("land", run("execute"), held("review", SKIP_REVIEW))
+    assert isinstance(landing, Ask) and (landing.stage, landing.purpose) == ("person", GATE)
+
+
+def test_only_a_review_held_for_usage_is_rerouted_or_skipped():
+    """The same words anywhere else are no answer: a work stage held for usage is never
+    skipped — its work would go unmade — and a review's other escalations are not usage."""
+    plan = run("plan")
+    for answer in (SKIP_REVIEW, "Review with claude"):
+        on_work = next_of("plan-execute-review-other", plan, held("execute", answer))
+        assert isinstance(on_work, Halted)
+        unheld = gate("review", answer, purpose=ESCALATION)  # A verdict-less review's card.
+        not_usage = next_of("plan-execute-review-other", plan, run("execute"), unheld)
+        assert isinstance(not_usage, Halted)
+
+
+def test_accepting_a_mainline_progress_gates_round_cap_accepts_the_work():
+    """On the mainline ``progress`` is a person's gate: its round cap's *Accept as is* is the
+    work accepted, as its *Pass* is."""
+    capped = next_of(
+        "plan-execute-progress",
+        run("plan"),
+        run("execute"),
+        gate("progress", "Fix the race"),
+        run("execute"),
+        gate("progress", "Still racy"),
+        gate("progress", ACCEPT, purpose=ROUND_CAP),
+    )
+    assert isinstance(capped, Complete) and capped.reviewed
 
 
 def test_a_person_sending_the_plan_back_reruns_the_plan_with_the_note():

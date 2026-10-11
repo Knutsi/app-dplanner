@@ -20,7 +20,7 @@ The rules are ``docs/architecture/playbooks.md``'s:
 """
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Any
 
@@ -180,6 +180,10 @@ class Progress:
 class Complete:
     why: str
     set_done: bool = False  # A playbook with nothing to merge: its approval is the step done.
+    # Reached through a gate that passed after the last work: the work is accepted, and its
+    # merge makes the step done. A pass whose last stage was work (Execute; Plan → human
+    # review → execute) is through without anybody having looked at what it made.
+    reviewed: bool = False
 
 
 @dataclass(frozen=True)
@@ -204,6 +208,7 @@ class Facts:
     unmerged_pr: bool = (
         False  # It has a PR recorded that is not merged: a pass through waits on it.
     )
+    merged_pr: bool = False  # Its PR merged: accepted work that has landed is done.
 
 
 def in_order(runs: Sequence[LedgerRecord], asked: Sequence[Question]) -> list[Entry]:
@@ -228,6 +233,32 @@ REFUSED_OPTIONS = (
     (questions.RETRY_NOW, "Try again now"),
     (STOP, "End the pass here"),
 )
+# A review whose agent's account is held may also run on another agent for this round, or be
+# skipped — a person's or the coordinator's choice, the answered card its record.
+SKIP_REVIEW = "Skip this review"
+REVIEW_WITH = "Review with "
+
+
+def held_review_options(others: Sequence[str]) -> tuple[tuple[str, str], ...]:
+    """What a card on a review held for its account offers: ``others`` are the agents some
+    profile runs headless here whose accounts are not held."""
+    return (
+        REFUSED_OPTIONS[0],
+        *(
+            (f"{REVIEW_WITH}{harness}", f"A fresh review by {harness}, this round only")
+            for harness in others
+        ),
+        (SKIP_REVIEW, "Go on as if the review passed"),
+        REFUSED_OPTIONS[1],
+    )
+
+
+def reviewer_named(word: str) -> str:
+    """The agent a *Review with <agent>* answer names, or "" for any other answer."""
+    said = " ".join(word.split()).rstrip(".!")
+    if not said.casefold().startswith(REVIEW_WITH.casefold()):
+        return ""
+    return said[len(REVIEW_WITH) :].strip().casefold()
 
 
 def retried(question: Question) -> bool:
@@ -309,7 +340,7 @@ class _Reading:
             return self._after(run.stage)
         outcome = _verdict(run).get("outcome")
         if outcome == "pass":
-            return self._after(run.stage)
+            return self._after(run.stage, reviewed=True)
         if outcome == "changes":
             findings = _verdict(run).get("findings")
             listed = findings if isinstance(findings, list) else []
@@ -335,12 +366,17 @@ class _Reading:
         word, stage = answer_word(question), question.stage
         if question.purpose == GATE:
             if is_answer(word, PASS):
-                return self._after(stage)
+                return self._after(stage, reviewed=True)
             if is_answer(word, STOP):
                 return Halted(f"{question.short} stopped the pass")
             return self._changes(stage, (note_of(question),))
-        if is_answer(word, ACCEPT):
-            return self._after(stage)
+        held = self._held_review(question)
+        if is_answer(word, ACCEPT) or (held and is_answer(word, SKIP_REVIEW)):
+            return self._after(stage, reviewed=self._is_gate(stage))
+        if held and (harness := reviewer_named(word)):
+            launch = self._enter(self.ids.index(stage))
+            assert isinstance(launch, Launch)
+            return replace(launch, harness=harness)
         if question.purpose == ROUND_CAP and is_answer(word, ONE_MORE):
             return self._loop_back(stage, self._open_findings(stage))
         if question.purpose == ESCALATION and is_answer(word, RETRY):
@@ -349,8 +385,24 @@ class _Reading:
 
     # -- moving through the list --------------------------------------------------------------
 
-    def _after(self, stage: str) -> Next:
-        """The stage after ``stage`` that is still to run."""
+    def _is_gate(self, stage: str) -> bool:
+        """Whether a stage judges the work: a gate, a person's look, or ``progress`` — which
+        on the mainline is a person's gate (``engine``), and on a branch accepts by merging."""
+        role = self.roles.get(stage)
+        return stage == LOOK or (role is not None and (role.is_gate or role is StageRole.PROGRESS))
+
+    def _held_review(self, question: Question) -> bool:
+        """Whether the card is a review's, held for its agent's usage: the one card whose
+        answers may reroute or skip the review (:func:`held_review_options`)."""
+        return (
+            question.purpose == ESCALATION
+            and question.kind == questions.LIMIT
+            and self.roles.get(question.stage) is StageRole.REVIEW
+        )
+
+    def _after(self, stage: str, *, reviewed: bool = False) -> Next:
+        """The stage after ``stage`` that is still to run — ``reviewed`` when ``stage`` is a
+        gate that just passed, which is what makes a pass that is through accepted work."""
         if stage in self.ids:
             start = self.ids.index(stage) + 1
         else:  # A fix runs before every stage; a person's look after them all.
@@ -359,7 +411,9 @@ class _Reading:
             if not (self.roles[self.ids[index]].is_gate and self._passed(self.ids[index])):
                 return self._enter(index)
         produced = any(r in (StageRole.EXECUTE, StageRole.REVIEW) for r in self.roles.values())
-        return Complete(f"{self.playbook.name} is through", set_done=not produced)
+        return Complete(
+            f"{self.playbook.name} is through", set_done=not produced, reviewed=reviewed
+        )
 
     def _enter(self, index: int) -> Next:
         stage, role = self.ids[index], self.playbook.stages[index].role
@@ -494,10 +548,18 @@ class _Reading:
     def _passed(self, gate: str) -> bool:
         if any(_verdict(r).get("outcome") == "pass" for r in self._run_list(gate)):
             return True
-        return any(is_answer(w, PASS) for w in self._settled_answers(gate, GATE)) or any(
-            is_answer(w, ACCEPT)
-            for purpose in (ROUND_CAP, ESCALATION)
-            for w in self._settled_answers(gate, purpose)
+        return (
+            any(is_answer(w, PASS) for w in self._settled_answers(gate, GATE))
+            or any(
+                is_answer(w, ACCEPT)
+                for purpose in (ROUND_CAP, ESCALATION)
+                for w in self._settled_answers(gate, purpose)
+            )
+            or any(
+                is_answer(answer_word(q), SKIP_REVIEW)
+                for q in self._questions(gate, ESCALATION)
+                if self._held_review(q) and q.state in (questions.ANSWERED, questions.CONSUMED)
+            )
         )
 
     def _open_findings(self, gate: str) -> tuple[Mapping[str, Any], ...]:

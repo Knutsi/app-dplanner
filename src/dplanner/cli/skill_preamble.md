@@ -457,8 +457,9 @@ then authored `step add`s.
   site` refreshes the plan repository's `reports/` site (Save never writes it; run it when
   someone wants the pages, and it never commits).
 - **Names or ids.** Anywhere a project or step is named you may use its id, its folder name,
-  or a unique part of its title. An ambiguous name is refused and the message lists the ids —
-  use one of those rather than guessing.
+  its whole title, or a unique part of it — a title typed whole wins over longer ones that
+  contain it. An ambiguous name is refused and the message lists the ids — use one of those
+  rather than guessing.
 - **The positional names the thing the verb acts on.** A step verb (`describe set`,
   `agent on`, `milestone set`, `estimate set`) takes the *step*; a project verb (`step add`,
   `spec …`, `order show`, `layout …`) takes the *project*. A step verb finds

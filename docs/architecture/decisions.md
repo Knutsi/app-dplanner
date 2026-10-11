@@ -852,3 +852,37 @@ plain run in the same worktree — and that an agent could give the person's loo
 surfaces run the CLI verbs, which name the pass, its latest run and its gate and are refused
 under the step's launch lock when any has moved on; `look` is person-only; and Accept is no
 longer an undo step. Now: `playbooks.md`'s *A pass is reviewed in its step's Playbook tab*.
+
+## 2026-10-11 — A pass that accepted work leaves it ready to merge
+
+A pass through its stages changed no status unless it had nothing to merge. Knut's playbook test
+run landed `feature/dictations` under *Land*: the person passed the gate, merged the PR into the
+mainline — and the step stayed at Ready for review, since a mainline merge finishes only a step
+ready to merge, so the pass asked the same person a third time. Now a pass whose last gate
+passed after its last work sets the step ready to merge (done when its PR has merged already),
+and a work stage it launches again sets the step back in progress, so a merge cannot finish work
+being fixed. Codex's review of the plan named the two limits kept: *Execute* and *Plan → human
+review → execute* accept nothing, because no gate looked at the finished work. Now:
+`playbooks.md`'s *The mark on the one card*.
+
+## 2026-10-11 — A review held for usage may run on another agent, or be skipped
+
+A review whose agent's account was held waited for its reset on a card offering *Try again now*
+or *Stop*, though another agent often had usage left. Knut asked, after the playbook test run,
+for the review to go to another agent or be skipped instead. The card now offers both, for a
+review held on usage only; the developer's choice is the coordinator's to ask for once. The
+first plan also had an automatic `--on-limit` policy and rerouting a review parked mid-turn;
+Codex's review of it cut both from this change (delivery and crash recovery for an answer
+nobody gave, and a race with the parked run's supervisor). Now: `playbooks.md`'s *How the
+engine drives a pass*.
+
+## 2026-10-11 — A plan or a review does not announce itself
+
+Every briefing opened with `dplanner agent-work start`, the plan and review stages included. In
+the playbook test run a Claude plan stage said it could not: it runs in plan mode. A probe then
+showed Claude's plan mode declines a write even when `--allowedTools` allows it. A plan or a
+review edits nothing in the plan, so it has no collision to warn of: the read stages are no
+longer told to announce, and the review is told to end its summary with what it could not run
+(`Not run: …`), since every Codex review in that run passed work its sandbox kept it from
+running. Left open: a Claude plan or review cannot `dplanner question ask` either. Now:
+`playbooks.md`'s *Each stage is one headless turn per harness*.

@@ -239,7 +239,24 @@ until the step reads done — the dogfood run's card said *Done* on a Ready-for-
 person still had to land. *Waits for merge* needs a PR to merge: the step's GitHub aspect
 records one, not merged (`Facts.unmerged_pr`, read by `engine._facts`). Work that never became
 a PR — a temp file, a local change — has nothing to merge, so the pass reads *Waits for you ·
-ready for review* (warn) instead: what is left is a person's look. A pass that ended — done or
+ready for review* (warn) instead: what is left is a person's look.
+
+**Accepted work is ready to merge, and work sent back is not.** A pass reaches its end through
+a gate that passed after its last work — a review's *pass*, a gate's *Pass*, a round cap's
+*Accept as is* — or with work nobody looked at (*Execute*; *Plan → human review → execute*,
+whose gate came before the work). Only the first accepts the work (`Complete.reviewed`), and
+the engine writes it so (`engine._completed`, through `workflows.awaiting_merge`): with its PR
+open the step is **ready to merge**, so the person's merge into the mainline finishes it by the
+merge's own path (`github refresh`, the window's refresher) exactly as a merge into a feature
+branch does; with its PR merged already — read before this advance — it is done. Without that,
+a landing whose person had passed it stayed at Ready for review, the mainline merge did not
+finish it, and the pass asked the same person a third time (the playbook test run of
+2026-10-11). The other half: **a work stage launched again by the pass sets the step in
+progress** (`workflows.reopened`) when it read Ready for review or ready to merge — what was
+finished no longer is, and a merge must not finish it while it is being fixed. A pass that is
+through with nothing reviewed changes nothing, and waits for a person's look as before.
+
+A pass that ended — done or
 stopped — shows for a day after its last record (`engine.ENDED_SHOWN`); one waiting for a
 person has not ended and stays. A pass is
 read in Step Details' Playbook tab, which a click on the strip opens (*A pass is reviewed in
@@ -413,7 +430,19 @@ card is `limit`, with the hold's reset, and a detached `playbook wake` waits for
 answers the card for the clock and advances (`engine.wake`). Any later advance answers a
 lapsed one too, which covers a waker that died with its machine. Every other refusal is
 `blocked`. *Retry now* — the label `inbox.retry_now` writes — answers either kind, and the
-pass does again what it could not; *Stop* halts it. The alternative was a pass whose advance
+pass does again what it could not; *Stop* halts it. **A review held for its agent's usage offers two answers more**
+(`passes.held_review_options`): *Review with <agent>*, one per agent a profile runs headless
+here whose account no limit holds (`StageLauncher.unheld`), which runs this round's review on
+that agent in a fresh session — the pass's pinned reviewer is kept, so the next round asks it
+again — and *Skip this review*, which counts as the gate passing, like a round cap's *Accept as
+is*, spends no round, and leaves any person gate after it to ask. Both are answers on the card,
+so the ledger keeps them and `passes.due` replays them; neither is offered for a work stage, a
+`blocked` card or anything but a usage hold, because none of those is the reviewer's quota.
+Which to give is the developer's policy: the coordinator asks for it once when nobody has said
+(`coordinator.py`). An automatic policy — the engine answering the card by itself — and
+rerouting a review that parks mid-turn were left out: Codex's review of the plan found the first
+needs a delivery and crash-recovery design of its own, and the second races the supervisor
+that owns the parked run. The alternative was a pass whose advance
 exited with nothing written: no run parked, no card shown, and no reset or answer that could
 ever wake it.
 
@@ -720,9 +749,13 @@ harness's `harness.py` spells it as an argv (`domain/headless.py`'s `Headless.co
 began in — a read-only thread resumed bare came back `workspace-write`. Read off the rollout's
 `turn_context` against the fake API, `--approve-for-me --add-dir <d>` is exactly the four
 overrides in the table, and they hold on `exec resume`; so a fresh turn uses them too, and the
-two spellings cannot drift. **A Codex plan or review never runs read-only**, because its
-briefing opens with `dplanner agent-work start` and asks through `dplanner question ask`, and
-both write — read-only, a reviewer could not even say it had begun. Codex has no read-only
+two spellings cannot drift. **A Codex plan or review never runs read-only**, because it
+asks through `dplanner question ask`, which writes. (Its briefing no longer opens with
+`dplanner agent-work start`: a plan or a review edits nothing in the plan, so it has no edit to
+announce, and **Claude's plan mode declines that write even under an `--allowedTools` allow
+rule** — the model refuses it itself, with no permission denial in the result, which a probe
+showed on 2026-10-11. The same holds for `question ask`, so a Claude plan or review cannot ask
+the developer today; how Claude's read stages run is an open question, not settled here.) Codex has no read-only
 sandbox with writable exceptions, so the turn's working root is its run directory (`-C`, which
 with `--skip-git-repo-check` goes on `codex exec` before `resume`, the subcommand taking
 neither), its other writable roots only what its `dplanner` verbs write — the project's

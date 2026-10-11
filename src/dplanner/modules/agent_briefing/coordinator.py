@@ -266,15 +266,22 @@ def _loop(project: str, actual: str, at_once: int) -> PromptPart:
             "1. **Launch what is ready.** For each ready step with no run under way:"
             " `dplanner agent run <key> --playbook --callsign <its member>` — at most"
             f" {at_once} runs live at once. Steps that would touch the same files run one after"
-            " the other even where the graph allows both; read two plans side by side before"
-            " you pass either.",
+            " the other even where the graph allows both; where a step's playbook gates its plan"
+            " (`dplanner playbook show <key>`), read two plans side by side before you pass"
+            " either.",
             "2. **Mind the quota.** You share the account with your squad: read `dplanner"
             " agent limits` before every launch and start nothing while a window reads"
             f" {LAUNCH_CEILING} % or more. A run that hits its limit parks and its supervisor"
-            " waits out the reset — never wait for one in your own session.",
+            " waits out the reset — never wait for one in your own session. A review whose"
+            " agent is held asks on a `limit` card that may also run it on another agent with"
+            " usage left (*Review with <agent>*) or skip it (*Skip this review*): which is the"
+            " developer's policy. If they have not said, ask them once — `dplanner question ask"
+            " '<when a reviewer runs out of usage: wait, review with another agent, or skip?>'`"
+            " — and keep the answer as a decision note; then answer each such card by it.",
             "3. **Watch.** Check in about every ten minutes — `dplanner question list --open`,"
-            f" `dplanner claim list`, `dplanner progression show {project}`, and `dplanner usage"
-            " show <key>` for a run you are unsure of; every check renews your claim. Wait"
+            f" `dplanner claim list`, `dplanner progression show {project}`, `dplanner playbook"
+            " show <key> --history` for what a pass's plans and verdicts said, and `dplanner"
+            " usage show <key>` for a run you are unsure of; every check renews your claim. Wait"
             " between checks with your harness's own scheduled wake-up, never a background"
             " watcher or a sleep loop. Run headless (`claude -p`, `codex exec`) you have none:"
             " your turn ends with your process, and only a person — or a timer they set up —"
@@ -324,7 +331,8 @@ def _loop(project: str, actual: str, at_once: int) -> PromptPart:
 def _done(project: str, actual: str) -> PromptPart:
     said = spoken(actual)
     body = (
-        "When every step is done, blocked, or waiting on a person: end the claim with"
+        "When every step is done, blocked, or waiting on a person: end the claim if it still"
+        " stands — releasing its last step ends it — with"
         " `dplanner claim end C-… --why done` (`claim take` printed its id) — unless a step"
         " still waits on a person, since ending stops its run: then leave the claim standing"
         " and say so. Leave a handoff,"
