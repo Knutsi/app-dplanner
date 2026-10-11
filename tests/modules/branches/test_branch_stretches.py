@@ -162,6 +162,25 @@ def test_a_cut_is_nobodys_work_and_reads_done_once_what_it_waits_on_is(services,
     assert status_on(library, TODAY)(card) is Status.DONE
 
 
+@pytest.mark.parametrize("read_on", [date(2026, 10, 3), date(2026, 10, 4)])
+def test_a_cut_whose_work_was_done_on_a_weekend_reads_done_that_weekend(services, plan, read_on):
+    """A weekend day is no working day, and a wait of no days counted from one reads less
+    than none — a cut is no wait of days, so a branch cut on a Saturday may start at once."""
+    from dplanner.planning.schedule import status_on
+    from dplanner.planning.status import MODULE_ID as STATUS_ID
+    from dplanner.planning.status import write as status_write
+
+    saturday = date(2026, 10, 3)
+    library = services.document
+    card = titled(plan, "Card")
+    card.created = "2026-09-29T12:00:00+00:00"  # Before its work was done, as a cut is.
+    library.set_module_data(card.id, CUT_ID, write_cut("feature/x"))
+    library.set_module_data(
+        titled(plan, "Menu").id, STATUS_ID, status_write(Status.DONE, today=saturday)
+    )
+    assert status_on(library, read_on)(card) is Status.DONE
+
+
 def test_a_merge_into_the_branch_accepts_a_member_under_review(services, plan):
     """Inside an open stretch, a PR merged into its branch is the acceptance — the review
     comes when the branch lands. A merge into anything else accepts nothing unreviewed."""

@@ -1132,7 +1132,10 @@ rendering PDF pages from the CLI.
 
 `spawn_detached()` and `detached_flags()`: start a process the user owns — an agent's terminal,
 a second window — so that closing the application never takes it down; `start_new_session` on
-POSIX, creation flags on Windows. One place, where there had been several.
+POSIX, creation flags on Windows. One place, where there had been several. Its output goes
+nowhere unless it is handed a `log`, which both streams are appended to (the directory made,
+the parent's handle closed once the child has its own): a detached process nobody waits on —
+a playbook's `advance` — otherwise leaves nothing to read when it wrote nothing it should have.
 `detached_environment()` drops the run marker (`RUN_ENV`, `DPLANNER_RUN`) from what a detached
 process inherits: DPlanner ends a run by finding every process that carries it, and a detached
 start is never part of its starter's run. The name lives here so that `spawn_detached` can

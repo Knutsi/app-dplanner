@@ -1186,3 +1186,38 @@ def test_a_dangling_index_line_is_skipped_while_another_resolves(tmp_path):
     library, store = open_library_of(tmp_path, first)
     found = find_current_project(library, store, start=plans)
     assert found is not None and found.id == library.projects[0].id
+
+
+# -- a flush another writer refused ------------------------------------------------------------
+
+
+@pytest.mark.parametrize("retries", [False, True])
+def test_a_refused_flush_is_run_again_only_by_a_verb_that_says_so(
+    cli_library, monkeypatch, retries
+):
+    """Each attempt is a whole run on a fresh opening of the library, and the bound holds: a
+    project written to without pause is still a refusal somebody reads."""
+    from dplanner.cli.command import CliCommand, CliRegistry
+    from dplanner.cli.main import STALE_ATTEMPTS, run
+    from dplanner.domain.store import StaleWorkspaceError
+
+    opened = []
+
+    def verb(context, _args) -> int:
+        opened.append(context.library)
+        return 0
+
+    def stale(_self, _marks):
+        raise StaleWorkspaceError("the plan changed underneath")
+
+    registry = CliRegistry()
+    registry.register(
+        CliCommand(
+            path=("try", "it"), summary="", run=verb, finds_project=False, retries_stale=retries
+        )
+    )
+    monkeypatch.setattr(LibraryStore, "flush", stale)
+    err = StringIO()
+    assert run(registry, [], ["--library", str(cli_library), "try", "it"], StringIO(), err) == 1
+    assert "run this again" in err.getvalue()
+    assert len(opened) == (STALE_ATTEMPTS if retries else 1) == len({id(o) for o in opened})

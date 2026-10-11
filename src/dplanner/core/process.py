@@ -20,7 +20,7 @@ import signal
 import subprocess
 import sys
 from collections.abc import Mapping, Sequence
-from contextlib import suppress
+from contextlib import nullcontext, suppress
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -50,18 +50,27 @@ def detached_flags(platform: str = sys.platform) -> int:
 
 
 def spawn_detached(
-    argv: Sequence[str], *, cwd: Path | None = None, env: Mapping[str, str] | None = None
+    argv: Sequence[str],
+    *,
+    cwd: Path | None = None,
+    env: Mapping[str, str] | None = None,
+    log: Path | None = None,
 ) -> None:
-    """Start ``argv`` detached and forget it: its output goes nowhere and nobody waits on it."""
-    subprocess.Popen(
-        list(argv),
-        cwd=cwd,
-        env=detached_environment(env),
-        start_new_session=True,
-        creationflags=detached_flags(),
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    """Start ``argv`` detached and forget it: nobody waits on it, and its output goes nowhere
+    — or, with ``log``, is appended to that file, so a process nobody watched can be read
+    afterwards. The child holds its own copy of the file; ours is closed once it has it."""
+    if log is not None:
+        log.parent.mkdir(parents=True, exist_ok=True)
+    with nullcontext(subprocess.DEVNULL) if log is None else log.open("ab") as out:
+        subprocess.Popen(
+            list(argv),
+            cwd=cwd,
+            env=detached_environment(env),
+            start_new_session=True,
+            creationflags=detached_flags(),
+            stdout=out,
+            stderr=subprocess.STDOUT,
+        )
 
 
 def detached_environment(env: Mapping[str, str] | None = None) -> dict[str, str]:

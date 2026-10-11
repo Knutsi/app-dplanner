@@ -740,7 +740,13 @@ harness's `harness.py` spells it as an argv (`domain/headless.py`'s `Headless.co
 - a typed final message where the CLI has one (`--json-schema`, `--output-schema`), so a
   verdict and a question are read, not guessed from prose — `domain/headless.py`'s
   `TURN_SCHEMA` for execute and `VERDICT_SCHEMA` for review, both strict because Codex takes no
-  other kind; a plan has none, because its final text *is* the plan;
+  other kind; a plan has none, because its final text *is* the plan. An execute's `outcome` is
+  `done`, `asked`, `denied` or `blocked`, and the briefing's epilogue says which means what:
+  `blocked` is an agent that stopped honestly on what it cannot mend — a prerequisite missing.
+  Without it, the parallel-branches run's Test agent, stopped because the code it was to test
+  was not there yet, picked `denied`, and the card said a permission was refused and offered
+  nothing. It ends the turn `failed` with `why: blocked` and parks at once on the `blocked`
+  card *Retry now* answers, since no wait mends it;
 - the scrubbed environment every launch already gets.
 
 **Codex states its mode on every turn, as `-c` overrides.** The research's

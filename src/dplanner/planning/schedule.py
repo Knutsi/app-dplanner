@@ -548,15 +548,17 @@ def wait_status(
     return lambda step: status(step)
 
 
-# A branch cut holds nothing once what it waits on is done: a wait of no days, read so in
-# status_on and only there — the schedule's own waits never count one.
-_CUT_HOLDS = Wait(days=0.0)
+# A branch cut holds nothing once what it waits on is done: a wait whose day has always come
+# (never one of no days, which a weekend reads as not yet over — docs/architecture/
+# graph-model.md), read so in status_on and only there — the schedule's own waits never count one.
+_CUT_HOLDS = Wait(until=date.min)
 
 
 def status_on(library: Library, today: date) -> Callable[[Step], Reading]:
     """A step's status on ``today``, as the Step statuses tab, its report and the Run Agent
     gate read it: :func:`wait_status` over the stored statuses, with a branch cut read as a
-    wait of no days, so what follows a wait or a cut is ready on the day it may start."""
+    wait already over once what it waits on is done, so what follows a wait or a cut is ready
+    on the day it may start."""
     return wait_status(
         library,
         stored,

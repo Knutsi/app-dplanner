@@ -951,7 +951,9 @@ supervisor classifies the stream and the result, and writes the class. The sixth
 `stopped`, is for a run a person or the coordinator fenced, or whose step went away:
 filing it under `failed` would have the supervisor retry exactly what somebody just stopped.
 The retry-or-abandon split of the 10-03 failure classes is the supervisor's count of
-`failed` turns, not another word. Running, parked and over are read from the turns, never
+`failed` turns, not another word — and so is an agent's own typed `blocked`, a `failed` turn
+whose `why` parks it at once, because nothing a backoff waits for brings a missing
+prerequisite. Running, parked and over are read from the turns, never
 stored, so nothing can say a run is parked while its last turn says done.
 
 **A lost turn is found by the machine that ran it, and a takeover fences it.** A turn records

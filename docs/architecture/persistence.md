@@ -75,7 +75,8 @@ the watcher, and the next membership flush wrote that project out of the file (t
 structural review's probe, `tests/domain/test_store_adoption.py`). Around that one check:
 
 - A **CLI run** reports it as one line and writes nothing. A run is a transaction, so
-  running it again picks up the change and is correct.
+  running it again picks up the change and is correct — and a verb a process of ours runs
+  with nobody to read the line runs itself again (below).
 - A **window** takes the change into its live model, entry by entry — the next section —
   and a flush that was refused is retried once the folder has been seen.
 - A **window that changed the very same entry** and has not flushed it stops on that
@@ -84,6 +85,27 @@ structural review's probe, `tests/domain/test_store_adoption.py`). Around that o
 
 The same check is why **two CLI runs need no lock between them**: the second is refused for
 exactly the same reason and can be run again. One mechanism, three cases.
+
+**A verb nobody watches runs itself again.** "Run this again" is advice to a reader, and a
+detached `playbook advance` has none: in the parallel-branches experiment two passes in one
+project finished their `progress` two seconds apart, one advance had already merged its PR when
+its flush was refused, and its pass sat at *Merging* with nothing written and nobody told. So a
+verb marks itself `retries_stale` (`playbook advance`, `agent run`, which a coordinator launches
+side by side), `open_library` raises the refusal as a `StaleRunError`, and `cli/main.py` runs
+the whole verb again — a fresh opening of the library, a fresh decision — up to three times,
+a jittered pause apart.
+
+It **re-runs rather than adopting** the other writer's change and flushing the same marks: the
+verb's decision was made on the plan as it was read, and the change that refused it may be the
+very thing that decides differently — the other pass's write, a person's stop. Adopting would
+commit a decision nobody made on the plan as it is. Re-running is safe because of the
+transaction's other half: nothing a refused run owes outside the plan has happened
+(`after_flush` runs only after a written flush, the verb's report among them, so a retry says
+its result once), and what it did beforehand is taken back (`unwritten`). What it did and cannot
+take back is idempotent by construction and read again by the retry — a run the engine started
+before the flush is in the ledger, so the retry's `passes.due` waits on it; a PR already merged
+is found merged by `accept_by_merge`, recorded and never merged twice. A verb opts in only when
+that holds for it; `playbook wake` holds no library at all and needs none of it.
 
 Git is the exception, because a commit, a fetch or a rebase is not a file write the stamp can
 judge: every one of them holds the repository's **sync lock**, a file in its common git

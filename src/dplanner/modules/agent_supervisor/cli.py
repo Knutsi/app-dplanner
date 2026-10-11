@@ -63,7 +63,7 @@ def commands(
                 library=library,
                 # A playbook's stage that ended done hands its pass on, in a process of its own.
                 advance=lambda directory, record: advance_detached(
-                    directory, record.project, record.step, library=library
+                    directory, record.project, record.step, record.pass_, library=library
                 ),
             )
         except RefusedError as error:

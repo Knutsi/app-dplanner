@@ -113,12 +113,20 @@ plan in an exploration the developer kept:
 **Two aspects on steps, not two node kinds.** *Status is an aspect, and step types are
 emergent* rules out a type field, and the bracket did not need one: a cut is a step
 carrying `branch_cut` (`{"branch": …}`), key `B`, nobody's work — no worker, no status of
-its own, done once what it waits on is, which is a wait of no days composed in
+its own, done once what it waits on is, which is a wait already over by then composed in
 `schedule.status_on` (never through the schedule's `wait_of`, or reports would name every cut a
 wait) — and a landing is an agent step carrying `branch_land` (`{"cut": id}`). `planning.kinds`'s
 `works_nobody` became the one predicate a wait and a cut share, and every module that
 refuses such a step a status, an agent or a test words its refusal from the name
 it hands back, where each had a wait's sentence of its own.
+
+**A cut's wait is a day that has always come, never a wait of no days.** It was `Wait(days=0)`
+once, and a wait of days is counted by `waited` from the middle of the day its predecessor was
+done — on a Saturday that is a working day less half of one, below nothing, so a cut whose
+work was done at the weekend read *Waiting* until Monday and Run Agent refused every first step
+on its branch. `Wait(until=date.min)` is over the moment what it waits on is done and never asks
+the time model. A person's own wait of no days keeps that weekend reading: it is the time
+model's, which is the prototype's to the day (`schedule.md`), and changes there first.
 
 **The pairing is stored; membership is derived.** A landing names its cut, and the name
 counts only while the cut is upstream — a stored id read through the graph, which no verb

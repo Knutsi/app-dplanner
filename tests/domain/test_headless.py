@@ -90,6 +90,11 @@ def test_a_typed_message_is_read_and_beats_prose():
     )
     denied = {"outcome": "denied", "summary": "The sandbox is read-only", "question": ""}
     assert ending(typed=denied) == Ending(TurnEnd.DENIED, "typed", "The sandbox is read-only")
+    # An agent that stopped honestly is blocked — a failure no retry mends — never denied.
+    blocked = {"outcome": "blocked", "summary": "mul and div are missing", "question": ""}
+    assert ending(typed=blocked) == Ending(
+        TurnEnd.FAILED, "blocked", reason="mul and div are missing"
+    )
     # A typed answer that did not ask is done, even if its prose ends on a question mark.
     done = {"outcome": "done", "summary": "Added it", "question": ""}
     assert ending(typed=done, final="Want tests too?").end is TurnEnd.DONE

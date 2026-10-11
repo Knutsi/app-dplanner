@@ -330,6 +330,13 @@ def _own_config_dir(monkeypatch, tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
+def _no_stale_pause(monkeypatch):
+    """A verb retried after a refused flush runs again at once: the jitter is for two real
+    processes, and a suite that refuses flushes on purpose would only sleep."""
+    monkeypatch.setattr("dplanner.cli.main.STALE_PAUSE_S", (0.0, 0.0))
+
+
+@pytest.fixture(autouse=True)
 def _fresh_session_settings():
     """Per-user state must not leak between tests.
 

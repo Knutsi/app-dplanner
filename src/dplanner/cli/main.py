@@ -8,7 +8,9 @@ without editing anything here.
 """
 
 import os
+import random
 import sys
+import time
 from argparse import (
     SUPPRESS,
     ArgumentParser,
@@ -20,7 +22,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TextIO
 
-from dplanner.cli.command import CliCommand, CliContext, CliError, CliRegistry
+from dplanner.cli.command import CliCommand, CliContext, CliError, CliRegistry, StaleRunError
 from dplanner.cli.discovery import (
     CALLSIGN_ENV,
     find_current_project,
@@ -44,6 +46,11 @@ WINDOW_WORD = "window"
 # The word typed for you: a second console script (``entry.window_main``) for a person's
 # shell and the desktop launcher. Like the word, the skill never names it.
 WINDOW_SHORTCUT = "dpw"
+# A verb that retries a flush another writer refused (``CliCommand.retries_stale``) runs at
+# most this often, a jittered pause between: two passes finishing together collide once, and
+# a project written to without pause is a refusal worth saying.
+STALE_ATTEMPTS = 3
+STALE_PAUSE_S = (0.1, 0.5)
 
 
 class _Formatter(RawDescriptionHelpFormatter):
@@ -174,6 +181,24 @@ def _named_project(args: Namespace) -> str:
     return several[0] if isinstance(several, list) and len(several) == 1 else ""
 
 
+def _run_verb(
+    context: CliContext, command: CliCommand, args: Namespace, board: "AtWorkBoard | None"
+) -> int:
+    context.current = _current_project(context, command, args)
+    if board is not None and context.current is not None:
+        board.touch(context.current.id)
+        from dplanner.domain.claim_sync import renew
+        from dplanner.domain.claims import squad_of
+
+        # A squad member's shell renews its own squad's claims alone: two squads on one
+        # machine must not keep each other alive.
+        renew(
+            context.store.project_dir(context.current.id),
+            squad=squad_of(os.environ.get(CALLSIGN_ENV, "")),
+        )
+    return command.run(context, args)
+
+
 def run(
     registry: CliRegistry,
     formats: Sequence[ModuleDataFormat],
@@ -210,6 +235,10 @@ def run(
     running a verb in their own terminal must not renew somebody else's claim. The verbs that
     read and write claims hold their own board and work either way.
 
+    A verb that ``retries_stale`` is run again from the start, on the plan as it is then, when
+    its flush is refused because another writer changed the project meanwhile — up to
+    :data:`STALE_ATTEMPTS` runs, then the refusal is said as for any other verb.
+
     ``clock`` is the day the run dates things by; the machine's unless a test pins one.
     ``link_rules`` are the composition root's additions to what may link to what, installed
     on the library the run opens as the window installs them on its own.
@@ -238,27 +267,25 @@ def run(
             )
         else:
             path = find_library(args.library)
-            with open_library(
-                path,
-                formats,
-                out,
-                as_json=args.as_json,
-                clock=clock or Clock(),
-                link_rules=link_rules,
-            ) as context:
-                context.current = _current_project(context, command, args)
-                if board is not None and context.current is not None:
-                    board.touch(context.current.id)
-                    from dplanner.domain.claim_sync import renew
-                    from dplanner.domain.claims import squad_of
-
-                    # A squad member's shell renews its own squad's claims alone: two squads
-                    # on one machine must not keep each other alive.
-                    renew(
-                        context.store.project_dir(context.current.id),
-                        squad=squad_of(os.environ.get(CALLSIGN_ENV, "")),
-                    )
-                code = command.run(context, args)
+            attempt = 1
+            while True:
+                try:
+                    with open_library(
+                        path,
+                        formats,
+                        out,
+                        as_json=args.as_json,
+                        clock=clock or Clock(),
+                        link_rules=link_rules,
+                    ) as context:
+                        code = _run_verb(context, command, args, board)
+                    break
+                except StaleRunError:
+                    if not command.retries_stale or attempt == STALE_ATTEMPTS:
+                        raise
+                    attempt += 1
+                    # Apart, so two runs refused by each other do not collide again.
+                    time.sleep(random.uniform(*STALE_PAUSE_S))
     except CliError as error:
         print(f"{PROG}: {error}", file=err)
         telemetry.end(span, exit_code=1, refused=str(error))

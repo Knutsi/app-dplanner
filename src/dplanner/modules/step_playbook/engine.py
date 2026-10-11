@@ -481,7 +481,7 @@ def _refused(
     if until is not None:
         project_dir = context.store.project_dir(asked.project)
         supervisor.wake_detached(
-            project_dir, asked.project, asked.id, library=context.store.library_path
+            project_dir, asked.project, asked.id, asked.pass_, library=context.store.library_path
         )
     return f"{stage} could not go on, and asks {asked.short}: {why}"
 
@@ -857,7 +857,7 @@ def wake(
         if left <= 0:
             questions.clock_answer(project_dir, question_id)
             supervisor.advance_detached(
-                project_dir, question.project, question.step, library=library
+                project_dir, question.project, question.step, question.pass_, library=library
             )
             return f"{question.short}: the limit has reset; its pass advances"
         sleep(min(left, 60.0))

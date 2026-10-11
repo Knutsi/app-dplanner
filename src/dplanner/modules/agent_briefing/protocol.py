@@ -254,7 +254,12 @@ def epilogue(library: Library, step: Step, branches: BranchPlan) -> str:
         " handoff note.\n"
         "Each of those statuses ends your working claim. If you stop without setting one,"
         f" end it yourself: `dplanner agent-work end --step {ref}` — a banner nobody ended"
-        " is one nobody believes next time."
+        " is one nobody believes next time.\n"
+        "Unattended, your final message's `outcome` says how the turn ended: `done` when the"
+        " work is finished; `asked` with the `question`, when you asked one; `blocked` when"
+        " something you cannot mend stops you — a prerequisite missing, the step not doable"
+        " as written — saying what in the `summary`; `denied` only when a tool you needed was"
+        " refused permission."
     )
 
 

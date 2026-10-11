@@ -489,8 +489,9 @@ paths:
   stream — and then ends, parks or retries (a review done without its verdict is asked once
   more, prompt `verdict`; a playbook's run that ends `done` starts its pass's
   `playbook advance`, detached): `done`/`stopped` end it; `asked`, `denied`,
-  `limit`, a runaway and a failure no retry mends park it and the process exits (but for a
-  limit whose reset is known); other
+  `limit`, a runaway, the agent's own typed `blocked` (`failed`/`blocked`, on a `blocked` card
+  saying its summary — never `denied`, which is a permission refused) and a failure no retry
+  mends park it and the process exits (but for a limit whose reset is known); other
   failures retry after 30 s, 2 min and 10 min, and a fourth in a row parks. A parked run
   resumes by `--prompt answer|continue|reset|retry`, or bare on an answered question. It
   opens no library. **A limit with a known reset waits in its supervisor**, which answers the

@@ -268,6 +268,19 @@ def test_every_park_stands_on_a_question_of_its_kind(rig, tmp_path):
     assert blocked.kind == "blocked" and "runaway" not in blocked.text  # Words, not a code.
 
 
+def test_an_agent_that_says_it_is_blocked_parks_at_once_on_a_blocked_card(rig):
+    """Its own word that it cannot go on — a prerequisite missing — is no failure a wait
+    mends and no permission refused: parked on the first turn, the card saying its why."""
+    why = "mul and div are missing, and the tests need them"
+    said = {"outcome": "blocked", "summary": why, "question": "", "declined": []}
+    rig.play({"lines": [INIT, result(typed=said)]})
+    rig.supervise()
+    assert rig.ends() == [("failed", "blocked")] and len(rig.specs) == 1
+    assert rig.record.parked
+    (card,) = questions.records(rig.plan)
+    assert card.kind == "blocked" and why in card.text
+
+
 def test_a_resume_that_is_no_answer_withdraws_the_question_it_parked_on(rig):
     rig.play({"lines": recorded("claude-asked-prose-1")}, {"lines": [result()]})
     rig.supervise()
@@ -767,6 +780,20 @@ def test_a_playbooks_finished_stage_hands_its_pass_on_and_nothing_else_does(rig)
     ledger.write(rig.plan, replace(rig.record, pass_="P", ended="", exit=None, turns=()))
     said = rig.supervise(advance=lambda _dir, record: told.append(record.run))
     assert told == [RUN] and said.endswith("its pass advances")
+
+
+def test_a_detached_advance_or_wake_keeps_its_output_in_the_passs_log(monkeypatch, tmp_path):
+    """Nobody waits on an advance, so one that wrote nothing is read back from its log."""
+    started: list[tuple[list[str], Path | None]] = []
+    monkeypatch.setattr(
+        supervisor,
+        "spawn_detached",
+        lambda argv, *, cwd, log=None: started.append((list(argv), log)),
+    )
+    supervisor.advance_detached(tmp_path, "proj", "S1", "P-1")
+    supervisor.wake_detached(tmp_path, "proj", "Q-1", "P-1")
+    log = ledger.run_dir("P-1") / supervisor.ADVANCE_LOG
+    assert [(argv[-1], at) for argv, at in started] == [("S1", log), (str(tmp_path), log)]
 
 
 def test_a_parked_stage_does_not_hand_its_pass_on(rig):

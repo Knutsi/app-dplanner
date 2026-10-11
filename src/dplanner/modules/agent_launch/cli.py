@@ -402,6 +402,7 @@ def commands(
                 "dplanner agent run S11 --profile 'Codex in herdr' --terminal",
                 "dplanner agent run S11 --anyway --json",
             ),
+            retries_stale=True,
         )
     ]
 
