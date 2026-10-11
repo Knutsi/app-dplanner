@@ -9,12 +9,13 @@ window and ``dplanner`` alike, so a stretch decides the same thing whichever sur
 from collections.abc import Callable, Iterable
 
 from dplanner.domain.branches import Reading, Stretch
+from dplanner.domain.locations import Location
 from dplanner.domain.model import Edge, Library, Project, Step
 from dplanner.modules.github.aspect import read as github_read
 from dplanner.modules.step_description.aspect import MODULE_ID as DESCRIPTION_ID
 from dplanner.modules.step_description.aspect import write_state as description_state
 from dplanner.planning.agent import MODULE_ID as AGENT_ID
-from dplanner.planning.agent import code_location, code_row, repository_key
+from dplanner.planning.agent import code_location, code_row, repository_key, workplace
 from dplanner.planning.agent import enabled as agent_enabled
 from dplanner.planning.agent import write_state as agent_state
 from dplanner.planning.branches import (
@@ -99,26 +100,48 @@ def _fresh(stretch: Stretch) -> bool:
 
 def _elsewhere(project: Project, step: Step, stretch: Stretch) -> str:
     """Why an agent step on a stretch may not run there, "" when it may: it works in another
-    repository than the branch — a branch lives in one, its landing's — so its run would
-    find no such branch, or cut a second one of the name in the wrong place."""
-    if step.id == stretch.land.id or not agent_enabled(step):
-        return ""
-    if repository_key(project.locations, step) == stretch_repository(project, stretch):
-        return ""
+    repository than the branch lives in, so its run would find no such branch, or cut a
+    second one of the name in the wrong place."""
+    return elsewhere(project, step, stretch) if agent_enabled(step) else ""
+
+
+def elsewhere(project: Project, step: Step, stretch: Stretch) -> str:
+    """How ``step`` — a member of ``stretch``, or its landing — works somewhere else than
+    the stretch's branch lives, with the verb that puts it right; "" when it does not."""
     works = code_location(project.locations, step)
-    lands = code_location(project.locations, stretch.land)
-    assert works is not None and lands is not None  # Two keys differ, so both rows exist.
+    lives = stretch_location(project, stretch)
+    if works is None or lives is None or works.canonical == lives.canonical:
+        return ""
+    lands = step.id == stretch.land.id
     return (
-        f"it works in {works.repository_label}, but {stretch.branch} lands in"
-        f" {lands.repository_label} — `dplanner agent workplace` puts it, or the landing,"
-        " where the other is"
+        f"it {'lands' if lands else 'is on'} {stretch.branch}, which is in"
+        f" {lives.repository_label}, but works in {works.repository_label} —"
+        f" `dplanner agent workplace {step.title!r} <location>`"
+        + ("" if lands else f", or the same for {stretch.land.title!r}")
     )
 
 
+def stretch_location(project: Project, stretch: Stretch) -> Location | None:
+    """The code row a stretch's branch lives in: its landing's — the agent step that merges
+    the branch back works where the branch is. A landing that names no workplace, as every
+    one made before branches had a repository, takes the row its agent members agree on, so
+    such a branch in a second repository keeps its members running and its landing is told
+    the one verb that puts it there too."""
+    lands = code_location(project.locations, stretch.land)
+    if workplace(stretch.land):
+        return lands
+    rows = {
+        repository_key(project.locations, member): code_location(project.locations, member)
+        for member in stretch.members
+        if agent_enabled(member)
+    }
+    return next(iter(rows.values())) if len(rows) == 1 else lands
+
+
 def stretch_repository(project: Project, stretch: Stretch) -> str:
-    """The repository a stretch's branch lives in, as :func:`repository_key` compares them:
-    its landing's — the agent step that merges the branch back works where the branch is."""
-    return repository_key(project.locations, stretch.land)
+    """The repository a stretch's branch lives in, as :func:`repository_key` compares them."""
+    location = stretch_location(project, stretch)
+    return location.canonical if location is not None else ""
 
 
 def landing_workplace(project: Project, steps: Iterable[Step]) -> str:

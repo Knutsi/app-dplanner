@@ -922,3 +922,16 @@ but one. `playbook advance` and `agent run` now say `retries_stale` and are run 
 up to three times; adopting the other writer's change and flushing was rejected because it
 commits a decision made on a plan that no longer stands. Now: `persistence.md`'s *Two writers,
 one folder*.
+
+## 2026-10-11 — An older branch keeps running; agents' own verbs retry
+
+The validation run after the multi-repository fixes found three edges. A branch made before
+branches had a repository has a landing with no workplace, which read as the primary and
+would have refused every member of such a branch in a second repository: such a landing now
+takes the repository its agent members agree on, and only the landing itself is refused and
+linted until it is put there. An agent's own `github set` lost a write to five agents writing
+beside it and the agent took the refusal's printed success at its word: the verbs agents
+report through retry, and a retried verb says only the run that stood. Two first runs on one
+nested stretch raced to cut the outer branch: the push that loses now finds it made. Now:
+`graph-model.md`'s *A branch stretch is bracketed by a cut and a landing* and `persistence.md`'s
+*Two writers, one folder*.

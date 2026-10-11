@@ -151,10 +151,12 @@ class CliCommand:
     # the *graph* is read first; this one says the shape of what is written inside a step
     # is. The same gate refuses until it has been read, and the skill marks them too.
     reads_guide: str | None = None
-    # Set on a verb a process of ours runs unattended — `playbook advance`, `agent run` — so
-    # that a flush refused because another writer got there first is run again, from the
-    # start, on the plan as it is then, rather than leaving nobody to read the refusal. Safe
-    # only for a verb that reports and acts outside the plan from ``after_flush`` alone.
+    # Set on a verb an agent or a process of ours runs — `playbook advance`, `agent run`, the
+    # verbs a briefing has an agent report through — so that a flush refused because another
+    # writer got there first is run again, from the start, on the plan as it is then, rather
+    # than left to whoever may misread the refusal. What a refused attempt reported is never
+    # said (``cli/main.py`` holds it back); safe for a verb that acts outside the plan from
+    # ``after_flush`` alone, or only in ways a second run repeats harmlessly.
     retries_stale: bool = False
 
     @property

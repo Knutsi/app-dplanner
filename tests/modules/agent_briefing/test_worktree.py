@@ -206,3 +206,25 @@ def test_a_worktree_is_checked_out_with_the_checkout_timeout(pointed_repo, monke
     monkeypatch.setattr(worktree, "run_git", timed)
     prepare(pointed_repo, "s1-discovery")
     assert timeouts == {"add": sparse.CHECKOUT_S}
+
+
+def test_a_cut_another_run_made_meanwhile_is_taken_as_made(cloned_repo, tmp_path):
+    """Two first runs on one stretch cut at once: the push that loses finds the branch the
+    other made, and starts from it rather than failing the run."""
+    from dplanner.modules.agent_briefing.worktree import _cut, _Repo
+
+    seed, origin = tmp_path / "seed", tmp_path / "origin.git"
+    _git(seed, "commit", "-q", "--allow-empty", "-m", "the other run's cut")
+    _git(seed, "push", "-q", str(origin), "HEAD:refs/heads/feature/r")  # Unseen by the clone.
+    _cut(_Repo(cloned_repo), "feature/r", "origin/main")
+    assert (
+        _git(cloned_repo, "log", "-1", "--format=%s", "origin/feature/r") == "the other run's cut"
+    )
+
+
+def test_a_cut_that_fails_for_another_reason_still_says_why(cloned_repo):
+    from dplanner.core.storage.sparse import GitError
+    from dplanner.modules.agent_briefing.worktree import _cut, _Repo
+
+    with pytest.raises(GitError):
+        _cut(_Repo(cloned_repo), "feature/s", "origin/no-such-branch")

@@ -73,6 +73,7 @@ def commands(*, finish_merged: FinishMerged) -> list[CliCommand]:
     return [
         CliCommand(
             path=("github", "set"),
+            retries_stale=True,
             summary="Record the branch and/or PR a step's work lands in.",
             configure=_configure_set,
             run=_set,

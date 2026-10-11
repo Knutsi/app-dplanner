@@ -20,6 +20,7 @@ def commands() -> list[CliCommand]:
     return [
         CliCommand(
             path=("agent-state", "set"),
+            retries_stale=True,
             summary="Say where a launched agent stands on a step.",
             configure=_configure_set,
             run=_set,
@@ -34,6 +35,7 @@ def commands() -> list[CliCommand]:
         ),
         CliCommand(
             path=("agent-state", "clear"),
+            retries_stale=True,
             summary="The run is over; leaves no file behind.",
             configure=step_arg,
             run=_clear,

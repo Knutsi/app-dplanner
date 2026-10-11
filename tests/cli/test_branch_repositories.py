@@ -87,7 +87,7 @@ def test_a_member_working_elsewhere_than_its_branch_is_refused_a_run_and_named_b
 
     library, sub = step_titled(cli_library, "Sub")
     refusal = branch_plan(library, sub, "").refusal
-    assert "works in acme/app, but feature/x lands in acme/lib" in refusal
+    assert "is on feature/x, which is in acme/lib, but works in acme/app" in refusal
     findings = data(cli("project", "lint", "shop", "--json", expect=1))["findings"]
     assert [f["subject"] for f in findings if f["check"] == "branch.repository"] == [sub.id]
 
@@ -103,3 +103,20 @@ def test_the_first_run_inside_a_nested_branch_cuts_the_outer_one_first(cli, cli_
     cli("github", "set", "Add", "--branch", "agent/s1-add")  # Its work was carried out.
     library, add = step_titled(cli_library, "Add")
     assert branch_plan(library, add, "").cuts == ()
+
+
+def test_a_landing_made_before_branches_had_a_repository_follows_its_members(cli, cli_library):
+    """A landing that names no workplace — every one made before this rule — takes the
+    repository its agent members agree on: they keep running, and the landing is told the
+    one verb that puts it with them."""
+    put = data(cli("branch", "put", "Mul", "Div", "--branch", "feature/x", "--json"))
+    cli("agent", "workplace", put["land"], "primary")  # As an older build left it.
+
+    library, div = step_titled(cli_library, "Div")
+    assert branch_plan(library, div, "").refusal == ""
+    land = library.step(put["land"])
+    assert "lands feature/x, which is in acme/app, but works in acme/lib" in (
+        branch_plan(library, land, "").refusal
+    )
+    findings = data(cli("project", "lint", "shop", "--json", expect=1))["findings"]
+    assert [f["subject"] for f in findings if f["check"] == "branch.repository"] == [land.id]

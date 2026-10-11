@@ -234,15 +234,21 @@ def _cut(repo: _Repo, create: str, create_from: str) -> None:
     ):
         with suppress(GitError):
             repo.git("remote", "set-head", "origin", "--auto", timeout=REMOTE_S)
-    if not repo.holds("show-ref", "--verify", "--quiet", f"refs/remotes/origin/{create}"):
+    cut = f"refs/remotes/origin/{create}"
+    if repo.holds("show-ref", "--verify", "--quiet", cut):
+        return
+    try:
         repo.git(
-            "push",
-            "--quiet",
-            "origin",
-            f"{create_from}:refs/heads/{create}",
-            timeout=REMOTE_S,
+            "push", "--quiet", "origin", f"{create_from}:refs/heads/{create}", timeout=REMOTE_S
         )
+    except GitError:
+        # Two first runs on one stretch cut at once, and the other one's push won: the
+        # branch is there now, which is all this push was for.
         repo.git("fetch", "--quiet", "origin", timeout=REMOTE_S)
+        if not repo.holds("show-ref", "--verify", "--quiet", cut):
+            raise
+        return
+    repo.git("fetch", "--quiet", "origin", timeout=REMOTE_S)
 
 
 def _remote_default(repo: _Repo) -> str:
