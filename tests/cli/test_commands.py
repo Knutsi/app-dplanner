@@ -5,6 +5,7 @@ flush — without a QApplication is the real proof the layering holds; the archi
 checks the imports, this checks the behaviour.
 """
 
+import io
 import json
 import re
 from io import StringIO
@@ -566,6 +567,22 @@ def test_inside_several_projects_project_create_and_list_need_none(cli, inside_t
     cli("project", "create", "Dispatch")
     titles = {row["title"] for row in data(cli("project", "list", "--json"))["projects"]}
     assert titles == {"Discovery", "Delivery", "Dispatch"}
+
+
+def test_inside_several_projects_verbs_that_name_their_own_projects_run(
+    cli, inside_two, monkeypatch
+):
+    """Every verb that never acts on *the* current project runs from a plan repository of
+    several: the library-wide ones, and those that take their projects as arguments."""
+    # Lint exits 1 on findings (no code repository yet): it ran, which is the point.
+    assert "2 findings" in cli("project", "lint", expect=1)
+    assert "Delivery:" in cli("project", "lint", "Delivery", expect=1)
+    cli("location", "roles")
+    cli("progression", "show", "--all")
+    cli("progression", "show", "Delivery")
+    exported = cli("project", "export", "Delivery")
+    monkeypatch.setattr("sys.stdin", io.StringIO(exported))
+    cli("project", "import", "--title", "Delivery copy", "--dir", str(inside_two / "copy"))
 
 
 def test_inside_several_projects_the_positional_names_the_project(cli, inside_two):

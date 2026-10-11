@@ -168,6 +168,7 @@ def commands(
         ),
         CliCommand(
             path=("location", "roles"),
+            finds_project=False,
             summary="The kinds of place a project can name, and what each is for.",
             run=partial(_location_roles, locating=locating),
             examples=("dplanner location roles",),
@@ -236,6 +237,7 @@ def commands(
         ),
         CliCommand(
             path=("project", "open"),
+            finds_project=False,
             summary="Add the project a link names, from a clone of its plan repository "
             "this machine already has.",
             configure=_configure_open,
@@ -285,6 +287,7 @@ def commands(
         ),
         CliCommand(
             path=("project", "import"),
+            finds_project=False,
             summary="Create a project from JSON on stdin, in export's shape.",
             configure=_configure_import,
             run=partial(_project_import, locating=locating),

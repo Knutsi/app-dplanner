@@ -63,6 +63,7 @@ def commands(
     return [
         CliCommand(
             path=("progression", "show"),
+            finds_project=False,
             summary="What can be launched right now, and how far along — one project or all.",
             configure=_configure,
             run=show,

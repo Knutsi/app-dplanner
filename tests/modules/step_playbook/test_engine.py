@@ -216,6 +216,43 @@ def test_work_sent_back_is_in_progress_again_until_its_fix_says_otherwise(drive)
     assert _status(drive.cli, "Build it") == "in-progress"
 
 
+def test_a_fix_whose_reopening_is_not_saved_never_starts(drive, monkeypatch):
+    """The fix's run starts only once the step's in-progress status is on disk: a refused
+    save takes the run back, so no fix works on a step a merge could still finish."""
+    from dplanner.domain.store import LibraryStore, StaleWorkspaceError
+
+    drive.cli("playbook", "set", "Build it", "plan-execute-review-self")
+    drive.play(
+        {"lines": [INIT, result("## Plan", session="plan-s")]},
+        {"lines": [INIT, result(typed=done(), session="plan-s")]},
+        {"lines": [INIT, result(typed=CHANGES, session="review-1")]},
+    )
+    drive.cli("agent", "run", "Build it", "--playbook")
+    for stage in ("plan", "execute", "review"):
+        drive.supervise()
+        if stage == "execute":
+            drive.cli("status", "set", "Build it", "ready-for-review")
+        if stage != "review":
+            drive.advance()
+    runs = len(drive.started)
+    records = len(ledger.records(drive.plan))
+
+    flush, refusing = LibraryStore.flush, [True]
+
+    def stale(self, marks):
+        if refusing:
+            raise StaleWorkspaceError("the plan changed underneath")
+        return flush(self, marks)
+
+    monkeypatch.setattr(LibraryStore, "flush", stale)
+    assert "nothing was written" in drive.cli("playbook", "advance", "Build it", expect=1)
+    assert len(drive.started) == runs and len(ledger.records(drive.plan)) == records
+    refusing.clear()
+    assert _status(drive.cli, "Build it") == "ready-for-review"
+    drive.advance()  # Saved this time: the fix starts, and the step is in progress.
+    assert len(drive.started) == runs + 1 and _status(drive.cli, "Build it") == "in-progress"
+
+
 def test_the_round_cap_asks_and_one_more_round_sends_a_fix_then_a_person_decides(drive):
     drive.cli("playbook", "set", "Build it", "review-only", "--rounds", "1")
     drive.play(

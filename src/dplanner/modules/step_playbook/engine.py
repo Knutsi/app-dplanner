@@ -16,6 +16,7 @@ effects only that way.
 
 import time
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import ExitStack
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -132,6 +133,8 @@ class Begun:
     said: str
     staged: Staged | None = None
     question: Path | None = None  # A question it wrote, which discard takes back.
+    # The launch changed the step's status too: the run starts only once that is on disk.
+    after_save: bool = False
 
     def start(self) -> None:
         if self.staged is not None:
@@ -200,7 +203,10 @@ class Engine:
         """Do what the step's latest pass needs next, once; what was done, in a sentence."""
         project = context.library.project_of(step.id)
         project_dir = context.store.project_dir(project.id)
-        with supervisor.launching(project.id, step.id, wait=True):
+        lock = ExitStack()
+        lock.enter_context(supervisor.launching(project.id, step.id, wait=True))
+        with ExitStack() as unless_handed:
+            unless_handed.callback(lock.close)
             pass_ = _latest_pass(project_dir, step.id)
             if isinstance(pass_, str):
                 return f"{step.title}: {pass_}"
@@ -211,34 +217,53 @@ class Engine:
                 pass_ = _latest_pass(project_dir, step.id)
                 assert not isinstance(pass_, str)
             next_ = passes.due(pass_.playbook, pass_.settings, pass_.entries, facts_of(step))
-            said = self._act(context, step, pass_, next_)
+            said, handed = self._act(context, step, pass_, next_, lock)
+            if handed:
+                unless_handed.pop_all()
             if not isinstance(next_, Wait):
                 _settle_answers(project_dir, pass_)
             return f"{step.title}: {said}"
 
     # -- acting -----------------------------------------------------------------------------
 
-    def _act(self, context: CliContext, step: Step, pass_: "Pass", next_: Next) -> str:
+    def _act(
+        self, context: CliContext, step: Step, pass_: "Pass", next_: Next, lock: ExitStack
+    ) -> tuple[str, bool]:
         """Do it, and start what it wrote — or, when the pass could not, ask about it on a
         card the pass waits on: a held account until its reset, anything else until a
-        person's *Retry now*."""
+        person's *Retry now*. True beside what it said when ``lock``, the step's launch lock,
+        was handed on: a run whose launch changed the step's status starts only once that
+        status is on disk, still under the lock, as a first launch does — so a refused save
+        takes the run back rather than leaving it at work on a step whose merge could finish
+        it."""
         stage = next_.stage if isinstance(next_, Launch | Progress) else ""
         attempt = next_.attempt if isinstance(next_, Launch) else 1
         try:
             begun = self._do(context, step, pass_, next_)
-            begun.start()
-            return begun.said
+            if not begun.after_save:
+                begun.start()
+                return begun.said, False
+            context.unwritten.append(lock.close)
+            context.unwritten.append(begun.discard)
+
+            def start() -> None:
+                with lock:
+                    begun.start()
+
+            context.after_flush.append(start)
+            return begun.said, True
         except limits.HeldError as held:
             options = (
                 self._held_review_options(next_.harness)
                 if isinstance(next_, Launch) and next_.kind is StageKind.REVIEW
                 else REFUSED_OPTIONS
             )
-            return _refused(
+            said = _refused(
                 context, step, pass_, stage, attempt, str(held), held.until, options=options
             )
+            return said, False
         except CliError as error:
-            return _refused(context, step, pass_, stage, attempt, str(error), None)
+            return _refused(context, step, pass_, stage, attempt, str(error), None), False
 
     def _held_review_options(self, held: str) -> tuple[tuple[str, str], ...]:
         """A review held for its agent's account may run on another agent this round, or be
@@ -265,10 +290,11 @@ class Engine:
                     member=pass_.member,
                     claim=pass_.claim,
                 )
-                if next_.kind is not StageKind.REVIEW:
-                    _apply(context, reopened(step, today=context.clock.today()))
+                reopens = next_.kind is not StageKind.REVIEW and _apply(
+                    context, reopened(step, today=context.clock.today())
+                )
                 said = f"{next_.stage} (attempt {next_.attempt}) launched as run {staged.run}"
-                return Begun(said, staged=staged)
+                return Begun(said, staged=staged, after_save=reopens)
             case Ask():
                 return _asked(context, step, pass_, next_)
             case Progress(stage):

@@ -146,17 +146,32 @@ def _examples(command: CliCommand) -> str:
 
 
 def _current_project(context: CliContext, command: CliCommand, args: Namespace) -> Project | None:
-    """The project the invocation is about. A project verb's positional names it — that is
-    the project it acts on, so it is also the one whose keys and titles it looks steps up in;
-    otherwise ``--project``, the environment, or where it runs (``find_current_project``). A
-    verb that never acts on one does not look, so a plan repository of several projects
-    cannot refuse it."""
+    """The project the invocation is about. One it names — a project verb's positional, or
+    the only one of several a verb may name — is the project it acts on, so it is also the
+    one whose keys and titles it looks steps up in and whose claim its run renews. Otherwise
+    ``--project``, the environment, or where it runs (``find_current_project``) — unless the
+    verb never acts on a current project (``finds_project``): then a plan repository of
+    several projects cannot refuse it, and an argument that is not a library project — an
+    archived path for ``library remove`` — is the verb's own to resolve or refuse."""
+    named = _named_project(args)
+    if named:
+        try:
+            return find_project(context.library, named)
+        except CliError:
+            if command.finds_project:
+                raise
+            return None
     if not command.finds_project:
         return None
-    named = getattr(args, "project", None)
-    if isinstance(named, str) and named:
-        return find_project(context.library, named)
     return find_current_project(context.library, context.store, args.project_scope)
+
+
+def _named_project(args: Namespace) -> str:
+    named = getattr(args, "project", None)
+    if isinstance(named, str):
+        return named
+    several = getattr(args, "projects", None)
+    return several[0] if isinstance(several, list) and len(several) == 1 else ""
 
 
 def run(

@@ -370,12 +370,10 @@ class _Reading:
             if is_answer(word, STOP):
                 return Halted(f"{question.short} stopped the pass")
             return self._changes(stage, (note_of(question),))
-        if is_answer(word, ACCEPT) or (
-            question.purpose == ESCALATION and is_answer(word, SKIP_REVIEW)
-        ):
+        held = self._held_review(question)
+        if is_answer(word, ACCEPT) or (held and is_answer(word, SKIP_REVIEW)):
             return self._after(stage, reviewed=self._is_gate(stage))
-        harness = reviewer_named(word) if question.purpose == ESCALATION else ""
-        if harness and stage in self.ids and self.roles[stage] is StageRole.REVIEW:
+        if held and (harness := reviewer_named(word)):
             launch = self._enter(self.ids.index(stage))
             assert isinstance(launch, Launch)
             return replace(launch, harness=harness)
@@ -388,7 +386,19 @@ class _Reading:
     # -- moving through the list --------------------------------------------------------------
 
     def _is_gate(self, stage: str) -> bool:
-        return stage == LOOK or (stage in self.roles and self.roles[stage].is_gate)
+        """Whether a stage judges the work: a gate, a person's look, or ``progress`` — which
+        on the mainline is a person's gate (``engine``), and on a branch accepts by merging."""
+        role = self.roles.get(stage)
+        return stage == LOOK or (role is not None and (role.is_gate or role is StageRole.PROGRESS))
+
+    def _held_review(self, question: Question) -> bool:
+        """Whether the card is a review's, held for its agent's usage: the one card whose
+        answers may reroute or skip the review (:func:`held_review_options`)."""
+        return (
+            question.purpose == ESCALATION
+            and question.kind == questions.LIMIT
+            and self.roles.get(question.stage) is StageRole.REVIEW
+        )
 
     def _after(self, stage: str, *, reviewed: bool = False) -> Next:
         """The stage after ``stage`` that is still to run — ``reviewed`` when ``stage`` is a
@@ -545,7 +555,11 @@ class _Reading:
                 for purpose in (ROUND_CAP, ESCALATION)
                 for w in self._settled_answers(gate, purpose)
             )
-            or any(is_answer(w, SKIP_REVIEW) for w in self._settled_answers(gate, ESCALATION))
+            or any(
+                is_answer(answer_word(q), SKIP_REVIEW)
+                for q in self._questions(gate, ESCALATION)
+                if self._held_review(q) and q.state in (questions.ANSWERED, questions.CONSUMED)
+            )
         )
 
     def _open_findings(self, gate: str) -> tuple[Mapping[str, Any], ...]:
