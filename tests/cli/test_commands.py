@@ -528,6 +528,54 @@ def test_with_no_current_project_a_key_is_looked_up_across_the_library(cli, two_
     assert data(cli("step", "show", "S2", "--json"))["id"] == two_projects
 
 
+def test_step_add_links_after_a_key_of_its_own_project(cli, two_projects):
+    """`--after S1` once refused as "a step in several projects" with the project named."""
+    cli("step", "add", "Delivery", "Gamma", "--after", "S1")
+    gamma = data(cli("step", "show", "Gamma", "--project", "Delivery", "--json"))
+    beta_one = data(cli("step", "show", "Beta one", "--json"))["id"]
+    assert gamma["requires"] == [beta_one]
+
+
+def test_a_title_typed_whole_wins_over_longer_titles_that_contain_it(cli):
+    cli("project", "create", "Discovery")
+    for title in ("Cut feature/dictations", "Dictations", "Land feature/dictations"):
+        cli("step", "add", "Discovery", title)
+    assert data(cli("step", "show", "dictations", "--json"))["title"] == "Dictations"
+    assert "matches several" in cli("step", "show", "feature/dictations", expect=1)
+
+
+# -- inside a plan repository of several projects ------------------------------------------------
+
+
+@pytest.fixture
+def inside_two(cli, workspace, monkeypatch):
+    """Two library projects in one plan repository, and the call made from its root, where
+    nothing says which of them is meant."""
+    cli("project", "create", "Discovery")
+    cli("project", "create", "Delivery")
+    monkeypatch.chdir(workspace)
+    return workspace
+
+
+def test_inside_several_projects_a_verb_needing_one_still_asks(cli, inside_two):
+    cli("step", "add", "Delivery", "Alpha")
+    assert "pass --project" in cli("step", "show", "S1", expect=1)
+
+
+def test_inside_several_projects_project_create_and_list_need_none(cli, inside_two):
+    cli("project", "create", "Dispatch")
+    titles = {row["title"] for row in data(cli("project", "list", "--json"))["projects"]}
+    assert titles == {"Discovery", "Delivery", "Dispatch"}
+
+
+def test_inside_several_projects_the_positional_names_the_project(cli, inside_two):
+    cli("step", "add", "Delivery", "Alpha")
+    cli("step", "add", "Delivery", "Beta", "--after", "S1")
+    alpha = data(cli("step", "show", "Alpha", "--project", "Delivery", "--json"))["id"]
+    beta = data(cli("step", "show", "Beta", "--project", "Delivery", "--json"))
+    assert beta["requires"] == [alpha]
+
+
 # -- the agent instruction at both levels ------------------------------------------------------
 
 

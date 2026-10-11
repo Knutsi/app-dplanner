@@ -111,6 +111,7 @@ def commands(
     return [
         CliCommand(
             path=("project", "list"),
+            finds_project=False,
             summary="Every project in this library, with its step count.",
             run=partial(_project_list, locating=locating),
             examples=("dplanner project list", "dplanner project list --json"),
@@ -125,6 +126,7 @@ def commands(
         ),
         CliCommand(
             path=("project", "create"),
+            finds_project=False,
             summary="Create a project directory inside a git repository and add it to the library.",
             configure=_configure_create,
             run=partial(_project_create, locating=locating),

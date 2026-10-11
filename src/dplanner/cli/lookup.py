@@ -109,7 +109,9 @@ def _key_number(needle: str) -> int | None:
 
 def _find[NodeT: (Project, Step)](candidates: list[NodeT], needle: str, kind: str) -> NodeT:
     """Exact identity first — an id, a folder name, or a step's key — then a unique id
-    prefix, then a unique partial title.
+    prefix, then a title: the one it equals, ignoring case, else the one it is part of. A
+    title that is a word of longer ones (*Dictations* beside *Land feature/dictations*)
+    is still named by typing it whole.
 
     The key is numbered per project, so a bare number is unambiguous inside one and may
     match a step in each of several; several is refused with the keys and titles, exactly
@@ -140,8 +142,9 @@ def _find[NodeT: (Project, Step)](candidates: list[NodeT], needle: str, kind: st
         raise CliError(f"{needle!r} is the start of several {kind} ids — type more of it: {names}")
     lowered = needle.lower()
     partial = [node for node in candidates if lowered in node.title.lower()]
-    if len(partial) == 1:
-        return partial[0]
+    whole = [node for node in partial if node.title.lower() == lowered]
+    if len(partial) == 1 or len(whole) == 1:
+        return (whole or partial)[0]
     if not partial:
         raise CliError(f"no {kind} matching {needle!r}")
     # The ids are the point of this message: it has to say what to type next, not just

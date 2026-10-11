@@ -112,7 +112,7 @@ def _configure_set(parser: ArgumentParser) -> None:
 
 
 def _step(context: CliContext, needle: str) -> Step:
-    return find_step(context.library, needle)
+    return find_step(context.library, needle, context.current)
 
 
 def step_author() -> StepAuthor:
