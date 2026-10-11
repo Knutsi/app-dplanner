@@ -65,7 +65,7 @@ def answer(
     question = questions.update(project_dir, question_id, answering, config)
     if question.pass_ and not question.run:
         try:
-            advance(project_dir, question.project, question.step, library=library)
+            advance(project_dir, question.project, question.step, question.pass_, library=library)
         except OSError as error:  # `playbook advance` finds the answer whenever it next runs.
             return Answered(
                 question, f"{question.short} answered; its pass did not advance: {error}"

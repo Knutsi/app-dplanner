@@ -18,6 +18,7 @@ from pathlib import Path
 import pytest
 from tests.modules.agent_supervisor.test_supervisor import FAKE, GUARDS, INIT, result
 
+from dplanner.cli.main import STALE_ATTEMPTS
 from dplanner.domain import ledger, questions
 from dplanner.domain.headless import TurnSpec
 from dplanner.domain.ledger import LedgerRecord
@@ -237,20 +238,117 @@ def test_a_fix_whose_reopening_is_not_saved_never_starts(drive, monkeypatch):
     runs = len(drive.started)
     records = len(ledger.records(drive.plan))
 
-    flush, refusing = LibraryStore.flush, [True]
+    flush, refusing, refused = LibraryStore.flush, [True], []
 
     def stale(self, marks):
         if refusing:
+            refused.append(marks)
             raise StaleWorkspaceError("the plan changed underneath")
         return flush(self, marks)
 
     monkeypatch.setattr(LibraryStore, "flush", stale)
     assert "nothing was written" in drive.cli("playbook", "advance", "Build it", expect=1)
+    assert len(refused) == STALE_ATTEMPTS  # Retried, and refused every time.
     assert len(drive.started) == runs and len(ledger.records(drive.plan)) == records
     refusing.clear()
     assert _status(drive.cli, "Build it") == "ready-for-review"
     drive.advance()  # Saved this time: the fix starts, and the step is in progress.
     assert len(drive.started) == runs + 1 and _status(drive.cli, "Build it") == "in-progress"
+
+
+def _stale_once(monkeypatch) -> list[bool]:
+    """Refuse the next flush as another writer's, and let every later one through — two
+    passes finishing together. The list says whether it has refused yet."""
+    from dplanner.domain.store import LibraryStore, StaleWorkspaceError
+
+    flush, refused = LibraryStore.flush, list[bool]()
+
+    def stale(self, marks):
+        if not refused:
+            refused.append(True)
+            raise StaleWorkspaceError("the plan changed underneath")
+        return flush(self, marks)
+
+    monkeypatch.setattr(LibraryStore, "flush", stale)
+    return refused
+
+
+def test_an_advance_refused_by_another_writer_is_run_again_and_launches_once(drive, monkeypatch):
+    """The fix's start waits for the save: the refused attempt took its record back, and the
+    retry, deciding afresh, launches the fix once and says so once."""
+    drive.cli("playbook", "set", "Build it", "plan-execute-review-self")
+    drive.play(
+        {"lines": [INIT, result("## Plan", session="plan-s")]},
+        {"lines": [INIT, result(typed=done(), session="plan-s")]},
+        {"lines": [INIT, result(typed=CHANGES, session="review-1")]},
+    )
+    drive.cli("agent", "run", "Build it", "--playbook")
+    for stage in ("plan", "execute", "review"):
+        drive.supervise()
+        if stage == "execute":
+            drive.cli("status", "set", "Build it", "ready-for-review")
+        if stage != "review":
+            drive.advance()
+    runs, records = len(drive.started), len(ledger.records(drive.plan))
+    refused = _stale_once(monkeypatch)
+    said = drive.advance()
+    assert refused and said.count("launched as run") == 1
+    assert len(drive.started) == runs + 1 and len(ledger.records(drive.plan)) == records + 1
+    assert _status(drive.cli, "Build it") == "in-progress"
+
+
+def test_a_run_started_before_a_refused_flush_is_not_started_again_by_the_retry(drive, monkeypatch):
+    """A review changes no status, so its run starts before the flush; when that flush is
+    refused, the retry reads the review running in the ledger and starts nothing more."""
+    drive.cli("playbook", "set", "Build it", "plan-execute-review-self")
+    drive.play(
+        {"lines": [INIT, result("## Plan", session="plan-s")]},
+        {"lines": [INIT, result(typed=done(), session="plan-s")]},
+    )
+    drive.cli("agent", "run", "Build it", "--playbook")
+    drive.supervise()
+    drive.advance()
+    drive.supervise()
+    drive.cli("status", "set", "Build it", "ready-for-review")
+    runs = len(drive.started)
+    refused = _stale_once(monkeypatch)
+    drive.advance()
+    assert refused and len(drive.started) == runs + 1
+    assert drive.latest().stage == "review"
+    assert [r.stage for r in ledger.records(drive.plan)].count("review") == 1
+
+
+def test_a_progress_refused_by_another_writer_merges_once_and_accepts_on_the_retry(
+    drive, monkeypatch
+):
+    """The finding the retry is for: one pass's progress merged its PR, another pass's write
+    landed first and refused the flush, and the pass sat at *Merging*. Run again, the merge
+    is found done on GitHub — never merged twice — and the step is accepted by it."""
+    from dplanner.modules.agent_launch.cli import StageLauncher
+
+    _to_progress(drive)
+    drive.cli("branch", "put", "Build it", "--branch", "feature/x")
+    state, merges = ["open"], list[int]()
+
+    def view(_repo, number):
+        return PrInfo(number, "Build it", state[-1], "u4", HEAD, "feature/x")
+
+    def merge(_repo, number):
+        merges.append(number)
+        state.append("merged")
+
+    monkeypatch.setattr(github_cli, "_step_repo", lambda *_a: "o/widget")
+    monkeypatch.setattr(github_cli, "_fetch_pr", view)
+    monkeypatch.setattr(github_cli, "view_pr", view)
+    monkeypatch.setattr(github_cli, "merge_pr", merge)
+    monkeypatch.setattr(github_cli, "default_branch", lambda _repo: "main")
+    monkeypatch.setattr(StageLauncher, "merge_target", lambda *_a: ("feature/x", HEAD))
+    drive.cli("status", "set", "Build it", "ready-for-review")
+    drive.cli("github", "set", "Build it", "--pr", "4")
+    refused = _stale_once(monkeypatch)
+    said = drive.advance()
+    assert refused and merges == [4] and said.count("accepted on its branch") == 1
+    assert _status(drive.cli, "Build it") == "done"
 
 
 def test_a_fix_whose_start_fails_after_its_save_asks_on_a_blocked_card(drive, monkeypatch):

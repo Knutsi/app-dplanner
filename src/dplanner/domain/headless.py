@@ -170,8 +170,8 @@ class Ending:
 
     end: TurnEnd
     # For ``failed``: login, billing, model, transient, malformed, killed or unknown — the
-    # 10-03 failure kinds — or abandoned-wait. For ``asked``: typed or prose. For ``denied``:
-    # typed, or "".
+    # 10-03 failure kinds — abandoned-wait, or blocked (the agent's own typed word that it
+    # cannot go on). For ``asked``: typed or prose. For ``denied``: typed, or "".
     why: str = ""
     reason: str = ""
     resets: datetime | None = None  # For ``limit``, when it is known.
@@ -263,6 +263,8 @@ class Headless:
                 return Ending(TurnEnd.ASKED, "typed", question=question)
             if typed.get("outcome") == "denied":
                 return Ending(TurnEnd.DENIED, "typed", reason=summary)
+            if typed.get("outcome") == "blocked":  # It stopped, honestly, on what it cannot mend.
+                return Ending(TurnEnd.FAILED, "blocked", reason=summary)
             # A schema-valid answer is the agent's own word on how it ended: no prose
             # heuristic second-guesses it.
             return Ending(TurnEnd.DONE)
@@ -498,7 +500,7 @@ TURN_SCHEMA: Mapping[str, object] = {
     "additionalProperties": False,
     "required": ["outcome", "summary", "question", "declined"],
     "properties": {
-        "outcome": {"type": "string", "enum": ["done", "asked", "denied"]},
+        "outcome": {"type": "string", "enum": ["done", "asked", "denied", "blocked"]},
         "summary": {"type": "string"},
         "question": {"type": "string"},  # "" unless the outcome is asked.
         # A fix's findings it would not act on, by their number in its briefing; [] otherwise.

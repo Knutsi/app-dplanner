@@ -7,9 +7,9 @@ watches it, classifies how it ended and writes the turn into the run record. The
 what the ending says — and **never waits for a person**:
 
 - ``done`` ends the run; ``stopped`` too (a SIGTERM, a fence).
-- ``asked``, ``denied``, ``limit`` and a failure no retry mends (a dead login, an empty
-  balance, a runaway) **park** it: the process exits, the run keeps its session, and
-  whoever answers starts the supervisor again with ``--prompt``.
+- ``asked``, ``denied``, ``limit`` and a failure no retry mends (the agent's own ``blocked``, a
+  dead login, an empty balance, a runaway) **park** it: the process exits, the run keeps its
+  session, and whoever answers starts the supervisor again with ``--prompt``.
 - a ``limit`` whose reset is known **waits** for it instead: at the reset the clock answers
   the run's ``limit`` question and the session resumes, and *Retry now* — a person's answer
   to the same question — resumes it sooner. Nothing else starts on an account that ran out
@@ -138,6 +138,7 @@ LAUNCHES_DIR = "launches"
 # supervisor started a moment ago may not hold its lock yet.
 LAUNCH_GRACE = 120.0
 PLAN_FILE = "plan.md"
+ADVANCE_LOG = "advance.log"
 # The findings a fix run was handed, in its briefing's order: [{run|question, index}], written
 # by the playbook engine, so the fix's typed `declined` numbers can be recorded as references.
 FINDINGS_FILE = "findings.json"
@@ -148,8 +149,9 @@ OVER = (TurnEnd.DONE, TurnEnd.STOPPED)
 # A turn claimed on an answer that was starting when its supervisor was lost: it may have
 # acted on the answer, so it is never started again without a person.
 LOST_AT_SPAWN = "lost-at-spawn"
-# Failures no wait mends, beside the ones Ending.needs_person names: they park at once.
-PARK_AT_ONCE = ("runaway", LOST_AT_SPAWN)
+# Failures no wait mends, beside the ones Ending.needs_person names: they park at once — a
+# blocked turn on a card saying the agent's own why.
+PARK_AT_ONCE = ("runaway", "blocked", LOST_AT_SPAWN)
 # A turn the supervisor parked without starting it: its account had run out.
 HELD = "held"
 # A limit whose reset had already passed when its turn ended — the turn's cleanup crossed it,
@@ -1210,21 +1212,34 @@ def start_detached(
 
 
 def advance_detached(
-    project_dir: Path, project: str, step: str, *, library: Path | None = None
+    project_dir: Path, project: str, step: str, pass_: str, *, library: Path | None = None
 ) -> None:
     """Start ``dplanner playbook advance <step>`` that outlives whoever started it: a pass's
     stage ended, or its gate was answered, and the engine decides what is due next. This
-    interpreter, as :func:`start_detached` is."""
-    spawn_detached(dplanner_argv(library, project, "playbook", "advance", step), cwd=project_dir)
+    interpreter, as :func:`start_detached` is, its output kept in the pass's
+    :func:`advance_log`."""
+    spawn_detached(
+        dplanner_argv(library, project, "playbook", "advance", step),
+        cwd=project_dir,
+        log=advance_log(pass_),
+    )
 
 
 def wake_detached(
-    project_dir: Path, project: str, question: str, *, library: Path | None = None
+    project_dir: Path, project: str, question: str, pass_: str, *, library: Path | None = None
 ) -> None:
     """Start ``dplanner playbook wake <question>``: a pass held on its account's usage waits
     for the reset in a process of its own, then answers the card for the clock and advances."""
     words = ("playbook", "wake", question, "--project-dir", str(project_dir))
-    spawn_detached(dplanner_argv(library, project, *words), cwd=project_dir)
+    spawn_detached(dplanner_argv(library, project, *words), cwd=project_dir, log=advance_log(pass_))
+
+
+def advance_log(pass_: str) -> Path:
+    """Where every detached ``playbook advance`` and ``playbook wake`` of a pass appends its
+    output: nobody waits on them, and an advance that wrote nothing must be readable after.
+    In the run directory named by the pass's id — minted as a run's, and the one name every
+    advance has, a gate answered with no run behind it included."""
+    return ledger.run_dir(pass_) / ADVANCE_LOG
 
 
 def revive(

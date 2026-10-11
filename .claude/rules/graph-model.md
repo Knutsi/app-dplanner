@@ -74,8 +74,9 @@ paths:
   is the current project's, an id the library's* has the reasoning.
 - **A branch stretch is a cut and a landing, and what is on it is derived.**
   `modules/branches/` holds two aspects: `branch_cut` (`{"branch": …}`) on a step nobody
-  works — no status of its own, done once what it waits on is (a wait of no days, composed
-  in `schedule.status_on`, never through the schedule's `wait_of`) — and `branch_land`
+  works — no status of its own, done once what it waits on is (a wait already over then,
+  `Wait(until=date.min)`, composed in `schedule.status_on`, never through the schedule's
+  `wait_of`; never a wait of no days, which a weekend reads as not yet over) — and `branch_land`
   (`{"cut": id}`) on the agent step that merges it back, counted only while that cut is
   upstream (a stored id read through the graph, never repaired by an edge verb). **Membership is
   never stored**: `domain/branches.py` reads it forwards — everything after the cut, until

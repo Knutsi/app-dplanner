@@ -45,7 +45,12 @@ paths:
   nothing if the verb failed. **What a run owes outside the plan waits for that flush** —
   ending an agent's claim is appended to `CliContext.after_flush`, which `open_library`
   runs only once everything is written, and the verb's report goes with it, so a refused
-  flush has released nothing and claimed no success. The window keeps the same order through
+  flush has released nothing and claimed no success. **A verb a process of ours runs unattended
+  says `retries_stale`** (`playbook advance`, `agent run`): a flush another writer refused
+  (`StaleRunError`) runs the whole verb again on a fresh opening, at most `STALE_ATTEMPTS`
+  times — re-deciding, never adopting the change and flushing the stale decision — so it
+  reports and acts outside the plan from `after_flush` alone (`docs/architecture/
+  persistence.md`'s *Two writers, one folder*). The window keeps the same order through
   `AutosaveService.saved()`, handed to a module as a `flush: Callable[[], bool]` seam: no
   effect owed to a change runs until it answers True, and a deferred one is re-checked
   against the saved model first — an undo or another writer may have taken its cause back. `docs/architecture/persistence.md`'s *Save

@@ -20,7 +20,7 @@ from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import TextIO
 
-from dplanner.cli.command import CliContext, CliError
+from dplanner.cli.command import CliContext, CliError, StaleRunError
 from dplanner.cli.lookup import find_project
 from dplanner.core.clock import Clock
 from dplanner.core.module_data import ModuleDataFormat, migrate_module_data
@@ -288,7 +288,7 @@ def open_library(
             # the loser is told, nothing is overwritten, and running again picks up the
             # change.
             _unwind(context.unwritten)
-            raise CliError(f"{error} — nothing was written; run this again") from error
+            raise StaleRunError(f"{error} — nothing was written; run this again") from error
         except BaseException:
             _unwind(context.unwritten)
             raise

@@ -147,7 +147,7 @@ def commands(
     def _advance(context: CliContext, args: Namespace) -> int:
         step = find_step(context.library, args.step, context.current)
         said = advance(context, step)
-        context.report({"step": step.id, "said": said}, said)
+        context.after_flush.append(lambda: context.report({"step": step.id, "said": said}, said))
         return 0
 
     def _stop(context: CliContext, args: Namespace) -> int:
@@ -328,6 +328,7 @@ def commands(
             configure=step_arg,
             run=_advance,
             examples=("dplanner playbook advance S7",),
+            retries_stale=True,
         ),
     ]
 

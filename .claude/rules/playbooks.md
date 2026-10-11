@@ -56,7 +56,8 @@ paths:
   review-round fact to its new home.
 - **The engine advances a pass once, and nothing waits for it.** A run of a pass that ends
   `done` and an answer to a pass's question each start `dplanner playbook advance <step>`
-  detached (`supervisor.advance_detached`); `step_playbook/engine.py` takes the step's launch
+  detached (`supervisor.advance_detached`, its output appended to the pass's `advance.log`,
+  and run again when another writer refused its flush); `step_playbook/engine.py` takes the step's launch
   lock, reads the pass's records oldest first, asks `passes.due` — the one derivation, pure —
   and does one thing, writing its record before the answer it acted on is consumed. **A pass
   starts only as `agent run --playbook`**, Run Agent's own gates and claim (none on a step at

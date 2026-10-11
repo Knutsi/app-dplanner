@@ -294,6 +294,29 @@ def test_a_refused_flush_starts_nothing_and_takes_the_record_back(cli, plan, sta
     assert _status(cli, "Build it") == "pending"
 
 
+def test_a_launch_refused_by_another_writer_is_run_again_and_starts_once(
+    cli, plan, started, monkeypatch
+):
+    """Two launches in one project at once: the one whose flush lost runs again on the plan
+    as it is now, so a coordinator launching in parallel need not retry by hand."""
+    from dplanner.domain.store import LibraryStore, StaleWorkspaceError
+
+    flush, refused = LibraryStore.flush, list[bool]()
+
+    def stale_once(self, marks):
+        if not refused:
+            refused.append(True)
+            raise StaleWorkspaceError("the plan changed underneath")
+        return flush(self, marks)
+
+    monkeypatch.setattr(LibraryStore, "flush", stale_once)
+    said = cli("agent", "run", "Build it")
+    assert refused and said.count("started headless") == 1
+    (record,) = ledger.records(plan)
+    assert [run for _dir, run in started] == [record.run]
+    assert _status(cli, "Build it") == "in-progress"
+
+
 def test_a_failed_start_withdraws_the_claim_it_wrote(cli, plan, monkeypatch):
     def refuse(_project_dir, _run, **_kw):
         raise OSError(2, "No such file or directory")

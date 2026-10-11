@@ -26,6 +26,12 @@ class CliError(Exception):
     """
 
 
+class StaleRunError(CliError):
+    """The run's flush was refused because the project changed on disk while it ran: nothing
+    was written, nothing it owed was done, and running it again decides on what is there now
+    — which ``cli/main.py`` does for a verb that says so (``CliCommand.retries_stale``)."""
+
+
 @dataclass
 class CliContext:
     """One invocation: the library it opened, the project it resolved, where output goes.
@@ -145,6 +151,11 @@ class CliCommand:
     # the *graph* is read first; this one says the shape of what is written inside a step
     # is. The same gate refuses until it has been read, and the skill marks them too.
     reads_guide: str | None = None
+    # Set on a verb a process of ours runs unattended — `playbook advance`, `agent run` — so
+    # that a flush refused because another writer got there first is run again, from the
+    # start, on the plan as it is then, rather than leaving nobody to read the refusal. Safe
+    # only for a verb that reports and acts outside the plan from ``after_flush`` alone.
+    retries_stale: bool = False
 
     @property
     def id(self) -> str:

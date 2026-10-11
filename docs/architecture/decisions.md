@@ -910,3 +910,15 @@ unique within one repository, and a member working elsewhere is refused and lint
 same run a nested stretch's first run failed because only the innermost branch was cut;
 `BranchPlan.create`/`create_from` became `cuts`, outside-in. Now: `graph-model.md`'s *A branch
 stretch is bracketed by a cut and a landing*.
+
+## 2026-10-11 — A verb nobody watches runs itself again after a refused flush
+
+A flush refused because the project changed on disk ended every CLI run with "run this again",
+and that was the whole contract: a person or an agent reads the line and does. In the
+parallel-branches experiment the reader was missing — two passes finished `progress` two
+seconds apart, one detached `playbook advance` had merged its PR when its flush was refused,
+and its pass sat at *Merging* for good; parallel `agent run`s in one project were refused all
+but one. `playbook advance` and `agent run` now say `retries_stale` and are run again, whole,
+up to three times; adopting the other writer's change and flushing was rejected because it
+commits a decision made on a plan that no longer stands. Now: `persistence.md`'s *Two writers,
+one folder*.

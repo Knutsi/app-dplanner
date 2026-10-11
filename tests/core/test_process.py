@@ -35,7 +35,22 @@ def test_a_detached_spawn_leaves_the_session_and_keeps_no_pipes(monkeypatch, tmp
     assert options["cwd"] == tmp_path and options["env"] == {"PATH": "/usr/bin"}
     assert options["start_new_session"] is True
     assert options["creationflags"] == detached_flags()
-    assert options["stdout"] is subprocess.DEVNULL and options["stderr"] is subprocess.DEVNULL
+    assert options["stdout"] is subprocess.DEVNULL and options["stderr"] is subprocess.STDOUT
+
+
+def test_a_detached_spawn_with_a_log_appends_both_streams_to_it(monkeypatch, tmp_path: Path):
+    """Nobody waits on a detached process, so its log is the only place its words survive;
+    the parent's handle is closed once the child has its own."""
+    log = tmp_path / "runs" / "r-1" / "advance.log"
+    calls = []
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: calls.append(kw))
+    spawn_detached(("dplanner", "playbook", "advance", "S1"), log=log)
+    log.write_text("earlier\n")
+    spawn_detached(("dplanner", "playbook", "advance", "S1"), log=log)
+    first, second = (call["stdout"] for call in calls)
+    assert first.name == str(log) and first.mode == "ab" and first.closed and second.closed
+    assert calls[0]["stderr"] is subprocess.STDOUT
+    assert log.read_text() == "earlier\n"  # Appended to, never truncated.
 
 
 @pytest.mark.parametrize("given", [None, {"PATH": "/usr/bin", RUN_ENV: "r-1"}])
