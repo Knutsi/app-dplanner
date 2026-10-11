@@ -154,6 +154,22 @@ missing branch is one somebody deleted — landed, most likely — and re-cuttin
 mainline would put a member's work nowhere, so the script refuses with the recovery in
 words.
 
+**A branch lives in one repository, and the landing says which.** A project whose code is
+two repositories — a library and the app that uses it — runs a branch in each, often by one
+name. A stretch stored nothing about where it was, and that cost a run over two
+repositories (`docs/research/2026-10-11-parallel-branches/`) three ways: the first member to
+run cut the branch in *its* repository, a member in the other found no such branch and was
+told it had been deleted, and a second `feature/x` was refused as taken. The landing already
+names a repository — it is an agent step, with a workplace — and it is the step that merges
+the branch back, so the branch's repository is the landing's and nothing new is stored.
+Repositories are compared by canonical remote, never by row: two code rows can be two paths
+of one monorepo, whose branches are one set. Put gives the landing the picked agent steps'
+workplace and refuses a pick across two; a name is unique within a repository; a member
+whose workplace drifts is refused at launch with both repositories named, and linted
+(`branch.repository`). **A branch off a branch is cut outside-in**: the first run inside a
+nested stretch cuts every enclosing stretch still fresh before its own, because cutting only
+the innermost pushed from an outer branch nobody had made.
+
 **The review moves to the landing.** A member's PR merged into the branch of an open stretch
 accepts the step, from ready-for-review too (`record_merged(accepted_by_merge=)`): the
 branch's quality review reads the landing's PR — a person, or the review in the landing's *Land*

@@ -85,13 +85,25 @@ def workplace(step: Step) -> str:
     return found if isinstance(found, str) else ""
 
 
-def code_location(locations: Iterable[Location], step: Step | None) -> Location | None:
-    """The code row a step works in: the one its workplace names, else the project's first.
-    A named row that is gone, or is no longer a code row, falls back to the primary —
+def code_row(locations: Iterable[Location], location_id: str) -> Location | None:
+    """The code row ``location_id`` names, else the project's first; None with no code. A
+    named row that is gone, or is no longer a code row, falls back to the primary —
     ``agent.workplace-gone`` in lint says so."""
     rows = of_role(locations, CODE.id)
-    named = workplace(step) if step is not None else ""
-    return next((row for row in rows if row.id == named), rows[0] if rows else None)
+    return next((row for row in rows if row.id == location_id), rows[0] if rows else None)
+
+
+def code_location(locations: Iterable[Location], step: Step | None) -> Location | None:
+    """The code row a step works in: the one its workplace names, else the project's first."""
+    return code_row(locations, workplace(step) if step is not None else "")
+
+
+def repository_key(locations: Iterable[Location], step: Step | None) -> str:
+    """The repository a step works in, as two are compared: the canonical remote, so two
+    code rows of one repository — a monorepo's UI and its backend — are one. "" when the
+    project names no code."""
+    location = code_location(locations, step)
+    return location.canonical if location is not None else ""
 
 
 def code_placement(facts: RepositoryFacts, step: Step | None) -> Placement | None:

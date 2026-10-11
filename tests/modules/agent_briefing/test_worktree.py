@@ -91,10 +91,7 @@ def test_a_fresh_worktree_starts_at_the_remotes_default_branch(cloned_repo):
 
 def test_the_first_run_in_a_stretch_cuts_its_branch_and_starts_from_it(cloned_repo, tmp_path):
     plan = BranchPlan(
-        start="origin/feature/x",
-        create="feature/x",
-        create_from="origin/main",
-        pr_base="feature/x",
+        start="origin/feature/x", cuts=(("feature/x", "origin/main"),), pr_base="feature/x"
     )
     tree = prepare(cloned_repo, "s2-x", plan)
     assert _git(tree, "log", "-1", "--format=%s") == "on main"
@@ -111,11 +108,29 @@ def test_a_cut_from_the_remotes_default_finds_it_on_a_checkout_that_was_never_to
     branch is its default before anything is pushed from it."""
     _git(cloned_repo, "remote", "set-head", "origin", "-d")
     plan = BranchPlan(
-        start="origin/feature/y", create="feature/y", create_from=DEFAULT_START, pr_base="feature/y"
+        start="origin/feature/y", cuts=(("feature/y", DEFAULT_START),), pr_base="feature/y"
     )
     tree = prepare(cloned_repo, "s5-x", plan)
     assert _git(tree, "log", "-1", "--format=%s") == "on main"
     assert _git(tmp_path / "origin.git", "branch", "--list", "feature/y")
+
+
+def test_a_branch_off_a_branch_nobody_cut_yet_cuts_the_outer_one_first(cloned_repo, tmp_path):
+    """The first run inside a nested branch, before anything on the outer one ran: the outer
+    is cut from main, then the inner from it — and a second run cuts neither again."""
+    plan = BranchPlan(
+        start="origin/feature/a",
+        cuts=(("feature/int", DEFAULT_START), ("feature/a", "origin/feature/int")),
+        pr_base="feature/a",
+    )
+    tree = prepare(cloned_repo, "s2-a1", plan)
+    assert _git(tree, "log", "-1", "--format=%s") == "on main"
+    origin = tmp_path / "origin.git"
+    assert _git(origin, "branch", "--list", "feature/int")
+    assert _git(origin, "branch", "--list", "feature/a")
+    _git(cloned_repo, "push", "-q", "origin", "--delete", "feature/int")
+    prepare(cloned_repo, "s2-a1", plan)  # The worktree stands: nothing is cut again.
+    assert not _git(origin, "branch", "--list", "feature/int")
 
 
 def test_a_landing_works_on_the_feature_branch_and_tracks_it(cloned_repo):
@@ -127,7 +142,7 @@ def test_a_landing_works_on_the_feature_branch_and_tracks_it(cloned_repo):
 
 
 def test_a_branch_gone_from_the_remote_is_never_cut_again(cloned_repo):
-    """No ``create``: the stretch has already run, so a missing branch was deleted — landed,
+    """No ``cuts``: the stretch has already run, so a missing branch was deleted — landed,
     most likely — and starting it afresh from main would put members' work nowhere."""
     plan = BranchPlan(start="origin/feature/gone", pr_base="feature/gone")
     with pytest.raises(WorktreeError, match="there is no origin/feature/gone"):

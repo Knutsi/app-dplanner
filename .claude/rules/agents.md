@@ -198,8 +198,8 @@ paths:
   branch, else the code row's `Location.ref` as the mainline, else the remote's default,
   looked up — **never from whatever the checkout has checked out**, with `--no-track` (a
   landing on the feature branch tracks it); it cuts a missing branch only when told to
-  (`create`, set while nothing on the stretch has recorded a branch or a PR) by pushing a
-  ref, never checking one out, and **refuses a branch gone from the remote** rather than
+  (`cuts`, outside-in, each stretch's set while nothing on it has recorded a branch or a PR)
+  by pushing a ref, never checking one out, and **refuses a branch gone from the remote** rather than
   re-cut it from the mainline. It sets `gh-merge-base` as a backstop for the `--base` the
   epilogue names; the preamble checks the plan's branch. Every name is checked with
   `sparse.valid_ref` before it reaches git. A landing is briefed by what it is —

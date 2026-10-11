@@ -899,3 +899,14 @@ branch, a merged PR never noticed, and a landing read done while its own PR was 
 reading, `planning.agent.code_remote_of`, answers for every step, and the briefing and the
 coordinator name that repository too. Now: `persistence.md`'s *A project names its locations*
 and `agents.md`'s *A step names the code location it works in*.
+
+## 2026-10-11 — A branch lives in one repository; names are unique per repository
+
+A branch name was unique per project, and a stretch said nothing about where it was. Over two
+code repositories that refused the usual convention — one `feature/x` in each — let the first
+member to run cut the branch in its own repository, and told a member in the other that its
+branch had been deleted. Now a stretch's repository is its landing's, Put sets it, names are
+unique within one repository, and a member working elsewhere is refused and linted. In the
+same run a nested stretch's first run failed because only the innermost branch was cut;
+`BranchPlan.create`/`create_from` became `cuts`, outside-in. Now: `graph-model.md`'s *A branch
+stretch is bracketed by a cut and a landing*.

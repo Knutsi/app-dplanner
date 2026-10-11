@@ -1033,7 +1033,8 @@ waits on is done. **`branch_land` makes an agent step the landing that merges it
 `{"cut": "<step id>"}`, format 1. The pairing counts only while that cut is upstream of the
 landing, so an edge verb never rewrites it and a stale id is inert; a paste renames the id
 when the cut is copied along and drops the entry otherwise. What is on the branch is never
-stored: it is everything after the cut and before the landing (`domain/branches.py`).
+stored: it is everything after the cut and before the landing (`domain/branches.py`). Nor is
+the repository it lives in: that is the landing's agent `workplace`.
 
 **`github` records where a step's work lands**: the branch and the PR, and the PR's last-seen
 state, title, URL and — since format 2 — `pr_base`, the branch it merges into. Format 2 is an

@@ -86,8 +86,16 @@ paths:
   **Put on a Branch** (`edits.put_command`) and **Remove Branch** (`remove_command`) are
   one rewire each — outside inputs move to the cut and outside dependents to the landing,
   and back — refused by `ordering.left_between`, the walk `stack make` shares, by a pick
-  that crosses another stretch, and by one that splits a stack (`stack.stack_split`, the
-  graph editor's fact handed in). Remove is never partial, so the window asks first.
+  that crosses another stretch, by one whose agent steps work in two repositories, and by
+  one that splits a stack (`stack.stack_split`, the graph editor's fact handed in). Remove
+  is never partial, so the window asks first.
+  **A branch lives in one repository: its landing's** (`plan.stretch_repository`, by
+  `planning.agent.repository_key` — the canonical remote, so a monorepo's two code rows are
+  one). Put gives the landing the picked steps' workplace (`landing_workplace`); a name is
+  unique among the open stretches of one repository (`taken_names`, a stray cut's against
+  every one), so `feature/x` may be a branch of two; `branch_plan` refuses a member working
+  elsewhere, and `branch.repository` names it. **A run cuts every fresh branch around its
+  own, outside-in** (`BranchPlan.cuts`), so a branch off a branch nobody cut yet has a start.
   `planning.kinds.works_nobody` is what a wait and a cut share — "a wait", "a branch cut" — and
   every module refusing such a step a status, an agent or a test words its
   refusal from it. `docs/architecture/graph-model.md`'s *A branch stretch is bracketed by a cut and

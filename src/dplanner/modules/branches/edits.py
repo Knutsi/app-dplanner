@@ -26,6 +26,8 @@ from dplanner.domain.commands import (
 )
 from dplanner.domain.model import Edge, Library, Project, Step, StepId
 from dplanner.domain.ordering import dependents_index, left_between
+from dplanner.planning.agent import code_location, repository_key
+from dplanner.planning.agent import enabled as agent_enabled
 
 PUT_LABEL = "Put on a Branch"
 REMOVE_LABEL = "Remove Branch"
@@ -38,8 +40,9 @@ def put_refusal(
     stacked_apart: Callable[[Project, set[StepId]], str],
 ) -> str:
     """Why the picked steps cannot be put on a branch, "" when they can: they are one
-    project's, nothing left out comes between two of them, the pick holds or avoids every
-    stretch already there rather than crossing one, and it splits no stack."""
+    project's, their agents work in one repository — a branch lives in one — nothing left
+    out comes between two of them, the pick holds or avoids every stretch already there
+    rather than crossing one, and it splits no stack."""
     if not step_ids:
         return "pick the steps to put on a branch"
     projects = {library.project_of(step_id).id for step_id in step_ids}
@@ -47,6 +50,8 @@ def put_refusal(
         return "pick steps of one project"
     project = library.project_of(step_ids[0])
     chosen = set(step_ids)
+    if refusal := _repositories_apart(project, [library.step(step_id) for step_id in step_ids]):
+        return refusal
     between = left_between(project, chosen)
     if between is not None:
         return f"{between.title!r} comes between them — pick it too, or leave a step out"
@@ -59,6 +64,23 @@ def put_refusal(
                 " landing, or only steps on it"
             )
     return stacked_apart(project, chosen)
+
+
+def _repositories_apart(project: Project, steps: Sequence[Step]) -> str:
+    """Why the picked agent steps cannot share one branch: they work in two repositories.
+    A landing in the pick counts, so a branch around two branches of two repositories is
+    refused too; a cut, a wait or a person's step works nowhere."""
+    rows = {
+        repository_key(project.locations, step): code_location(project.locations, step)
+        for step in steps
+        if agent_enabled(step)
+    }
+    if len(rows) < 2:
+        return ""
+    names = " and ".join(row.repository_label for row in rows.values() if row is not None)
+    return (
+        f"the picked steps work in {names} — a branch lives in one repository; put each on its own"
+    )
 
 
 def put_command(

@@ -37,7 +37,12 @@ from dplanner.framework.step_selection import chosen_steps
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import confirm
 from dplanner.modules.branches.edits import put_command, put_refusal, remove_command, stretch_picked
-from dplanner.modules.branches.plan import branch_births, branch_reading
+from dplanner.modules.branches.plan import (
+    branch_births,
+    branch_reading,
+    landing_workplace,
+    taken_names,
+)
 from dplanner.modules.branches.section import CutSection
 from dplanner.planning.branches import (
     CUT_FORMAT,
@@ -46,7 +51,6 @@ from dplanner.planning.branches import (
     LAND_FORMAT,
     LAND_ID,
     LAND_SPEC,
-    branch_of,
     is_cut,
     is_land,
     name_problem,
@@ -232,8 +236,8 @@ class BranchesModule:
         if not chosen or self._put_refusal(chosen):
             return
         project = deps.library.project_of(chosen[0])
-        taken = [s.branch for s in self.reading_of(project).stretches if not s.landed]
-        taken += [branch_of(cut) for cut in self.reading_of(project).stray_cuts]
+        workplace = landing_workplace(project, [deps.library.step(step_id) for step_id in chosen])
+        taken = taken_names(self.reading_of(project), project, workplace)
         name = LinePrompt.ask(
             deps.parent,
             "Put on a Branch",
@@ -244,7 +248,7 @@ class BranchesModule:
         )
         if name is None:
             return
-        cut, land = branch_births(project, name)
+        cut, land = branch_births(project, name, workplace)
         seats = deps.seats(chosen, cut, land) if deps.seats is not None else ()
         deps.undo.push(put_command(deps.library, chosen, cut, land, carrying=seats))
 
