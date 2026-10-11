@@ -75,6 +75,34 @@ def test_put_on_a_branch_brackets_the_pick_as_one_undo(services, plan, monkeypat
     assert titled(plan, "Card").edges["requires"] == [titled(plan, "Menu").id]
 
 
+def test_put_on_a_branch_lands_where_the_pick_works_and_is_greyed_across_two(
+    services, plan, monkeypatch
+):
+    """A branch lives in one repository, its landing's: the landing takes the pick's
+    workplace, and a pick whose agents work in two repositories cannot be one branch."""
+    from dplanner.domain.commands import SetFieldCommand, SetModuleDataCommand
+    from dplanner.domain.locations import Location
+    from dplanner.framework.dialog import LinePrompt
+    from dplanner.planning.agent import MODULE_ID as AGENT_ID
+    from dplanner.planning.agent import with_workplace, workplace
+
+    rows = (
+        Location("l1", "code", "https://github.com/acme/lib"),
+        Location("l2", "code", "https://github.com/acme/app", label="App"),
+    )
+    services.undo.push(SetFieldCommand(plan.id, "locations", rows))
+    edit, canvas = titled(plan, "Edit"), titled(plan, "Canvas")
+    services.undo.push(SetModuleDataCommand(edit.id, AGENT_ID, with_workplace(edit, "l2")))
+    services.undo.push(SetModuleDataCommand(canvas.id, AGENT_ID, with_workplace(canvas, "")))
+    state = services.actions.spec("branch.put").state(picked(edit, canvas))
+    assert not state.enabled and "work in acme/app and acme/lib" in state.label
+
+    monkeypatch.setattr(LinePrompt, "ask", lambda *_args, **_kwargs: "feature/edit")
+    services.actions.run("branch.put", picked(edit))
+    (land,) = [s for s in plan.steps if cut_of(s)]
+    assert workplace(land) == "l2"
+
+
 def test_put_on_a_branch_is_greyed_with_the_step_left_between(services, plan):
     state = services.actions.spec("branch.put").state(
         picked(titled(plan, "Card"), titled(plan, "Drag"))

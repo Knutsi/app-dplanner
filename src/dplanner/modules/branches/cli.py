@@ -15,12 +15,20 @@ from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import find_project, find_step, project_of_step, project_of_steps, step_arg
 from dplanner.domain.branches import Reading, Stretch, late_entries, unlanded
 from dplanner.domain.commands import SetModuleDataCommand
+from dplanner.domain.locations import CODE, of_role
 from dplanner.domain.model import Library, Project, Step, StepId
 from dplanner.domain.ordering import upstream
 from dplanner.domain.shelf import turn_off
 from dplanner.domain.store import FilesFor
 from dplanner.modules.branches.edits import put_command, put_refusal, remove_command, stretch_picked
-from dplanner.modules.branches.plan import branch_births, branch_reading
+from dplanner.modules.branches.plan import (
+    branch_births,
+    branch_reading,
+    landing_workplace,
+    stretch_repository,
+    taken_names,
+)
+from dplanner.planning.agent import code_location
 from dplanner.planning.branches import (
     CUT_ID,
     LAND_ID,
@@ -211,10 +219,10 @@ def _put(
     if refusal := put_refusal(library, ids, read, stacked_apart):
         raise CliError(refusal)
     project = library.project_of(ids[0])
-    taken = [s.branch for s in read(project).stretches if not s.landed]
-    if problem := name_problem(args.branch, taken):
+    workplace = landing_workplace(project, steps)
+    if problem := name_problem(args.branch, taken_names(read(project), project, workplace)):
         raise CliError(problem)
-    cut, land = branch_births(project, args.branch)
+    cut, land = branch_births(project, args.branch, workplace)
     context.apply(put_command(library, ids, cut, land))
     context.report(
         {"branch": args.branch, "cut": cut.id, "land": land.id, "steps": ids},
@@ -253,7 +261,7 @@ def _show(
 ) -> int:
     project = find_project(context.library, args.project) if args.project else context.project
     found = read(project)
-    rows = [_stretch_row(stretch, found, key_of) for stretch in found.stretches]
+    rows = [_stretch_row(project, stretch, found, key_of) for stretch in found.stretches]
     lines = [line for _data, line in rows]
     lines += [
         f"{key_of(cut)} cuts {branch_of(cut)} — no landing closes it" for cut in found.stray_cuts
@@ -266,9 +274,13 @@ def _show(
 
 
 def _stretch_row(
-    stretch: Stretch, found: Reading, key_of: Callable[[Step], str]
+    project: Project, stretch: Stretch, found: Reading, key_of: Callable[[Step], str]
 ) -> tuple[dict[str, object], str]:
     base = found.base_of(stretch.cut.id, "")
+    lands = code_location(project.locations, stretch.land)
+    repository = lands.repository_label if lands is not None else ""
+    # Said in the line only where it tells two apart: two repositories may share a name.
+    several = len({row.canonical for row in of_role(project.locations, CODE.id)}) > 1
     members = " ".join(key_of(step) or step.title for step in stretch.members)
     state = "landed" if stretch.landed else "open"
     data: dict[str, object] = {
@@ -276,11 +288,13 @@ def _stretch_row(
         "cut": stretch.cut.id,
         "land": stretch.land.id,
         "from": base,
+        "repository": repository,
         "steps": [step.id for step in stretch.members],
         "landed": stretch.landed,
     }
     line = (
-        f"{stretch.branch} ({state}, from {base or 'the default branch'}):"
+        f"{stretch.branch} ({state}, {f'in {repository}, ' if several else ''}"
+        f"from {base or 'the default branch'}):"
         f" {key_of(stretch.cut)} → {members or 'nothing'} → {key_of(stretch.land)}"
     )
     return data, line
@@ -335,12 +349,19 @@ def lint_checks(
         return out
 
     def names(_library: Library, project: Project, _files: FilesFor) -> list[LintFinding]:
-        """A branch name git refuses, or one two open stretches share."""
+        """A branch name git refuses, or one two open stretches of one repository share — a
+        stray cut's, whose repository no landing says, against every one."""
         found = branch_reading(project)
         out = []
-        cuts = [s.cut for s in found.stretches if not s.landed] + list(found.stray_cuts)
+        held = {s.cut.id: stretch_repository(project, s) for s in found.stretches if not s.landed}
+        cuts = [s.cut for s in found.stretches if s.cut.id in held] + list(found.stray_cuts)
         for cut in cuts:
-            others = [branch_of(other) for other in cuts if other is not cut]
+            others = [
+                branch_of(other)
+                for other in cuts
+                if other is not cut
+                and (cut.id not in held or other.id not in held or held[other.id] == held[cut.id])
+            ]
             if problem := name_problem(branch_of(cut), others):
                 out.append(
                     finding(
@@ -430,4 +451,28 @@ def lint_checks(
                     )
         return out
 
-    return [pairs, names, shapes, merges]
+    def repositories(_library: Library, project: Project, _files: FilesFor) -> list[LintFinding]:
+        """An agent step on a branch that works in another repository than the branch: its
+        run would find no such branch there, or cut a second one of the name."""
+        found = branch_reading(project)
+        out = []
+        for stretch in found.stretches:
+            lands = code_location(project.locations, stretch.land)
+            if stretch.landed or lands is None:
+                continue
+            for member in stretch.members:
+                works = code_location(project.locations, member)
+                if is_agent(member) and works is not None and works.canonical != lands.canonical:
+                    out.append(
+                        finding(
+                            "branch.repository",
+                            member,
+                            f"is on {stretch.branch}, which lands in {lands.repository_label},"
+                            f" but works in {works.repository_label} — a branch lives in one"
+                            f" repository; `dplanner agent workplace '{member.title}' <location>`,"
+                            f" or the same for {stretch.land.title!r}",
+                        )
+                    )
+        return out
+
+    return [pairs, names, shapes, merges, repositories]

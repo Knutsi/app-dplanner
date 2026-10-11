@@ -95,18 +95,19 @@ class BranchPlan:
     ``work_branch`` is the branch its worktree is on, "" for the step's own
     ``agent/<run name>``; a landing names the feature branch it lands. ``start`` is where a
     new branch starts — ``origin/<branch>`` — and "" is the remote's default branch, looked
-    up by the script. ``create`` is the branch this run may create on the remote from
-    ``create_from`` when it is not there yet: the first run in a stretch cuts it, and no
-    later one ever cuts it again. ``pr_base`` is the branch the step's PR opens against, ""
-    for the repository's default. ``refusal`` is why no agent may run on the step now, ""
-    when one may. Every field names a branch the plan wrote, so each is checked with
-    :func:`dplanner.core.storage.sparse.valid_ref` before it reaches a script.
+    up by the script. ``cuts`` are the branches this run may create on the remote when they
+    are not there yet, outside-in, each with the ref it starts from: the first run in a
+    stretch cuts it — and every branch around it nobody cut yet, so a branch off a branch
+    has something to start from — and no later one ever cuts it again. ``pr_base`` is the
+    branch the step's PR opens against, "" for the repository's default. ``refusal`` is why
+    no agent may run on the step now, "" when one may. Every field names a branch the plan
+    wrote, so each is checked with :func:`dplanner.core.storage.sparse.valid_ref` before it
+    reaches a script.
     """
 
     work_branch: str = ""
     start: str = ""
-    create: str = ""
-    create_from: str = ""
+    cuts: tuple[tuple[str, str], ...] = ()
     pr_base: str = ""
     refusal: str = ""
 

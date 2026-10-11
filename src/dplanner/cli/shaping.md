@@ -265,8 +265,11 @@ branch's own PR. **Review the landing, not each step**: a person reviews the lan
 the whole branch at once — and the landing's *Land* playbook reviews it before a person
 merges (*How each step gets done*). Link work the stretch builds on into the cut, never into
 its middle (`project lint` names it, `branch.late-entry`), and keep milestones outside it —
-a release whose work is not on the mainline yet is not a release. `dplanner branch show`
-says what is on each branch; `dplanner branch remove` takes one away again.
+a release whose work is not on the mainline yet is not a release. **A branch lives in one
+repository**: in a project whose code is two, put each repository's steps on a branch of
+their own — the same name in both is fine — and a step that joins them waits on both
+landings. `dplanner branch show` says what is on each branch; `dplanner branch remove` takes
+one away again.
 
 ## A line that keeps growing: stack it
 

@@ -108,14 +108,13 @@ def prepare(workdir: Path, name: str, branches: BranchPlan = DEFAULT_BRANCHES) -
     names: created on the first run, reused on the next. Raises :class:`WorktreeError`.
 
     A failed fetch is no stop — the run starts from what was fetched last — but a start
-    that is gone is: with no ``create`` the stretch has run before, so a missing branch was
+    that is gone is: with no ``cuts`` the stretch has run before, so a missing branch was
     deleted (landed, most likely), and cutting it afresh would put members' work nowhere.
     """
     named = (
         branches.work_branch,
         branches.start,
-        branches.create,
-        branches.create_from,
+        *(ref for cut in branches.cuts for ref in cut),
         branches.pr_base,
     )
     if refused := next((ref for ref in named if ref and not valid_ref(ref)), ""):
@@ -139,8 +138,8 @@ def prepare(workdir: Path, name: str, branches: BranchPlan = DEFAULT_BRANCHES) -
             if holds("remote", "get-url", "origin"):
                 with suppress(GitError):
                     git("fetch", "--quiet", "origin", timeout=REMOTE_S)
-            if branches.create:
-                _cut(repo, branches)
+            for create, create_from in branches.cuts:
+                _cut(repo, create, create_from)
             start = branches.start or _remote_default(repo)
             if holds("show-ref", "--verify", "--quiet", f"refs/heads/{branch}"):
                 git("worktree", "add", str(tree), branch, timeout=CHECKOUT_S)
@@ -224,22 +223,23 @@ def _exclude(common: Path, workdir: Path) -> None:
         exclude.write(("" if not text or text.endswith("\n") else "\n") + line + "\n")
 
 
-def _cut(repo: _Repo, branches: BranchPlan) -> None:
+def _cut(repo: _Repo, create: str, create_from: str) -> None:
     """The first run in a stretch cuts its branch on the remote: a push of a ref, never a
     checkout, so a plan kept inside this checkout is not switched under. A cut from the
     remote's default pushes from ``origin/HEAD``, which a checkout that was not cloned may
-    never have been told."""
-    if branches.create_from == DEFAULT_START and not repo.holds(
+    never have been told. A branch already there is left as it is, and the fetch after a
+    push is what lets the next cut, a branch off this one, start from it."""
+    if create_from == DEFAULT_START and not repo.holds(
         "symbolic-ref", "-q", f"refs/remotes/{DEFAULT_START}"
     ):
         with suppress(GitError):
             repo.git("remote", "set-head", "origin", "--auto", timeout=REMOTE_S)
-    if not repo.holds("show-ref", "--verify", "--quiet", f"refs/remotes/origin/{branches.create}"):
+    if not repo.holds("show-ref", "--verify", "--quiet", f"refs/remotes/origin/{create}"):
         repo.git(
             "push",
             "--quiet",
             "origin",
-            f"{branches.create_from}:refs/heads/{branches.create}",
+            f"{create_from}:refs/heads/{create}",
             timeout=REMOTE_S,
         )
         repo.git("fetch", "--quiet", "origin", timeout=REMOTE_S)
