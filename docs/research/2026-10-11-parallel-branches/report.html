@@ -1,0 +1,283 @@
+<title>Two Branches, One Test</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root{
+  --ground:#F1F3F6; --surface:#FFFFFF; --sunken:#E6EAF0; --ink:#17212C; --muted:#56616E; --line:#D3D9E1;
+  --accent:#2F5D8A; --accent-soft:#DCE6F1;
+  --ok:#2C7A4B; --ok-soft:#DDEFE3; --warn:#9A5A08; --warn-soft:#F5E8D2; --bad:#AE3A30; --bad-soft:#F6DEDB;
+  --code-bg:#E9EDF2;
+  --display:"Bricolage Grotesque","Arial Narrow",system-ui,sans-serif;
+  --body:"Source Sans 3",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --ground:#0F141A; --surface:#161D25; --sunken:#1C242E; --ink:#E2E8EE; --muted:#9AA6B3; --line:#2A3440;
+    --accent:#7FA8D4; --accent-soft:#1B2B3D;
+    --ok:#6CC28F; --ok-soft:#15291E; --warn:#E0A54F; --warn-soft:#2E2312; --bad:#EE8579; --bad-soft:#331916;
+    --code-bg:#1A222B;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --ground:#0F141A; --surface:#161D25; --sunken:#1C242E; --ink:#E2E8EE; --muted:#9AA6B3; --line:#2A3440;
+  --accent:#7FA8D4; --accent-soft:#1B2B3D;
+  --ok:#6CC28F; --ok-soft:#15291E; --warn:#E0A54F; --warn-soft:#2E2312; --bad:#EE8579; --bad-soft:#331916;
+  --code-bg:#1A222B;
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--body);font-size:17px;line-height:1.6;padding-inline:16px;padding-block:0 64px}
+.shell{max-width:1160px;margin:0 auto;display:grid;grid-template-columns:1fr;gap:36px}
+@media (min-width:1000px){.shell{grid-template-columns:220px minmax(0,1fr)}}
+nav.toc{font-size:14.5px;padding-top:32px}
+@media (min-width:1000px){nav.toc{position:sticky;top:env(safe-area-inset-top,0px);align-self:start;max-height:100vh;overflow-y:auto}}
+nav.toc h2{font-family:var(--mono);font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:0 0 10px;font-weight:600}
+nav.toc ul{list-style:none;margin:0;padding:0;display:grid;gap:2px}
+nav.toc a{display:block;color:var(--ink);text-decoration:none;padding:5px 8px;border-radius:4px}
+nav.toc a:hover,nav.toc a:focus-visible{background:var(--sunken)}
+main{min-width:0;max-width:840px}
+header.mast{padding:40px 0 20px;border-bottom:1px solid var(--line)}
+.eyebrow{font-family:var(--mono);font-size:12.5px;color:var(--muted)}
+h1{font-family:var(--display);font-weight:800;font-size:clamp(34px,6vw,52px);line-height:1.04;margin:10px 0 14px;letter-spacing:-.015em;text-wrap:balance}
+.lede{font-size:19px;max-width:62ch;margin:0}
+section{padding-top:44px}
+h2{font-family:var(--display);font-weight:800;font-size:28px;line-height:1.15;margin:0 0 14px;text-wrap:balance}
+h3{font-family:var(--display);font-weight:600;font-size:19px;margin:26px 0 8px}
+p,li{max-width:68ch}
+p{margin:0 0 14px}
+ul{padding-left:1.2em;margin:0 0 14px}
+li{margin-bottom:6px}
+a{color:var(--accent)}
+code{font-family:var(--mono);font-size:.84em;background:var(--code-bg);padding:1px 5px;border-radius:3px}
+.inshort{border-left:3px solid var(--accent);background:var(--surface);padding:12px 16px 2px;margin:0 0 20px;border-radius:0 6px 6px 0}
+.inshort b.k{font-family:var(--mono);font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:2px}
+.scroll{overflow-x:auto;margin:12px 0 22px;background:var(--surface);border:1px solid var(--line);border-radius:6px}
+table{border-collapse:collapse;width:100%;min-width:640px;font-size:15px}
+th,td{text-align:left;vertical-align:top;padding:9px 12px;border-bottom:1px solid var(--line)}
+tr:last-child td{border-bottom:0}
+th{font-family:var(--mono);font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+td:first-child{font-weight:600;width:24%}
+.chip{display:inline-block;font-family:var(--mono);font-size:11.5px;font-weight:600;padding:1px 7px;border-radius:999px;margin-right:6px;white-space:nowrap}
+.ok{background:var(--ok-soft);color:var(--ok)} .warn{background:var(--warn-soft);color:var(--warn)} .bad{background:var(--bad-soft);color:var(--bad)} .na{background:var(--sunken);color:var(--muted)}
+.code{background:var(--code-bg);border-radius:6px;margin:12px 0 20px;overflow-x:auto}
+.code pre{margin:0;padding:12px 14px;font-family:var(--mono);font-size:13px;line-height:1.55}
+.code .src{font-family:var(--mono);font-size:11.5px;color:var(--muted);padding:7px 14px 0}
+.flow{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:12px;overflow-x:auto;margin:12px 0 18px}
+.verdict{display:grid;grid-template-columns:1fr;gap:12px;margin:16px 0 8px}
+@media (min-width:700px){.verdict{grid-template-columns:repeat(3,1fr)}}
+.verdict div{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:12px 14px}
+.verdict b{font-family:var(--display);font-size:17px;display:block;margin-bottom:4px}
+.verdict p{font-size:15px;margin:0}
+footer{margin-top:56px;padding-top:16px;border-top:1px solid var(--line);font-size:14px;color:var(--muted)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+figure{margin:14px 0 22px}
+figure img{display:block;max-width:100%;height:auto;border:1px solid var(--line);border-radius:6px}
+figcaption{font-size:14px;color:var(--muted);margin-top:6px}
+</style>
+<div class="shell">
+<nav class="toc" aria-label="Contents">
+  <h2>Contents</h2>
+  <ul>
+    <li><a href="#answer">The answer</a></li>
+    <li><a href="#plans">The three plans</a></li>
+    <li><a href="#findings">Findings</a></li>
+    <li><a href="#prs">Two repos, one PR lookup</a></li>
+    <li><a href="#nested">Nested branches</a></li>
+    <li><a href="#landings">Parallel landings</a></li>
+    <li><a href="#stale">A stale Test worktree</a></li>
+    <li><a href="#races">Two writers, one project</a></li>
+    <li><a href="#held">What held up</a></li>
+    <li><a href="#blind">Blind spots beyond this run</a></li>
+    <li><a href="#fixes">Suggested fixes</a></li>
+    <li><a href="#evidence">Evidence</a></li>
+  </ul>
+</nav>
+<main>
+<header class="mast">
+  <div class="eyebrow">2026-10-11 · Claude Code (Opus 5.5) · Codex CLI · three toy plans · four throwaway GitHub repos · 47 runs</div>
+  <h1>Two branches, one Test step</h1>
+  <p class="lede">Two lines of work, each on its own feature branch, joining at one Test step. In one repository DPlanner plans and runs this end to end, in two different shapes. Across two repositories it reads the second repository's pull requests in the first one. In this run that marked a landing <strong>done</strong> while its PR was still open.</p>
+</header>
+
+<section id="answer">
+  <h2>The answer</h2>
+  <div class="inshort"><b class="k">In short</b><p>One repository: yes, with four places where a person or a workaround was needed. Two repositories: not without a person checking every PR, because every PR number is looked up in the primary repository.</p></div>
+  <div class="verdict">
+    <div><b>Land, then test</b><p><span class="chip ok">reached the end</span>The second landing conflicted after the first merged. <em>Send Back</em> fixed it.</p></div>
+    <div><b>Integration branch</b><p><span class="chip warn">with a workaround</span>The first run inside the nested branch failed until I cut <code>feature/int</code> by hand.</p></div>
+    <div><b>Two repositories</b><p><span class="chip bad">misread every PR</span>Four steps were settled by hand. One was falsely <em>done</em>.</p></div>
+  </div>
+</section>
+
+<section id="plans">
+  <h2>The three plans</h2>
+  <div class="inshort"><b class="k">In short</b><p>The same pair of two-step branches (add/sub, mul/div), joined three ways. Both branches touch the same <code>__init__.py</code> and README on purpose, so whichever lands second must merge.</p></div>
+  <div class="scroll"><table>
+    <tr><th>Project</th><th>Shape</th><th>Where Test runs</th></tr>
+    <tr><td>LandThenTest</td><td>A1→A2 on <code>feature/a</code> and B1→B2 on <code>feature/b</code>, each landing on <code>main</code>. Test waits on both landings.</td><td><code>main</code>, after a person merged both landings</td></tr>
+    <tr><td>Integration</td><td>The same two branches, cut off an outer <code>feature/int</code> (<code>branch put</code> over two existing branches nests them). Test is on <code>feature/int</code>, and <code>feature/int</code> then lands on <code>main</code>.</td><td><code>feature/int</code>, before anything reaches <code>main</code></td></tr>
+    <tr><td>TwoRepos</td><td>L1→L2 in <code>lib</code> (primary) on <code>feature/a</code>, and P1→P2 in <code>app</code> on <code>feature/b</code>. Each step's <code>agent workplace</code> names its repository. Test, in <code>app</code>, waits on both landings.</td><td><code>app</code>'s <code>main</code>, depending on <code>lib</code>'s <code>main</code></td></tr>
+  </table></div>
+  <figure><img src="shots/canvas-Integration.png" alt="The Integration plan on the canvas: feature/int's cut fans out to feature/a and feature/b, each with two done steps and a done landing, joining at Test together on feature/int"><figcaption>The integration shape, drawn by the canvas: two branches cut off <code>feature/int</code>, both landed, Test on <code>feature/int</code>. Nesting needed no new concept.</figcaption></figure>
+  <figure><img src="shots/canvas-TwoRepos.png" alt="The TwoRepos plan on the canvas: two lanes that look exactly like a one-repository plan; S4 and S5 read Stopped"><figcaption>The two-repository plan. Nothing on a card says which repository a step works in, and S4's <em>PR #1</em> chip points at <code>lib</code>'s PR #1. S4 and S5 read <em>Stopped</em> because I stopped their passes and settled the steps by hand.</figcaption></figure>
+</section>
+
+<section id="findings">
+  <h2>Findings</h2>
+  <div class="inshort"><b class="k">In short</b><p>Twelve findings. Five are confirmed bugs with a line to fix. The rest are gaps where DPlanner knew enough to help and said nothing.</p></div>
+  <div class="scroll"><table>
+    <tr><th>Finding</th><th>Seen</th><th>Where</th></tr>
+    <tr><td>A step's PR is looked up in the primary repository</td><td><span class="chip bad">high</span>A false <em>done</em>, a wrong PR written onto a step, a near-miss merge, a merge never noticed</td><td><code>github/cli.py:391</code> <code>_step_repo</code>; <code>modules/__init__.py:2160</code></td></tr>
+    <tr><td>A nested branch's first run fails before the outer branch exists</td><td><span class="chip bad">high</span><code>src refspec origin/feature/int does not match any</code></td><td><code>branches/plan.py</code> <code>branch_plan</code>; <code>worktree.py</code> <code>_cut</code></td></tr>
+    <tr><td>On a non-working day a branch cut stays <em>waiting</em></td><td><span class="chip bad">high</span>Every first step on every branch refused on a Sunday</td><td><code>planning/schedule.py:497</code> <code>spent_since</code></td></tr>
+    <tr><td>A detached <code>playbook advance</code> can be lost</td><td><span class="chip warn">medium</span>PR merged, pass stuck at <em>Merging</em>, no card (cause plausible, not proven)</td><td><code>supervisor.py:1218</code> discards its output</td></tr>
+    <tr><td>Simultaneous launches in one project</td><td><span class="chip warn">medium</span>All but one refused with "changed on disk… run this again", after side effects</td><td>the CLI's open-and-write</td></tr>
+    <tr><td>Parallel landings into one base conflict silently</td><td><span class="chip warn">medium</span>The second landing sat at <em>ready to merge</em> with a conflicting PR</td><td>no check exists</td></tr>
+    <tr><td>A worktree made early is never brought forward</td><td><span class="chip warn">medium</span>Test resumed on the old <code>main</code>; the agent fixed it itself</td><td><code>worktree.prepare</code></td></tr>
+    <tr><td>The briefing names the wrong repository</td><td><span class="chip warn">medium</span>An <code>app</code> step is told it works in <code>lib</code></td><td><code>protocol.py:161</code> <code>plan_whereabouts</code></td></tr>
+    <tr><td>"Cannot proceed" shows as a permission denial</td><td><span class="chip warn">low</span>A card with no choices</td><td><code>execute.schema.json</code>: <code>done | asked | denied</code></td></tr>
+    <tr><td>A branch across two repositories</td><td><span class="chip warn">low</span>Lint is silent; the launch error names the wrong cause</td><td>lint; <code>worktree.prepare</code></td></tr>
+    <tr><td>Coordinator across repositories</td><td><span class="chip na">read only</span><code>gh pr merge &lt;n&gt;</code> with no <code>-R</code>; "the integrated branch"</td><td><code>agent_briefing/coordinator.py</code></td></tr>
+    <tr><td>Smaller points</td><td><span class="chip na">low</span>Overlap advice; partial join only linted; refresh needed headless; plan never committed</td><td>see below</td></tr>
+  </table></div>
+</section>
+
+<section id="prs">
+  <h2>Two repos, one PR lookup</h2>
+  <div class="inshort"><b class="k">In short</b><p>DPlanner resolves every step's PR number in the project's primary repository, whatever the step's workplace. Both repositories numbered their PRs from #1, so every <code>app</code> PR was read as <code>lib</code>'s PR with the same number.</p></div>
+  <p>Each verb that touches a PR (<code>github set</code>, <code>github refresh</code>, the playbook's <code>progress</code>, the window's refresher) asks <code>_step_repo</code>. That reads <code>repository_facts(...).code_remote</code>, the first code row. The worktree code already knows better: <code>agent_briefing/worktree.py</code>'s <code>code_placement</code> uses the step's own row. The run hit all four ways this can go wrong:</p>
+  <div class="scroll"><table>
+    <tr><th>Step</th><th>What DPlanner did</th><th>What was true</th></tr>
+    <tr><td>S4 · app member</td><td><code>progress</code> read <code>lib</code> PR #1, wrote its title, URL and <em>merged</em> onto S4, then blocked: "PR #1 merged into feature/a, but that did not accept the step"</td><td><code>app</code> PR #1 was open, into <code>feature/b</code></td></tr>
+    <tr><td>S5 · app member</td><td><code>progress</code> found <code>lib</code> PR #2 <em>open</em> and refused only because its head branch differed</td><td>The head check is the one thing that kept it from merging the other repository's PR</td></tr>
+    <tr><td>S9 · app landing</td><td><span class="chip bad">false done</span><code>github refresh</code>: "1 step(s) merged and done"</td><td><code>app</code> PR #3 still <strong>open</strong>; <code>lib</code> PR #3 had just merged into <code>main</code></td></tr>
+    <tr><td>S10 · app Test</td><td>"1 PR(s) checked, 0 updated", silently, indefinitely</td><td><code>app</code> PR #4 merged; <code>lib</code> has no PR #4</td></tr>
+  </table></div>
+  <div class="code"><div class="src">evidence/ev/tworepos-s9-false-done.txt</div><pre>1 PR(s) checked, 1 updated, 1 step(s) merged and done
+Land feature/b: done
+  github: {"branch": "feature/b", "pr_number": 3, "pr_state": "merged",
+           "pr_title": "S7: Land feature/a (add, sub)",
+           "pr_url": "https://github.com/Knutsi/temp-dplanner-test-lib/pull/3"}
+{"state":"OPEN","title":"S9: Land feature/b (mul and div CLI commands)"}</pre></div>
+  <p>A false <em>done</em> on a landing frees everything that waits on it. Here that was the final Test, which would have started against an <code>app</code> without its mul/div work. With a window open, the PR refresher would do the same unattended.</p>
+  <p>The same project also showed four smaller gaps:</p>
+  <ul>
+    <li>The briefing tells an <code>app</code> step it works in <code>Knutsi/temp-dplanner-test-lib</code> (<code>protocol.py:161</code> uses <code>facts.code_label</code>).</li>
+    <li>The coordinator's briefing merges with <code>gh pr merge &lt;n&gt;</code> from the primary checkout.</li>
+    <li>A branch whose members sit in both repositories is not linted. Its launch fails with "there is no origin/feature/mix … a branch deleted after it landed".</li>
+    <li>The canvas cannot show which repository a card belongs to.</li>
+  </ul>
+  <p>What did work: each step's worktree opened in its own repository, and each repository's branch was cut there. The Test step in <code>app</code> found <code>lib</code>'s <code>main</code> on its own and depended on it through a <code>git+ssh</code> URL. All 24 tests passed.</p>
+</section>
+
+<section id="nested">
+  <h2>Nested branches</h2>
+  <div class="inshort"><b class="k">In short</b><p>Planning a branch inside a branch is free: <code>branch put</code> over two existing branches nests them, and the canvas and the briefings read it right. Running it fails at the first step, because only the innermost branch gets cut.</p></div>
+  <p><code>branch_plan</code> decides the cut for the innermost open stretch only. <code>feature/a</code> is "fresh", so it is created from <code>origin/feature/int</code>. But nothing had cut <code>feature/int</code>, because no step of its own had run yet:</p>
+  <div class="code"><div class="src">evidence/ev/probe3-nested-first-run.txt</div><pre>dplanner: could not prepare the worktree …/s2-a1-add on agent/s2-a1-add: git push:
+error: src refspec origin/feature/int does not match any</pre></div>
+  <p>It failed cleanly: no claim, no status, no worktree. One <code>git push origin main:refs/heads/feature/int</code> and the plan ran to the end. Inner landings opened their PRs against <code>feature/int</code>, merging there accepted them, and Test ran on the integrated branch.</p>
+  <h3>The Sunday cut</h3>
+  <p>Before any of that, every first step was refused: "'A1 add' waits on work not done yet: B6 'feature/a'". A cut is a wait of zero days. <code>spent_since(day, today)</code> is <code>working_days_between − ½</code>, which is <strong>−0.5</strong> on a Sunday, and −0.5 is less than 0. Every branch in every plan is held until Monday. <code>--anyway</code> gets past it.</p>
+</section>
+
+<section id="landings">
+  <h2>Parallel landings</h2>
+  <div class="inshort"><b class="k">In short</b><p>When two landings target the same base, the second conflicts the moment the first merges, and DPlanner does not notice. <em>Send Back</em> was the right tool and the agent used it well. But the resolution skipped review, and the merged landing still needed a person's Accept.</p></div>
+  <ul>
+    <li>The first landing agent saw it coming. Its note N6 read: "whichever feature branch lands second will conflict on <code>calc/__init__.py</code> and the README list of functions, and should keep the entries from both sides". Nothing reads a note as an instruction.</li>
+    <li>After PR #6 merged, GitHub still reported PR #5 <em>MERGEABLE</em>, which was stale. <code>git merge-tree</code> exited 1. The step sat at <em>ready to merge</em>.</li>
+    <li><code>playbook send-back</code> with the conflict as the note: the landing merged <code>origin/main</code> into <code>feature/b</code> as a merge commit, kept both sides, and the conflict was gone. Same in the Integration project, into <code>feature/int</code>.</li>
+    <li>After that execute, no Codex review ran again, because a person's send-back loops to the work and nothing follows it but the person. That is consistent with the rules, but it means the one hand-merged change got the least review.</li>
+    <li>Into <code>main</code>, the merge then left the step <em>ready for review</em>, because no gate had passed since its last work. Merged into <code>feature/int</code>, the same merge accepted it. The two behave differently by design, but it surprised me.</li>
+  </ul>
+  <p>DPlanner <em>knows</em> when two open landings share a base. When one merges, it could tell the other one to merge that base back in, instead of leaving it to GitHub's stale flag and a person's eye.</p>
+</section>
+
+<section id="stale">
+  <h2>A stale Test worktree</h2>
+  <div class="inshort"><b class="k">In short</b><p>A worktree is made on the first run and reused unchanged. Test, started early on purpose, resumed after both landings on a <code>main</code> that lacked <code>feature/b</code>. The agent brought its branch up to date itself; DPlanner did not.</p></div>
+  <ul>
+    <li>Started with <code>--anyway</code> while only <code>feature/a</code> had landed, the Test agent did what its brief said: it found mul and div missing, wrote nothing, and set itself blocked. That was the right behaviour.</li>
+    <li>It had to report that as <code>"outcome": "denied"</code>, because the execute schema offers only <code>done | asked | denied</code>. The card read "The agent was denied a permission it needed. How should it go on?", with no choices.</li>
+    <li>When I answered after <code>feature/b</code> landed, the run resumed in the same worktree, still at <code>8738e75</code>. The agent, not DPlanner, updated it to <code>66320b4</code>. Then 6 tests passed.</li>
+  </ul>
+</section>
+
+<section id="races">
+  <h2>Two writers, one project</h2>
+  <div class="inshort"><b class="k">In short</b><p>Parallel branches mean parallel runs in one project, and the project file is one writer at a time. A refused launch only costs a retry. A refused <em>advance</em> can leave a pass stuck with no sign of why.</p></div>
+  <ul>
+    <li>Six launches at once, two per project. In each project one was refused: "changed on disk since it was opened … nothing was written; run this again". The branch cut and the worktree had already been made. Both are idempotent, so a retry worked. A coordinator launching in parallel must retry too.</li>
+    <li>Two <code>progress</code> stages in Integration ended 2 s apart. One merged its PR on GitHub, but its pass sat at <em>Merging</em>: no record, no card, nothing in any log, because the detached advance's output goes nowhere. <code>playbook advance S4</code> by hand finished it. The likely cause is the same concurrent-write refusal, which nothing retries. Verdict: plausible, not proven.</li>
+  </ul>
+</section>
+
+<section id="held">
+  <h2>What held up</h2>
+  <div class="inshort"><b class="k">In short</b><p>The graph model and the agents were the strong half. Every refusal I aimed at the graph either fired or was named by lint.</p></div>
+  <ul>
+    <li><strong>Overlap.</strong> Test linked straight to A2 and B2 is refused at launch ("it is on feature/a and feature/b, and neither is inside the other") and named by lint. The advice to "<code>branch remove</code> one of them" misses the two shapes that work: link after both landings, or nest both in an outer branch.</li>
+    <li><strong>Partial join.</strong> Test after <em>Land feature/a</em> and B2 lands on <code>feature/b</code> without A's work. Lint says exactly that ("the branch was cut before that work, so this step's worktree will not have it"), but the launch is not refused.</li>
+    <li><strong>Names.</strong> A second branch named <code>feature/a</code> in one project is refused.</li>
+    <li><strong>Members.</strong> In one repository, <code>progress</code> merged every member into its feature branch and accepted it.</li>
+    <li><strong>Agents.</strong> They stopped rather than inventing missing code, predicted the conflict, resolved it when sent back, and found the sibling repository without being told how.</li>
+    <li><strong>Cost.</strong> About $10 of Claude turns plus nine Codex reviews, in roughly 90 minutes.</li>
+  </ul>
+</section>
+
+<section id="blind">
+  <h2>Blind spots beyond this run</h2>
+  <div class="inshort"><b class="k">In short</b><p>Setups near this one that the run did not exercise, each with what would go wrong. The first is the one most likely to hit a real team.</p></div>
+  <div class="scroll"><table>
+    <tr><th>Setup</th><th>What happens</th><th>Basis</th></tr>
+    <tr><td>One change across two repos on the <em>same</em> branch name</td><td>Refused: "another branch in this project is already called feature/a". That is the usual convention for a cross-repo change.</td><td>Refusal seen in probe 4; that it hits this convention is inferred</td></tr>
+    <tr><td>Three or more branches into one base</td><td>Each landing conflicts after the one before it merges: N−1 send-backs, one after another</td><td>Follows from the run</td></tr>
+    <tr><td>Squash- or rebase-only repositories</td><td>Landings are told to merge, never rebase or squash. Branch protection that forbids merge commits stops every landing.</td><td>From the briefing</td></tr>
+    <tr><td>Auto-delete head branches</td><td>A landed branch vanishes, and any later run of its members reads "deleted after it landed". That is correct, but nothing warns beforehand.</td><td>From <code>worktree.prepare</code></td></tr>
+    <tr><td>Two projects in one code repository</td><td>Branch names are unique per project only, so both can cut <code>feature/a</code> in the same repository</td><td>Inferred from probe 4's scope</td></tr>
+    <tr><td>Repo B consumes repo A</td><td>"A landed" is not "B can install A". There is no version pin or release in the model. Here the agent's <code>git+ssh</code> URL needs SSH to install.</td><td>The two-repo Test step</td></tr>
+    <tr><td>A window open during a two-repo run</td><td>Its PR refresher would make the false <em>done</em>s by itself, with nobody running a verb</td><td><code>modules/__init__.py:2160</code></td></tr>
+    <tr><td>Headless runs over a day</td><td>The CLI never commits the plan: 64 uncommitted changes. Another machine sees nothing until someone saves.</td><td>Seen</td></tr>
+    <tr><td>A reviewer that cannot reach the network</td><td>Codex reviewed landings without checking the remote ("SSH/network unavailable") and passed them. The conflict was invisible to it.</td><td>Seen</td></tr>
+  </table></div>
+</section>
+
+<section id="fixes">
+  <h2>Suggested fixes</h2>
+  <div class="inshort"><b class="k">In short</b><p>Ranked by what they prevent. The first three are small and remove the failures that need a person at every step. The rest make the parallel shape safe to leave alone.</p></div>
+  <ul>
+    <li><strong>1. One <code>repo_of(step)</code>, from the step's workplace</strong>, used by <code>github set</code>, <code>refresh</code>, <code>progress</code>, the window's refresher, the PR chip, the briefing's "code you are working in" and the coordinator's <code>gh … -R</code>. This is one function replacing several readers.</li>
+    <li><strong>2. Clamp <code>spent_since</code> at 0</strong>, or read a cut as done once its predecessors are. Add a test dated on a Sunday.</li>
+    <li><strong>3. Cut the enclosing stretches outside-in</strong> when a nested stretch is fresh.</li>
+    <li><strong>4. Keep the detached advance's output</strong> in the run directory, and retry an advance refused by a concurrent write. Have <code>agent run</code> retry the same way.</li>
+    <li><strong>5. Landings that share a base:</strong> when one merges, put a card on the others ("<code>main</code> moved; merge it in") and re-run their gate after a send-back.</li>
+    <li><strong>6. A <code>blocked</code> outcome</strong> in the execute schema, so an honest stop reads as one.</li>
+    <li><strong>7. Bring a reused worktree forward</strong> (or brief it) when a prerequisite has landed since it was cut.</li>
+    <li><strong>8. Lint a stretch whose members span repositories</strong>, and scope branch-name uniqueness per repository.</li>
+    <li><strong>9. Better overlap advice:</strong> "link Test after both landings, or put both branches on one outer branch".</li>
+  </ul>
+</section>
+
+<section id="evidence">
+  <h2>Evidence</h2>
+  <div class="inshort"><b class="k">In short</b><p>Everything is in <code>evidence/</code>, next to this report. <code>$T</code> is the scratch directory; rebuild with <code>T=… W=… bash setup.sh</code>, then <code>build.sh</code> and <code>probes.sh</code>.</p></div>
+  <div class="scroll"><table>
+    <tr><th>File</th><th>What it shows</th></tr>
+    <tr><td><code>setup.sh</code>, <code>build.sh</code>, <code>steps/</code></td><td>The repositories, the isolated DPlanner, the three plans and each step's brief</td></tr>
+    <tr><td><code>probes.sh</code> → <code>ev/probes.txt</code></td><td>Overlap, partial join, duplicate branch name, a branch across two repositories</td></tr>
+    <tr><td><code>ev/probe3-nested-first-run.txt</code></td><td>The nested branch's first run</td></tr>
+    <tr><td><code>why.py</code></td><td>Derived statuses on a Sunday: the cut reads <em>Waiting</em></td></tr>
+    <tr><td><code>ev/launch-*.txt</code></td><td>Six simultaneous launches: three refused, then retried</td></tr>
+    <tr><td><code>ev/integration-s4-advance.txt</code></td><td>The lost advance, finished by hand</td></tr>
+    <tr><td><code>ev/tworepos-s9-false-done.txt</code>, <code>ev/tworepos-s10-refresh.txt</code></td><td>The false <em>done</em>, and the merge never noticed</td></tr>
+    <tr><td><code>ev/prompt-*.md</code></td><td>Briefings: nested bases, the landing's merge instructions, the wrong repository named</td></tr>
+    <tr><td><code>ev/coordinator-ProbesTwo.md</code></td><td>The coordinator's briefing for a two-repository selection</td></tr>
+  </table></div>
+</section>
+
+<footer>The throwaway repositories are <code>Knutsi/temp-dplanner-test-mainland</code>, <code>-integration</code>, <code>-lib</code> and <code>-app</code>. Delete them with <code>gh repo delete Knutsi/&lt;name&gt; --yes</code>. No product code changed in this experiment.</footer>
+</main>
+</div>

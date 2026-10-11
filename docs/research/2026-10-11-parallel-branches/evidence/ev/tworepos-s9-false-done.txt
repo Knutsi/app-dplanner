@@ -1,0 +1,4 @@
+1 PR(s) checked, 1 updated, 1 step(s) merged and done
+Land feature/b: done
+  github: {"branch": "feature/b", "format": 2, "pr_base": "main", "pr_number": 3, "pr_state": "merged", "pr_title": "S7: Land feature/a (add, sub)", "pr_url": "https://github.com/Knutsi/temp-dplanner-test-lib/pull/3"}
+{"state":"OPEN","title":"S9: Land feature/b (mul and div CLI commands)"}

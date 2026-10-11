@@ -42,3 +42,9 @@ changes, write a new note and link back.
   supervisor was revived. The weak part is what a person sees: during the run only the cards
   said a step waits for you (S27's strip, merged meanwhile, now does). Three fixes and eight
   filed notes.
+- [2026-10-11 — Two branches, one Test step](2026-10-11-parallel-branches/README.md): two
+  parallel feature branches joining at a final Test, in one repository (land-then-test, and
+  an outer integration branch) and across two, with real agents and GitHub PRs. One
+  repository works with a few workarounds; across two, every PR number is looked up in the
+  primary repository, which marked a landing done while its PR was open. Twelve findings,
+  a Sunday-only cut bug, and the blind spots of nearby setups.
