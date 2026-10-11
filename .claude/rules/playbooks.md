@@ -145,7 +145,8 @@ paths:
   *The presets*, *A step names its playbook; a project names its default* and *The mark on the
   one card*.
 - **A pass is reviewed in Step Details' Playbook tab** (`pass_section.py`), opened by a click
-  on the card's strip: what it did is `history.py` — the one builder of a pass's messages —
+  on the card's strip: what it did is `history.py` — the one builder of a pass's messages,
+  which `dplanner playbook show <step> --history` prints for an agent —
   and what it changed `changes.py`, both Qt-free and read on a task. A work run's `summary`
   is on its record (the supervisor writes it, a plan's too); an older run's is read back from
   its stream.

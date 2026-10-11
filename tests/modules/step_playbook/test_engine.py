@@ -177,6 +177,20 @@ def test_a_pass_plans_executes_and_loops_back_to_its_session_until_review_passes
     assert "is through" in drive.advance()  # Advancing again does nothing more.
     assert len(drive.started) == runs
 
+    # What every stage said, without opening a run record: the plan, each verdict and its
+    # findings, the reason a finding was declined.
+    told = str(drive.cli("playbook", "show", "Build it", "--history"))
+    assert "Add the lock." in told and "plan#1" in told and "review#1" in told
+    assert "- [high] a.py:3 A race (declined: It cannot race)" in told
+    (latest,) = json.loads(drive.cli("playbook", "show", "Build it", "--history", "--json"))[
+        "history"
+    ]
+    assert [(e["stage"], e["outcome"]) for e in latest["events"] if e["kind"] == "review"] == [
+        ("review", "changes"),
+        ("review", "pass"),
+    ]
+    assert "history" not in json.loads(drive.cli("playbook", "show", "Build it", "--json"))
+
 
 def test_work_sent_back_is_in_progress_again_until_its_fix_says_otherwise(drive):
     """What the agent called finished no longer is once a gate sends it back — and a step

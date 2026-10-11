@@ -13,7 +13,7 @@ import getpass
 from argparse import ArgumentParser, Namespace
 from collections.abc import Callable
 from contextlib import ExitStack
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from textwrap import indent
@@ -41,6 +41,7 @@ from dplanner.modules.step_playbook.aspect import (
 from dplanner.modules.step_playbook.engine import (
     Answer,
     Reviewed,
+    facts_of,
     halted_pass,
     reviewed,
     send_back,
@@ -48,6 +49,7 @@ from dplanner.modules.step_playbook.engine import (
     stop,
     wake,
 )
+from dplanner.modules.step_playbook.history import PassHistory, history
 from dplanner.modules.step_playbook.passes import PASS, describe
 from dplanner.modules.step_playbook.presets import MAX_ROUNDS, PRESETS, ROUNDS, Playbook, preset
 from dplanner.modules.step_playbook.workflows import ACCEPTED, acceptance, stopped
@@ -263,10 +265,11 @@ def commands(
         ),
         CliCommand(
             path=("playbook", "show"),
-            summary="Which playbook a step runs, where that was chosen, and its stages.",
-            configure=step_arg,
-            run=_show,
-            examples=("dplanner playbook show S7",),
+            summary="Which playbook a step runs, where that was chosen, and its stages — "
+            "with --history, what each of its passes did.",
+            configure=_configure_show,
+            run=lambda context, args: _show(context, args, harnesses),
+            examples=("dplanner playbook show S7", "dplanner playbook show S7 --history"),
         ),
         CliCommand(
             path=("playbook", "set"),
@@ -390,7 +393,38 @@ def _list(context: CliContext, args: Namespace) -> int:
     return 0
 
 
-def _show(context: CliContext, args: Namespace) -> int:
+def _configure_show(parser: ArgumentParser) -> None:
+    step_arg(parser)
+    parser.add_argument(
+        "--history",
+        action="store_true",
+        help="also every pass of the step, latest first: each run's summary (a plan's is the"
+        " plan), each verdict with its findings, and each answer",
+    )
+
+
+def _history_text(passes_: tuple[PassHistory, ...]) -> str:
+    lines: list[str] = []
+    for pass_ in passes_:
+        lines.append(f"\npass {pass_.pass_id} — {pass_.playbook}: {pass_.standing.phrase}")
+        for event in pass_.events:
+            outcome = f" {event.outcome}" if event.outcome else ""
+            lines.append(
+                f"  {event.at[:16].replace('T', ' ')}  {event.stage}#{event.attempt}"
+                f"  {event.who}  {event.state}{outcome}"
+            )
+            if event.summary:
+                lines.append(indent(event.summary.strip(), "      "))
+            for finding in event.findings:
+                where = f" {finding.where}" if finding.where else ""
+                declined = f" (declined: {finding.declined})" if finding.declined else ""
+                lines.append(
+                    f"      - [{finding.severity or 'note'}]{where} {finding.text}{declined}"
+                )
+    return "\n".join(lines) if lines else "\nno passes yet"
+
+
+def _show(context: CliContext, args: Namespace, harnesses: tuple[AgentHarness, ...] = ()) -> int:
     step = find_step(context.library, args.step, context.current)
     resolved = resolve(step, context.library.project_of(step.id))
     choice = read(step)
@@ -411,9 +445,30 @@ def _show(context: CliContext, args: Namespace) -> int:
     )
     # The pass under way, or the last one, as the card's strip says it.
     under = "" if stands is None else "\n" + indent(describe(stands), "  ")
+    passes_ = (
+        history(project_dir, step.id, facts_of(step), datetime.now(UTC), harnesses)
+        if args.history
+        else ()
+    )
+    told = (
+        {
+            "history": [
+                {
+                    "pass": p.pass_id,
+                    "playbook": p.playbook,
+                    "phrase": p.standing.phrase,
+                    "events": [asdict(event) for event in p.events],
+                }
+                for p in passes_
+            ]
+        }
+        if args.history
+        else {}
+    )
+    under += _history_text(passes_) if args.history else ""
     if resolved.playbook is None:
         context.report(
-            {"step": step.id, "playbook": None, "source": resolved.source, "pass": now},
+            {"step": step.id, "playbook": None, "source": resolved.source, "pass": now} | told,
             f"{step.title}: no playbook — Run Agent{under}",
         )
         return 0
@@ -430,11 +485,17 @@ def _show(context: CliContext, args: Namespace) -> int:
             "reviewer": reviewer,
             "pass": now,
         }
-        | _data(playbook),
+        | _data(playbook)
+        | told,
         f"{step.title}: {playbook.name} ({playbook.id}), {_SOURCES[resolved.source]}\n"
         f"{stages}\n"
         f"  rounds {rounds if rounds is not None else f'{ROUNDS} (default)'}"
-        f" · reviewer {reviewer or 'another vendor (default)'}{under}",
+        + (
+            f" · reviewer {reviewer or 'another vendor (default)'}"
+            if playbook.reviews_with_other()
+            else ""
+        )
+        + under,
     )
     return 0
 
