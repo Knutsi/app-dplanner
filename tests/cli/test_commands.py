@@ -1221,3 +1221,44 @@ def test_a_refused_flush_is_run_again_only_by_a_verb_that_says_so(
     assert run(registry, [], ["--library", str(cli_library), "try", "it"], StringIO(), err) == 1
     assert "run this again" in err.getvalue()
     assert len(opened) == (STALE_ATTEMPTS if retries else 1) == len({id(o) for o in opened})
+
+
+def test_a_retried_verb_says_only_what_its_standing_run_reported(cli_library, monkeypatch):
+    """A refused attempt's report never happened: the agent reading it once took a refused
+    `github set` for a recorded PR. Only the run whose flush stood is said."""
+    from dplanner.cli.command import CliCommand, CliRegistry
+    from dplanner.cli.main import run
+    from dplanner.domain.store import StaleWorkspaceError
+
+    attempts = []
+
+    def verb(context, _args) -> int:
+        attempts.append(1)
+        context.report({}, f"recorded, attempt {len(attempts)}")
+        return 0
+
+    real = LibraryStore.flush
+
+    def stale_once(self, marks):
+        if len(attempts) == 1:
+            raise StaleWorkspaceError("the plan changed underneath")
+        return real(self, marks)
+
+    registry = CliRegistry()
+    registry.register(
+        CliCommand(
+            path=("try", "it"), summary="", run=verb, finds_project=False, retries_stale=True
+        )
+    )
+    monkeypatch.setattr(LibraryStore, "flush", stale_once)
+    out = StringIO()
+    assert run(registry, [], ["--library", str(cli_library), "try", "it"], out, StringIO()) == 0
+    assert out.getvalue() == "recorded, attempt 2\n"
+
+
+def test_the_verbs_an_agent_reports_through_retry_a_refused_flush():
+    from dplanner.modules import default_cli_commands
+
+    retrying = {command.path for command in default_cli_commands() if command.retries_stale}
+    for path in (("status", "set"), ("github", "set"), ("note", "add"), ("agent-state", "set")):
+        assert path in retrying

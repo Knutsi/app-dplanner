@@ -254,6 +254,7 @@ def commands(*, key_of: Callable[[Step], str]) -> list[CliCommand]:
     return [
         CliCommand(
             path=("note", "add"),
+            retries_stale=True,
             summary="Record a note — a decision, a handoff, a spec change, something deferred "
             "— with its label, on which step, and for whom. A title already on that step "
             "is that note; safe to run twice.",

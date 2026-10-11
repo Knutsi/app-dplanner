@@ -19,6 +19,7 @@ from argparse import (
     RawDescriptionHelpFormatter,
 )
 from collections.abc import Sequence
+from io import StringIO
 from pathlib import Path
 from typing import TextIO
 
@@ -269,23 +270,32 @@ def run(
             path = find_library(args.library)
             attempt = 1
             while True:
+                # A run that may be run again says its words only once they stand: what a
+                # refused attempt reported never happened.
+                said = StringIO() if command.retries_stale else out
+                retrying = False
                 try:
                     with open_library(
                         path,
                         formats,
-                        out,
+                        said,
                         as_json=args.as_json,
                         clock=clock or Clock(),
                         link_rules=link_rules,
                     ) as context:
                         code = _run_verb(context, command, args, board)
-                    break
                 except StaleRunError:
-                    if not command.retries_stale or attempt == STALE_ATTEMPTS:
+                    retrying = command.retries_stale and attempt < STALE_ATTEMPTS
+                    if not retrying:
                         raise
-                    attempt += 1
-                    # Apart, so two runs refused by each other do not collide again.
-                    time.sleep(random.uniform(*STALE_PAUSE_S))
+                finally:
+                    if isinstance(said, StringIO) and said is not out and not retrying:
+                        out.write(said.getvalue())
+                if not retrying:
+                    break
+                attempt += 1
+                # Apart, so two runs refused by each other do not collide again.
+                time.sleep(random.uniform(*STALE_PAUSE_S))
     except CliError as error:
         print(f"{PROG}: {error}", file=err)
         telemetry.end(span, exit_code=1, refused=str(error))

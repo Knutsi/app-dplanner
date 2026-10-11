@@ -117,6 +117,7 @@ def commands(
     return [
         CliCommand(
             path=("status", "set"),
+            retries_stale=True,
             summary="Say where a step stands; setting it pending removes the file.",
             configure=_configure_set,
             run=set_status,

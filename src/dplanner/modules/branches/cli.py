@@ -24,11 +24,12 @@ from dplanner.modules.branches.edits import put_command, put_refusal, remove_com
 from dplanner.modules.branches.plan import (
     branch_births,
     branch_reading,
+    elsewhere,
     landing_workplace,
+    stretch_location,
     stretch_repository,
     taken_names,
 )
-from dplanner.planning.agent import code_location
 from dplanner.planning.branches import (
     CUT_ID,
     LAND_ID,
@@ -277,8 +278,8 @@ def _stretch_row(
     project: Project, stretch: Stretch, found: Reading, key_of: Callable[[Step], str]
 ) -> tuple[dict[str, object], str]:
     base = found.base_of(stretch.cut.id, "")
-    lands = code_location(project.locations, stretch.land)
-    repository = lands.repository_label if lands is not None else ""
+    lives = stretch_location(project, stretch)
+    repository = lives.repository_label if lives is not None else ""
     # Said in the line only where it tells two apart: two repositories may share a name.
     several = len({row.canonical for row in of_role(project.locations, CODE.id)}) > 1
     members = " ".join(key_of(step) or step.title for step in stretch.members)
@@ -452,27 +453,16 @@ def lint_checks(
         return out
 
     def repositories(_library: Library, project: Project, _files: FilesFor) -> list[LintFinding]:
-        """An agent step on a branch that works in another repository than the branch: its
-        run would find no such branch there, or cut a second one of the name."""
+        """An agent step on a branch, or its landing, that works in another repository than
+        the branch lives in: its run would find no such branch there, or cut a second one."""
         found = branch_reading(project)
         out = []
         for stretch in found.stretches:
-            lands = code_location(project.locations, stretch.land)
-            if stretch.landed or lands is None:
+            if stretch.landed:
                 continue
-            for member in stretch.members:
-                works = code_location(project.locations, member)
-                if is_agent(member) and works is not None and works.canonical != lands.canonical:
-                    out.append(
-                        finding(
-                            "branch.repository",
-                            member,
-                            f"is on {stretch.branch}, which lands in {lands.repository_label},"
-                            f" but works in {works.repository_label} — a branch lives in one"
-                            f" repository; `dplanner agent workplace '{member.title}' <location>`,"
-                            f" or the same for {stretch.land.title!r}",
-                        )
-                    )
+            for step in (*stretch.members, stretch.land):
+                if is_agent(step) and (said := elsewhere(project, step, stretch)):
+                    out.append(finding("branch.repository", step, said.removeprefix("it ")))
         return out
 
     return [pairs, names, shapes, merges, repositories]

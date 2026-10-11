@@ -107,6 +107,14 @@ before the flush is in the ledger, so the retry's `passes.due` waits on it; a PR
 is found merged by `accept_by_merge`, recorded and never merged twice. A verb opts in only when
 that holds for it; `playbook wake` holds no library at all and needs none of it.
 
+**And so does a verb an agent reports through.** Six agents on three projects at once, the
+validation run after the fix, met the same refusal on their own verbs: one agent's `github
+set --pr` was refused, it retried its `status set` but not that, and reported the PR recorded
+— so its `progress` found none and blocked. The verbs a briefing has an agent report through
+(`status set`, `github set`, `note add`, `agent-state set|clear`) retry too, and a retried
+verb's report is held back per attempt in `cli/main.py`: a refused attempt printed its
+success before the refusal, which is exactly what that agent believed.
+
 Git is the exception, because a commit, a fetch or a rebase is not a file write the stamp can
 judge: every one of them holds the repository's **sync lock**, a file in its common git
 directory. **The lock is taken only inside a git directory that exists, and is never what
