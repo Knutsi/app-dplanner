@@ -9,6 +9,7 @@ import { DpElement } from "../engine/element.js";
 import { html, repeat, nothing } from "../engine/template.js";
 import { adopt, css } from "../ui/style.js";
 import { glyph } from "../ui/glyph.js";
+import { kbd } from "../ui/keys.js";
 import { variant, toolbarPlace } from "../ui/look.js";
 import { activeTheme } from "../ui/theme.js";
 import "../ui/menu.js";
@@ -24,6 +25,8 @@ import { mode, echo, pending, whichKeyOpen } from "./keyboard.js";
 import { panes, activePaneId, activate, viewOf, kindOf, closeTab, pinTab, paneFocus, describe, clearSelection, panels, leftOpen, bottomOpen, overlays } from "./workspace.js";
 import { running, unseen } from "./activity.js";
 
+// Alt+M first: on Omarchy the desktop or the browser can take F10 before the page sees it.
+const MENUBAR_KEYS = ["Alt+M", "F10"];
 const TOOLBAR_BANDS = ["history", "navigate", "step", "status", "agent", "panes"];
 
 let app = null;
@@ -55,6 +58,15 @@ function openCheatsheet() {
     .map((menu) => ({ title: menu, items: all.filter((item) => commands.get(item.id).menu === menu) }))
     .filter((s) => s.items.length);
   if (focusKind) sections.unshift({ title: `On this ${focusKind}`, items: all.filter((item) => commands.get(item.id).for === focusKind) });
+  // The menubar's own keys are not commands, so they would never be listed: say them here.
+  sections.push({
+    title: "Menus",
+    items: [
+      { id: "menubar.focus", label: "Go to the menu bar (F10 too, where the desktop lets it through)", keys: MENUBAR_KEYS[0] },
+      { id: "menubar.mnemonic", label: "Open a menu by its underlined letter (hold Alt to see them)", keys: "Alt+F" },
+      { id: "menubar.context", label: "Open the context menu on the focused row", keys: "Shift+F10" },
+    ],
+  });
   const sheet = app.querySelector("dp-cheatsheet");
   sheet.sections = sections;
   sheet.open();
@@ -80,7 +92,10 @@ class DpApp extends DpElement {
     const selection = selectionModel(() => clearSelection());
     const toolbar = html`<dp-toolbar placement=${place === "modeline" ? "inline" : place} .bands=${bands} .selection=${selection}></dp-toolbar>`;
     return html`
-      <dp-menubar .menus=${menubarModel()}></dp-menubar>
+      <div class="frame-menubar">
+        <dp-menubar .menus=${menubarModel()} .focusKeys=${MENUBAR_KEYS}></dp-menubar>
+        <div class="frame-keyhint" aria-hidden="true">${kbd(MENUBAR_KEYS[0])}<span>menus</span>${kbd("Ctrl+K")}<span>commands</span>${kbd("?")}<span>keys</span></div>
+      </div>
       ${place === "top" ? html`<div class="frame-toolbar">${toolbar}</div>` : nothing}
       <div class="frame-body">
         ${leftOpen.value && panels.left.value ? html`<aside class="frame-left" aria-label=${panels.left.value.title}>${panels.left.value.render()}</aside>` : nothing}
@@ -121,7 +136,9 @@ class DpApp extends DpElement {
               @click=${() => activate(pane.id, i)}
               @dblclick=${() => pinTab(pane.id, i)}
               @auxclick=${(e) => e.button === 1 && closeTab(pane.id, i)}
-            >${glyph(kindOf(t).icon)}<span>${kindOf(t).title(t.params)}</span><span class="pane-tab-close" @click=${(e) => (e.stopPropagation(), closeTab(pane.id, i))}>${glyph("close", "Close tab")}</span></button>`,
+            >${glyph(kindOf(t).icon)}<span>${kindOf(t).title(t.params)}</span>${t.preview && i === pane.active && active && pane.tabs.length > 1
+              ? html`<span class="pane-tab-esc" data-tip="A preview: Escape puts it away">${kbd("Escape")}</span>`
+              : nothing}<span class="pane-tab-close" @click=${(e) => (e.stopPropagation(), closeTab(pane.id, i))}>${glyph("close", "Close tab")}</span></button>`,
           )}
           <span class="pane-tabs-fill"></span>
           ${pane.follow ? html`<span class="pane-follow" data-tip="This pane shows what the other pane has focused">${glyph("link")} follows ${panes.value.findIndex((p) => p.id === pane.follow) === 0 ? "left" : "the other"} pane</span>` : nothing}
@@ -173,7 +190,22 @@ adopt(css`
     height: 100%;
     background: var(--bg);
   }
-  dp-app > dp-menubar { grid-row: 1; }
+  dp-app > .frame-menubar { grid-row: 1; display: flex; align-items: center; min-width: 0; }
+  dp-app .frame-menubar dp-menubar { flex: 1; min-width: 0; }
+  /* The three doors into the keyboard, where the eye looks for menus. Quiet, and gone when tight. */
+  dp-app .frame-keyhint {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding-inline: 10px;
+    color: var(--fg-3);
+    font-size: var(--fs-small);
+    white-space: nowrap;
+    opacity: 0.8;
+  }
+  dp-app .frame-keyhint .kbd { font-size: 10px; }
+  dp-app .frame-keyhint span + .kbd { margin-left: 8px; }
+  @media (max-width: 900px) { dp-app .frame-keyhint { display: none; } }
   dp-app > .frame-toolbar { grid-row: 2; }
   dp-app .frame-toolbar {
     border-bottom: var(--rule);
@@ -260,6 +292,9 @@ adopt(css`
     color: var(--fg);
     box-shadow: inset 0 -1px 0 var(--bg);
   }
+  /* The hint sits where the eye already goes to close a tab: Escape does the same to a preview. */
+  dp-app .pane-tab-esc .kbd { font-size: 10px; opacity: 0.75; }
+  dp-app .pane-tab-esc .kbd kbd { padding: 0 3px; min-width: 0; }
   dp-app .pane-tab-close { display: inline-flex; opacity: 0; border-radius: var(--radius); }
   dp-app .pane-tab:hover .pane-tab-close, dp-app .pane-tab[aria-selected="true"] .pane-tab-close { opacity: 0.7; }
   dp-app .pane-tab-close:hover { opacity: 1; background: var(--bg-hover); }

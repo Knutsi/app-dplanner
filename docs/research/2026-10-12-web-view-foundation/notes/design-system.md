@@ -107,13 +107,17 @@ tints. In an Omarchy theme the fixed tints clash; the theme's own green and red 
 - **Chords** (Ctrl+K, F2, Ctrl+\\) work everywhere except the few a text field owns.
 - **Bare keys and sequences** (`x`, `s d`, `g p`) only act on a focused navigable surface — WCAG
   2.1.4's "active only on focus" — and View ▸ Single-Key Shortcuts turns them off (R20–R25).
-- **Escape** steps one level out: prefix → transient mode → field → selection.
+- **Escape** steps one level out: prefix → transient mode → field → selection → preview tab.
+- **The menubar's keys are shown, not assumed:** a quiet strip at the menubar's right end reads
+  `Alt M menus · Ctrl K commands · ? keys`, and the `?` sheet lists the menu keys too. Alt+M is
+  first because on Omarchy the desktop or the browser can take F10 before the page sees it; F10
+  still works where it gets through, and Alt + a menu's underlined letter opens that menu.
 - **Self-teaching:** the modeline echoes every command with its key however it ran — a mouse user
   who clicks Peek sees "Peek · Space". Holding Ctrl for 600 ms puts chord badges on the toolbar.
   `?` opens the sheet, with the focused thing's own verbs first.
 - **Bindings in the prototype:** `j/k` move, `x` select, Space peek, Enter open, `s` + `n i r m d b`
   status, `a` + `c x k` assign, `y` copy link, `R` run agent, `g p` projects, `g a` activity,
-  Ctrl+K palette, Ctrl+\\ split, Ctrl+Shift+\\ split following focus, Ctrl+J activity, Alt+W close tab.
+  Alt+M menu bar, Ctrl+K palette, Ctrl+\\ split, Ctrl+Shift+\\ split following focus, Ctrl+J activity, Alt+W close tab.
 
 ## 6. Doing more than one thing at once
 
@@ -122,8 +126,9 @@ tints. In an Omarchy theme the fixed tints clash; the theme's own green and red 
 - **Follow:** a pane can follow another's focus — read a step's detail on the right while you work
   through the table on the left (Ctrl+Shift+\\).
 - **Peek** (Space) shows the focused step beside the table and follows the arrows (R47).
-- **Preview tabs:** a single click opens a tab that the next single click replaces; a double click
-  pins it (R46).
+- **Preview tabs:** a single click (or Enter in the table) opens a tab that the next one replaces; a
+  double click pins it (R46). Escape puts a preview away — the last rung of the Escape ladder — and
+  the active preview wears a small `Esc` keycap beside its ×, so the way out is on the tab itself.
 - **Background work** (Run Agent) reports on the object (its status changes) and in a status-bar
   item that opens the Activity panel; a toast only when you started it and it ran long enough
   that you will have moved on (R48). When the agent writes its result, the row washes once in

@@ -5,7 +5,7 @@
 // bare keys and sequences act ("r" renames, "g p" goes to projects). Focus a field and you are
 // typing (EDIT), with nothing to remember: the keys are letters again. The modeline always
 // says which, and always names the way out. Escape steps exactly one level outward — pending
-// prefix, transient mode, selection, field — and never loses work.
+// prefix, transient mode, field, selection, preview tab — and never loses work.
 //
 // Chords (Ctrl+K, F2) work everywhere except the few a text field owns while you type in it.
 // Overlays (menus, palette, sheets) handle their own keys first and preventDefault; the router
@@ -14,7 +14,7 @@
 import { signal, computed } from "../engine/signals.js";
 import { chordOf, isChord, isEditable } from "../ui/keys.js";
 import { context } from "./context.js";
-import { clearSelection } from "./workspace.js";
+import { clearSelection, closePreview } from "./workspace.js";
 
 const FIELD_CHORDS = new Set(["Ctrl+A", "Ctrl+C", "Ctrl+V", "Ctrl+X", "Ctrl+Z", "Ctrl+Y", "Ctrl+Shift+Z", "Ctrl+ArrowLeft", "Ctrl+ArrowRight", "Ctrl+Backspace", "Ctrl+Delete", "Home", "End", "Delete", "Backspace"]);
 const WHICH_KEY_MS = 400;
@@ -84,7 +84,7 @@ export function installKeyboard(commands) {
       return true;
     }
     if (context.peek().selection.length) return clearSelection(), true;
-    return false;
+    return closePreview();
   };
 
   document.addEventListener("focusin", (e) => {

@@ -11,7 +11,7 @@ import { html, nothing, render } from "../engine/template.js";
 import { glyph } from "./glyph.js";
 import { enter } from "./motion.js";
 import { adopt, css } from "./style.js";
-import { kbd } from "./keys.js";
+import { chordOf, kbd } from "./keys.js";
 
 const SUBMENU_HOVER_MS = 100;
 const AIM_PATIENCE_MS = 300;
@@ -357,7 +357,10 @@ DpMenu.define("dp-menu");
 // for (`groups()`) each time one opens, so a menu always reflects the selection of that moment.
 export class DpMenubar extends DpElement {
   static shadow = false;
-  static props = { menus: { type: Object, value: [] } };
+  // focusKeys: the chords that bring the keyboard to the bar. F10 is the platform convention,
+  // but a desktop (Omarchy, Hyprland) or the browser may take it first, so the shell can add its
+  // own; a focus key wins over a menu whose name starts with the same letter.
+  static props = { menus: { type: Object, value: [] }, focusKeys: { type: Object, value: ["F10"] } };
 
   #open = signal(-1);
   #focus = signal(0);
@@ -448,10 +451,11 @@ export class DpMenubar extends DpElement {
     e.stopPropagation();
   }
 
-  // Alt+letter opens a menu (its letter underlined while Alt is held); F10 comes to the bar.
+  // Alt+letter opens a menu (its letter underlined while Alt is held); a focus key comes to the bar.
   #onGlobalKey(e) {
     if (e.key === "Alt") return this.setAttribute("data-alt", "");
-    if (e.key === "F10" && !e.shiftKey && !e.ctrlKey && !e.altKey) {
+    if (this.focusKeys.includes(chordOf(e))) {
+      this.removeAttribute("data-alt");
       this.#remember();
       e.preventDefault();
       e.stopPropagation();

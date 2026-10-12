@@ -260,7 +260,7 @@
       <tr><td>a verb's own mode</td><td>a verb that needs more input</td><td>named by the verb</td></tr>
     </tbody>
   </table></div>
-  <p>The system teaches itself. Keys are printed on every menu row, tooltip and palette row. The modeline <b>echoes every command with its key, however it ran</b>, so a mouse user who clicks Peek sees "Peek · <kbd>Space</kbd>". Holding <kbd>Ctrl</kbd> for 600 ms puts chord badges on the toolbar. <kbd>?</kbd> opens the sheet with the focused thing's own verbs first. View ▸ Single-Key Shortcuts turns bare keys off.</p>
+  <p>The system teaches itself. Keys are printed on every menu row, tooltip and palette row. The modeline <b>echoes every command with its key, however it ran</b>, so a mouse user who clicks Peek sees "Peek · <kbd>Space</kbd>". Holding <kbd>Ctrl</kbd> for 600 ms puts chord badges on the toolbar. The menubar's right end quietly lists the three doors into the keyboard: <kbd>Alt</kbd><kbd>M</kbd> menus (Alt+M because Omarchy or the browser can take F10 first), <kbd>Ctrl</kbd><kbd>K</kbd> commands, <kbd>?</kbd> keys. <kbd>?</kbd> opens the sheet with the focused thing's own verbs first. View ▸ Single-Key Shortcuts turns bare keys off.</p>
   <div class="figures two">
     <figure><img src="shots/desktop-whichkey.png" alt="Which-key panel after pressing s"><figcaption><b>Which-key.</b> After <kbd>s</kbd>, the modeline says <code>s…</code> at once; 400 ms later the panel lists what each next key does.</figcaption></figure>
     <figure><img src="shots/desktop-cheatsheet.png" alt="Keyboard shortcuts sheet"><figcaption><b>The <kbd>?</kbd> sheet</b>, filterable, with the focused step's verbs first.</figcaption></figure>
@@ -272,7 +272,7 @@
   <div class="summary"><p><b>Panes are live views of one store, never copies</b>, so two panes can never disagree. A pane can <em>follow</em> another's focus. Space peeks beside the table. Background work reports on the thing it changes and in an Activity panel.</p></div>
   <figure><img src="shots/desktop-split-follow-peek.png" alt="Two panes: the table with a peek, and a second pane following its focus"><figcaption><b>Read one part, work on another.</b> <kbd>Ctrl</kbd><kbd>⇧</kbd><kbd>\</kbd> opens a pane that follows the table's focus; <kbd>Space</kbd> also peeks beside the table. The active pane wears the accent edge, and the context, and with it the menus, is always the active pane's.</figcaption></figure>
   <ul class="tight">
-    <li><b>Preview tabs.</b> A single click opens a tab that the next single click replaces; a double click pins it, so browsing leaves no trail.</li>
+    <li><b>Preview tabs.</b> A single click, or <kbd>Enter</kbd> in the table, opens an italic tab that the next one replaces; a double click pins it, so browsing leaves no trail. <kbd>Esc</kbd> puts a preview away (the last rung of the Escape ladder), and the active preview shows a small <kbd>Esc</kbd> beside its × so the way out is on the tab.</li>
     <li><b>Waiting for a task.</b> Run Agent turns the step In Progress at once. When the agent writes Ready for Review, the row washes once in every pane that shows it, because a change by another writer is the one thing that should catch the eye. A toast appears only if you started the run and it took long enough for you to have moved on.</li>
     <li><b>Keys inside a browser.</b> The browser owns <kbd>Ctrl</kbd><kbd>W</kbd>/<kbd>T</kbd>/<kbd>Tab</kbd>, so in-app tabs use <kbd>Alt</kbd><kbd>W</kbd> and <kbd>Alt</kbd><kbd>⇧</kbd><kbd>T</kbd>. Every view should get a URL so <kbd>Ctrl</kbd>-click opens it in a new browser tab.</li>
   </ul>
@@ -357,7 +357,7 @@
     <iframe class="phone" src="demo/touch.html" title="Touch prototype" loading="lazy"></iframe>
   </div>
   <div class="keys">
-    <span>Click the table, then: <kbd>j</kbd>/<kbd>k</kbd> move</span><span><kbd>x</kbd> select</span><span><kbd>Space</kbd> peek</span><span><kbd>s</kbd> then a letter: status</span><span><kbd>⇧R</kbd> run agent</span><span><kbd>Ctrl</kbd><kbd>K</kbd> palette</span><span><kbd>?</kbd> all keys</span><span><kbd>Ctrl</kbd><kbd>⇧</kbd><kbd>\</kbd> split and follow</span><span>right-click a row</span>
+    <span>Click the table, then: <kbd>j</kbd>/<kbd>k</kbd> move</span><span><kbd>x</kbd> select</span><span><kbd>Space</kbd> peek</span><span><kbd>s</kbd> then a letter: status</span><span><kbd>⇧R</kbd> run agent</span><span><kbd>Ctrl</kbd><kbd>K</kbd> palette</span><span><kbd>?</kbd> all keys</span><span><kbd>Alt</kbd><kbd>M</kbd> menu bar</span><span><kbd>Enter</kbd> preview, <kbd>Esc</kbd> put it away</span><span><kbd>Ctrl</kbd><kbd>⇧</kbd><kbd>\</kbd> split and follow</span><span>right-click a row</span>
   </div>
   <p style="font-size:13px;color:var(--ink-2)">In the repository, the frames need <code>node tools/build-demo.mjs</code> first. To run it with your desktop's live theme, use <code>node tools/serve.mjs</code>.</p>
 </section>

@@ -93,6 +93,13 @@ const SCENES = [
       await settle(p, 200);
     },
   },
+  {
+    name: "desktop-preview-tab",
+    act: async (p) => {
+      for (const k of ["j", "j", "j", "Enter"]) await p.keyboard.press(k);
+      await settle(p, 200);
+    },
+  },
   { name: "desktop-modeline-retro82", variant: "modeline", act: async (p) => { for (const k of ["j", "j", "j", "x", "j", "x"]) await p.keyboard.press(k); } },
   { name: "desktop-atelier-light", variant: "atelier", theme: "house:dplanner-light", scheme: "light", act: async (p) => { await p.click(row("S4")); await p.keyboard.press("Space"); } },
   { name: "desktop-ledger-light", theme: "house:dplanner-light", scheme: "light", act: async (p) => { for (const k of ["j", "j", "x", "j", "x"]) await p.keyboard.press(k); } },

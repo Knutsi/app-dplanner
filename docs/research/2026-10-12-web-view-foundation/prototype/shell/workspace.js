@@ -65,6 +65,7 @@ export function openTab(kind, params, { paneId = activePaneId.peek(), preview = 
     return { ...p, tabs, active: at >= 0 ? at : tabs.length - 1 };
   });
   activate(paneId, panes.peek().find((p) => p.id === paneId).active);
+  queueMicrotask(() => viewOf(tab).focus?.()); // the keyboard follows what it opened, never <body>
 }
 
 export function pinTab(paneId, index) {
@@ -82,6 +83,18 @@ export function closeTab(paneId = activePaneId.peek(), index = panes.peek().find
   if (!tabs.length && panes.peek().length > 1) return closePane(paneId);
   replacePane(paneId, (p) => ({ ...p, tabs, active: Math.min(p.active, tabs.length - 1) }));
   activate(paneId, Math.min(index, tabs.length - 1));
+}
+
+// Escape's last rung: a preview tab is temporary, so Escape puts it away and the keyboard goes
+// back to the tab beneath. Never the pane's only tab — that would leave an empty pane.
+export function closePreview() {
+  const pane = activePane.peek();
+  const tab = pane?.tabs[pane.active];
+  if (!tab?.preview || pane.tabs.length < 2) return false;
+  closeTab(pane.id, pane.active);
+  const now = activePane.peek();
+  queueMicrotask(() => viewOf(now.tabs[now.active]).focus?.());
+  return true;
 }
 
 export function reopenTab() {
