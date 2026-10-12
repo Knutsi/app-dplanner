@@ -1,0 +1,96 @@
+{
+ "total": {
+  "create 1,000 rows": {
+   "lit": 38.79,
+   "fine": 32.6,
+   "ours": 28.13
+  },
+  "replace 1,000 rows": {
+   "lit": 32,
+   "fine": 40.06,
+   "ours": 23.11
+  },
+  "update every 10th of 1,000": {
+   "lit": 7.97,
+   "fine": 7.58,
+   "ours": 7.21
+  },
+  "select a row of 1,000": {
+   "lit": 0.4,
+   "fine": 0.22,
+   "ours": 0.65
+  },
+  "swap two of 1,000": {
+   "lit": 2.7,
+   "fine": 2.3,
+   "ours": 1.84
+  },
+  "remove one of 1,000": {
+   "lit": 1.51,
+   "fine": 1.75,
+   "ours": 1.69
+  },
+  "create 10,000 rows": {
+   "lit": 219.45,
+   "fine": 294.82,
+   "ours": 296.28
+  },
+  "append 1,000 to 1,000": {
+   "lit": 32.8,
+   "fine": 42.17,
+   "ours": 40.39
+  },
+  "clear 1,000 rows": {
+   "lit": 2.96,
+   "fine": 4.89,
+   "ours": 5.14
+  }
+ },
+ "script": {
+  "create 1,000 rows": {
+   "lit": 9.61,
+   "fine": 10.72,
+   "ours": 7.41
+  },
+  "replace 1,000 rows": {
+   "lit": 9.53,
+   "fine": 15.94,
+   "ours": 7.94
+  },
+  "update every 10th of 1,000": {
+   "lit": 0.52,
+   "fine": 0.45,
+   "ours": 0.67
+  },
+  "select a row of 1,000": {
+   "lit": 0.25,
+   "fine": 0.08,
+   "ours": 0.47
+  },
+  "swap two of 1,000": {
+   "lit": 0.73,
+   "fine": 0.87,
+   "ours": 0.42
+  },
+  "remove one of 1,000": {
+   "lit": 0.27,
+   "fine": 0.54,
+   "ours": 0.45
+  },
+  "create 10,000 rows": {
+   "lit": 41.24,
+   "fine": 72.97,
+   "ours": 71.23
+  },
+  "append 1,000 to 1,000": {
+   "lit": 5.83,
+   "fine": 11.81,
+   "ours": 9.85
+  },
+  "clear 1,000 rows": {
+   "lit": 2.88,
+   "fine": 4.7,
+   "ours": 5
+  }
+ }
+}

@@ -1,0 +1,23 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Menus, toolbar, tooltip</title>
+<link rel="stylesheet" href="../ui/tokens.css">
+<link rel="stylesheet" href="../ui/base.css">
+<style>
+  body { display: flex; flex-direction: column; }
+  main { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap); padding: var(--pad); align-content: start; }
+  #content, #target { padding: var(--pad); border: var(--rule); border-radius: var(--radius); color: var(--fg-2); min-height: calc(var(--row) * 4); }
+  #float-host { padding: var(--pad); }
+  header { background: var(--bg-raised); border-bottom: var(--rule); }
+</style>
+<body>
+  <header><dp-menubar id="bar"></dp-menubar></header>
+  <div data-pane>
+    <dp-toolbar id="tools" label="Steps"></dp-toolbar>
+    <main>
+      <div id="content" tabindex="0" data-nav>Steps (a navigable surface)</div>
+      <div id="target" tabindex="0">Right-click here, or Shift+F10</div>
+    </main>
+  </div>
+  <script type="module" src="./menus.test.js"></script>
+</body>

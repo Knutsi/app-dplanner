@@ -1,0 +1,17 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Overlay tests</title>
+<link rel="stylesheet" href="../ui/tokens.css">
+<link rel="stylesheet" href="../ui/base.css">
+<style>
+  body { display: grid; grid-template-rows: 1fr auto; }
+  main { padding: 24px; color: var(--fg-2); }
+  main h1 { font: var(--title-weight) var(--fs-title) var(--font-title); color: var(--fg); margin: 0 0 8px; }
+  .phone { position: fixed; inset: auto 0 0 0; }
+</style>
+<body>
+<main><h1>Web view</h1><p>Engine · Design system · Report site</p></main>
+<dp-statusbar></dp-statusbar>
+<script type="module" src="./overlays.test.js"></script>
+</body>

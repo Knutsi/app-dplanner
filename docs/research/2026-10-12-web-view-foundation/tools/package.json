@@ -1,0 +1,12 @@
+{
+  "name": "web-view-foundation-tools",
+  "private": true,
+  "description": "Runs the prototype's tests, benchmark and screenshots in Chromium. Nothing here ships.",
+  "type": "module",
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "lit": "3.3.3",
+    "lit-html-330": "npm:lit-html@3.3.0",
+    "playwright-core": "^1.55.0"
+  }
+}

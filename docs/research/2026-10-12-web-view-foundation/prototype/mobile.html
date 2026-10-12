@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>DPlanner — touch prototype</title>
+<link rel="stylesheet" href="ui/tokens.css">
+<link rel="stylesheet" href="ui/base.css">
+</head>
+<body>
+<script type="module">
+  import "./shell/touch.js";
+  import { startTouch } from "./app.js";
+  await startTouch();
+  window.__done = true;
+</script>
+</body>
+</html>
