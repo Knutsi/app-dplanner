@@ -1,0 +1,428 @@
+<title>Web View Foundation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@500;600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+  :root {
+    --paper: #f5f4f1;
+    --sheet: #fcfbf9;
+    --ink: #23262b;
+    --ink-2: #5d6169;
+    --ink-3: #8b8d90;
+    --rule: #d7d4cd;
+    --gold: #8a6a2b;
+    --gold-wash: #efe6d2;
+    --ok: #2f7a45;
+    --bad: #a8433f;
+    --s-lit: #2a78d6;
+    --s-ours: #eda100;
+    --s-fine: #1baf7a;
+    --code-bg: #ece9e2;
+    --serif: "EB Garamond", "Iowan Old Style", Palatino, Charter, Georgia, serif;
+    --sans: Inter, "Segoe UI", "SF Pro Text", system-ui, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #14161a; --sheet: #1b1e24; --ink: #e6e8ec; --ink-2: #a8b0bd; --ink-3: #6f7784;
+      --rule: #2b303a; --gold: #c8a45c; --gold-wash: #2a2519; --ok: #78c88c; --bad: #dc6e6e;
+      --s-lit: #3987e5; --s-ours: #c98500; --s-fine: #199e70; --code-bg: #23272f; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #14161a; --sheet: #1b1e24; --ink: #e6e8ec; --ink-2: #a8b0bd; --ink-3: #6f7784;
+    --rule: #2b303a; --gold: #c8a45c; --gold-wash: #2a2519; --ok: #78c88c; --bad: #dc6e6e;
+    --s-lit: #3987e5; --s-ours: #c98500; --s-fine: #199e70; --code-bg: #23272f; color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 15.5px/1.6 var(--sans); padding-inline: 16px; }
+  .page { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 48px; padding-block: 40px 96px; }
+  @media (max-width: 900px) { .page { grid-template-columns: minmax(0, 1fr); gap: 16px; } nav.toc { position: static !important; max-height: none !important; } }
+
+  nav.toc { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 24px); align-self: start; max-height: calc(100vh - 48px); overflow: auto; font-size: 13.5px; }
+  nav.toc .eyebrow { font: 600 11px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 12px; }
+  nav.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; counter-reset: s; }
+  nav.toc a { display: block; padding: 4px 8px; border-left: 2px solid var(--rule); color: var(--ink-2); text-decoration: none; }
+  nav.toc a:hover { color: var(--ink); border-color: var(--gold); }
+
+  main { min-width: 0; }
+  header.title { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 8px; }
+  header.title .eyebrow { font: 600 11.5px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--gold); }
+  h1 { font: 600 clamp(36px, 5vw, 54px)/1.05 var(--serif); margin: 14px 0 14px; text-wrap: balance; letter-spacing: -0.01em; }
+  header.title p.lede { font-size: 18px; color: var(--ink-2); max-width: 64ch; margin: 0; }
+  header.title .meta { margin-top: 16px; font: 12.5px var(--mono); color: var(--ink-3); }
+
+  section { padding-top: 44px; }
+  h2 { font: 600 30px/1.15 var(--serif); margin: 0 0 14px; text-wrap: balance; }
+  h3 { font: 600 16px/1.3 var(--sans); margin: 28px 0 8px; }
+  p, li { max-width: 72ch; }
+  a { color: var(--gold); }
+  code, kbd { font: 0.88em var(--mono); background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+  kbd { border: 1px solid var(--rule); border-bottom-width: 2px; background: var(--sheet); }
+  .summary { background: var(--gold-wash); border-radius: 8px; padding: 14px 18px; margin: 0 0 18px; max-width: 78ch; }
+  .summary p { margin: 0; }
+  .summary b { color: var(--ink); }
+
+  .verdicts { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin: 24px 0 8px; }
+  .verdict { background: var(--sheet); border: 1px solid var(--rule); border-radius: 10px; padding: 18px 20px; }
+  .verdict .q { font: 600 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
+  .verdict .a { font: 600 23px/1.2 var(--serif); margin: 6px 0 8px; }
+  .verdict p { margin: 0; font-size: 14.5px; color: var(--ink-2); }
+
+  .figures { display: grid; gap: 16px; margin: 18px 0; }
+  .figures.two { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .figures.four { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+  figure { margin: 0; }
+  figure img { display: block; width: 100%; max-width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--rule); background: var(--sheet); }
+  figcaption { font-size: 13px; color: var(--ink-2); margin-top: 6px; max-width: 72ch; }
+  figcaption b { color: var(--ink); }
+
+  .scroll { overflow-x: auto; margin: 14px 0; }
+  table { border-collapse: collapse; font-size: 14px; min-width: 100%; }
+  th, td { text-align: left; padding: 7px 12px 7px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font: 600 11.5px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* the benchmark small multiples */
+  .bench { display: grid; grid-template-columns: minmax(150px, 210px) minmax(0, 1fr); gap: 4px 18px; align-items: center; margin: 18px 0 6px; font-size: 13.5px; }
+  .bench .op { color: var(--ink); }
+  .bench .op small { display: block; color: var(--ink-3); font: 11px var(--mono); }
+  .bars { display: grid; gap: 3px; padding: 6px 0; border-bottom: 1px solid var(--rule); }
+  .bar { display: grid; grid-template-columns: minmax(0, 1fr) 76px; align-items: center; gap: 8px; }
+  .bar i { display: block; height: 9px; border-radius: 0 4px 4px 0; background: var(--c); min-width: 2px; }
+  .bar span { font: 12px var(--mono); color: var(--ink-2); text-align: right; font-variant-numeric: tabular-nums; }
+  .bar:hover i { outline: 2px solid var(--c); outline-offset: 1px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; font-size: 13px; color: var(--ink-2); }
+  .legend i { display: inline-block; width: 12px; height: 9px; border-radius: 2px; background: var(--c); margin-right: 6px; vertical-align: middle; }
+
+  .layers { display: grid; gap: 6px; margin: 18px 0; max-width: 760px; font-size: 13.5px; }
+  .layer { display: grid; grid-template-columns: 110px 1fr auto; gap: 14px; align-items: baseline; background: var(--sheet); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 14px; }
+  .layer b { font: 600 13px var(--mono); color: var(--gold); }
+  .layer span { color: var(--ink-2); }
+  .layer em { font: 12px var(--mono); color: var(--ink-3); font-style: normal; }
+  @media (max-width: 520px) { .layer { grid-template-columns: 1fr; gap: 2px; } }
+
+  .demo { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; margin: 18px 0; }
+  .demo iframe { width: 100%; border: 1px solid var(--rule); border-radius: 10px; background: #14161a; }
+  .demo .desk { height: 620px; }
+  .demo .phone { height: 620px; max-width: 300px; }
+  @media (max-width: 900px) { .demo { grid-template-columns: minmax(0, 1fr); } .demo .phone { justify-self: center; } }
+  .keys { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 13.5px; color: var(--ink-2); }
+
+  .tag { display: inline-block; font: 600 11px var(--mono); padding: 1px 6px; border-radius: 4px; vertical-align: 1px; }
+  .tag.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
+  .tag.bad { color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, transparent); }
+  ol.findings li, ul.tight li { margin-bottom: 6px; }
+  footer { margin-top: 64px; padding-top: 16px; border-top: 1px solid var(--rule); font-size: 13px; color: var(--ink-3); }
+</style>
+
+<div class="page">
+<nav class="toc" aria-label="Contents">
+  <div class="eyebrow">Contents</div>
+  <ol>
+    <li><a href="#summary">Summary</a></li>
+    <li><a href="#engine">The engine: can we own it?</a></li>
+    <li><a href="#performance">Performance, and WASM</a></li>
+    <li><a href="#system">The design system</a></li>
+    <li><a href="#variants">Three variants</a></li>
+    <li><a href="#themes">Omarchy themes</a></li>
+    <li><a href="#context">Context, commands, the selection bar</a></li>
+    <li><a href="#keyboard">Keyboard without the Vim trap</a></li>
+    <li><a href="#multitask">More than one thing at once</a></li>
+    <li><a href="#motion">Motion that informs</a></li>
+    <li><a href="#touch">Touch: a separate UI</a></li>
+    <li><a href="#architecture">Keeping entropy down</a></li>
+    <li><a href="#edges">Edge cases and failure modes</a></li>
+    <li><a href="#live">Try it</a></li>
+    <li><a href="#next">Gaps and next steps</a></li>
+  </ol>
+</nav>
+
+<main>
+<header class="title">
+  <div class="eyebrow">DPlanner research · 12 October 2026</div>
+  <h1>Our own engine, and a design system for the web view</h1>
+  <p class="lede">Two linked questions before the web view is built. Can we own the small reactive core behind Lit rather than depend on it? And what should a professional, keyboard-first, Omarchy-themed design system for DPlanner look like? A working prototype answers both.</p>
+  <div class="meta">notes/ · prototype/ · 37 engine tests · 51 interaction rules · 21 scripted scenes</div>
+</header>
+
+<section id="summary">
+  <h2>Summary</h2>
+  <div class="summary"><p><b>Build both, and the prototype shows how.</b> A 5.5 KB engine of our own performs with Lit on the same table workloads. One command registry over a context of URIs drives every surface. Three design variants come from one component set. Omarchy themes are followed live, and touch gets its own UI on the same commands.</p></div>
+  <div class="verdicts">
+    <div class="verdict"><div class="q">(a) Own the engine?</div><div class="a">Yes — it is small, and the bugs are where the risk is</div><p>About 1,000 lines with signals built in: 5.5 KB gzipped, against 4.1 KB for lit-html without signals and 11.5 KB with its signals add-on. It keeps pace on updates and trails Lit by 10–25% on bulk creation. Lit 3.3.3 currently ships a leak.</p></div>
+    <div class="verdict"><div class="q">(b) The design system?</div><div class="a">One registry, three variants, two frames</div><p>Ledger becomes the default. Atelier serves the report's readers, and Modeline suits people who live in a terminal. A separate touch frame shares everything but its layout.</p></div>
+    <div class="verdict"><div class="q">A WASM core?</div><div class="a">No — the time is in the DOM</div><p>JavaScript is 20–35% of every heavy operation. WASM cannot reach the rest without crossing back into JS. It can help with decoding and indexing big datasets later.</p></div>
+  </div>
+  <div class="figures">
+    <figure><img src="shots/desktop-selection-bar.png" alt="The Ledger variant: three steps selected, the toolbar replaced by a selection bar with clear, the count and bulk verbs"><figcaption><b>Ledger in the desktop's live Omarchy theme (retro-82).</b> Three steps are selected, so the toolbar's slot has become the selection bar: <kbd>×</kbd> clear, the count, then the bulk verbs, with Status and Assign To gathered into menus. The focused row (outlined) is a separate thing from the selection (filled).</figcaption></figure>
+  </div>
+</section>
+
+<section id="engine">
+  <h2>The engine: can we own it?</h2>
+  <div class="summary"><p><b>Lit's core idea fits in a few hundred lines, and our prototype implements it.</b> Lit's size goes to dev diagnostics, SSR, polyfills and a public directive API, none of which we need. What remains hard is the lifetime of subscriptions and keyed moves. An independent review found six defects in our prototype, all now fixed and each under a test.</p></div>
+  <h3>How Lit works, and what we kept</h3>
+  <p>A tagged template's <code>strings</code> array is the same object every time a call site runs, so it is the cache key. The first render scans it once and writes HTML with a marker at every hole. The browser parses that into a <code>&lt;template&gt;</code>. Each later render clones it, or reuses the instance on screen, and hands each hole (a <em>part</em>) only its new value. Values never become markup. Lit's own <code>lit-html.ts</code> is 2,304 lines, about 630 of them code once dev mode is stripped; the essential mechanism is about 350.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>Bundle (esbuild --minify, gzip -9)</th><th class="num">min</th><th class="num">gzip</th></tr></thead>
+    <tbody>
+      <tr><td>lit-html 3.3.0 with <code>repeat</code></td><td class="num">9.5 KB</td><td class="num">4.1 KB</td></tr>
+      <tr><td>Our templates (<code>html</code>, <code>render</code>, <code>repeat</code>)</td><td class="num">11.3 KB</td><td class="num">4.3 KB</td></tr>
+      <tr><td>lit (LitElement, html, css, repeat)</td><td class="num">18.1 KB</td><td class="num">7.0 KB</td></tr>
+      <tr><td>lit + @lit-labs/signals</td><td class="num">32.3 KB</td><td class="num">11.5 KB</td></tr>
+      <tr><td><b>Our whole engine</b>: signals, templates, base element</td><td class="num">14.6 KB</td><td class="num"><b>5.5 KB</b></td></tr>
+      <tr><td>The whole desktop prototype: engine, design system, shell, features, 87 glyphs, 22 themes</td><td class="num">149 KB</td><td class="num">44.7 KB</td></tr>
+    </tbody>
+  </table></div>
+  <h3>Where it differs from Lit, on purpose</h3>
+  <ul class="tight">
+    <li><b>Signals are native.</b> A component's render is one batched effect, re-run when anything it read changes. A signal placed straight in a hole updates that one text node or attribute with no render at all. That is the fine-grained path for hot spots: selecting a row costs 0.2 ms.</li>
+    <li><b>No directive class system.</b> <code>repeat</code>, element refs and signals cover what we need. The rest is CSS or a signal.</li>
+    <li><b>Keyed moves keep only the longest run of rows that are already in order still</b>, with head/tail skipping, so swapping two rows moves two rows. Moves use <code>moveBefore</code> where the browser has it, so a moved row keeps focus.</li>
+  </ul>
+  <h3>Bugs found, here and upstream</h3>
+  <ol class="findings">
+    <li><span class="tag bad">upstream</span> <b>Lit 3.3.1–3.3.3's <code>repeat</code> leaks one comment per removed row</b> (<a href="https://github.com/lit/lit/issues/5298">lit/lit#5298</a>, still open). In our first benchmark, a replace-and-clear of 1,000 rows grew the DOM by 2,000 nodes each round. Rounds slowed from 340 ms to 1.4 s before we saw why. Pinned to 3.3.0 for a fair comparison.</li>
+    <li><span class="tag ok">fixed</span> Six defects from an independent review of our prototype: <code>html()</code> called as a plain function would parse data as markup; a hole in an SVG <code>&lt;title&gt;</code> was refused; computeds never unsubscribed; a detached element kept writing; a moved row lost focus; one failed commit broke every later render.</li>
+    <li><span class="tag ok">fixed</span> Building the app found a seventh. A parent setting a child's reactive property read it back to compare, which subscribed the parent to its own child: an infinite loop that froze the page with no error. A new render-loop guard caught it on the first run, and both the fix and the guard are under test.</li>
+  </ol>
+</section>
+
+<section id="performance">
+  <h2>Performance, and the WASM question</h2>
+  <div class="summary"><p><b>Same league as Lit.</b> We are faster or level on updates, selection and swaps, and 10–25% behind on creating many rows at once. Run order alone moved results by that much, so these are medians over three orders. In every heavy operation JavaScript is a quarter of the time; the browser's DOM, style and layout work is the rest.</p></div>
+  <div class="legend" aria-hidden="true"><span><i style="--c: var(--s-lit)"></i>lit-html 3.3.0</span><span><i style="--c: var(--s-ours)"></i>ours, re-rendering from data</span><span><i style="--c: var(--s-fine)"></i>ours, signals bound in holes</span></div>
+  <div class="bench" id="bench" role="table" aria-label="Benchmark: milliseconds per operation, script plus style plus layout"></div>
+  <p style="font-size:13px;color:var(--ink-2)">Each row has its own scale; numbers are total milliseconds including a forced layout, Chromium 152, 12 rounds with the extremes trimmed, median of three run orders (<code>evidence/</code>). Hover a bar for the share spent in script.</p>
+  <h3>Would a WASM core be faster?</h3>
+  <p>Not for this. Signals and the template diff are microseconds of work. The milliseconds go to creating nodes and laying them out, which only the browser does. WASM cannot touch the DOM; every write would cross back into JavaScript, adding a boundary rather than removing one. Where WASM, or a plain Worker, would pay is bulk work off the main thread: decoding a large plan snapshot, building a search index, laying out a big graph. That belongs with the backend-for-frontend idea, where the store already loads in one bulk call and no component fetches its own data.</p>
+</section>
+
+<section id="system">
+  <h2>The design system</h2>
+  <div class="summary"><p><b>Professional, dense and learnable, with no explainer text.</b> The system rests on five principles: teach by showing the key wherever a verb appears; code status by colour <em>and</em> shape; keep things in fixed places; stay dense and quiet; and make the surfaces unable to drift apart, because all of them read one registry.</p></div>
+  <p>The research behind it (<code>notes/interaction-patterns.md</code>) covers menubars, context menus, toolbars, the palette, modes, grids, touch, motion, icons, feedback and multitasking. It draws on the WAI-ARIA Authoring Practices, the Apple, Fluent and GNOME guidelines, and the tools that do this best: VS Code, JetBrains, Linear, Superhuman, Figma, Gmail and Helix. It ends in 51 numbered rules, and the prototype cites them. The glyphs are DPlanner's own: Tabler, under DPlanner's semantic keys, generated from <code>src/dplanner/theme/glyphs</code>, so a verb wears the same picture in the window and the browser.</p>
+  <div class="figures two">
+    <figure><img src="shots/desktop-menu-step-status.png" alt="The Step menu open with the Status submenu, each status with its glyph and key sequence"><figcaption><b>Menus teach the keys.</b> Every item shows its binding (<code>s then d</code>). The checked status keeps its own glyph, lifted, so the tick that means "Done" is never mistaken for "checked".</figcaption></figure>
+    <figure><img src="shots/desktop-context-menu.png" alt="Right-click context menu on a step row"><figcaption><b>Context menus hide what does not apply.</b> The menubar disables instead, because it is the map of everything the app can do.</figcaption></figure>
+  </div>
+</section>
+
+<section id="variants">
+  <h2>Three variants, one component set</h2>
+  <div class="summary"><p><b>A variant is about 30 lines of tokens, not a fork.</b> Ledger is the classic workbench, Modeline is terminal-native and keyboard-first, and Atelier is calm and layered. The one structural difference, where the toolbar lives, is a single token the frame reads. Recommendation: Ledger as the default.</p></div>
+  <div class="figures two">
+    <figure><img src="shots/desktop-ledger-light.png" alt="Ledger variant, DPlanner light theme"><figcaption><b>Ledger.</b> Menubar, a toolbar of glyph bands, a hairline grid and 24 px rows. What JetBrains and Excel taught a generation, and the closest to DPlanner's window.</figcaption></figure>
+    <figure><img src="shots/desktop-modeline-retro82.png" alt="Modeline variant: monospace, verbs with keys in the status line"><figcaption><b>Modeline.</b> Everything in the mono face, square corners and no toolbar strip. The verbs for the selection live in the modeline with their keys (<kbd>y</kbd> Copy 2 Links, <kbd>⇧R</kbd> Run Agents), the way Helix teaches.</figcaption></figure>
+    <figure><img src="shots/desktop-atelier-light.png" alt="Atelier variant with serif titles, floating toolbar and a floating peek"><figcaption><b>Atelier.</b> DPlanner's "calm, spacious, unhurried". Step titles are in the prose serif, rows are 30 px, the toolbar floats over the work and the peek is a lifted sheet. The natural fit for the read-only report's readers.</figcaption></figure>
+    <figure><img src="shots/desktop-ledger-retro82.png" alt="Ledger in the retro-82 Omarchy theme"><figcaption><b>The same Ledger, wearing the desktop's theme.</b> The status colours here are retro-82's own teal, amber and red.</figcaption></figure>
+  </div>
+</section>
+
+<section id="themes">
+  <h2>Omarchy themes, followed live</h2>
+  <div class="summary"><p><b>Omarchy's <code>colors.toml</code> is the theme format.</b> A theme sets ten raw colours, and CSS <code>color-mix()</code> derives every role from them, using the same ramps as the Qt app's <code>theme/omarchy.py</code>. "Automatic" follows a local server's <code>/api/theme</code>, polled with an ETag so an unchanged theme costs a 304. Without one, as on CI, it follows the browser's light/dark preference.</p></div>
+  <div class="figures four">
+    <figure><img src="shots/theme-tokyo-night.png" alt="Tokyo Night"><figcaption>tokyo-night · Ledger</figcaption></figure>
+    <figure><img src="shots/theme-catppuccin-latte.png" alt="Catppuccin Latte"><figcaption>catppuccin-latte · Ledger</figcaption></figure>
+    <figure><img src="shots/theme-gruvbox.png" alt="Gruvbox in Modeline"><figcaption>gruvbox · Modeline</figcaption></figure>
+    <figure><img src="shots/theme-rose-pine.png" alt="Rose Pine in Atelier"><figcaption>rose-pine · Atelier</figcaption></figure>
+  </div>
+  <p><b>One deliberate difference from the Qt app:</b> status colours come from the theme's own ANSI hues, mixed 10–30% toward its text colour so a dim blue still reads. The Qt app uses fixed tints, which clash with most Omarchy palettes. Shape carries status too, so a hue that reads poorly does not lose information. All 22 stock themes and DPlanner's own Dark and Light are in the picker; a theme change is the one screen-wide crossfade.</p>
+</section>
+
+<section id="context">
+  <h2>Context, commands, and the selection bar</h2>
+  <div class="summary"><p><b>Every verb is registered once and shown everywhere</b> it applies: menubar, context menu, toolbar, selection bar, palette, which-key panel, <kbd>?</kbd> sheet and touch bar. Its state is computed from a context of URIs (<code>app://entity/step/S12</code>), as <code>framework/context.py</code> does. Keeping focus and selection apart is what makes the toolbar behave.</p></div>
+  <ul class="tight">
+    <li><b>Focus is not selection.</b> Arrows and <kbd>j</kbd>/<kbd>k</kbd> move focus and never reshape the chrome. <kbd>x</kbd>, Ctrl-click and Shift-click build the selection, which turns the toolbar into the selection bar.</li>
+    <li><b>One target rule.</b> A verb acts on the selection if there is one, else on the focused step, and its label says which: "Copy 3 Links", "Run Agents on 2 Steps".</li>
+    <li><b>A refusal carries its reason.</b> "Select or focus a step first" appears in the tooltip, the palette row, the menu item's description and, when a key is pressed, the modeline.</li>
+    <li><b>The palette opens scoped to the selection</b>, shown as a chip. Backspace on an empty query widens it to everything, and recents come first.</li>
+  </ul>
+  <div class="figures two">
+    <figure><img src="shots/desktop-palette-scoped.png" alt="Command palette scoped to two selected steps, filtered by 'stat'"><figcaption><b>The palette</b>, opened with <kbd>Ctrl</kbd><kbd>K</kbd> over two selected steps. Every row shows its key, so it teaches as it serves.</figcaption></figure>
+    <figure><img src="shots/desktop-agent-running.png" alt="Selection bar with Run Agent; the Activity panel shows an agent running"><figcaption><b>The selection bar on one step</b>, after Run Agent (<kbd>⇧R</kbd>). The modeline echoes the last command with its key, and the Activity panel shows the run.</figcaption></figure>
+  </div>
+</section>
+
+<section id="keyboard">
+  <h2>Keyboard-driven, without the Vim trap</h2>
+  <div class="summary"><p><b>"Normal mode" is never entered; it is simply where you are</b> whenever focus is on a navigable surface and not in a text field. Bare keys act there and nowhere else, which is both Vim's speed and WCAG 2.1.4's "active only on focus". The modeline always names the mode and its way out, and Escape steps exactly one level outward.</p></div>
+  <div class="scroll"><table>
+    <thead><tr><th>Mode</th><th>When</th><th>The way out, as shown</th></tr></thead>
+    <tbody>
+      <tr><td><code>NAV</code></td><td>focus on the table or a list</td><td>— (home)</td></tr>
+      <tr><td><code>EDIT</code></td><td>focus in any text field; the keys are letters again</td><td>"Esc leaves the field"</td></tr>
+      <tr><td><code>s…</code></td><td>a prefix typed; which-key appears after 400 ms</td><td>"Esc cancels" — never a silent timeout</td></tr>
+      <tr><td>a verb's own mode</td><td>a verb that needs more input</td><td>named by the verb</td></tr>
+    </tbody>
+  </table></div>
+  <p>The system teaches itself. Keys are printed on every menu row, tooltip and palette row. The modeline <b>echoes every command with its key, however it ran</b>, so a mouse user who clicks Peek sees "Peek · <kbd>Space</kbd>". Holding <kbd>Ctrl</kbd> for 600 ms puts chord badges on the toolbar. <kbd>?</kbd> opens the sheet with the focused thing's own verbs first. View ▸ Single-Key Shortcuts turns bare keys off.</p>
+  <div class="figures two">
+    <figure><img src="shots/desktop-whichkey.png" alt="Which-key panel after pressing s"><figcaption><b>Which-key.</b> After <kbd>s</kbd>, the modeline says <code>s…</code> at once; 400 ms later the panel lists what each next key does.</figcaption></figure>
+    <figure><img src="shots/desktop-cheatsheet.png" alt="Keyboard shortcuts sheet"><figcaption><b>The <kbd>?</kbd> sheet</b>, filterable, with the focused step's verbs first.</figcaption></figure>
+  </div>
+</section>
+
+<section id="multitask">
+  <h2>Doing more than one thing at once</h2>
+  <div class="summary"><p><b>Panes are live views of one store, never copies</b>, so two panes can never disagree. A pane can <em>follow</em> another's focus. Space peeks beside the table. Background work reports on the thing it changes and in an Activity panel.</p></div>
+  <figure><img src="shots/desktop-split-follow-peek.png" alt="Two panes: the table with a peek, and a second pane following its focus"><figcaption><b>Read one part, work on another.</b> <kbd>Ctrl</kbd><kbd>⇧</kbd><kbd>\</kbd> opens a pane that follows the table's focus; <kbd>Space</kbd> also peeks beside the table. The active pane wears the accent edge, and the context, and with it the menus, is always the active pane's.</figcaption></figure>
+  <ul class="tight">
+    <li><b>Preview tabs.</b> A single click opens a tab that the next single click replaces; a double click pins it, so browsing leaves no trail.</li>
+    <li><b>Waiting for a task.</b> Run Agent turns the step In Progress at once. When the agent writes Ready for Review, the row washes once in every pane that shows it, because a change by another writer is the one thing that should catch the eye. A toast appears only if you started the run and it took long enough for you to have moved on.</li>
+    <li><b>Keys inside a browser.</b> The browser owns <kbd>Ctrl</kbd><kbd>W</kbd>/<kbd>T</kbd>/<kbd>Tab</kbd>, so in-app tabs use <kbd>Alt</kbd><kbd>W</kbd> and <kbd>Alt</kbd><kbd>⇧</kbd><kbd>T</kbd>. Every view should get a URL so <kbd>Ctrl</kbd>-click opens it in a new browser tab.</li>
+  </ul>
+</section>
+
+<section id="motion">
+  <h2>Motion that informs, never adorns</h2>
+  <div class="summary"><p><b>Motion answers one of three questions:</b> where did it go, what changed under me, and where did this come from? Anything done hundreds of times a day does not animate. State commits first and every animation is interruptible, so the person never waits for one.</p></div>
+  <div class="scroll"><table>
+    <thead><tr><th>Motion</th><th>Says</th><th class="num">Duration</th></tr></thead>
+    <tbody>
+      <tr><td>A menu scaling out of its trigger (pointer only)</td><td>where it came from</td><td class="num">150 ms</td></tr>
+      <tr><td>Rows travelling to their new places on sort</td><td>where they went</td><td class="num">220 ms</td></tr>
+      <tr><td>A one-shot wash on rows another writer changed</td><td>what changed under you</td><td class="num">1.2 s</td></tr>
+      <tr><td>Toolbar ↔ selection bar crossfade (pointer only)</td><td>the same slot changed role</td><td class="num">100 ms</td></tr>
+      <tr><td>A touch screen arriving from the right, leaving to the left</td><td>where you went</td><td class="num">220 ms</td></tr>
+      <tr><td>A theme change crossfading the window</td><td>everything changed at once</td><td class="num">≈250 ms</td></tr>
+      <tr><td>Keyboard-opened menus, the palette, selection, focus, key repeat</td><td>— instant, always</td><td class="num">0</td></tr>
+    </tbody>
+  </table></div>
+  <p>Durations and easings are tokens. <code>prefers-reduced-motion</code> and View ▸ Reduce Motion zero them, and the motion helpers check too. This is a deliberate step past the Qt app's DESIGN.md, which allows almost no motion. In a browser, where tables re-sort and agents write under you, these few motions carry real information.</p>
+</section>
+
+<section id="touch">
+  <h2>Touch: a separate UI on the same commands</h2>
+  <div class="summary"><p><b>Two UIs, as you said you would prefer if one compromised the other.</b> The touch frame is a stack of screens with bottom tabs. Rows are 56 px, a long press starts selecting, the selection bar takes the app bar's place, the bulk verbs fill a bottom action bar, and a submenu becomes a sheet. It runs the same commands, context, store and workspace, so it can never grow a verb the desktop lacks.</p></div>
+  <div class="figures four">
+    <figure><img src="shots/touch-list.png" alt="Touch step list"><figcaption>The list: two-line rows, status by glyph</figcaption></figure>
+    <figure><img src="shots/touch-selecting.png" alt="Touch selection mode"><figcaption>Long-press selects; the bar and action bar follow</figcaption></figure>
+    <figure><img src="shots/touch-status-sheet.png" alt="Status sheet"><figcaption>A submenu is a sheet, swiped down to dismiss</figcaption></figure>
+    <figure><img src="shots/touch-light-atelier.png" alt="Touch detail in Atelier light"><figcaption>A step's detail, with its verbs below</figcaption></figure>
+  </div>
+  <p>Verbs that mean nothing on touch, such as Peek and Open, say so (<code>touch: false</code>) and the touch surfaces drop them. Proposed detection is a coarse pointer with no hover on a narrow screen, with a switch in each frame remembered per device. A touch laptop or an iPad with a keyboard gets the desktop.</p>
+</section>
+
+<section id="architecture">
+  <h2>Keeping entropy down</h2>
+  <div class="summary"><p><b>The structure is DPlanner's own, enforced by a test.</b> Engine, design system, shell, data and features form layers that only import downward. Features never import each other; one composition root wires them. Components take plain data and emit events, through one shared item shape documented in <code>ui/README.md</code>.</p></div>
+  <div class="layers">
+    <div class="layer"><b>engine/</b><span>signals, templates, base element — knows nothing of UI</span><em>3 files · 1,020 lines</em></div>
+    <div class="layer"><b>ui/</b><span>tokens, themes, glyphs, motion, components — knows nothing of DPlanner</span><em>16 files · 2,880</em></div>
+    <div class="layer"><b>shell/</b><span>context (URIs), commands, keyboard, surfaces, workspace, desktop &amp; touch frames — DPlanner's <code>framework/</code></span><em>8 files · 1,170</em></div>
+    <div class="layer"><b>data/</b><span>the plan store, filled by one bulk load; no component ever fetches</span><em>2 files</em></div>
+    <div class="layer"><b>features/</b><span>appshell, steps, projects, activity — DPlanner's <code>modules/</code>; never import each other</span><em>7 files · 1,090</em></div>
+    <div class="layer"><b>app.js</b><span>the composition root: the only place features meet</span><em>1 file</em></div>
+  </div>
+  <ul class="tight">
+    <li><code>tests/layers.test.mjs</code> checks 171 imports: every one goes downward, nothing imports a package, and no feature reaches into another.</li>
+    <li>A feature registers verbs and views; it never builds a button that runs code. Adding a verb is one <code>commands.register()</code>, and it appears in the menu, palette, keys, toolbar and touch bar.</li>
+    <li>Each component is one file, with its CSS beside its code and every class scoped under its element. A shared <code>.bar</code> class once clipped the menubar to 96 px; that bug is why the rule exists.</li>
+    <li>There is no build step. The prototype runs from source; esbuild exists only in <code>tools/</code> to measure and to pack this report's demo.</li>
+  </ul>
+</section>
+
+<section id="edges">
+  <h2>Edge cases and failure modes</h2>
+  <div class="summary"><p><b>Worked through, not hoped about.</b> Several of these were found by running the prototype, not by thinking about it, and each is now fixed or listed as a gap.</p></div>
+  <div class="scroll"><table>
+    <thead><tr><th>Case</th><th>What happens</th></tr></thead>
+    <tbody>
+      <tr><td>A render writes a signal it reads</td><td>The base element throws, naming the element, after 200 renders without yielding. A frozen page becomes an error message.</td></tr>
+      <tr><td>A focused row moves (sort, another writer)</td><td><code>moveBefore</code> keeps focus where supported; elsewhere focus is restored after the move.</td></tr>
+      <tr><td>Rows removed while their computeds still watch the selection</td><td>Computeds with no readers let go of their sources, and elements tear down on disconnect.</td></tr>
+      <tr><td>Markup in plan data</td><td>Values are never parsed as markup. A strings array that is not a real template literal is refused.</td></tr>
+      <tr><td>No <code>/api/theme</code> (CI, another OS), or Omarchy swapping its theme directory mid-read</td><td>Without the endpoint, the browser's preference is used. A failed read keeps the current theme until the next poll.</td></tr>
+      <tr><td>IME composition, AltGr layouts, browser-reserved chords</td><td>Composition is ignored, there are no Ctrl+Alt+letter bindings, and tabs use Alt-based keys.</td></tr>
+      <tr><td>Focus on <code>&lt;body&gt;</code></td><td>Bare keys are off (the mode shows "—"). Arriving on the table focuses its first row.</td></tr>
+      <tr><td>Clicking an already-focused grid in the other pane</td><td>Panes also activate on pointer-down, a bug the split scene found.</td></tr>
+      <tr><td>Undo clicked in a toast that then disappears</td><td>The stack releases its focus pause after each render. Without that, every later toast froze, a bug the overlay tests found.</td></tr>
+      <tr><td>Long press versus scrolling on touch</td><td>Moving more than 8 px cancels the long press, and scrolling stays native.</td></tr>
+      <tr><td>10,000 rows</td><td>About 250 ms to build, ours or Lit's. Virtualise past about 500 rows, keeping the focused row mounted.</td></tr>
+      <tr><td>A dependency regresses (Lit 3.3.1)</td><td>With our own engine, a fix is ours to make the same day, under our own tests.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="live">
+  <h2>Try it</h2>
+  <div class="summary"><p><b>The prototype, live.</b> The desktop frame is on the left and the touch frame on the right, both built from the same sources. There is no <code>/api/theme</code> here, so "Automatic" follows your browser's light or dark setting; choose an Omarchy theme from View ▸ Theme ▸ More Themes…</p></div>
+  <div class="demo">
+    <iframe class="desk" src="demo/desktop.html" title="Desktop prototype" loading="lazy"></iframe>
+    <iframe class="phone" src="demo/touch.html" title="Touch prototype" loading="lazy"></iframe>
+  </div>
+  <div class="keys">
+    <span>Click the table, then: <kbd>j</kbd>/<kbd>k</kbd> move</span><span><kbd>x</kbd> select</span><span><kbd>Space</kbd> peek</span><span><kbd>s</kbd> then a letter: status</span><span><kbd>⇧R</kbd> run agent</span><span><kbd>Ctrl</kbd><kbd>K</kbd> palette</span><span><kbd>?</kbd> all keys</span><span><kbd>Ctrl</kbd><kbd>⇧</kbd><kbd>\</kbd> split and follow</span><span>right-click a row</span>
+  </div>
+  <p style="font-size:13px;color:var(--ink-2)">In the repository, the frames need <code>node tools/build-demo.mjs</code> first. To run it with your desktop's live theme, use <code>node tools/serve.mjs</code>.</p>
+</section>
+
+<section id="next">
+  <h2>Gaps and next steps</h2>
+  <div class="summary"><p><b>Settle the scope, port the engine, then wire real data.</b> The timeline note says the web view is read-only. The design system supports verbs, but the first version should register only reading ones.</p></div>
+  <h3>Known gaps in the prototype</h3>
+  <ul class="tight">
+    <li>The touch sheet does not mark the current status as checked.</li>
+    <li>The selection is not pruned when another writer deletes a selected step.</li>
+    <li>There is no virtualisation, no column chooser, and column widths are not remembered.</li>
+    <li>There has been no screen-reader pass. Roles and labels are in place, but nobody has listened to them.</li>
+    <li>Safari and Firefox are untested. The touch frame is chosen by page, not yet by detection.</li>
+  </ul>
+  <h3>If this goes ahead</h3>
+  <ol class="tight">
+    <li>Decide what the first version may do: read-only verbs (open, peek, copy link, filter), or more.</li>
+    <li>Port the engine out of the prototype at the line budget in <code>notes/lit-engine.md</code>, adding a <code>selector()</code> helper for per-row selection.</li>
+    <li>Have <code>dplanner report</code> emit the store's snapshot shape. Later, a local <code>dplanner serve</code> can provide it and <code>/api/theme</code>.</li>
+    <li>Work out how to adopt server-rendered HTML, which is the backend-for-frontend's hydration question.</li>
+    <li>Add virtualisation, an accessibility pass, and other browsers.</li>
+  </ol>
+</section>
+
+<footer>
+  Sources and detail: <code>notes/lit-engine.md</code> (Lit from source, comparables, platform status, the six defects), <code>notes/interaction-patterns.md</code> (51 rules with citations), <code>notes/design-system.md</code> (the system as rules), <code>README.md</code>. Glyphs: Tabler Icons, MIT © Paweł Kuna. Themes: Omarchy's stock themes. The sample plan in the screenshots is example data.
+</footer>
+</main>
+</div>
+
+<script>
+  // Medians of evidence/bench-*.json (three run orders): [total ms, script ms] per implementation.
+  const BENCH = [
+    ["create 1,000 rows", { lit: [35.64, 8.3], ours: [35.91, 9.39], fine: [37.87, 11.9] }],
+    ["replace 1,000 rows", { lit: [25.45, 8], ours: [32.98, 10.57], fine: [40.06, 15.33] }],
+    ["update every 10th of 1,000", { lit: [6.98, 0.41], ours: [5.45, 0.65], fine: [7.46, 0.43] }],
+    ["select a row of 1,000", { lit: [0.31, 0.21], ours: [0.58, 0.47], fine: [0.2, 0.08] }],
+    ["swap two of 1,000", { lit: [2.7, 0.4], ours: [2.18, 0.67], fine: [2.3, 0.87] }],
+    ["remove one of 1,000", { lit: [1.73, 0.28], ours: [2.4, 0.62], fine: [2.74, 0.76] }],
+    ["create 10,000 rows", { lit: [221.15, 44.49], ours: [260.11, 61.06], fine: [294.82, 72.97] }],
+    ["append 1,000 to 1,000", { lit: [32.8, 5.83], ours: [40.39, 9.14], fine: [40.16, 11.12] }],
+    ["clear 1,000 rows", { lit: [2.96, 2.88], ours: [3.19, 3.15], fine: [4.51, 4.67] }],
+  ];
+  const NAMES = { lit: "lit-html 3.3.0", ours: "ours, re-render", fine: "ours, signals in holes" };
+  const host = document.getElementById("bench");
+  for (const [op, runs] of BENCH) {
+    const max = Math.max(...Object.values(runs).map(([t]) => t));
+    const best = Object.entries(runs).sort((a, b) => a[1][0] - b[1][0])[0][0];
+    const label = document.createElement("div");
+    label.className = "op";
+    label.setAttribute("role", "rowheader");
+    label.innerHTML = `${op}<small>fastest: ${NAMES[best]}</small>`;
+    const bars = document.createElement("div");
+    bars.className = "bars";
+    bars.setAttribute("role", "cell");
+    for (const key of ["lit", "ours", "fine"]) {
+      const [total, script] = runs[key];
+      const row = document.createElement("div");
+      row.className = "bar";
+      row.style.setProperty("--c", `var(--s-${key})`);
+      row.title = `${NAMES[key]}: ${total} ms total, ${Math.round((100 * script) / total)}% in script`;
+      row.innerHTML = `<i style="width:${(100 * total) / max}%"></i><span>${total < 10 ? total.toFixed(2) : total.toFixed(1)} ms</span>`;
+      bars.append(row);
+    }
+    host.append(label, bars);
+  }
+</script>

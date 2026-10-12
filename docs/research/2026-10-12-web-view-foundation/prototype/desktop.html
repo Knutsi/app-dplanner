@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DPlanner — web view prototype</title>
+<link rel="stylesheet" href="ui/tokens.css">
+<link rel="stylesheet" href="ui/base.css">
+</head>
+<body>
+<script type="module">
+  import "./shell/frame.js";
+  import { startDesktop } from "./app.js";
+  await startDesktop();
+  window.__done = true;
+</script>
+</body>
+</html>

@@ -1,0 +1,117 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Engine benchmark</title>
+<script type="importmap">
+{ "imports": {
+  "lit-html": "/node_modules/lit-html-330/lit-html.js",
+  "lit-html/": "/node_modules/lit-html-330/"
+} }
+</script>
+<style>td { padding: 0 4px; font: 12px sans-serif; } .sel { background: #ddd; }</style>
+<body>
+<div id="ours"></div><div id="fine"></div><div id="lit"></div>
+<script type="module">
+// The js-framework-benchmark operations on a compact table, three ways:
+//   ours   — our template engine, the whole table re-rendered from data (Lit's model)
+//   fine   — our engine with one signal per row label and one for the selection: an
+//            update touches only the holes bound to what changed, no re-render
+//   lit    — lit-html 3.3.0 (3.3.1–3.3.3 leak repeat end markers, lit/lit#5298) with its repeat directive, the same template as "ours"
+// Each timing includes a forced layout, so it is script plus style plus layout.
+import * as ours from "../engine/template.js";
+import { signal, batch } from "../engine/signals.js";
+import { html as litHtml, render as litRender } from "lit-html";
+import { repeat as litRepeat } from "lit-html/directives/repeat.js";
+
+let nextId = 1;
+const ADJ = ["pretty", "large", "big", "small", "tall", "short", "long", "handsome", "plain", "quaint", "clean", "elegant", "easy", "angry", "crazy", "helpful", "mushy", "odd"];
+const NOUN = ["table", "chair", "house", "bbq", "desk", "car", "pony", "cookie", "sandwich", "burger", "pizza", "mouse", "keyboard"];
+let seed = 1;
+const rnd = (n) => ((seed = (seed * 16807) % 2147483647), seed % n);
+const build = (n) => Array.from({ length: n }, () => ({ id: nextId++, label: `${ADJ[rnd(ADJ.length)]} ${NOUN[rnd(NOUN.length)]}` }));
+
+function templated(h, rep, rnder, root) {
+  let rows = [];
+  let selected = 0;
+  const view = () => h`<table><tbody>${rep(rows, (r) => r.id, (r) => h`<tr class=${r.id === selected ? "sel" : ""}><td>${r.id}</td><td>${r.label}</td><td>x</td></tr>`)}</tbody></table>`;
+  const draw = () => rnder(view(), root);
+  return {
+    create: (n) => { rows = build(n); draw(); },
+    append: (n) => { rows = rows.concat(build(n)); draw(); },
+    update: () => { rows = rows.map((r, i) => (i % 10 === 0 ? { ...r, label: r.label + " !!!" } : r)); draw(); },
+    select: () => { selected = rows[rows.length >> 1].id; draw(); },
+    swap: () => { rows = rows.slice(); const t = rows[1]; rows[1] = rows[rows.length - 2]; rows[rows.length - 2] = t; draw(); },
+    remove: () => { rows = rows.filter((_, i) => i !== 5); draw(); },
+    clear: () => { rows = []; draw(); },
+  };
+}
+
+function fine(root) {
+  const { html, repeat, render } = ours;
+  let rows = [];
+  let selected = null;
+  // Each row's label and class are signals: an update or a selection writes them, and only
+  // the holes bound to them change. The table renders only when the set of rows changes.
+  const make = (n) => build(n).map((r) => ({ id: r.id, label: signal(r.label), cls: signal("") }));
+  const draw = () => render(html`<table><tbody>${repeat(rows, (r) => r.id, (r) => html`<tr class=${r.cls}><td>${r.id}</td><td>${r.label}</td><td>x</td></tr>`)}</tbody></table>`, root);
+  return {
+    create: (n) => { rows = make(n); draw(); },
+    append: (n) => { rows = rows.concat(make(n)); draw(); },
+    update: () => batch(() => rows.forEach((r, i) => { if (i % 10 === 0) r.label.value += " !!!"; })),
+    select: () => batch(() => { if (selected) selected.cls.value = ""; selected = rows[rows.length >> 1]; selected.cls.value = "sel"; }),
+    swap: () => { rows = rows.slice(); const t = rows[1]; rows[1] = rows[rows.length - 2]; rows[rows.length - 2] = t; draw(); },
+    remove: () => { rows = rows.filter((_, i) => i !== 5); draw(); },
+    clear: () => { rows = []; selected = null; draw(); },
+  };
+}
+
+// Order matters to a JIT, so ?order=lit,fine,ours runs them in another order.
+const all = {
+  ours: () => templated(ours.html, ours.repeat, ours.render, document.getElementById("ours")),
+  fine: () => fine(document.getElementById("fine")),
+  lit: () => templated(litHtml, litRepeat, litRender, document.getElementById("lit")),
+};
+const impls = Object.fromEntries((new URLSearchParams(location.search).get("order") ?? "ours,fine,lit").split(",").map((n) => [n, all[n]()]));
+
+const OPS = [
+  ["create 1,000 rows", (x) => x.create(1000), (x) => x.clear()],
+  ["replace 1,000 rows", (x) => x.create(1000), null, (x) => x.create(1000)],
+  ["update every 10th of 1,000", (x) => x.update(), null, (x) => x.create(1000)],
+  ["select a row of 1,000", (x) => x.select(), null, (x) => x.create(1000)],
+  ["swap two of 1,000", (x) => x.swap(), null, (x) => x.create(1000)],
+  ["remove one of 1,000", (x) => x.remove(), null, (x) => x.create(1000)],
+  ["create 10,000 rows", (x) => x.create(10000), (x) => x.clear()],
+  ["append 1,000 to 1,000", (x) => x.append(1000), null, (x) => x.create(1000)],
+  ["clear 1,000 rows", (x) => x.clear(), null, (x) => x.create(1000)],
+];
+
+const ROUNDS = 12;
+const results = {};
+const scripts = {}; // the part of each timing spent in script, before style and layout
+const nap = () => new Promise((r) => setTimeout(r, 0));
+for (const [name, op, after, before] of OPS) {
+  results[name] = {};
+  for (const [implName, impl] of Object.entries(impls)) {
+    const times = [];
+    for (let round = 0; round < ROUNDS; round++) {
+      before?.(impl);
+      document.body.offsetHeight;
+      await nap();
+      const t0 = performance.now();
+      op(impl);
+      const t1 = performance.now();
+      document.body.offsetHeight;
+      times.push(performance.now() - t0);
+      (scripts[name] ??= {})[implName] = ((scripts[name][implName] ?? 0) + (t1 - t0) / ROUNDS);
+      after?.(impl);
+      impl.clear();
+      await nap();
+    }
+    times.sort((a, b) => a - b);
+    results[name][implName] = +times.slice(2, -2).reduce((s, t, _, a) => s + t / a.length, 0).toFixed(2);
+  }
+}
+for (const [n, per] of Object.entries(scripts)) for (const k of Object.keys(per)) per[k] = +per[k].toFixed(2);
+window.__results = { total: results, script: scripts };
+window.__done = true;
+</script>
+</body>

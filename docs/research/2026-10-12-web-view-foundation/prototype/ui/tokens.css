@@ -1,0 +1,165 @@
+/* Design tokens.
+ *
+ * Three layers, and a component reads only the last:
+ *   1. --om-*   a theme's raw colours, exactly the keys of an Omarchy colors.toml, set by
+ *               ui/theme.js on <html>. Nothing else ever sets them.
+ *   2. roles    every colour a surface needs, derived from layer 1 with color-mix() — the
+ *               same ramps as DPlanner's theme/omarchy.py, computed by the browser.
+ *   3. variant  sizes, type, shape and motion for one design direction, chosen by
+ *               data-variant on <html>.
+ * A component that writes a literal colour or pixel size is a bug.
+ */
+
+:root {
+  /* ---- 1. theme input (a dark fallback until ui/theme.js runs) */
+  --om-background: #16161e;
+  --om-foreground: #c0caf5;
+  --om-accent: #7aa2f7;
+  --om-selection: #283457;
+  --om-red: #f7768e;
+  --om-yellow: #e0af68;
+  --om-green: #9ece6a;
+  --om-blue: #7aa2f7;
+  --om-magenta: #bb9af7;
+  --om-cyan: #7dcfff;
+  color-scheme: dark;
+
+  /* ---- 2. colour roles (dark mixes; [data-mode="light"] below swaps the ramps) */
+  --bg: var(--om-background);
+  --bg-sunken: color-mix(in srgb, var(--om-background), black 25%);
+  --bg-raised: color-mix(in srgb, var(--om-background), white 4%);
+  --bg-overlay: color-mix(in srgb, var(--om-background), white 8%);
+  --bg-hover: color-mix(in srgb, var(--om-foreground) 6%, transparent);
+  --line: color-mix(in srgb, var(--om-background), var(--om-foreground) 12%);
+  --line-strong: color-mix(in srgb, var(--om-background), var(--om-foreground) 22%);
+  --fg: var(--om-foreground);
+  --fg-2: color-mix(in srgb, var(--om-foreground), var(--om-background) 32%);
+  --fg-3: color-mix(in srgb, var(--om-foreground), var(--om-background) 60%);
+  --accent: var(--om-accent);
+  --accent-hover: color-mix(in srgb, var(--om-accent), white 15%);
+  --on-accent: var(--om-background);
+  --accent-wash: color-mix(in srgb, var(--om-accent) 16%, transparent);
+  --sel-bg: var(--om-selection);
+  --sel-fg: var(--om-foreground);
+  --focus: var(--om-accent);
+  --shadow: 0 6px 24px color-mix(in srgb, black 45%, transparent), 0 0 0 1px var(--line-strong);
+
+  /* Status and tone come from the theme's own hues, mixed a little toward the text colour
+     so a dim ANSI blue still reads on its ground. Shape carries status too (ui/marks.js). */
+  --st-pending: var(--fg-3);
+  --st-progress: color-mix(in srgb, var(--om-blue), var(--om-foreground) 15%);
+  --st-review: color-mix(in srgb, var(--om-yellow), var(--om-foreground) 10%);
+  --st-merge: color-mix(in srgb, var(--om-cyan), var(--om-foreground) 10%);
+  --st-done: color-mix(in srgb, var(--om-green), var(--om-foreground) 10%);
+  --st-blocked: color-mix(in srgb, var(--om-red), var(--om-foreground) 10%);
+  --tone-ok: var(--st-done);
+  --tone-warn: var(--st-review);
+  --tone-error: var(--st-blocked);
+  --tone-busy: var(--st-progress);
+  --changed: color-mix(in srgb, var(--om-accent) 28%, transparent);
+
+  /* ---- motion (shared by every variant; see ui/motion.js for the rules) */
+  --dur-micro: 100ms;
+  --dur-small: 150ms;
+  --dur-layout: 220ms;
+  --dur-changed: 1200ms;
+  --ease-enter: cubic-bezier(0, 0, 0, 1);
+  --ease-exit: cubic-bezier(0.3, 0, 1, 1);
+  --ease-move: cubic-bezier(0.2, 0, 0, 1);
+}
+
+:root[data-mode="light"] {
+  color-scheme: light;
+  --bg-sunken: color-mix(in srgb, var(--om-background), black 4%);
+  --bg-raised: color-mix(in srgb, var(--om-background), white 50%);
+  --bg-overlay: color-mix(in srgb, var(--om-background), white 70%);
+  --bg-hover: color-mix(in srgb, var(--om-foreground) 6%, transparent);
+  --line: color-mix(in srgb, var(--om-background), var(--om-foreground) 14%);
+  --line-strong: color-mix(in srgb, var(--om-background), var(--om-foreground) 26%);
+  --fg-2: color-mix(in srgb, var(--om-foreground), var(--om-background) 28%);
+  --fg-3: color-mix(in srgb, var(--om-foreground), var(--om-background) 55%);
+  --accent-hover: color-mix(in srgb, var(--om-accent), black 15%);
+  --on-accent: white;
+  --shadow: 0 6px 24px color-mix(in srgb, black 14%, transparent), 0 0 0 1px var(--line-strong);
+  --st-progress: color-mix(in srgb, var(--om-blue), var(--om-foreground) 25%);
+  --st-review: color-mix(in srgb, var(--om-yellow), var(--om-foreground) 30%);
+  --st-merge: color-mix(in srgb, var(--om-cyan), var(--om-foreground) 30%);
+  --st-done: color-mix(in srgb, var(--om-green), var(--om-foreground) 25%);
+  --st-blocked: color-mix(in srgb, var(--om-red), var(--om-foreground) 15%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --dur-micro: 0ms; --dur-small: 0ms; --dur-layout: 0ms; --dur-changed: 600ms; }
+}
+:root[data-motion="reduced"] { --dur-micro: 0ms; --dur-small: 0ms; --dur-layout: 0ms; --dur-changed: 600ms; }
+
+/* ---- 3. variants ---------------------------------------------------------------------- */
+
+/* Ledger — the classic workbench. A menubar, a toolbar of glyph bands under it, a hairline
+   grid, 24 px rows. What JetBrains and Excel taught a generation of professionals. */
+:root, :root[data-variant="ledger"] {
+  --font-ui: Inter, "Segoe UI Variable Text", "SF Pro Text", Cantarell, "Noto Sans", system-ui, sans-serif;
+  --font-title: var(--font-ui);
+  --font-mono: "JetBrainsMono Nerd Font", "JetBrains Mono", "Cascadia Mono", ui-monospace, Menlo, monospace;
+  --fs: 13px;
+  --fs-small: 11.5px;
+  --fs-title: 15px;
+  --lh: 1.35;
+  --row: 24px;
+  --control: 26px;
+  --menubar: 28px;
+  --icon: 16px;
+  --pad: 8px;
+  --gap: 8px;
+  --radius: 4px;
+  --radius-pop: 6px;
+  --rule: 1px solid var(--line);
+  --grid-lines: 1;            /* row hairlines in tables */
+  --toolbar-place: top;       /* read by the shell: top | modeline | float */
+  --title-weight: 600;
+  --label-case: none;
+}
+
+/* Modeline — keyboard first, terminal-native. Everything in the mono face, square corners,
+   no toolbar strip: the verbs for the selection live in the modeline at the foot, each with
+   its key, the way Helix and Kakoune teach theirs. Status in the theme's own ANSI hues. */
+:root[data-variant="modeline"] {
+  --font-ui: var(--font-mono);
+  --font-title: var(--font-mono);
+  --fs: 12.5px;
+  --fs-small: 11.5px;
+  --fs-title: 13px;
+  --lh: 1.3;
+  --row: 22px;
+  --control: 22px;
+  --menubar: 24px;
+  --pad: 7px;
+  --gap: 6px;
+  --radius: 0px;
+  --radius-pop: 0px;
+  --grid-lines: 0;
+  --toolbar-place: modeline;
+  --title-weight: 700;
+  --label-case: lowercase;
+  --shadow: 0 0 0 1px var(--line-strong), 4px 4px 0 color-mix(in srgb, black 35%, transparent);
+}
+
+/* Atelier — calm and layered, DPlanner's own "calm, spacious, unhurried". A slimmer menubar,
+   a floating toolbar near the work, step titles in the prose serif, 30 px rows, soft lifts. */
+:root[data-variant="atelier"] {
+  --font-title: "EB Garamond", "Iowan Old Style", Palatino, Charter, "Source Serif 4", Georgia, serif;
+  --fs: 13.5px;
+  --fs-small: 12px;
+  --fs-title: 17px;
+  --lh: 1.45;
+  --row: 30px;
+  --control: 30px;
+  --menubar: 30px;
+  --pad: 10px;
+  --gap: 10px;
+  --radius: 7px;
+  --radius-pop: 10px;
+  --grid-lines: 0;
+  --toolbar-place: float;
+  --title-weight: 500;
+}

@@ -48,3 +48,9 @@ changes, write a new note and link back.
   repository works with a few workarounds; across two, every PR number is looked up in the
   primary repository, which marked a landing done while its PR was open. Twelve findings,
   a Sunday-only cut bug, and the blind spots of nearby setups.
+- [2026-10-12 — The web view's foundation: our own engine, and a design system](2026-10-12-web-view-foundation/README.md):
+  is Lit's engine small enough to own (yes: a 5.5 KB engine with signals, level with lit-html 3.3.0
+  on updates and 10–25 % behind on bulk creation, and Lit 3.3.1–3.3.3 leak in `repeat`), and a
+  keyboard-first design system for the web view — one command registry over URI contexts, a
+  selection bar, three variants, live Omarchy themes, a separate touch UI. A working prototype,
+  51 interaction rules, and an HTML report.

@@ -1,0 +1,23 @@
+<!doctype html><meta charset="utf-8">
+<script type="importmap">{ "imports": { "lit-html": "/node_modules/lit-html-330/lit-html.js", "lit-html/": "/node_modules/lit-html-330/" } }</script>
+<body><div id="r"></div>
+<script type="module">
+import { html, render } from "lit-html";
+import { repeat } from "lit-html/directives/repeat.js";
+const root = document.getElementById("r");
+let id = 1;
+const build = (n) => Array.from({ length: n }, () => ({ id: id++, label: "x" + id }));
+const view = (rows) => html`<table><tbody>${repeat(rows, (r) => r.id, (r) => html`<tr><td>${r.id}</td><td>${r.label}</td></tr>`)}</tbody></table>`;
+const t = (f) => { const t0 = performance.now(); f(); document.body.offsetHeight; return (performance.now() - t0).toFixed(1); };
+const out = [];
+const count = () => { const tb = root.querySelector("tbody"); return tb ? `tr=${tb.querySelectorAll("tr").length} nodes=${tb.childNodes.length}` : "none"; };
+const v = (rows) => html`<table><tbody>${repeat(rows, (r) => r.id, (r) => html`<tr><td>${r.id}</td></tr>`)}</tbody></table>`;
+render(v(build(3)), root); out.push("create 3: " + count());
+render(v(build(3)), root); out.push("replace 3 with 3 new keys: " + count());
+render(v([]), root); out.push("clear: " + count());
+render(v(build(3)), root); out.push("create 3: " + count());
+render(v([]), root); out.push("clear: " + count());
+const keep = build(3); render(v(keep), root); render(v([keep[0], ...build(2)]), root); out.push("replace 2 of 3: " + count());
+out.push(root.querySelector("tbody").innerHTML.replace(/\n/g, ""));
+window.__results = out; window.__done = true;
+</script>
